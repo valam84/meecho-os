@@ -1076,8 +1076,15 @@ MACHINE_GNU_PLATFORM?=${MACHINE_GNU_ARCH}--netbsd
 .endif
 
 .if defined(__MINIX)
-# We have a simpler toolchain naming scheme
+# We have a simpler toolchain naming scheme. The middle field names the
+# object format. binutils and gcc only ever match the OS field, so nothing
+# breaks if it lies, but it is the prefix of every tool's name and
+# "aarch64-elf32-minix-gcc" would be exactly that.
+.if !empty(MACHINE_ARCH:M*64*)
+MACHINE_GNU_PLATFORM:=${MACHINE_GNU_ARCH}-elf64-minix
+.else
 MACHINE_GNU_PLATFORM:=${MACHINE_GNU_ARCH}-elf32-minix
+.endif
 
 # We need to check for HAVE_GOLD after LD has been set
 .  if ${_HAVE_GOLD:U} == ""

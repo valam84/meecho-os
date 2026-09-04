@@ -88,7 +88,9 @@ typedef	unsigned char	__cpu_simple_lock_nv_t;
 #define __HAVE_CPU_DATA_FIRST
 #define __HAVE___LWP_GETPRIVATE_FAST
 #define __HAVE_COMMON___TLS_GET_ADDR
+#if !defined(__minix)
 #define __HAVE_TLS_VARIANT_I
+#endif /* !defined(__minix) */
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #define PCU_FPU			0

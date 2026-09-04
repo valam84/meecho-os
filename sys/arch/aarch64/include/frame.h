@@ -49,6 +49,22 @@ struct trapframe {
 #define tf_tpidr	tf_regs.r_tpidr
 };
 
+#if defined(__minix) && !defined(_LOCORE)
+#include <sys/signal.h>
+
+/*
+ * Signal frame. Pushed onto the user stack by the kernel before calling the
+ * handler; __sigreturn finds the context through sf_scp.
+ *
+ * The frame is what the handler runs on top of, and AArch64 faults on a
+ * misaligned stack pointer, so its size is kept a multiple of 16.
+ */
+struct sigframe_sigcontext {
+	struct	sigcontext *sf_scp;	/* Let sigreturn find sigcontext */
+	struct	sigcontext sf_sc;
+} __aligned(16);
+#endif /* defined(__minix) && !defined(_LOCORE) */
+
 #elif defined(__arm__)
 
 #include <arm/frame.h>

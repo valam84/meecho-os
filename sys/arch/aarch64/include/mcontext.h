@@ -99,7 +99,14 @@ typedef struct {
 typedef struct {
 	__gregset_t	__gregs;	/* General Purpose Register set */
 	__fregset_t	__fregs;	/* FPU/SIMD Register File */
+#if defined(__minix)
+	/* Carved out of the spare space so that the size stays NetBSD's. */
+	int		mc_flags;
+	int		mc_magic;
+	__greg_t	__spare[7];	/* future proof */
+#else
 	__greg_t	__spare[8];	/* future proof */
+#endif /* defined(__minix) */
 } mcontext_t;
 
 /* Machine-dependent uc_flags */
@@ -110,6 +117,31 @@ typedef struct {
 #define _UC_MACHINE_INTRV(uc)	((uc)->uc_mcontext.__gregs[_REG_X0])
 
 #define	_UC_MACHINE_SET_PC(uc, pc)	_UC_MACHINE_PC(uc) = (pc)
+
+#if defined(__minix)
+#define _UC_MACHINE_STACK(uc)		((uc)->uc_mcontext.__gregs[_REG_SP])
+#define	_UC_MACHINE_SET_STACK(uc, sp)	_UC_MACHINE_STACK(uc) = (sp)
+
+#define _UC_MACHINE_FP(uc)		((uc)->uc_mcontext.__gregs[_REG_X29])
+#define	_UC_MACHINE_SET_FP(uc, fp)	_UC_MACHINE_FP(uc) = (fp)
+
+#define _UC_MACHINE_LR(uc)		((uc)->uc_mcontext.__gregs[_REG_X30])
+#define	_UC_MACHINE_SET_LR(uc, lr)	_UC_MACHINE_LR(uc) = (lr)
+
+/* General register n, 0..30. The arm header spells out R0..R4; here the
+ * argument registers are eight and the callee-saved ones ten, so the
+ * register number is a parameter. */
+#define _UC_MACHINE_X(uc, n)		((uc)->uc_mcontext.__gregs[_REG_X0 + (n)])
+#define	_UC_MACHINE_SET_X(uc, n, v)	_UC_MACHINE_X(uc, n) = (v)
+
+__BEGIN_DECLS
+int setmcontext(const mcontext_t *mcp);
+int getmcontext(mcontext_t *mcp);
+__END_DECLS
+
+#define MCF_MAGIC	0xc0ffee
+#define _MC_FPU_SAVED	0x001
+#endif /* defined(__minix) */
 
 #if defined(_RTLD_SOURCE) || defined(_LIBC_SOURCE) || defined(__LIBPTHREAD_SOURCE__)
 #include <sys/tls.h>

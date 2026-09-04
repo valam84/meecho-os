@@ -99,6 +99,15 @@
 	.ascii msg;							\
 	.popsection
 
+#if defined(__minix)
+#define IMPORT(sym)               \
+        .extern _C_LABEL(sym)
+
+#define _LABEL(x) \
+	.globl x; x:
+#define	LABEL(y)	_LABEL(_C_LABEL(y))
+#endif /* defined(__minix) */
+
 #elif defined(__arm__)
 
 #include <arm/asm.h>

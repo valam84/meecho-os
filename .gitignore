@@ -49,3 +49,7 @@ external/bsd/llvm/dist/clang/test/CodeGenCXX/microsoft-abi-vtables-multiple-nonv
 external/bsd/llvm/dist/llvm/test/Verifier/bitcast-address-space-through-constant-inttoptr-inside-gep-i
 lib/libc/compat__*
 .gdbinit
+
+# Output of the stand-alone aarch64 bring-up build. Nested .gitignore files
+# are ignored themselves (see above), so this has to live here.
+minix/kernel/arch/aarch64/kernel.elf

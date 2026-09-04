@@ -125,6 +125,18 @@ extern char boot_stack_top[];
 #define MMU_DEVICE	(PTE_ATTRINDX(MAIR_IDX_DEVICE_nGnRnE) | PTE_SH_NONE | \
 			 PTE_AF | PTE_AP_RW_EL1 | PTE_UXN | PTE_PXN)
 
+/*
+ * User mappings. All non-global, so their TLB entries carry an ASID and one
+ * process's translations do not have to be flushed to run another.
+ *
+ * PXN is set on user text as firmly as UXN is on kernel text, and for the
+ * same reason in reverse: EL1 must not execute a page EL0 can write to, which
+ * is the whole shape of a large family of exploits.
+ */
+#define MMU_USER_RX	(MMU_NORMAL | PTE_AP_RO_ALL | PTE_PXN | PTE_NG)
+#define MMU_USER_RW	(MMU_NORMAL | PTE_AP_RW_ALL | PTE_PXN | PTE_UXN | \
+			 PTE_NG)
+
 /* TCR_EL1 fields. */
 #define TCR_T0SZ(x)		((uint64_t)(x) << 0)
 #define TCR_EPD0		(1UL << 7)	/* no TTBR0 walks */
@@ -160,14 +172,19 @@ extern char boot_stack_top[];
  * of RAM, which arrives once there is a device tree to say how much RAM there
  * is.
  */
-#define EARLY_PT_PAGES		16
+#define PT_POOL_PAGES		24
 
-static uint64_t early_pt_pool[EARLY_PT_PAGES][PTRS_PER_TABLE]
+static uint64_t pt_pool[PT_POOL_PAGES][PTRS_PER_TABLE]
     __attribute__((aligned(PAGE_SIZE)));
-static unsigned early_pt_used;
+static unsigned pt_used;
 
-static uint64_t *identity_root;
-static uint64_t *kernel_root;
+/*
+ * Roots are held as physical addresses because that is what a TTBR takes, and
+ * because a page table is reached through a different address depending on
+ * when you ask - see pt() below.
+ */
+static uint64_t identity_root;
+static uint64_t kernel_root;
 
 /*
  * Device register ranges the BSP has asked for, with the variable each driver
@@ -242,20 +259,68 @@ mmu_device_map_get(unsigned i, uint64_t *base, uint64_t *size)
 	return 1;
 }
 
+/*
+ * Is the kernel executing from the upper half yet?
+ *
+ * Asked of the program counter rather than of SCTLR_EL1.M, because the
+ * question is not whether translation is on but which addresses this code is
+ * using. Between enabling the MMU and branching high, translation is on and
+ * the kernel is still running physically.
+ */
+static int
+running_high(void)
+{
+	uint64_t pc;
+
+	__asm__ volatile("adr %0, ." : "=r"(pc));
+	return pc >= KERNEL_VA_OFFSET;
+}
+
+/*
+ * An addressable pointer to the page table at physical address pa.
+ *
+ * Descriptors hold physical addresses; the code that writes them needs an
+ * address it can dereference. Before the branch into the upper half that is
+ * the physical address itself, through the identity map. Afterwards the
+ * identity map is gone and the same page is reached through the kernel map.
+ */
 static uint64_t *
-early_alloc_table(void)
+pt(uint64_t pa)
+{
+	return (uint64_t *)(running_high() ? phys_to_virt(pa) : pa);
+}
+
+/* The physical address of a kernel object, named however we can see it. */
+static uint64_t
+sym_phys(const void *p)
+{
+	uint64_t a = (uint64_t)p;
+
+	return a >= KERNEL_VA_OFFSET ? virt_to_phys(a) : a;
+}
+
+/*
+ * Take a page from the pool and return its physical address.
+ *
+ * The pool is a fixed array in BSS. A kernel with a memory allocator gets its
+ * page tables from that instead; there is no allocator until VM exists, and
+ * counting the pages this kernel actually needs is more honest than
+ * pretending to have one.
+ */
+static uint64_t
+alloc_table(void)
 {
 	uint64_t *table;
 	unsigned i;
 
-	if (early_pt_used >= EARLY_PT_PAGES)
-		early_stop("out of early page tables");
+	if (pt_used >= PT_POOL_PAGES)
+		early_stop("out of page tables");
 
-	table = early_pt_pool[early_pt_used++];
+	table = pt_pool[pt_used++];
 	for (i = 0; i < PTRS_PER_TABLE; i++)
 		table[i] = 0;
 
-	return table;
+	return sym_phys(table);
 }
 
 /*
@@ -263,12 +328,9 @@ early_alloc_table(void)
  * needed. Block descriptors are used wherever alignment and length allow,
  * which keeps the identity map down to a handful of entries and saves a level
  * of walking on every miss.
- *
- * Descriptors are written through physical pointers, so this only works with
- * the MMU off.
  */
 static void
-map_range(uint64_t *root, uint64_t va, uint64_t pa, uint64_t size,
+map_range(uint64_t root, uint64_t va, uint64_t pa, uint64_t size,
 	uint64_t attrs)
 {
 	uint64_t end;
@@ -278,14 +340,14 @@ map_range(uint64_t *root, uint64_t va, uint64_t pa, uint64_t size,
 	pa &= ~PAGE_MASK;
 
 	while (va < end) {
-		uint64_t *table = root;
+		uint64_t table_pa = root;
 		unsigned level;
 
 		for (level = 0; ; level++) {
 			unsigned shift = LEVEL_SHIFT(level);
 			uint64_t span = 1UL << shift;
 			unsigned idx = (va >> shift) & (PTRS_PER_TABLE - 1);
-			uint64_t *next;
+			uint64_t *table = pt(table_pa);
 
 			if (level == 3) {
 				table[idx] = pa | attrs | PTE_PAGE | PTE_VALID;
@@ -308,8 +370,7 @@ map_range(uint64_t *root, uint64_t va, uint64_t pa, uint64_t size,
 			}
 
 			if ((table[idx] & PTE_VALID) == 0) {
-				next = early_alloc_table();
-				table[idx] = (uint64_t)next | PTE_TABLE |
+				table[idx] = alloc_table() | PTE_TABLE |
 				    PTE_VALID;
 			} else if ((table[idx] & PTE_TABLE) == 0) {
 				/*
@@ -320,7 +381,7 @@ map_range(uint64_t *root, uint64_t va, uint64_t pa, uint64_t size,
 				early_stop("would have to split a block");
 			}
 
-			table = (uint64_t *)(table[idx] & PTE_ADDR_MASK);
+			table_pa = table[idx] & PTE_ADDR_MASK;
 		}
 	}
 }
@@ -334,7 +395,7 @@ map_range(uint64_t *root, uint64_t va, uint64_t pa, uint64_t size,
  * .data through the end of .bss is a single writable range.
  */
 static void
-map_kernel_image(uint64_t *root, uint64_t offset)
+map_kernel_image(uint64_t root, uint64_t offset)
 {
 	uint64_t text = (uint64_t)__text_start;
 	uint64_t rodata = (uint64_t)__rodata_start;
@@ -399,8 +460,8 @@ mmu_setup(void)
 	uint64_t mair, tcr, sctlr;
 	unsigned i;
 
-	identity_root = early_alloc_table();
-	kernel_root = early_alloc_table();
+	identity_root = alloc_table();
+	kernel_root = alloc_table();
 
 	/*
 	 * The kernel map: the image at its link address, plus every device
@@ -430,7 +491,7 @@ mmu_setup(void)
 		map_range(identity_root, base, base, size, MMU_DEVICE);
 	}
 
-	dcache_clean_inval((uint64_t)early_pt_pool, sizeof(early_pt_pool));
+	dcache_clean_inval((uint64_t)pt_pool, sizeof(pt_pool));
 
 	mair = MAIR_VALUE;
 
@@ -453,7 +514,7 @@ mmu_setup(void)
 		"msr	ttbr1_el1, %3\n\t"
 		"isb"
 		:: "r"(mair), "r"(tcr),
-		   "r"((uint64_t)identity_root), "r"((uint64_t)kernel_root)
+		   "r"(identity_root), "r"(kernel_root)
 		: "memory");
 
 	/*
@@ -524,6 +585,93 @@ mmu_drop_identity(void)
 		:: "r"(tcr) : "memory");
 }
 
+uint64_t
+mmu_kern_phys(const void *p)
+{
+	return sym_phys(p);
+}
+
+uint64_t
+mmu_user_create(void)
+{
+	return alloc_table();
+}
+
+void
+mmu_user_map_text(uint64_t root, uint64_t va, uint64_t pa, uint64_t size)
+{
+	map_range(root, va, pa, size, MMU_USER_RX);
+}
+
+void
+mmu_user_map_data(uint64_t root, uint64_t va, uint64_t pa, uint64_t size)
+{
+	map_range(root, va, pa, size, MMU_USER_RW);
+}
+
+void
+mmu_user_enter(uint64_t root, unsigned asid)
+{
+	uint64_t tcr;
+
+	/*
+	 * Undo what mmu_drop_identity() did: the lower half has a legitimate
+	 * occupant again.
+	 */
+	__asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr));
+	tcr &= ~TCR_EPD0;
+
+	/*
+	 * The ASID rides in the top sixteen bits of TTBR0_EL1 - TCR_EL1.A1 is
+	 * clear, so TTBR0 is what defines it.
+	 *
+	 * Everything is invalidated here rather than just this ASID. With one
+	 * process that is the same thing and it is one instruction; a
+	 * scheduler switching between address spaces wants "tlbi aside1is"
+	 * for the outgoing ASID instead, and nothing at all when the incoming
+	 * ASID is still valid, which is the point of having them.
+	 */
+	__asm__ volatile(
+		"msr	ttbr0_el1, %0\n\t"
+		"msr	tcr_el1, %1\n\t"
+		"isb\n\t"
+		"tlbi	vmalle1\n\t"
+		"dsb	nsh\n\t"
+		"isb"
+		:: "r"(root | ((uint64_t)asid << 48)), "r"(tcr) : "memory");
+}
+
+void
+mmu_sync_icache(uint64_t va, uint64_t size)
+{
+	uint64_t ctr, dline, iline, addr, end;
+
+	__asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
+	dline = 4UL << ((ctr >> 16) & 0xf);	/* DminLine */
+	iline = 4UL << (ctr & 0xf);		/* IminLine */
+
+	end = va + size;
+
+	/*
+	 * Clean to the point of unification so instruction fetch can see the
+	 * writes, then throw away whatever the instruction cache already had
+	 * for those addresses.
+	 *
+	 * By virtual address, and the address used is the kernel's - the
+	 * Cortex-A72's caches are physically tagged, so cleaning an alias
+	 * covers every other mapping of the same page, including the one the
+	 * process will run from.
+	 */
+	for (addr = va & ~(dline - 1); addr < end; addr += dline)
+		__asm__ volatile("dc cvau, %0" :: "r"(addr) : "memory");
+	__asm__ volatile("dsb ish" ::: "memory");
+
+	for (addr = va & ~(iline - 1); addr < end; addr += iline)
+		__asm__ volatile("ic ivau, %0" :: "r"(addr) : "memory");
+	__asm__ volatile("dsb ish" ::: "memory");
+	__asm__ volatile("isb" ::: "memory");
+}
+
 int
 mmu_probe(uint64_t va, unsigned access, uint64_t *pa)
 {
@@ -566,6 +714,6 @@ mmu_report(void)
 	kput_line("TTBR0_EL1   : ", v);
 	__asm__ volatile("mrs %0, ttbr1_el1" : "=r"(v));
 	kput_line("TTBR1_EL1   : ", v);
-	kput_line("tables used : ", early_pt_used);
+	kput_line("tables used : ", pt_used);
 	kput_line("device maps : ", device_maps);
 }

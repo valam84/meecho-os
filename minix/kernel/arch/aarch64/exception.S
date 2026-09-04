@@ -85,19 +85,29 @@ exception_entry:
 	stp	x28, x29, [sp, #FRAME_X(28)]
 	str	x30, [sp, #FRAME_X(30)]
 
+	mrs	x1, spsr_el1
+	str	x1, [sp, #FRAME_PSR]
+
 	/*
-	 * The interrupted stack pointer. Taken from EL1h this is simply the
-	 * current one before the frame was pushed. An exception from EL0 will
-	 * have left its stack in SP_EL0 instead; that path arrives with EL0,
-	 * at stage 2.6.
+	 * The interrupted stack pointer.
+	 *
+	 * Taken from EL1h it is simply the current one before the frame was
+	 * pushed. Taken from EL0 the process was using SP_EL0, and SP_EL1 -
+	 * which is what "sp" means here - is the kernel's own stack and has
+	 * nothing to do with the process.
+	 *
+	 * SPSR.M[3:0] is zero exactly when the exception came from EL0t, so
+	 * the saved PSR is the thing to ask. It is also what the return path
+	 * asks, which keeps the two from disagreeing.
 	 */
-	add	x1, sp, #FRAME_SIZE
+	tst	x1, #0xf
+	mrs	x2, sp_el0
+	add	x3, sp, #FRAME_SIZE
+	csel	x1, x2, x3, eq
 	str	x1, [sp, #FRAME_SP]
 
 	mrs	x1, elr_el1
 	str	x1, [sp, #FRAME_PC]
-	mrs	x1, spsr_el1
-	str	x1, [sp, #FRAME_PSR]
 
 	/*
 	 * Read the cause here rather than in C. Nothing can overwrite ESR and
@@ -111,18 +121,32 @@ exception_entry:
 	mov	x0, sp			/* frame */
 	bl	trap_handler
 
-	/*
-	 * ELR and SPSR are reloaded from the frame, not left as they were:
-	 * the handler is allowed to change them, and stepping over a faulting
-	 * instruction is exactly that.
-	 *
-	 * x0 is scratch here and gets its saved value back below, so the
-	 * order matters.
-	 */
+/*
+ * The return half, reached both by falling out of the handler and by
+ * restore_user_context() below.
+ *
+ * ELR and SPSR are reloaded from the frame, not left as they were: the
+ * handler is allowed to change them, and stepping over a faulting instruction
+ * or setting a system call's return value is exactly that.
+ *
+ * x0 and x1 are scratch here and get their saved values back below, so the
+ * order matters.
+ */
+exception_return:
 	ldr	x0, [sp, #FRAME_PC]
 	msr	elr_el1, x0
 	ldr	x0, [sp, #FRAME_PSR]
 	msr	spsr_el1, x0
+
+	/*
+	 * Returning to EL0 means giving the process its stack pointer back.
+	 * Returning to EL1h does not: sp is restored by unwinding the frame.
+	 */
+	tst	x0, #0xf
+	b.ne	1f
+	ldr	x1, [sp, #FRAME_SP]
+	msr	sp_el0, x1
+1:
 
 	ldp	x0, x1, [sp, #FRAME_X(0)]
 	ldp	x2, x3, [sp, #FRAME_X(2)]
@@ -145,3 +169,44 @@ exception_entry:
 	eret
 
 	.size	exception_entry, . - exception_entry
+
+/*
+ * Enter user mode.
+ *
+ * The frame a process is entered through sits at the top of the kernel's trap
+ * stack, in exactly the place an exception from EL0 would build one. That is
+ * not a coincidence: it means going to user and coming back from user use the
+ * same code, and that SP_EL1 lands back at trap_stack_top every time the
+ * process runs, whether it got there from a system call, an interrupt or from
+ * being started.
+ *
+ * A kernel with more than one process copies the frame in and out of that
+ * process's struct proc around this; with one process the frame is the
+ * context.
+ *
+ * Does not return - whatever called it is abandoning its own stack.
+ */
+	.globl	restore_user_context
+restore_user_context:
+	adrp	x0, trap_stack_top
+	add	x0, x0, :lo12:trap_stack_top
+	sub	sp, x0, #FRAME_SIZE
+	b	exception_return
+
+	.size	restore_user_context, . - restore_user_context
+
+/*
+ * The stack the kernel runs on once there is a process.
+ *
+ * Separate from the boot stack because entry from EL0 has to land somewhere
+ * known: the frame's position is what ties restore_user_context() to the
+ * vectors. The boot stack is abandoned at the same moment, along with
+ * everything kernel_main() had on it.
+ */
+	.section .bss.trapstack, "aw", @nobits
+	.balign	4096
+	.globl	trap_stack
+trap_stack:
+	.space	16384
+	.globl	trap_stack_top
+trap_stack_top:

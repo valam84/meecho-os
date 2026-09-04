@@ -19,6 +19,7 @@
 #include "intr.h"
 #include "kprint.h"
 #include "mmu.h"
+#include "proc.h"
 #include "trap.h"
 
 /* Provided by the link script. */
@@ -225,6 +226,15 @@ timer_tick(int irq)
 	 */
 	bsp_timer_int_handler();
 	ticks++;
+
+	/*
+	 * Whether this interrupted the kernel or a process is the first thing
+	 * a scheduler asks - it decides whose time was just spent. Here it
+	 * only counts, but counting it is what shows the process is genuinely
+	 * preemptible rather than merely reachable.
+	 */
+	if (trap_from_user())
+		proc_count_user_tick();
 }
 
 static void
@@ -257,32 +267,26 @@ start_ticking(void)
 
 	bsp_register_timer_handler(timer_tick);
 	irq_enable();
-	kputs("interrupts unmasked, waiting\n\n");
+	kputs("interrupts unmasked\n");
 
-	for (;;) {
-		/*
-		 * Sleep until something happens. If the timer were not
-		 * running this would never wake, which is exactly the failure
-		 * this stage is meant to rule out.
-		 */
+	/*
+	 * Wait for a few ticks before going any further. If the timer were
+	 * not running this would never wake, and it is worth failing here -
+	 * with the reason on the console - rather than inside the first
+	 * process, where the same silence would have a dozen explanations.
+	 */
+	while (ticks < 3) {
 		__asm__ volatile("wfi");
 
 		if (ticks == seen)
 			continue;
 		seen = ticks;
 
-		/*
-		 * The first few ticks prove interrupts arrive at all; one
-		 * line a second afterwards proves they keep arriving at the
-		 * rate asked for.
-		 */
-		if (seen <= 3 || seen % SYSTEM_HZ == 0) {
-			kputs("tick ");
-			kput_dec(seen);
-			kputs("  counter ");
-			kput_dec(bsp_timer_counter());
-			kputs("\n");
-		}
+		kputs("tick ");
+		kput_dec(seen);
+		kputs("  counter ");
+		kput_dec(bsp_timer_counter());
+		kputs("\n");
 	}
 }
 
@@ -406,4 +410,12 @@ kernel_main(void)
 
 	check_permissions();
 	start_ticking();
+
+	/*
+	 * From here the kernel stops being a straight line. proc_start_first()
+	 * abandons this stack and enters EL0; everything after that happens in
+	 * the trap handler, on the trap stack, driven by what the process and
+	 * the timer do. That is the shape a kernel keeps.
+	 */
+	proc_start_first();
 }

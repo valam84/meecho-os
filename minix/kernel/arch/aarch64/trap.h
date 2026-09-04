@@ -110,15 +110,41 @@ void trap_init(void);
 
 /*
  * Expect the next synchronous data abort at EL1 rather than treating it as
- * fatal: the handler records it, steps over the faulting instruction and
- * returns. This is how the kernel checks that a mapping refuses an access
- * without dying of it, and it is the same mechanism copyin/copyout will need
- * once there is user memory to touch - earm spells it phys_copy_fault.
+ * fatal: the handler records it and returns somewhere useful instead of
+ * printing a register dump and stopping.
  *
- * trap_took_fault() disarms the expectation and reports whether it fired.
+ * trap_expect_fault() resumes at the instruction after the faulting one,
+ * which is what a single probing access wants. trap_expect_fault_at() resumes
+ * at an address of the caller's choosing, which is what a copy loop wants:
+ * stepping over one load in the middle of a copy would carry on with a hole
+ * in the data. This is the mechanism earm calls phys_copy_fault.
+ *
+ * trap_took_fault() disarms the expectation and reports whether it fired;
+ * trap_expect_clear() disarms without asking.
  */
 void trap_expect_fault(void);
+void trap_expect_fault_at(uint64_t resume_pc);
+void trap_expect_clear(void);
 int trap_took_fault(uint64_t *esr, uint64_t *far);
+
+/*
+ * The frame of the exception being handled. Valid only inside a handler, and
+ * the way anything called from one - a system call, an interrupt handler
+ * wanting to know whether it interrupted user code - reaches the interrupted
+ * context.
+ */
+struct stackframe_s *trap_current_frame(void);
+
+/* Was the current exception taken from EL0? */
+int trap_from_user(void);
+
+/*
+ * Return to user mode through the frame at the top of the trap stack. Defined
+ * in exception.S; see the comment there for why the frame lives where it
+ * does.
+ */
+struct stackframe_s *trap_user_frame(void);
+void restore_user_context(void) __attribute__((noreturn));
 
 /* Called from exception.S. */
 void trap_handler(struct stackframe_s *frame, uint64_t kind, uint64_t esr,

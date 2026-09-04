@@ -19,6 +19,7 @@
 #include "bsp_intr.h"
 #include "bsp_serial.h"
 #include "kprint.h"
+#include "proc.h"
 #include "trap.h"
 
 /* exception.S */
@@ -131,6 +132,10 @@ static volatile int trap_expecting;
 static volatile int trap_fired;
 static volatile uint64_t trap_esr;
 static volatile uint64_t trap_far;
+static volatile uint64_t trap_resume;	/* 0 means "the next instruction" */
+
+/* The frame of the exception currently being handled. */
+static struct stackframe_s *current_frame;
 
 /*
  * Depth guard. A fault inside the handler would otherwise fault again on the
@@ -165,12 +170,28 @@ trap_expect_fault(void)
 {
 	trap_expecting = 1;
 	trap_fired = 0;
+	trap_resume = 0;
+}
+
+void
+trap_expect_fault_at(uint64_t resume_pc)
+{
+	trap_expecting = 1;
+	trap_fired = 0;
+	trap_resume = resume_pc;
+}
+
+void
+trap_expect_clear(void)
+{
+	trap_expecting = 0;
+	trap_resume = 0;
 }
 
 int
 trap_took_fault(uint64_t *esr, uint64_t *far)
 {
-	trap_expecting = 0;
+	trap_expect_clear();
 
 	if (!trap_fired)
 		return 0;
@@ -178,6 +199,27 @@ trap_took_fault(uint64_t *esr, uint64_t *far)
 	*esr = trap_esr;
 	*far = trap_far;
 	return 1;
+}
+
+struct stackframe_s *
+trap_current_frame(void)
+{
+	return current_frame;
+}
+
+int
+trap_from_user(void)
+{
+	/* SPSR.M[3:0] is zero only for EL0t. */
+	return current_frame != 0 && (current_frame->psr & 0xf) == 0;
+}
+
+struct stackframe_s *
+trap_user_frame(void)
+{
+	extern char trap_stack_top[];
+
+	return (struct stackframe_s *)((uint64_t)trap_stack_top - FRAME_SIZE);
 }
 
 static void
@@ -249,30 +291,61 @@ trap_handler(struct stackframe_s *frame, uint64_t kind, uint64_t esr,
 	uint32_t ec = (uint32_t)ESR_EC(esr);
 
 	/*
-	 * An interrupt. Hand it to the controller, which works out what
-	 * happened and dispatches it. Nothing else here applies: an IRQ is
-	 * not a fault, it carries no ESR worth decoding, and it returns.
-	 */
-	if (kind == EXC_EL1H_IRQ) {
-		bsp_irq_handle();
-		return;
-	}
-
-	/*
-	 * A data abort the kernel asked for. Record it, step over the
-	 * instruction that took it and go back.
+	 * A data abort the kernel asked for. Record it and resume where the
+	 * caller said to.
 	 *
-	 * Only data aborts: every A64 instruction is four bytes, so skipping
-	 * one is well defined, but an instruction abort means the four bytes
-	 * after the fault are no more fetchable than the fault itself.
+	 * Handled before anything else because this is a fault taken inside
+	 * another handler - copyin() runs while a system call is being
+	 * serviced - and it must leave no trace. In particular it must not
+	 * replace the outer handler's idea of what it interrupted.
+	 *
+	 * Only data aborts: every A64 instruction is four bytes, so stepping
+	 * over one is well defined, but an instruction abort means the four
+	 * bytes after the fault are no more fetchable than the fault itself.
 	 */
 	if (trap_expecting && kind == EXC_EL1H_SYNC && ec == EC_DABT_SAME) {
 		trap_expecting = 0;
 		trap_fired = 1;
 		trap_esr = esr;
 		trap_far = far;
-		frame->pc += 4;
+		frame->pc = trap_resume != 0 ? trap_resume : frame->pc + 4;
 		return;
+	}
+
+	current_frame = frame;
+
+	/*
+	 * An interrupt, from the kernel or from a process. Hand it to the
+	 * controller, which works out what happened and dispatches it.
+	 * Nothing else here applies: an IRQ is not a fault, it carries no ESR
+	 * worth decoding, and it returns to whatever it interrupted.
+	 */
+	if (kind == EXC_EL1H_IRQ || kind == EXC_EL0_64_IRQ) {
+		bsp_irq_handle();
+		return;
+	}
+
+	/*
+	 * A system call. ELR already points past the SVC - the architecture
+	 * does that for us - so the handler only has to leave a return value
+	 * in the frame.
+	 */
+	if (kind == EXC_EL0_64_SYNC && ec == EC_SVC64) {
+		syscall_handler(frame);
+		return;
+	}
+
+	/*
+	 * A fault in the process. There is no signal to deliver and no
+	 * scheduler to pick someone else, so it is reported and the process
+	 * stops - which for a kernel with one process means everything does.
+	 */
+	if (kind >= EXC_EL0_64_SYNC) {
+		kputs("\n=== fault in user mode ===\n");
+		describe_fault(esr, far);
+		kputs("\n");
+		dump_registers(frame);
+		proc_fault();
 	}
 
 	if (++trap_depth > 1) {

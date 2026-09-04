@@ -105,6 +105,29 @@ void mmu_drop_identity(void);
 void mmu_report(void);
 
 /*
+ * User address spaces.
+ *
+ * A process lives in TTBR0, which mmu_drop_identity() switched off at the end
+ * of boot. mmu_user_enter() turns it back on for one address space; every
+ * mapping made through these is non-global, so its TLB entries are tagged
+ * with the ASID and do not have to be shot down when another process runs.
+ */
+uint64_t mmu_user_create(void);
+void mmu_user_map_text(uint64_t root, uint64_t va, uint64_t pa, uint64_t size);
+void mmu_user_map_data(uint64_t root, uint64_t va, uint64_t pa, uint64_t size);
+void mmu_user_enter(uint64_t root, unsigned asid);
+
+/* The physical address of something in the kernel image. */
+uint64_t mmu_kern_phys(const void *p);
+
+/*
+ * Make writes to a range visible to instruction fetch. Needed after putting
+ * code somewhere - the data and instruction caches are not coherent with each
+ * other, and QEMU will not tell you so.
+ */
+void mmu_sync_icache(uint64_t va, uint64_t size);
+
+/*
  * Ask the hardware to translate va the way the given access would, and store
  * the physical address it produces. Returns 0 if the walk faults - which
  * covers both a missing mapping and one whose permissions forbid the access,

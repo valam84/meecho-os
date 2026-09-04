@@ -1,23 +1,17 @@
 /*
  * Exception entry: the saved register frame and the handler interface.
  *
- * The frame mirrors what MINIX already does on earm, where
- * include/arch/earm/include/stackframe.h is simply the register file in
- * order - r0..r15 then the status register - and struct proc embeds one as
- * p_reg. The AArch64 equivalent is x0..x30, then SP, PC and PSTATE. Keeping
- * that shape now means stage 2.6 inherits a frame the generic kernel already
- * knows how to think about, and this header becomes
- * minix/include/arch/aarch64/include/stackframe.h when there is a MINIX
- * userland to share it with.
+ * The frame is struct stackframe_s from <stackframe.h>, which lives in
+ * minix/include/arch/aarch64/include and is shared with userland: it is
+ * what struct proc embeds as p_reg and what a signal context copies. This
+ * header adds only what the kernel needs on top - the byte offsets used by
+ * exception.S, checked against the struct in trap.c, which is the cheap
+ * modern form of what procoffsets.cf does for the other architectures.
  *
  * ESR and FAR are deliberately not in the frame. They describe the cause of
  * one exception, not the state of the interrupted code, and a frame that is
  * also a process context has no business carrying them. They are handed to
  * the handler as arguments instead.
- *
- * The offsets are used by exception.S and checked against the struct in
- * trap.c, which is the cheap modern form of what procoffsets.cf does for the
- * other architectures.
  */
 
 #ifndef _AARCH64_TRAP_H_
@@ -57,45 +51,7 @@
 #ifndef __ASSEMBLER__
 
 #include <stdint.h>
-
-typedef uint64_t reg_t;
-
-struct stackframe_s {
-	reg_t retreg;		/* x0 */
-	reg_t x1;
-	reg_t x2;
-	reg_t x3;
-	reg_t x4;
-	reg_t x5;
-	reg_t x6;
-	reg_t x7;
-	reg_t x8;
-	reg_t x9;
-	reg_t x10;
-	reg_t x11;
-	reg_t x12;
-	reg_t x13;
-	reg_t x14;
-	reg_t x15;
-	reg_t x16;
-	reg_t x17;
-	reg_t x18;		/* platform register */
-	reg_t x19;
-	reg_t x20;
-	reg_t x21;
-	reg_t x22;
-	reg_t x23;
-	reg_t x24;
-	reg_t x25;
-	reg_t x26;
-	reg_t x27;
-	reg_t x28;
-	reg_t fp;		/* x29 */
-	reg_t lr;		/* x30 */
-	reg_t sp;
-	reg_t pc;		/* ELR_EL1 */
-	reg_t psr;		/* SPSR_EL1 */
-};
+#include <stackframe.h>		/* struct stackframe_s, reg_t */
 
 /*
  * Point VBAR_EL1 at the vector table. Called twice: once with the MMU off,

@@ -115,7 +115,23 @@ SUBDIR+=  gencat \
 SUBDIR+= cat join lorder m4 mkdep tsort .WAIT yacc .WAIT awk .WAIT lex
 
 .if ${TOOLS_BUILDRUMP} == "no"
-SUBDIR += .WAIT texinfo \
+#
+# texinfo builds makeinfo, which exists solely to turn .texi sources into
+# info documentation. It is not a prerequisite for building the system
+# itself.
+#
+# It also is not part of this tree: gnu/dist/fetch.sh downloads texinfo 4.8
+# and unpacks it during the build. That release is from 2004 and does not
+# survive a modern compiler.
+#
+# The documentation tools groff and mandoc are already conditional further
+# down, on MKMAN/MKDOC/MKHTML. texinfo simply never got the same treatment;
+# MKINFO is the variable that governs info files, so use it.
+#
+.if ${MKINFO} != "no"
+SUBDIR += .WAIT texinfo
+.endif
+SUBDIR += \
 	.WAIT tic \
 	.WAIT pax \
 	.WAIT ${TOOLCHAIN_BITS} \

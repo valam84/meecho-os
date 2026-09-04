@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 
+#include "bench.h"
 #include "bsp_intr.h"
 #include "bsp_serial.h"
 #include "bsp_timer.h"
@@ -213,6 +214,17 @@ report_device_mappings(void)
 
 static volatile uint64_t ticks;
 
+/*
+ * For the benchmark, which reports how many ticks landed inside a window it
+ * measured with interrupts enabled. This is clock.c's business in the generic
+ * kernel and the accessor goes away when there is one.
+ */
+uint64_t
+clock_ticks(void)
+{
+	return ticks;
+}
+
 static void
 timer_tick(int irq)
 {
@@ -410,6 +422,14 @@ kernel_main(void)
 
 	check_permissions();
 	start_ticking();
+
+	/*
+	 * Stage 3 wants to know what a message costs before deciding how big
+	 * one should be. The kernel-side half of that measurement runs here,
+	 * while there is still a straight line to run it on; the half that
+	 * needs a process runs from user.S.
+	 */
+	bench_run();
 
 	/*
 	 * From here the kernel stops being a straight line. proc_start_first()

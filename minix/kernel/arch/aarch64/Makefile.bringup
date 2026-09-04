@@ -4,6 +4,7 @@
 #	make -f Makefile.bringup		build kernel.elf
 #	make -f Makefile.bringup run		boot it under QEMU
 #	make -f Makefile.bringup run-el2	same, entered at EL2 as U-Boot does
+#	make -f Makefile.bringup bench		the stage 3 numbers, under -icount
 #	make -f Makefile.bringup debug		wait for gdb before the first insn
 #	make -f Makefile.bringup debug-el2	same, entered at EL2
 #	make -f Makefile.bringup gdb		attach to a waiting instance
@@ -76,8 +77,8 @@ ASFLAGS=	-mcpu=$(CPU) -g
 LDFLAGS=	-nostdlib -static -no-pie -T kernel.lds \
 		--defsym=KERNEL_VA_OFFSET=$(KERNEL_VA_OFFSET)
 
-OBJS=		head.o exception.o usercopy.o user.o \
-		start.o kprint.o mmu.o trap.o intr.o proc.o \
+OBJS=		head.o exception.o usercopy.o user.o bench_copy.o \
+		start.o kprint.o mmu.o trap.o intr.o proc.o bench.o \
 		bsp/qemu-virt/virt_serial.o \
 		bsp/qemu-virt/virt_intr.o \
 		bsp/qemu-virt/virt_timer.o
@@ -117,6 +118,28 @@ $(KERNEL): $(OBJS) kernel.lds
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# The stage 3 measurement, run so that the numbers mean something.
+#
+# -icount makes virtual time advance with the guest's instruction count
+# instead of with the host's clock, so CNTPCT_EL0 stops measuring the machine
+# QEMU happens to be running on and starts measuring the guest. shift=0 is one
+# instruction per nanosecond of virtual time.
+#
+# That does not make the result a Cortex-A72 number - there is still no cache
+# and no pipeline in there - but it makes it repeatable and proportional to
+# work done, which is what a comparison between message sizes needs. See the
+# comment at the top of bench.c for what these numbers can and cannot say.
+#
+# timeout, because a kernel that has nothing left to run stops on wfi and
+# QEMU has no reason to exit.
+QEMUFLAGS_ICOUNT= -icount shift=0,align=off
+
+bench: $(KERNEL)
+	timeout 120 $(QEMU) $(QEMUFLAGS) $(QEMUFLAGS_ICOUNT) || true
+
+bench-el2: $(KERNEL)
+	timeout 120 $(QEMU) $(QEMUFLAGS_EL2) $(QEMUFLAGS_ICOUNT) || true
+
 run: $(KERNEL)
 	@echo "--- Ctrl-A x to quit ---"
 	$(QEMU) $(QEMUFLAGS)
@@ -152,4 +175,4 @@ disasm: $(KERNEL)
 clean:
 	rm -f $(OBJS) $(KERNEL)
 
-.PHONY: all run run-el2 debug debug-el2 gdb disasm clean
+.PHONY: all run run-el2 bench bench-el2 debug debug-el2 gdb disasm clean

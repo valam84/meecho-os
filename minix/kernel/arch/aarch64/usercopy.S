@@ -46,6 +46,34 @@ usercopy_bytes:
 	.size	usercopy_bytes, . - usercopy_bytes
 
 /*
+ * usercopy_pairs(void *dst, const void *src, unsigned long len)
+ *	x0 = destination, x1 = source, x2 = length, a multiple of 16
+ *	returns 0, or -1 if the copy faulted
+ *
+ * The same routine for the one case the IPC path actually has: a whole
+ * message, at an address the compiler aligned, of a length known at compile
+ * time. Sixteen bytes an iteration instead of one is the difference between
+ * a message costing four instructions per sixteen bytes and four per byte,
+ * and stage 3 is about what a message costs.
+ *
+ * It shares usercopy_fault with the byte version. The resume label only sets
+ * the result and returns, and both routines reach it with x30 untouched.
+ */
+	.globl	usercopy_pairs
+usercopy_pairs:
+	cbz	x2, 2f
+1:
+	ldp	x3, x4, [x1], #16
+	stp	x3, x4, [x0], #16
+	subs	x2, x2, #16
+	b.ne	1b
+2:
+	mov	x0, #0
+	ret
+
+	.size	usercopy_pairs, . - usercopy_pairs
+
+/*
  * Where a faulting access above resumes. Not called; jumped to by the
  * exception handler.
  */

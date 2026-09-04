@@ -11,7 +11,9 @@
 
 #include <stdint.h>
 
+#include "bench.h"
 #include "bsp_serial.h"
+#include "bsp_timer.h"
 #include "kprint.h"
 #include "mmu.h"
 #include "proc.h"
@@ -84,6 +86,7 @@ copy_bytes(void *dst, const void *src, uint64_t len)
 
 /* usercopy.S */
 extern int usercopy_bytes(void *dst, const void *src, uint64_t len);
+extern int usercopy_pairs(void *dst, const void *src, uint64_t len);
 extern char usercopy_fault[];
 
 int
@@ -98,6 +101,30 @@ copyin(uint64_t uaddr, void *dst, uint64_t len)
 	 */
 	trap_expect_fault_at((uint64_t)usercopy_fault);
 	r = usercopy_bytes(dst, (const void *)uaddr, len);
+	trap_expect_clear();
+
+	return r;
+}
+
+int
+copyin_msg(uint64_t uaddr, void *dst, uint64_t len)
+{
+	int r;
+
+	trap_expect_fault_at((uint64_t)usercopy_fault);
+	r = usercopy_pairs(dst, (const void *)uaddr, len);
+	trap_expect_clear();
+
+	return r;
+}
+
+int
+copyout_msg(uint64_t uaddr, const void *src, uint64_t len)
+{
+	int r;
+
+	trap_expect_fault_at((uint64_t)usercopy_fault);
+	r = usercopy_pairs((void *)uaddr, src, len);
 	trap_expect_clear();
 
 	return r;
@@ -149,6 +176,64 @@ sys_write(struct stackframe_s *frame)
 	frame->retreg = len;
 }
 
+/*
+ * Where a message would land.
+ *
+ * In the generic kernel this is p_delivermsg inside struct proc. Here it only
+ * has to exist, be aligned the way a message is, and be big enough for the
+ * largest size stage 3 is weighing.
+ */
+static uint8_t msg_buf[256] __attribute__((aligned(16)));
+
+static void
+sys_msgcopy(struct stackframe_s *frame)
+{
+	uint64_t uaddr = frame->retreg;		/* x0 */
+	uint64_t len = frame->x1;
+
+	if (len > sizeof(msg_buf))
+		len = sizeof(msg_buf);
+
+	/*
+	 * usercopy_pairs() decrements by sixteen and stops at zero, so a
+	 * length that is not a multiple of sixteen would not stop at all.
+	 * The caller is the program in user.S and passes whole messages, but
+	 * a length that arrives from EL0 is a length from EL0.
+	 */
+	len &= ~15ULL;
+
+	frame->retreg = copyin_msg(uaddr, msg_buf, len) == 0 ? len
+	    : (uint64_t)-1;
+}
+
+/*
+ * A request in and a reply back out, through the same buffer.
+ *
+ * This is the shape of a SENDREC, which is how nearly every MINIX system call
+ * is made: the message crosses the boundary twice, so whatever a message
+ * costs, this row pays it twice. What is missing compared with the real thing
+ * is the copy between the two processes inside the kernel - a third crossing
+ * of the same bytes, measured in the kernel-side table instead.
+ */
+static void
+sys_msgxchg(struct stackframe_s *frame)
+{
+	uint64_t uaddr = frame->retreg;		/* x0 */
+	uint64_t len = frame->x1;
+
+	if (len > sizeof(msg_buf))
+		len = sizeof(msg_buf);
+	len &= ~15ULL;
+
+	if (copyin_msg(uaddr, msg_buf, len) != 0 ||
+	    copyout_msg(uaddr, msg_buf, len) != 0) {
+		frame->retreg = (uint64_t)-1;
+		return;
+	}
+
+	frame->retreg = len;
+}
+
 void
 syscall_handler(struct stackframe_s *frame)
 {
@@ -163,6 +248,28 @@ syscall_handler(struct stackframe_s *frame)
 		frame->retreg = ticks_in_user;
 		break;
 
+	case SYS_NULL:
+		/*
+		 * Deliberately empty. What it costs is the trap around it, and
+		 * that is the number every other row is measured against.
+		 */
+		break;
+
+	case SYS_MSGCOPY:
+		sys_msgcopy(frame);
+		break;
+
+	case SYS_MSGXCHG:
+		sys_msgxchg(frame);
+		break;
+
+	case SYS_BENCH:
+		if (frame->retreg == 0)
+			bench_start();
+		else
+			bench_stop(frame->x1, frame->x2);
+		break;
+
 	case SYS_EXIT:
 		kputs("\nprocess exited\n");
 		kputs("exit status : ");
@@ -172,6 +279,15 @@ syscall_handler(struct stackframe_s *frame)
 		kputs("\nticks at EL0: ");
 		kput_dec(ticks_in_user);
 		kputs("\n\nnothing left to run, halting.\n");
+
+		/*
+		 * Stop the tick before parking. A kernel with nothing to run
+		 * has nothing to schedule, and leaving the timer on means wfi
+		 * wakes a hundred times a second to find that out again -
+		 * which under the emulator is the difference between an idle
+		 * machine and one that keeps a host core busy.
+		 */
+		bsp_timer_stop();
 		halt();
 
 	default:

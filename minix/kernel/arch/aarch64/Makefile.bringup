@@ -1,0 +1,109 @@
+#
+# Stand-alone build for the AArch64 kernel during bring-up.
+#
+#	make -f Makefile.bringup		build kernel.elf
+#	make -f Makefile.bringup run		boot it under QEMU
+#	make -f Makefile.bringup debug		same, but wait for gdb
+#	make -f Makefile.bringup gdb		attach to a waiting instance
+#
+# This is scaffolding, not the final build. The kernel eventually belongs to
+# the NetBSD build system like every other part of the tree, but that
+# toolchain is binutils 2.23.2 and GCC 4.8.5 and has no aarch64-minix target.
+# Teaching it one is weeks of work on code from 2013, and none of it is
+# needed to write the arch layer: the kernel is freestanding, so an
+# off-the-shelf cross compiler does the job and gives modern diagnostics
+# while we write new code.
+#
+# The toolchain question comes back when userland matters, which is stages
+# away. See PLAN.md.
+#
+
+CROSS?=		aarch64-linux-gnu-
+CC=		$(CROSS)gcc
+LD=		$(CROSS)ld
+OBJCOPY=	$(CROSS)objcopy
+OBJDUMP=	$(CROSS)objdump
+
+# Cortex-A72 is what the Compute Module 4 has. QEMU virt is told to emulate
+# the same core, so code generation matches the eventual target.
+CPU?=		cortex-a72
+
+# -nostdinc drops every default include path, so that a stray #include can
+# never reach the host's glibc headers. The compiler's own freestanding
+# headers - stdint.h, stddef.h, stdarg.h, stdbool.h - live in its private
+# include directory and still have to be reachable, so add just that one back.
+GCC_INCLUDE:=	$(shell $(CC) -print-file-name=include)
+
+# -ffreestanding      there is no libc and no hosted environment
+# -mgeneral-regs-only the kernel must not touch FP/SIMD registers: they are
+#                     not saved on entry, and using them would corrupt user
+#                     state and trap while FP is disabled
+# -fno-stack-protector the guard variable lives in libc
+# -fno-pic            the kernel runs at its link address
+CFLAGS=		-Wall -Wextra -Werror -O2 -g \
+		-mcpu=$(CPU) \
+		-ffreestanding -nostdinc -fno-builtin \
+		-isystem $(GCC_INCLUDE) \
+		-mgeneral-regs-only \
+		-fno-stack-protector -fno-pic -fno-pie \
+		-fno-common \
+		-Ibsp/include
+
+ASFLAGS=	-mcpu=$(CPU) -g
+
+LDFLAGS=	-nostdlib -static -no-pie -T kernel.lds
+
+OBJS=		head.o start.o bsp/qemu-virt/virt_serial.o
+
+KERNEL=		kernel.elf
+
+# QEMU's virt machine, one Cortex-A72, no graphics, serial on stdio.
+#
+# -net none matters: without it QEMU adds a default NIC and fails looking for
+# efi-virtio.rom, which is in a package we have no other reason to install.
+QEMU=		qemu-system-aarch64
+QEMUFLAGS=	-M virt -cpu $(CPU) -m 512 -display none -serial mon:stdio \
+		-net none -kernel $(KERNEL)
+
+# On the real board U-Boot hands control over at EL2, so the drop to EL1 in
+# head.S has to work. Plain "virt" enters at EL1 and never exercises that
+# path; virtualization=on does. Test both.
+QEMUFLAGS_EL2=	-M virt,virtualization=on -cpu $(CPU) -m 512 -display none \
+		-serial mon:stdio -net none -kernel $(KERNEL)
+
+all: $(KERNEL)
+
+$(KERNEL): $(OBJS) kernel.lds
+	$(LD) $(LDFLAGS) -o $@ $(OBJS)
+	@echo
+	@$(OBJDUMP) -h $@ | head -12
+
+%.o: %.S
+	$(CC) $(ASFLAGS) -c -o $@ $<
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+run: $(KERNEL)
+	@echo "--- Ctrl-A x to quit ---"
+	$(QEMU) $(QEMUFLAGS)
+
+# Same, but entered at EL2 the way real firmware does it.
+run-el2: $(KERNEL)
+	@echo "--- Ctrl-A x to quit ---"
+	$(QEMU) $(QEMUFLAGS_EL2)
+
+# Halt before the first instruction and wait for gdb on port 1234.
+debug: $(KERNEL)
+	$(QEMU) $(QEMUFLAGS) -S -s
+
+gdb:
+	gdb-multiarch -ex 'target remote :1234' -ex 'symbol-file $(KERNEL)'
+
+disasm: $(KERNEL)
+	$(OBJDUMP) -d $(KERNEL)
+
+clean:
+	rm -f $(OBJS) $(KERNEL)
+
+.PHONY: all run debug gdb disasm clean

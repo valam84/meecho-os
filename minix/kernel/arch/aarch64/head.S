@@ -9,6 +9,13 @@
  * Nothing here may touch memory outside the kernel image. There is no MMU
  * yet, so every address is physical, and the only thing known to exist is
  * what the loader placed in RAM.
+ *
+ * The kernel is linked at its upper-half virtual address but entered at its
+ * physical one, so this code runs KERNEL_VA_OFFSET below where the linker
+ * thinks it is. Everything here is addressed PC-relatively - adr, adrp/add -
+ * which yields the physical address of a symbol while the MMU is off and the
+ * virtual address of the same symbol afterwards. An absolute reference would
+ * carry the upper-half value and fault. mmu.c explains the arrangement.
  */
 
 /*
@@ -78,10 +85,6 @@ _start:
 	msr	cnthctl_el2, x0
 	msr	cntvoff_el2, xzr
 
-	/* Give EL1 a defined starting state: MMU and caches off. */
-	ldr	x0, =SCTLR_EL1_RES1
-	msr	sctlr_el1, x0
-
 	/* Fake an exception return into EL1, landing at at_el1. */
 	mov	x0, #SPSR_EL1H
 	msr	spsr_el2, x0
@@ -92,7 +95,23 @@ _start:
 at_el1:
 	/*
 	 * From here on the CPU is at EL1 with the MMU off.
+	 *
+	 * Put SCTLR_EL1 into a known state on both entry paths, not just the
+	 * one that came through EL2. Firmware that hands over at EL1 leaves
+	 * its own value behind - QEMU's differs from the architectural reset
+	 * value in half a dozen bits - and the MMU is later turned on by
+	 * setting three bits in whatever happens to be here. Two entry paths
+	 * that enable translation from different SCTLR values are two
+	 * different kernels, and only one of them gets tested.
+	 *
+	 * Built with mov/movk rather than "ldr =": a literal pool load is a
+	 * data access, and the bits that govern data accesses are exactly the
+	 * ones not yet known to be sane.
 	 */
+	mov	x0, #(SCTLR_EL1_RES1 & 0xffff)
+	movk	x0, #(SCTLR_EL1_RES1 >> 16), lsl #16
+	msr	sctlr_el1, x0
+	isb
 
 	/* Mask everything until the exception vectors exist. */
 	msr	daifset, #0xf

@@ -7,9 +7,12 @@
  * one the Raspberry Pi actually has, without the gaps in QEMU's model of that
  * board.
  *
- * This is the pre-MMU version. Once paging exists these registers have to be
- * mapped rather than addressed physically, the way bsp/ti does it on earm
- * through kern_phys_map_ptr().
+ * The register base lives in a variable rather than a constant so that one
+ * copy of the code serves both sides of the MMU switch: physical addresses
+ * during boot, the kernel mapping of the same registers afterwards. The
+ * kernel moves it with bsp_ser_set_base(). On earm bsp/ti does the same job
+ * through kern_phys_map_ptr(), which has VM rewrite the base once paging is
+ * up; this is the reduced form of that, with no VM to ask.
  */
 
 #include <stdint.h>
@@ -86,6 +89,25 @@ bsp_ser_init(void)
 
 	uart_write(PL011_LCRH, PL011_LCRH_WLEN_8 | PL011_LCRH_FEN);
 	uart_write(PL011_CR, PL011_CR_UARTEN | PL011_CR_TXE | PL011_CR_RXE);
+}
+
+void
+bsp_ser_phys_range(uint64_t *base, uint64_t *size)
+{
+	*base = VIRT_UART0_BASE;
+
+	/*
+	 * The PL011 register file is well under a page, but a page is the
+	 * finest granularity a mapping has, so that is what has to be asked
+	 * for. Nothing else lives in this page on virt.
+	 */
+	*size = 0x1000;
+}
+
+void
+bsp_ser_set_base(uint64_t base)
+{
+	uart_base = (volatile uint32_t *)base;
 }
 
 void

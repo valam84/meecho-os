@@ -34,26 +34,47 @@ CPU?=		cortex-a72
 # include directory and still have to be reachable, so add just that one back.
 GCC_INCLUDE:=	$(shell $(CC) -print-file-name=include)
 
+# Distance between a physical address and the kernel-virtual address of the
+# same byte. The kernel is linked at KERNEL_PHYS_BASE + this and loaded at
+# KERNEL_PHYS_BASE; see mmu.h for the address space layout and kernel.lds for
+# how the two addresses are kept apart.
+#
+# It is defined here, once, and handed to both the compiler and the linker.
+# Splitting it between a header and the link script would let the two drift,
+# and the symptom would be a machine that dies with the MMU half on.
+KERNEL_VA_OFFSET?= 0xffff000000000000
+
 # -ffreestanding      there is no libc and no hosted environment
 # -mgeneral-regs-only the kernel must not touch FP/SIMD registers: they are
 #                     not saved on entry, and using them would corrupt user
 #                     state and trap while FP is disabled
 # -fno-stack-protector the guard variable lives in libc
 # -fno-pic            the kernel runs at its link address
+# -mcmodel=small      the default, but named explicitly because early boot
+#                     depends on it: it reaches symbols with PC-relative
+#                     adrp/add, which is what lets the image execute at its
+#                     physical address before the MMU is on. See mmu.c.
+# -fno-tree-loop-distribute-patterns
+#                     stops GCC turning a clearing loop into a call to memset,
+#                     which does not exist here
 CFLAGS=		-Wall -Wextra -Werror -O2 -g \
 		-mcpu=$(CPU) \
 		-ffreestanding -nostdinc -fno-builtin \
 		-isystem $(GCC_INCLUDE) \
 		-mgeneral-regs-only \
 		-fno-stack-protector -fno-pic -fno-pie \
+		-mcmodel=small \
+		-fno-tree-loop-distribute-patterns \
 		-fno-common \
+		-DKERNEL_VA_OFFSET=$(KERNEL_VA_OFFSET)UL \
 		-Ibsp/include
 
 ASFLAGS=	-mcpu=$(CPU) -g
 
-LDFLAGS=	-nostdlib -static -no-pie -T kernel.lds
+LDFLAGS=	-nostdlib -static -no-pie -T kernel.lds \
+		--defsym=KERNEL_VA_OFFSET=$(KERNEL_VA_OFFSET)
 
-OBJS=		head.o start.o bsp/qemu-virt/virt_serial.o
+OBJS=		head.o start.o kprint.o mmu.o bsp/qemu-virt/virt_serial.o
 
 KERNEL=		kernel.elf
 

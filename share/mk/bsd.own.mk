@@ -1305,7 +1305,15 @@ _MKVARS.no= \
 #MINIX-specific vars
 _MKVARS.no+= \
 	MKIMAGEONLY MKSMALL MKBITCODE MKMAGIC MKPAE MKASR MKSRC
-.if !empty(MACHINE_ARCH:Mearm*)
+
+# These MINIX options only exist on x86: watchdog, ACPI, APIC, debug
+# registers, installboot and PCI. ARM has none of them, in either width.
+#
+# They must be given a value for every architecture that is not i386. The
+# USE_* loop further down expands ${${var:S/USE_/MK/}}, so an undefined
+# MKACPI turns into the conditional "( == \"no\")", which is a syntax
+# error rather than a false test.
+.if !empty(MACHINE_ARCH:Mearm*) || !empty(MACHINE_ARCH:Maarch64*)
 _MKVARS.no+= \
 	MKWATCHDOG MKPAE MKACPI MKAPIC MKDEBUGREG MKINSTALLBOOT MKPCI
 .endif

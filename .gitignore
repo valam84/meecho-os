@@ -53,3 +53,7 @@ lib/libc/compat__*
 # Output of the stand-alone aarch64 bring-up build. Nested .gitignore files
 # are ignored themselves (see above), so this has to live here.
 minix/kernel/arch/aarch64/kernel.elf
+
+# The message payload tools import a shared module, so python leaves a
+# bytecode cache beside them.
+minix/kernel/arch/aarch64/tools/__pycache__/

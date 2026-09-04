@@ -15,22 +15,22 @@
 #define CTL_SHORTNAME 8 /* max sysctl(2) name length that fits in message */
 
 typedef struct {
-	uint8_t data[56];
+	uint8_t data[120];
 } mess_u8;
 _ASSERT_MSG_SIZE(mess_u8);
 
 typedef struct {
-	uint16_t data[28];
+	uint16_t data[60];
 } mess_u16;
 _ASSERT_MSG_SIZE(mess_u16);
 
 typedef struct {
-	uint32_t data[14];
+	uint32_t data[30];
 } mess_u32;
 _ASSERT_MSG_SIZE(mess_u32);
 
 typedef struct {
-	uint64_t data[7];
+	uint64_t data[15];
 } mess_u64;
 _ASSERT_MSG_SIZE(mess_u64);
 
@@ -38,7 +38,7 @@ typedef struct {
 	uint64_t m1ull1;
 	int m1i1, m1i2, m1i3;
 	char *m1p1, *m1p2, *m1p3, *m1p4;
-	uint8_t padding[20];
+	uint8_t padding[64];
 } mess_1;
 _ASSERT_MSG_SIZE(mess_1);
 
@@ -49,7 +49,7 @@ typedef struct {
 	char *m2p1;
 	sigset_t sigset;
 	short m2s1;
-	uint8_t padding[6];
+	uint8_t padding[54];
 } mess_2;
 _ASSERT_MSG_SIZE(mess_2);
 
@@ -57,20 +57,21 @@ typedef struct {
 	int m3i1, m3i2;
 	char *m3p1;
 	char m3ca1[44];
+	uint8_t padding[60];
 } mess_3;
 _ASSERT_MSG_SIZE(mess_3);
 
 typedef struct {
 	int64_t m4ll1;
 	long m4l1, m4l2, m4l3, m4l4, m4l5;
-	uint8_t padding[28];
+	uint8_t padding[72];
 } mess_4;
 _ASSERT_MSG_SIZE(mess_4);
 
 typedef struct {
 	int m7i1, m7i2, m7i3, m7i4, m7i5;
 	char *m7p1, *m7p2;
-	uint8_t padding[28];
+	uint8_t padding[80];
 } mess_7;
 _ASSERT_MSG_SIZE(mess_7);
 
@@ -78,7 +79,7 @@ typedef struct {
 	uint64_t m9ull1, m9ull2;
 	long m9l1, m9l2, m9l3, m9l4, m9l5;
 	short m9s1, m9s2, m9s3, m9s4;
-	uint8_t padding[12];
+	uint8_t padding[56];
 } mess_9;
 _ASSERT_MSG_SIZE(mess_9);
 
@@ -86,7 +87,7 @@ typedef struct {
 	u64_t m10ull1;
 	int m10i1, m10i2, m10i3, m10i4;
 	long m10l1, m10l2, m10l3;
-	uint8_t padding[20];
+	uint8_t padding[72];
 } mess_10;
 _ASSERT_MSG_SIZE(mess_10);
 
@@ -100,7 +101,7 @@ union	ds_val {
 typedef struct {
 	union	ds_val 	val_out;
 	int	val_len;
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_ds_reply;
 _ASSERT_MSG_SIZE(mess_ds_reply);
 
@@ -111,7 +112,7 @@ typedef struct {
 	union ds_val 	val_in;
 	int		val_len;
 	endpoint_t	owner;
-	uint8_t padding[32];
+	uint8_t padding[96];
 } mess_ds_req;
 _ASSERT_MSG_SIZE(mess_ds_req);
 
@@ -121,6 +122,7 @@ typedef struct {
 	size_t nbytes;
 
 	uint8_t data[44];
+	uint8_t padding[60];
 } mess_fs_vfs_breadwrite;
 _ASSERT_MSG_SIZE(mess_fs_vfs_breadwrite);
 
@@ -128,6 +130,7 @@ typedef struct {
 	mode_t mode;
 
 	uint8_t data[52];
+	uint8_t padding[64];
 } mess_fs_vfs_chmod;
 _ASSERT_MSG_SIZE(mess_fs_vfs_chmod);
 
@@ -135,6 +138,7 @@ typedef struct {
 	mode_t mode;
 
 	uint8_t data[52];
+	uint8_t padding[64];
 } mess_fs_vfs_chown;
 _ASSERT_MSG_SIZE(mess_fs_vfs_chown);
 
@@ -147,6 +151,7 @@ typedef struct {
 	gid_t gid;
 
 	uint8_t data[28];
+	uint8_t padding[64];
 } mess_fs_vfs_create;
 _ASSERT_MSG_SIZE(mess_fs_vfs_create);
 
@@ -156,6 +161,7 @@ typedef struct {
 	size_t nbytes;
 
 	uint8_t data[44];
+	uint8_t padding[60];
 } mess_fs_vfs_getdents;
 _ASSERT_MSG_SIZE(mess_fs_vfs_getdents);
 
@@ -172,6 +178,7 @@ typedef struct {
 	uint16_t symloop;
 
 	uint8_t data[10];
+	uint8_t padding[64];
 } mess_fs_vfs_lookup;
 _ASSERT_MSG_SIZE(mess_fs_vfs_lookup);
 
@@ -185,6 +192,7 @@ typedef struct {
 	gid_t gid;
 
 	uint8_t data[20];
+	uint8_t padding[64];
 } mess_fs_vfs_newnode;
 _ASSERT_MSG_SIZE(mess_fs_vfs_newnode);
 
@@ -192,6 +200,7 @@ typedef struct {
 	size_t nbytes;
 
 	uint8_t data[52];
+	uint8_t padding[60];
 } mess_fs_vfs_rdlink;
 _ASSERT_MSG_SIZE(mess_fs_vfs_rdlink);
 
@@ -208,6 +217,7 @@ typedef struct {
 	uint16_t con_reqs;
 
 	uint8_t data[14];
+	uint8_t padding[64];
 } mess_fs_vfs_readsuper;
 _ASSERT_MSG_SIZE(mess_fs_vfs_readsuper);
 
@@ -217,16 +227,17 @@ typedef struct {
 	size_t nbytes;
 
 	uint8_t data[44];
+	uint8_t padding[60];
 } mess_fs_vfs_readwrite;
 _ASSERT_MSG_SIZE(mess_fs_vfs_readwrite);
 
 typedef struct {
-	uint8_t padding[56];
+	uint8_t padding[120];
 } mess_i2c_li2cdriver_busc_i2c_exec;
 _ASSERT_MSG_SIZE(mess_i2c_li2cdriver_busc_i2c_exec);
 
 typedef struct {
-	uint8_t padding[56];
+	uint8_t padding[120];
 } mess_i2c_li2cdriver_busc_i2c_reserve;
 _ASSERT_MSG_SIZE(mess_i2c_li2cdriver_busc_i2c_reserve);
 
@@ -236,14 +247,14 @@ typedef struct {
 	int rsvd1_id;
 	int rsvd2_id;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_input_linputdriver_input_conf;
 _ASSERT_MSG_SIZE(mess_input_linputdriver_input_conf);
 
 typedef struct {
 	uint32_t led_mask;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_input_linputdriver_setleds;
 _ASSERT_MSG_SIZE(mess_input_linputdriver_setleds);
 
@@ -254,7 +265,7 @@ typedef struct {
 	int value;
 	int flags;
 
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_input_tty_event;
 _ASSERT_MSG_SIZE(mess_input_tty_event);
 
@@ -268,14 +279,14 @@ typedef struct {
 	uint32_t acnt_cpu;
 	uint32_t acnt_cpu_load;
 
-	uint8_t padding[24];
+	uint8_t padding[72];
 } mess_krn_lsys_schedule;
 _ASSERT_MSG_SIZE(mess_krn_lsys_schedule);
 
 typedef struct {
 	uint32_t value;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_krn_lsys_sys_devio;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_devio);
 
@@ -283,7 +294,7 @@ typedef struct {
 	endpoint_t endpt;
 	vir_bytes msgaddr;
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_krn_lsys_sys_fork;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_fork);
 
@@ -293,13 +304,14 @@ typedef struct {
 	int initflags;
 	char name[44];
 
+	uint8_t padding[64];
 } mess_krn_lsys_sys_getwhoami;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_getwhoami);
 
 typedef struct {
 	int hook_id;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_krn_lsys_sys_irqctl;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_irqctl);
 
@@ -310,28 +322,28 @@ typedef struct {
 	clock_t system_time;
 	time_t boot_time;
 
-	uint8_t padding[32];
+	uint8_t padding[96];
 } mess_krn_lsys_sys_times;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_times);
 
 typedef struct {
 	long int data;
 
-	uint8_t padding[52];
+	uint8_t padding[112];
 } mess_krn_lsys_sys_trace;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_trace);
 
 typedef struct {
 	phys_bytes dst_addr;
 
-	uint8_t padding[52];
+	uint8_t padding[112];
 } mess_krn_lsys_sys_umap;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_umap);
 
 typedef struct {
 	int pcount;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_krn_lsys_sys_vumap;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_vumap);
 
@@ -349,7 +361,7 @@ typedef struct {
 	endpoint_t user;
 	unsigned long request;
 
-	uint8_t padding[16];
+	uint8_t padding[72];
 } mess_lbdev_lblockdriver_msg;
 _ASSERT_MSG_SIZE(mess_lbdev_lblockdriver_msg);
 
@@ -357,7 +369,7 @@ typedef struct {
 	int status;
 	int id;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lblockdriver_lbdev_reply;
 _ASSERT_MSG_SIZE(mess_lblockdriver_lbdev_reply);
 
@@ -367,7 +379,7 @@ typedef struct {
 	int		cmd;
 	vir_bytes	opt;
 	int		ret;
-	uint8_t		padding[36];
+	uint8_t padding[92];
 } mess_lc_ipc_semctl;
 _ASSERT_MSG_SIZE(mess_lc_ipc_semctl);
 
@@ -376,7 +388,7 @@ typedef struct {
 	int		nr;
 	int		flag;
 	int		retid;
-	uint8_t		padding[40];
+	uint8_t padding[100];
 } mess_lc_ipc_semget;
 _ASSERT_MSG_SIZE(mess_lc_ipc_semget);
 
@@ -384,7 +396,7 @@ typedef struct {
 	int		id;
 	void		*ops;
 	unsigned int	size;
-	uint8_t		padding[42];
+	uint8_t padding[100];
 } mess_lc_ipc_semop;
 _ASSERT_MSG_SIZE(mess_lc_ipc_semop);
 
@@ -393,7 +405,7 @@ typedef struct {
 	const void	*addr;
 	int		flag;
 	void		*retaddr;
-	uint8_t		padding[40];
+	uint8_t padding[88];
 } mess_lc_ipc_shmat;
 _ASSERT_MSG_SIZE(mess_lc_ipc_shmat);
 
@@ -402,13 +414,13 @@ typedef struct {
 	int		cmd;
 	void		*buf;
 	int		ret;
-	uint8_t		padding[40];
+	uint8_t padding[100];
 } mess_lc_ipc_shmctl;
 _ASSERT_MSG_SIZE(mess_lc_ipc_shmctl);
 
 typedef struct {
 	const void	*addr;
-	uint8_t		padding[52];
+	uint8_t padding[112];
 } mess_lc_ipc_shmdt;
 _ASSERT_MSG_SIZE(mess_lc_ipc_shmdt);
 
@@ -417,7 +429,7 @@ typedef struct {
 	size_t		size;
 	int		flag;
 	int		retid;
-	uint8_t		padding[40];
+	uint8_t padding[96];
 } mess_lc_ipc_shmget;
 _ASSERT_MSG_SIZE(mess_lc_ipc_shmget);
 
@@ -429,6 +441,7 @@ typedef struct {
 	unsigned int	namelen;
 	vir_bytes	namep;
 	int		name[CTL_SHORTNAME];
+	uint8_t padding[40];
 } mess_lc_mib_sysctl;
 _ASSERT_MSG_SIZE(mess_lc_mib_sysctl);
 
@@ -439,21 +452,21 @@ typedef struct {
 	size_t framelen;
 	vir_bytes ps_str;
 
-	uint8_t padding[36];
+	uint8_t padding[80];
 } mess_lc_pm_exec;
 _ASSERT_MSG_SIZE(mess_lc_pm_exec);
 
 typedef struct {
 	int status;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lc_pm_exit;
 _ASSERT_MSG_SIZE(mess_lc_pm_exit);
 
 typedef struct {
 	pid_t pid;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lc_pm_getsid;
 _ASSERT_MSG_SIZE(mess_lc_pm_getsid);
 
@@ -461,7 +474,7 @@ typedef struct {
 	int num;
 	vir_bytes ptr;		/* gid_t * */
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_lc_pm_groups;
 _ASSERT_MSG_SIZE(mess_lc_pm_groups);
 
@@ -470,14 +483,14 @@ typedef struct {
 	vir_bytes value;	/* const struct itimerval * */
 	vir_bytes ovalue;	/* struct itimerval * */
 
-	uint8_t padding[44];
+	uint8_t padding[96];
 } mess_lc_pm_itimer;
 _ASSERT_MSG_SIZE(mess_lc_pm_itimer);
 
 typedef struct {
 	vir_bytes ctx;		/* mcontext_t * */
 
-	uint8_t padding[52];
+	uint8_t padding[112];
 } mess_lc_pm_mcontext;
 _ASSERT_MSG_SIZE(mess_lc_pm_mcontext);
 
@@ -486,7 +499,7 @@ typedef struct {
 	int who;
 	int prio;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_lc_pm_priority;
 _ASSERT_MSG_SIZE(mess_lc_pm_priority);
 
@@ -496,14 +509,14 @@ typedef struct {
 	vir_bytes addr;
 	long data;
 
-	uint8_t padding[40];
+	uint8_t padding[96];
 } mess_lc_pm_ptrace;
 _ASSERT_MSG_SIZE(mess_lc_pm_ptrace);
 
 typedef struct {
 	int how;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lc_pm_reboot;
 _ASSERT_MSG_SIZE(mess_lc_pm_reboot);
 
@@ -511,21 +524,21 @@ typedef struct {
 	endpoint_t who;
 	vir_bytes addr;
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_lc_pm_rusage;
 _ASSERT_MSG_SIZE(mess_lc_pm_rusage);
 
 typedef struct {
 	gid_t gid;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lc_pm_setgid;
 _ASSERT_MSG_SIZE(mess_lc_pm_setgid);
 
 typedef struct {
 	uid_t uid;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lc_pm_setuid;
 _ASSERT_MSG_SIZE(mess_lc_pm_setuid);
 
@@ -536,7 +549,7 @@ typedef struct {
 	vir_bytes oact;		/* struct sigaction * */
 	vir_bytes ret;		/* int (*)(void) */
 
-	uint8_t padding[36];
+	uint8_t padding[88];
 } mess_lc_pm_sig;
 _ASSERT_MSG_SIZE(mess_lc_pm_sig);
 
@@ -545,7 +558,7 @@ typedef struct {
 	vir_bytes ctx;
 	sigset_t set;
 
-	uint8_t padding[32];
+	uint8_t padding[88];
 } mess_lc_pm_sigset;
 _ASSERT_MSG_SIZE(mess_lc_pm_sigset);
 
@@ -557,7 +570,7 @@ typedef struct {
 	vir_bytes mem_ptr;
 	size_t mem_size;
 
-	uint8_t padding[32];
+	uint8_t padding[80];
 } mess_lc_pm_sprof;
 _ASSERT_MSG_SIZE(mess_lc_pm_sprof);
 
@@ -567,7 +580,7 @@ typedef struct {
 	size_t len;
 	vir_bytes value;
 
-	uint8_t padding[40];
+	uint8_t padding[96];
 } mess_lc_pm_sysuname;
 _ASSERT_MSG_SIZE(mess_lc_pm_sysuname);
 
@@ -578,7 +591,7 @@ typedef struct {
 	int now;
 	long nsec;
 
-	uint8_t padding[36];
+	uint8_t padding[96];
 } mess_lc_pm_time;
 _ASSERT_MSG_SIZE(mess_lc_pm_time);
 
@@ -587,7 +600,7 @@ typedef struct {
 	int options;
 	vir_bytes addr;			/* struct rusage * */
 
-	uint8_t padding[44];
+	uint8_t padding[104];
 } mess_lc_pm_wait4;
 _ASSERT_MSG_SIZE(mess_lc_pm_wait4);
 
@@ -596,7 +609,7 @@ typedef struct {
 	vir_bytes tm;			/* struct tm * */
 	int flags;
 
-	uint8_t padding[44];
+	uint8_t padding[100];
 } mess_lc_readclock_rtcdev;
 _ASSERT_MSG_SIZE(mess_lc_readclock_rtcdev);
 
@@ -604,7 +617,7 @@ typedef struct {
 	unsigned long request;
 	vir_bytes arg;
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_lc_svrctl;
 _ASSERT_MSG_SIZE(mess_lc_svrctl);
 
@@ -615,7 +628,7 @@ typedef struct {
 	uid_t owner;
 	gid_t group;
 
-	uint8_t padding[36];
+	uint8_t padding[92];
 } mess_lc_vfs_chown;
 _ASSERT_MSG_SIZE(mess_lc_vfs_chown);
 
@@ -623,7 +636,7 @@ typedef struct {
 	int fd;
 	int nblock;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lc_vfs_close;
 _ASSERT_MSG_SIZE(mess_lc_vfs_close);
 
@@ -633,14 +646,14 @@ typedef struct {
 	int flags;
 	mode_t mode;
 
-	uint8_t padding[40];
+	uint8_t padding[96];
 } mess_lc_vfs_creat;
 _ASSERT_MSG_SIZE(mess_lc_vfs_creat);
 
 typedef struct {
 	int fd;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lc_vfs_fchdir;
 _ASSERT_MSG_SIZE(mess_lc_vfs_fchdir);
 
@@ -648,7 +661,7 @@ typedef struct {
 	int fd;
 	mode_t mode;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lc_vfs_fchmod;
 _ASSERT_MSG_SIZE(mess_lc_vfs_fchmod);
 
@@ -658,7 +671,7 @@ typedef struct {
 	int arg_int;
 	vir_bytes arg_ptr;	/* struct flock * */
 
-	uint8_t padding[40];
+	uint8_t padding[96];
 } mess_lc_vfs_fcntl;
 _ASSERT_MSG_SIZE(mess_lc_vfs_fcntl);
 
@@ -666,14 +679,14 @@ typedef struct {
 	int fd;
 	vir_bytes buf;		/* struct stat * */
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_lc_vfs_fstat;
 _ASSERT_MSG_SIZE(mess_lc_vfs_fstat);
 
 typedef struct {
 	int fd;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lc_vfs_fsync;
 _ASSERT_MSG_SIZE(mess_lc_vfs_fsync);
 
@@ -683,7 +696,7 @@ typedef struct {
 	vir_bytes label;
 	vir_bytes buf;
 
-	uint8_t padding[40];
+	uint8_t padding[88];
 } mess_lc_vfs_gcov;
 _ASSERT_MSG_SIZE(mess_lc_vfs_gcov);
 
@@ -692,7 +705,7 @@ typedef struct {
 	size_t len;
 	vir_bytes buf;		/* struct statvfs */
 
-	uint8_t padding[44];
+	uint8_t padding[96];
 } mess_lc_vfs_getvfsstat;
 _ASSERT_MSG_SIZE(mess_lc_vfs_getvfsstat);
 
@@ -701,7 +714,7 @@ typedef struct {
 	unsigned long req;
 	vir_bytes arg;
 
-	uint8_t padding[44];
+	uint8_t padding[96];
 } mess_lc_vfs_ioctl;
 _ASSERT_MSG_SIZE(mess_lc_vfs_ioctl);
 
@@ -711,7 +724,7 @@ typedef struct {
 	size_t len1;
 	size_t len2;
 
-	uint8_t padding[40];
+	uint8_t padding[88];
 } mess_lc_vfs_link;
 _ASSERT_MSG_SIZE(mess_lc_vfs_link);
 
@@ -719,7 +732,7 @@ typedef struct {
 	int fd;
 	int backlog;
 
-	u8_t padding[48];
+	uint8_t padding[112];
 } mess_lc_vfs_listen;
 _ASSERT_MSG_SIZE(mess_lc_vfs_listen);
 
@@ -729,7 +742,7 @@ typedef struct {
 	int fd;
 	int whence;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_lc_vfs_lseek;
 _ASSERT_MSG_SIZE(mess_lc_vfs_lseek);
 
@@ -740,7 +753,7 @@ typedef struct {
 	size_t len;
 	mode_t mode;
 
-	uint8_t padding[36];
+	uint8_t padding[92];
 } mess_lc_vfs_mknod;
 _ASSERT_MSG_SIZE(mess_lc_vfs_mknod);
 
@@ -755,7 +768,7 @@ typedef struct {
 	vir_bytes type;
 	vir_bytes label;
 
-	uint8_t padding[20];
+	uint8_t padding[48];
 } mess_lc_vfs_mount;
 _ASSERT_MSG_SIZE(mess_lc_vfs_mount);
 
@@ -765,6 +778,7 @@ typedef struct {
 	int flags;
 	mode_t mode;
 	char buf[M_PATH_STRING_MAX];
+	uint8_t padding[56];
 } mess_lc_vfs_path;
 _ASSERT_MSG_SIZE(mess_lc_vfs_path);
 
@@ -778,7 +792,7 @@ typedef struct {
 	int _unused;
 	int oflags;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_lc_vfs_pipe2;
 _ASSERT_MSG_SIZE(mess_lc_vfs_pipe2);
 
@@ -788,7 +802,7 @@ typedef struct {
 	vir_bytes buf;
 	size_t bufsize;
 
-	uint8_t padding[40];
+	uint8_t padding[88];
 } mess_lc_vfs_readlink;
 _ASSERT_MSG_SIZE(mess_lc_vfs_readlink);
 
@@ -798,7 +812,7 @@ typedef struct {
 	size_t len;
 	size_t cum_io;		/* reserved/internal, set to 0 */
 
-	uint8_t padding[40];
+	uint8_t padding[88];
 } mess_lc_vfs_readwrite;
 _ASSERT_MSG_SIZE(mess_lc_vfs_readwrite);
 
@@ -809,7 +823,7 @@ typedef struct {
 	fd_set *errorfds;
 	vir_bytes timeout;	/* user-provided 'struct timeval *' */
 
-	uint8_t padding[36];
+	uint8_t padding[80];
 } mess_lc_vfs_select;
 _ASSERT_MSG_SIZE(mess_lc_vfs_select);
 
@@ -821,7 +835,7 @@ typedef struct {
 	vir_bytes addr;		/* struct sockaddr * */
 	unsigned int addr_len;	/* socklen_t */
 
-	uint8_t padding[32];
+	uint8_t padding[76];
 } mess_lc_vfs_sendrecv;
 _ASSERT_MSG_SIZE(mess_lc_vfs_sendrecv);
 
@@ -829,7 +843,7 @@ typedef struct {
 	int fd;
 	int how;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lc_vfs_shutdown;
 _ASSERT_MSG_SIZE(mess_lc_vfs_shutdown);
 
@@ -838,7 +852,7 @@ typedef struct {
 	vir_bytes addr;		/* struct sockaddr * */
 	unsigned int addr_len;	/* socklen_t */
 
-	uint8_t padding[44];
+	uint8_t padding[100];
 } mess_lc_vfs_sockaddr;
 _ASSERT_MSG_SIZE(mess_lc_vfs_sockaddr);
 
@@ -847,7 +861,7 @@ typedef struct {
 	int type;
 	int protocol;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_lc_vfs_socket;
 _ASSERT_MSG_SIZE(mess_lc_vfs_socket);
 
@@ -856,7 +870,7 @@ typedef struct {
 	vir_bytes msgbuf;	/* struct msghdr * */
 	int flags;
 
-	uint8_t padding[44];
+	uint8_t padding[100];
 } mess_lc_vfs_sockmsg;
 _ASSERT_MSG_SIZE(mess_lc_vfs_sockmsg);
 
@@ -867,7 +881,7 @@ typedef struct {
 	vir_bytes buf;		/* void * */
 	unsigned int len;	/* socklen_t */
 
-	uint8_t padding[36];
+	uint8_t padding[92];
 } mess_lc_vfs_sockopt;
 _ASSERT_MSG_SIZE(mess_lc_vfs_sockopt);
 
@@ -876,7 +890,7 @@ typedef struct {
 	vir_bytes name;		/* const char * */
 	vir_bytes buf;		/* struct stat * */
 
-	uint8_t padding[44];
+	uint8_t padding[96];
 } mess_lc_vfs_stat;
 _ASSERT_MSG_SIZE(mess_lc_vfs_stat);
 
@@ -887,7 +901,7 @@ typedef struct {
 	vir_bytes name;
 	vir_bytes buf;
 
-	uint8_t padding[36];
+	uint8_t padding[88];
 } mess_lc_vfs_statvfs1;
 _ASSERT_MSG_SIZE(mess_lc_vfs_statvfs1);
 
@@ -898,14 +912,14 @@ typedef struct {
 	vir_bytes name;
 	size_t len;
 
-	uint8_t padding[36];
+	uint8_t padding[88];
 } mess_lc_vfs_truncate;
 _ASSERT_MSG_SIZE(mess_lc_vfs_truncate);
 
 typedef struct {
 	mode_t mask;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lc_vfs_umask;
 _ASSERT_MSG_SIZE(mess_lc_vfs_umask);
 
@@ -915,13 +929,13 @@ typedef struct {
 	vir_bytes label;
 	size_t labellen;
 
-	uint8_t padding[40];
+	uint8_t padding[88];
 } mess_lc_vfs_umount;
 _ASSERT_MSG_SIZE(mess_lc_vfs_umount);
 
 typedef struct {
 	void		*addr;
-	uint8_t		padding[52];
+	uint8_t padding[112];
 } mess_lc_vm_brk;
 _ASSERT_MSG_SIZE(mess_lc_vm_brk);
 
@@ -929,14 +943,14 @@ typedef struct {
 	endpoint_t	endpt;
 	void		*addr;
 	void		*ret_addr;
-	uint8_t		padding[44];
+	uint8_t padding[96];
 } mess_lc_vm_getphys;
 _ASSERT_MSG_SIZE(mess_lc_vm_getphys);
 
 typedef struct {
 	endpoint_t	forwhom;
 	void		*addr;
-	uint8_t		padding[48];
+	uint8_t padding[104];
 } mess_lc_vm_shm_unmap;
 _ASSERT_MSG_SIZE(mess_lc_vm_shm_unmap);
 
@@ -944,7 +958,7 @@ typedef struct {
 	int status;
 	uint32_t id;		/* should be cdev_id_t */
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lchardriver_vfs_reply;
 _ASSERT_MSG_SIZE(mess_lchardriver_vfs_reply);
 
@@ -952,7 +966,7 @@ typedef struct {
 	int status;
 	int32_t minor;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lchardriver_vfs_sel1;
 _ASSERT_MSG_SIZE(mess_lchardriver_vfs_sel1);
 
@@ -960,7 +974,7 @@ typedef struct {
 	int status;
 	int32_t minor;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lchardriver_vfs_sel2;
 _ASSERT_MSG_SIZE(mess_lchardriver_vfs_sel2);
 
@@ -968,14 +982,14 @@ typedef struct {
 	endpoint_t endpt;
 	vir_bytes ptr;		/* struct exec_info * */
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_lexec_pm_exec_new;
 _ASSERT_MSG_SIZE(mess_lexec_pm_exec_new);
 
 typedef struct {
 	cp_grant_id_t grant;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_li2cdriver_i2c_busc_i2c_exec;
 _ASSERT_MSG_SIZE(mess_li2cdriver_i2c_busc_i2c_exec);
 
@@ -985,7 +999,7 @@ typedef struct {
 			  sys/dev/i2c/i2c_io.h, which I am not sure is a good
 			  idea to have everywhere. */
 
-	uint8_t padding[54];
+	uint8_t padding[118];
 } mess_li2cdriver_i2c_busc_i2c_reserve;
 _ASSERT_MSG_SIZE(mess_li2cdriver_i2c_busc_i2c_reserve);
 
@@ -996,7 +1010,7 @@ typedef struct {
 	int value;
 	int flags;
 
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_linputdriver_input_event;
 _ASSERT_MSG_SIZE(mess_linputdriver_input_event);
 
@@ -1006,7 +1020,7 @@ typedef struct {
 	int status;
 	unsigned int len;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_lsockdriver_vfs_accept_reply;
 _ASSERT_MSG_SIZE(mess_lsockdriver_vfs_accept_reply);
 
@@ -1017,7 +1031,7 @@ typedef struct {
 	unsigned int addr_len;
 	int flags;
 
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_lsockdriver_vfs_recv_reply;
 _ASSERT_MSG_SIZE(mess_lsockdriver_vfs_recv_reply);
 
@@ -1025,7 +1039,7 @@ typedef struct {
 	int32_t req_id;
 	int status;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lsockdriver_vfs_reply;
 _ASSERT_MSG_SIZE(mess_lsockdriver_vfs_reply);
 
@@ -1033,7 +1047,7 @@ typedef struct {
 	int32_t sock_id;
 	int status;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lsockdriver_vfs_select_reply;
 _ASSERT_MSG_SIZE(mess_lsockdriver_vfs_select_reply);
 
@@ -1042,7 +1056,7 @@ typedef struct {
 	int32_t sock_id;
 	int32_t sock_id2;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_lsockdriver_vfs_socket_reply;
 _ASSERT_MSG_SIZE(mess_lsockdriver_vfs_socket_reply);
 
@@ -1051,14 +1065,14 @@ typedef struct {
 	size_t size;
 	int subtype;
 
-        uint8_t padding[44];
+	uint8_t padding[100];
 } mess_lsys_fi_ctl;
 _ASSERT_MSG_SIZE(mess_lsys_fi_ctl);
 
 typedef struct {
         int status;
 
-        uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lsys_fi_reply;
 _ASSERT_MSG_SIZE(mess_lsys_fi_reply);
 
@@ -1067,7 +1081,7 @@ typedef struct {
 	vir_bytes where;
 	size_t size;
 
-	uint8_t padding[44];
+	uint8_t padding[96];
 } mess_lsys_getsysinfo;
 _ASSERT_MSG_SIZE(mess_lsys_getsysinfo);
 
@@ -1076,7 +1090,7 @@ typedef struct {
 	phys_bytes addr;
 	vir_bytes buf;
 
-	uint8_t padding[44];
+	uint8_t padding[96];
 } mess_lsys_krn_readbios;
 _ASSERT_MSG_SIZE(mess_lsys_krn_readbios);
 
@@ -1086,7 +1100,7 @@ typedef struct {
 	size_t		offset;
 	void		*address;
 	size_t		bytes;
-	uint8_t padding[36];
+	uint8_t padding[88];
 } mess_lsys_kern_safecopy;
 _ASSERT_MSG_SIZE(mess_lsys_kern_safecopy);
 
@@ -1097,7 +1111,7 @@ typedef struct {
 	int quantum;
 	int cpu;
 
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_lsys_krn_schedctl;
 _ASSERT_MSG_SIZE(mess_lsys_krn_schedctl);
 
@@ -1108,21 +1122,21 @@ typedef struct {
 	int cpu;
 	int niced;
 
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_lsys_krn_schedule;
 _ASSERT_MSG_SIZE(mess_lsys_krn_schedule);
 
 typedef struct {
 	int how;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lsys_krn_sys_abort;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_abort);
 
 typedef struct {
 	endpoint_t endpt;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lsys_krn_sys_clear;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_clear);
 
@@ -1134,7 +1148,7 @@ typedef struct {
 	phys_bytes nr_bytes;
 	int flags;
 
-	uint8_t padding[32];
+	uint8_t padding[76];
 } mess_lsys_krn_sys_copy;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_copy);
 
@@ -1143,7 +1157,7 @@ typedef struct {
 	int port;
 	uint32_t value;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_lsys_krn_sys_devio;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_devio);
 
@@ -1153,7 +1167,7 @@ typedef struct {
 	int len;
 	endpoint_t endpt;
 
-	uint8_t padding[40];
+	uint8_t padding[96];
 } mess_lsys_krn_sys_diagctl;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_diagctl);
 
@@ -1164,7 +1178,7 @@ typedef struct {
 	vir_bytes name;
 	vir_bytes ps_str;
 
-	uint8_t padding[36];
+	uint8_t padding[80];
 } mess_lsys_krn_sys_exec;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_exec);
 
@@ -1173,7 +1187,7 @@ typedef struct {
 	endpoint_t slot;
 	uint32_t flags;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_lsys_krn_sys_fork;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_fork);
 
@@ -1185,7 +1199,7 @@ typedef struct {
 	vir_bytes val_ptr2;
 	int val_len2_e;
 
-	uint8_t padding[32];
+	uint8_t padding[84];
 } mess_lsys_krn_sys_getinfo;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_getinfo);
 
@@ -1193,14 +1207,14 @@ typedef struct {
 	endpoint_t endpt;
 	vir_bytes ctx_ptr;
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_lsys_krn_sys_getmcontext;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_getmcontext);
 
 typedef struct {
 	endpoint_t endpt;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lsys_krn_sys_iopenable;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_iopenable);
 
@@ -1210,7 +1224,7 @@ typedef struct {
 	int policy;
 	int hook_id;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_lsys_krn_sys_irqctl;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_irqctl);
 
@@ -1220,7 +1234,7 @@ typedef struct {
 	unsigned long pattern;
 	endpoint_t process;
 
-	uint8_t padding[40];
+	uint8_t padding[92];
 } mess_lsys_krn_sys_memset;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_memset);
 
@@ -1231,7 +1245,7 @@ typedef struct {
 	phys_bytes phys_start;
 	phys_bytes phys_len;
 
-	uint8_t padding[36];
+	uint8_t padding[88];
 } mess_lsys_krn_sys_privctl;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_privctl);
 
@@ -1243,7 +1257,7 @@ typedef struct {
 	vir_bytes vec_size;
 	vir_bytes offset;
 
-	uint8_t padding[32];
+	uint8_t padding[72];
 } mess_lsys_krn_sys_sdevio;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_sdevio);
 
@@ -1253,7 +1267,7 @@ typedef struct {
 	clock_t uptime;
 	int abs_time;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_lsys_krn_sys_setalarm;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_setalarm);
 
@@ -1261,7 +1275,7 @@ typedef struct {
 	vir_bytes addr;			/* cp_grant_t * */
 	int size;
 
-	uint8_t padding[48];
+	uint8_t padding[108];
 } mess_lsys_krn_sys_setgrant;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_setgrant);
 
@@ -1269,7 +1283,7 @@ typedef struct {
 	endpoint_t endpt;
 	vir_bytes ctx_ptr;
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_lsys_krn_sys_setmcontext;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_setmcontext);
 
@@ -1279,7 +1293,7 @@ typedef struct {
 	int now;		/* non-zero for immediate, 0 for adjtime */
 	clockid_t clock_id;
 
-	uint8_t padding[36];
+	uint8_t padding[96];
 } mess_lsys_krn_sys_settime;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_settime);
 
@@ -1292,7 +1306,7 @@ typedef struct {
 	vir_bytes mem_ptr;
 	size_t mem_size;
 
-	uint8_t padding[28];
+	uint8_t padding[80];
 } mess_lsys_krn_sys_sprof;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_sprof);
 
@@ -1301,21 +1315,21 @@ typedef struct {
 	void *address;
 	int length;
 
-	uint8_t padding[44];
+	uint8_t padding[100];
 } mess_lsys_krn_sys_statectl;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_statectl);
 
 typedef struct {
 	time_t boot_time;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lsys_krn_sys_stime;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_stime);
 
 typedef struct {
 	endpoint_t endpt;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lsys_krn_sys_times;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_times);
 
@@ -1325,7 +1339,7 @@ typedef struct {
 	vir_bytes address;
 	long int data;
 
-	uint8_t padding[40];
+	uint8_t padding[96];
 } mess_lsys_krn_sys_trace;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_trace);
 
@@ -1336,7 +1350,7 @@ typedef struct {
 	endpoint_t dst_endpt;
 	int nr_bytes;
 
-	uint8_t padding[36];
+	uint8_t padding[96];
 } mess_lsys_krn_sys_umap;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_umap);
 
@@ -1346,7 +1360,7 @@ typedef struct {
 	int vec_size;
 	vir_bytes vec_addr;		/* pv{b,w,l}_pair_t * */
 
-	uint8_t padding[44];
+	uint8_t padding[104];
 } mess_lsys_krn_sys_vdevio;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_vdevio);
 
@@ -1359,14 +1373,14 @@ typedef struct {
 	int access;
 	size_t offset;
 
-	uint8_t padding[28];
+	uint8_t padding[72];
 } mess_lsys_krn_sys_vumap;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_vumap);
 
 typedef struct {
 	void		*vec_addr;
 	int		vec_size;
-	uint8_t padding[48];
+	uint8_t padding[108];
 } mess_lsys_kern_vsafecopy;
 _ASSERT_MSG_SIZE(mess_lsys_kern_vsafecopy);
 
@@ -1377,14 +1391,14 @@ typedef struct {
 	unsigned int	clen;
 	unsigned int	miblen;
 	int		mib[CTL_SHORTNAME];
-	uint8_t		padding[4];
+	uint8_t padding[68];
 } mess_lsys_mib_register;
 _ASSERT_MSG_SIZE(mess_lsys_mib_register);
 
 typedef struct {
 	uint32_t	req_id;
 	ssize_t		status;
-	uint8_t		padding[48];
+	uint8_t padding[104];
 } mess_lsys_mib_reply;
 _ASSERT_MSG_SIZE(mess_lsys_mib_reply);
 
@@ -1392,7 +1406,7 @@ typedef struct {
 	int devind;
 	int port;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lsys_pci_busc_get_bar;
 _ASSERT_MSG_SIZE(mess_lsys_pci_busc_get_bar);
 
@@ -1401,21 +1415,21 @@ typedef struct {
 	vir_bytes groups;
 	int ngroups;
 
-	uint8_t padding[44];
+	uint8_t padding[100];
 } mess_lsys_pm_getepinfo;
 _ASSERT_MSG_SIZE(mess_lsys_pm_getepinfo);
 
 typedef struct {
 	pid_t pid;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lsys_pm_getprocnr;
 _ASSERT_MSG_SIZE(mess_lsys_pm_getprocnr);
 
 typedef struct {
 	unsigned int mask;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lsys_pm_proceventmask;
 _ASSERT_MSG_SIZE(mess_lsys_pm_proceventmask);
 
@@ -1423,7 +1437,7 @@ typedef struct {
 	uid_t uid;
 	gid_t gid;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_lsys_pm_srv_fork;
 _ASSERT_MSG_SIZE(mess_lsys_pm_srv_fork);
 
@@ -1433,14 +1447,14 @@ typedef struct {
 	int maxprio;
 	int quantum;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_lsys_sched_scheduling_start;
 _ASSERT_MSG_SIZE(mess_lsys_sched_scheduling_start);
 
 typedef struct {
 	endpoint_t endpoint;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_lsys_sched_scheduling_stop;
 _ASSERT_MSG_SIZE(mess_lsys_sched_scheduling_stop);
 
@@ -1449,7 +1463,7 @@ typedef struct {
 	int fkeys;
 	int sfkeys;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_lsys_tty_fkey_ctl;
 _ASSERT_MSG_SIZE(mess_lsys_tty_fkey_ctl);
 
@@ -1458,7 +1472,7 @@ typedef struct {
 	int fd;
 	int what;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_lsys_vfs_copyfd;
 _ASSERT_MSG_SIZE(mess_lsys_vfs_copyfd);
 
@@ -1469,7 +1483,7 @@ typedef struct {
 	int ndomains;
 	int domains[NR_DOMAIN];
 
-	uint8_t padding[8];
+	uint8_t padding[60];
 } mess_lsys_vfs_mapdriver;
 _ASSERT_MSG_SIZE(mess_lsys_vfs_mapdriver);
 
@@ -1479,7 +1493,7 @@ typedef struct {
 	size_t count;
 	int what;
 
-	uint8_t padding[40];
+	uint8_t padding[100];
 } mess_lsys_vfs_socketpath;
 _ASSERT_MSG_SIZE(mess_lsys_vfs_socketpath);
 
@@ -1487,7 +1501,7 @@ typedef struct {
 	endpoint_t	endpt;
 	void		*addr;
 	int		retc;
-	uint8_t		padding[44];
+	uint8_t padding[100];
 } mess_lsys_vm_getref;
 _ASSERT_MSG_SIZE(mess_lsys_vm_getref);
 
@@ -1497,7 +1511,7 @@ typedef struct {
 	int		count;
 	void		*ptr;
 	vir_bytes	next;
-	uint8_t		padding[36];
+	uint8_t padding[88];
 } mess_lsys_vm_info;
 _ASSERT_MSG_SIZE(mess_lsys_vm_info);
 
@@ -1506,7 +1520,7 @@ typedef struct {
 	phys_bytes	phaddr;
 	size_t		len;
 	void		*reply;
-	uint8_t		padding[40];
+	uint8_t padding[88];
 } mess_lsys_vm_map_phys;
 _ASSERT_MSG_SIZE(mess_lsys_vm_map_phys);
 
@@ -1515,14 +1529,14 @@ typedef struct {
 	vir_bytes	addr;
 	int		children;
 
-	uint8_t		padding[44];
+	uint8_t padding[100];
 } mess_lsys_vm_rusage;
 _ASSERT_MSG_SIZE(mess_lsys_vm_rusage);
 
 typedef struct {
 	endpoint_t	ep;
 	void		*vaddr;
-	uint8_t		padding[48];
+	uint8_t padding[104];
 } mess_lsys_vm_unmap_phys;
 _ASSERT_MSG_SIZE(mess_lsys_vm_unmap_phys);
 
@@ -1530,7 +1544,7 @@ typedef struct {
 	endpoint_t src;
 	endpoint_t dst;
 	int flags;
-	uint8_t		padding[44];
+	uint8_t padding[108];
 } mess_lsys_vm_update;
 _ASSERT_MSG_SIZE(mess_lsys_vm_update);
 
@@ -1541,13 +1555,13 @@ typedef struct {
 	void		*src_addr;
 	size_t		size;
 	void		*ret_addr;
-	uint8_t		padding[32];
+	uint8_t padding[80];
 } mess_lsys_vm_vmremap;
 _ASSERT_MSG_SIZE(mess_lsys_vm_vmremap);
 
 typedef struct {
 	size_t		oldlen;
-	uint8_t		padding[52];
+	uint8_t padding[112];
 } mess_mib_lc_sysctl;
 _ASSERT_MSG_SIZE(mess_mib_lc_sysctl);
 
@@ -1564,7 +1578,7 @@ typedef struct {
 	uint32_t	flags;
 	uint32_t	root_ver;
 	uint32_t	tree_ver;
-	uint8_t		padding[8];
+	uint8_t padding[56];
 } mess_mib_lsys_call;
 _ASSERT_MSG_SIZE(mess_mib_lsys_call);
 
@@ -1575,7 +1589,7 @@ typedef struct {
 	size_t		name_size;
 	cp_grant_id_t	desc_grant;
 	size_t		desc_size;
-	uint8_t		padding[32];
+	uint8_t padding[80];
 } mess_mib_lsys_info;
 _ASSERT_MSG_SIZE(mess_mib_lsys_info);
 
@@ -1588,14 +1602,14 @@ typedef struct {
 	int fd;
 	endpoint_t forwhom;
 	void *retaddr;
-	u32_t padding[5];
+	uint8_t padding[72];
 } mess_mmap;
 _ASSERT_MSG_SIZE(mess_mmap);
 
 typedef struct {
 	uint32_t id;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_ndev_netdriver_init;
 _ASSERT_MSG_SIZE(mess_ndev_netdriver_init);
 
@@ -1610,7 +1624,7 @@ typedef struct {
 	uint32_t media;
 	uint8_t hwaddr[NDEV_HWADDR_MAX];
 
-	uint8_t padding[18];
+	uint8_t padding[82];
 } mess_ndev_netdriver_conf;
 _ASSERT_MSG_SIZE(mess_ndev_netdriver_conf);
 
@@ -1619,13 +1633,14 @@ typedef struct {
 	uint32_t count;
 	cp_grant_id_t grant[NDEV_IOV_MAX];
 	uint16_t len[NDEV_IOV_MAX];
+	uint8_t padding[64];
 } mess_ndev_netdriver_transfer;
 _ASSERT_MSG_SIZE(mess_ndev_netdriver_transfer);
 
 typedef struct {
 	uint32_t id;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_ndev_netdriver_status_reply;
 _ASSERT_MSG_SIZE(mess_ndev_netdriver_status_reply);
 
@@ -1640,7 +1655,7 @@ typedef struct {
 	uint8_t max_send;
 	uint8_t max_recv;
 
-	uint8_t padding[15];
+	uint8_t padding[79];
 } mess_netdriver_ndev_init_reply;
 _ASSERT_MSG_SIZE(mess_netdriver_ndev_init_reply);
 
@@ -1648,7 +1663,7 @@ typedef struct {
 	uint32_t id;
 	int32_t result;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_netdriver_ndev_reply;
 _ASSERT_MSG_SIZE(mess_netdriver_ndev_reply);
 
@@ -1661,21 +1676,21 @@ typedef struct {
 	uint32_t ierror;
 	uint32_t iqdrop;
 
-	uint8_t padding[28];
+	uint8_t padding[92];
 } mess_netdriver_ndev_status;
 _ASSERT_MSG_SIZE(mess_netdriver_ndev_status);
 
 typedef struct {
 	int mode;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_net_netdrv_dl_conf;
 _ASSERT_MSG_SIZE(mess_net_netdrv_dl_conf);
 
 typedef struct {
 	cp_grant_id_t grant;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_net_netdrv_dl_getstat_s;
 _ASSERT_MSG_SIZE(mess_net_netdrv_dl_getstat_s);
 
@@ -1683,7 +1698,7 @@ typedef struct {
 	cp_grant_id_t grant;
 	int count;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_net_netdrv_dl_readv_s;
 _ASSERT_MSG_SIZE(mess_net_netdrv_dl_readv_s);
 
@@ -1691,7 +1706,7 @@ typedef struct {
 	cp_grant_id_t grant;
 	int count;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_net_netdrv_dl_writev_s;
 _ASSERT_MSG_SIZE(mess_net_netdrv_dl_writev_s);
 
@@ -1699,7 +1714,7 @@ typedef struct {
 	int stat;
 	uint8_t hw_addr[6];
 
-	uint8_t padding[46];
+	uint8_t padding[110];
 } mess_netdrv_net_dl_conf;
 _ASSERT_MSG_SIZE(mess_netdrv_net_dl_conf);
 
@@ -1707,7 +1722,7 @@ typedef struct {
 	int count;
 	uint32_t flags;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_netdrv_net_dl_task;
 _ASSERT_MSG_SIZE(mess_netdrv_net_dl_task);
 
@@ -1715,7 +1730,7 @@ typedef struct {
 	u64_t timestamp;	/* valid for every notify msg */
 	u64_t interrupts;	/* raised interrupts; valid if from HARDWARE */
 	sigset_t sigset;	/* raised signals; valid if from SYSTEM */
-	uint8_t padding[24];
+	uint8_t padding[88];
 } mess_notify;
 _ASSERT_MSG_SIZE(mess_notify);
 
@@ -1724,42 +1739,42 @@ typedef struct {
 	size_t size;
 	uint32_t flags;
 
-	uint8_t padding[44];
+	uint8_t padding[100];
 } mess_pci_lsys_busc_get_bar;
 _ASSERT_MSG_SIZE(mess_pci_lsys_busc_get_bar);
 
 typedef struct {
 	uid_t egid;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_pm_lc_getgid;
 _ASSERT_MSG_SIZE(mess_pm_lc_getgid);
 
 typedef struct {
 	pid_t parent_pid;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_pm_lc_getpid;
 _ASSERT_MSG_SIZE(mess_pm_lc_getpid);
 
 typedef struct {
 	uid_t euid;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_pm_lc_getuid;
 _ASSERT_MSG_SIZE(mess_pm_lc_getuid);
 
 typedef struct {
 	long data;
 
-	uint8_t padding[52];
+	uint8_t padding[112];
 } mess_pm_lc_ptrace;
 _ASSERT_MSG_SIZE(mess_pm_lc_ptrace);
 
 typedef struct {
 	sigset_t set;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_pm_lc_sigset;
 _ASSERT_MSG_SIZE(mess_pm_lc_sigset);
 
@@ -1768,21 +1783,21 @@ typedef struct {
 
 	long nsec;
 
-	uint8_t padding[44];
+	uint8_t padding[104];
 } mess_pm_lc_time;
 _ASSERT_MSG_SIZE(mess_pm_lc_time);
 
 typedef struct {
 	int status;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_pm_lc_wait4;
 _ASSERT_MSG_SIZE(mess_pm_lc_wait4);
 
 typedef struct {
 	int suid;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_pm_lexec_exec_new;
 _ASSERT_MSG_SIZE(mess_pm_lexec_exec_new);
 
@@ -1793,14 +1808,14 @@ typedef struct {
 	gid_t egid;
 	int ngroups;
 
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_pm_lsys_getepinfo;
 _ASSERT_MSG_SIZE(mess_pm_lsys_getepinfo);
 
 typedef struct {
 	endpoint_t endpt;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_pm_lsys_getprocnr;
 _ASSERT_MSG_SIZE(mess_pm_lsys_getprocnr);
 
@@ -1808,14 +1823,14 @@ typedef struct {
 	endpoint_t endpt;
 	unsigned int event;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_pm_lsys_proc_event;
 _ASSERT_MSG_SIZE(mess_pm_lsys_proc_event);
 
 typedef struct {
 	int num;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_pm_lsys_sigs_signal;
 _ASSERT_MSG_SIZE(mess_pm_lsys_sigs_signal);
 
@@ -1823,7 +1838,7 @@ typedef struct {
 	endpoint_t endpoint;
 	uint32_t maxprio;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_pm_sched_scheduling_set_nice;
 _ASSERT_MSG_SIZE(mess_pm_sched_scheduling_set_nice);
 
@@ -1834,21 +1849,21 @@ typedef struct {
 	gid_t gid;
 	uint32_t index;
 
-	uint8_t padding[32];
+	uint8_t padding[96];
 } mess_pty_ptyfs_req;
 _ASSERT_MSG_SIZE(mess_pty_ptyfs_req);
 
 typedef struct {
 	char name[20];
 
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_ptyfs_pty_name;
 _ASSERT_MSG_SIZE(mess_ptyfs_pty_name);
 
 typedef struct {
 	int status;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_readclock_lc_rtcdev;
 _ASSERT_MSG_SIZE(mess_readclock_lc_rtcdev);
 
@@ -1862,7 +1877,7 @@ typedef struct {
 	vir_bytes	buff_addr;
 	size_t		buff_len;
 	int		prepare_state;
-	uint8_t padding[20];
+	uint8_t padding[76];
 } mess_rs_init;
 _ASSERT_MSG_SIZE(mess_rs_init);
 
@@ -1872,7 +1887,7 @@ typedef struct {
 	vir_bytes pc;
 	vir_bytes ps_str;
 
-	uint8_t padding[40];
+	uint8_t padding[96];
 } mess_rs_pm_exec_restart;
 _ASSERT_MSG_SIZE(mess_rs_pm_exec_restart);
 
@@ -1880,7 +1895,7 @@ typedef struct {
 	pid_t pid;
 	int nr;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_rs_pm_srv_kill;
 _ASSERT_MSG_SIZE(mess_rs_pm_srv_kill);
 
@@ -1891,7 +1906,7 @@ typedef struct {
 	void		*addr;
 	const char	*name;
 	int		subtype;
-	uint8_t padding[32];
+	uint8_t padding[84];
 } mess_rs_req;
 _ASSERT_MSG_SIZE(mess_rs_req);
 
@@ -1901,14 +1916,14 @@ typedef struct {
 	int		prepare_maxtime;
 	int		flags;
 	gid_t		state_data_gid;
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_rs_update;
 _ASSERT_MSG_SIZE(mess_rs_update);
 
 typedef struct {
 	endpoint_t scheduler;
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_sched_lsys_scheduling_start;
 _ASSERT_MSG_SIZE(mess_sched_lsys_scheduling_start);
 
@@ -1918,7 +1933,7 @@ typedef struct {
 	endpoint_t endpt;	/* process number for inform */
 	int sig;		/* signal number to send */
 	void *sigctx;		/* pointer to signal context */
-	uint8_t padding[28];
+	uint8_t padding[88];
 } mess_sigcalls;
 _ASSERT_MSG_SIZE(mess_sigcalls);
 
@@ -1926,7 +1941,7 @@ typedef struct {
 	int fkeys;
 	int sfkeys;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_tty_lsys_fkey_ctl;
 _ASSERT_MSG_SIZE(mess_tty_lsys_fkey_ctl);
 
@@ -1938,6 +1953,7 @@ typedef struct {
 	size_t nbytes;
 
 	uint8_t data[32];
+	uint8_t padding[56];
 } mess_vfs_fs_breadwrite;
 _ASSERT_MSG_SIZE(mess_vfs_fs_breadwrite);
 
@@ -1947,6 +1963,7 @@ typedef struct {
 	mode_t mode;
 
 	uint8_t data[44];
+	uint8_t padding[64];
 } mess_vfs_fs_chmod;
 _ASSERT_MSG_SIZE(mess_vfs_fs_chmod);
 
@@ -1957,6 +1974,7 @@ typedef struct {
 	gid_t gid;
 
 	uint8_t data[40];
+	uint8_t padding[64];
 } mess_vfs_fs_chown;
 _ASSERT_MSG_SIZE(mess_vfs_fs_chown);
 
@@ -1970,6 +1988,7 @@ typedef struct {
 	size_t path_len;
 
 	uint8_t data[28];
+	uint8_t padding[60];
 } mess_vfs_fs_create;
 _ASSERT_MSG_SIZE(mess_vfs_fs_create);
 
@@ -1977,6 +1996,7 @@ typedef struct {
 	dev_t device;
 
 	uint8_t data[48];
+	uint8_t padding[64];
 } mess_vfs_fs_flush;
 _ASSERT_MSG_SIZE(mess_vfs_fs_flush);
 
@@ -1986,6 +2006,7 @@ typedef struct {
 	off_t trc_end;
 
 	uint8_t data[32];
+	uint8_t padding[64];
 } mess_vfs_fs_ftrunc;
 _ASSERT_MSG_SIZE(mess_vfs_fs_ftrunc);
 
@@ -1997,6 +2018,7 @@ typedef struct {
 	size_t mem_size;
 
 	uint8_t data[32];
+	uint8_t padding[56];
 } mess_vfs_fs_getdents;
 _ASSERT_MSG_SIZE(mess_vfs_fs_getdents);
 
@@ -2004,6 +2026,7 @@ typedef struct {
 	ino_t inode;
 
 	uint8_t data[48];
+	uint8_t padding[64];
 } mess_vfs_fs_inhibread;
 _ASSERT_MSG_SIZE(mess_vfs_fs_inhibread);
 
@@ -2015,6 +2038,7 @@ typedef struct {
 	size_t path_len;
 
 	uint8_t data[32];
+	uint8_t padding[56];
 } mess_vfs_fs_link;
 _ASSERT_MSG_SIZE(mess_vfs_fs_link);
 
@@ -2032,6 +2056,7 @@ typedef struct {
 	gid_t gid;
 
 	uint8_t data[8];
+	uint8_t padding[48];
 } mess_vfs_fs_lookup;
 _ASSERT_MSG_SIZE(mess_vfs_fs_lookup);
 
@@ -2045,6 +2070,7 @@ typedef struct {
 	size_t path_len;
 
 	uint8_t data[28];
+	uint8_t padding[60];
 } mess_vfs_fs_mkdir;
 _ASSERT_MSG_SIZE(mess_vfs_fs_mkdir);
 
@@ -2059,6 +2085,7 @@ typedef struct {
 	size_t path_len;
 
 	uint8_t data[20];
+	uint8_t padding[60];
 } mess_vfs_fs_mknod;
 _ASSERT_MSG_SIZE(mess_vfs_fs_mknod);
 
@@ -2066,6 +2093,7 @@ typedef struct {
 	ino_t inode;
 
 	uint8_t data[48];
+	uint8_t padding[64];
 } mess_vfs_fs_mountpoint;
 _ASSERT_MSG_SIZE(mess_vfs_fs_mountpoint);
 
@@ -2076,6 +2104,7 @@ typedef struct {
 	size_t path_len;
 
 	uint8_t data[40];
+	uint8_t padding[56];
 } mess_vfs_fs_new_driver;
 _ASSERT_MSG_SIZE(mess_vfs_fs_new_driver);
 
@@ -2087,6 +2116,7 @@ typedef struct {
 	gid_t gid;
 
 	uint8_t data[36];
+	uint8_t padding[64];
 } mess_vfs_fs_newnode;
 _ASSERT_MSG_SIZE(mess_vfs_fs_newnode);
 
@@ -2095,6 +2125,7 @@ typedef struct {
 	unsigned int count;
 
 	uint8_t data[44];
+	uint8_t padding[64];
 } mess_vfs_fs_putnode;
 _ASSERT_MSG_SIZE(mess_vfs_fs_putnode);
 
@@ -2105,6 +2136,7 @@ typedef struct {
 	size_t mem_size;
 
 	uint8_t data[40];
+	uint8_t padding[56];
 } mess_vfs_fs_rdlink;
 _ASSERT_MSG_SIZE(mess_vfs_fs_rdlink);
 
@@ -2116,6 +2148,7 @@ typedef struct {
 	cp_grant_id_t grant;
 
 	uint8_t data[36];
+	uint8_t padding[56];
 } mess_vfs_fs_readsuper;
 _ASSERT_MSG_SIZE(mess_vfs_fs_readsuper);
 
@@ -2127,6 +2160,7 @@ typedef struct {
 	size_t nbytes;
 
 	uint8_t data[32];
+	uint8_t padding[56];
 } mess_vfs_fs_readwrite;
 _ASSERT_MSG_SIZE(mess_vfs_fs_readwrite);
 
@@ -2140,6 +2174,7 @@ typedef struct {
 	cp_grant_id_t grant_new;
 
 	uint8_t data[24];
+	uint8_t padding[56];
 } mess_vfs_fs_rename;
 _ASSERT_MSG_SIZE(mess_vfs_fs_rename);
 
@@ -2154,6 +2189,7 @@ typedef struct {
 	gid_t gid;
 
 	uint8_t data[24];
+	uint8_t padding[56];
 } mess_vfs_fs_slink;
 _ASSERT_MSG_SIZE(mess_vfs_fs_slink);
 
@@ -2163,6 +2199,7 @@ typedef struct {
 	cp_grant_id_t grant;
 
 	uint8_t data[44];
+	uint8_t padding[64];
 } mess_vfs_fs_stat;
 _ASSERT_MSG_SIZE(mess_vfs_fs_stat);
 
@@ -2170,6 +2207,7 @@ typedef struct {
 	cp_grant_id_t grant;
 
 	uint8_t data[52];
+	uint8_t padding[64];
 } mess_vfs_fs_statvfs;
 _ASSERT_MSG_SIZE(mess_vfs_fs_statvfs);
 
@@ -2180,6 +2218,7 @@ typedef struct {
 	size_t path_len;
 
 	uint8_t data[40];
+	uint8_t padding[56];
 } mess_vfs_fs_unlink;
 _ASSERT_MSG_SIZE(mess_vfs_fs_unlink);
 
@@ -2192,6 +2231,7 @@ typedef struct {
 	uint32_t modnsec;
 
 	uint8_t data[24];
+	uint8_t padding[64];
 } mess_vfs_fs_utime;
 _ASSERT_MSG_SIZE(mess_vfs_fs_utime);
 
@@ -2199,21 +2239,21 @@ typedef struct {
 	int fd0;
 	int fd1;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_vfs_lc_fdpair;
 _ASSERT_MSG_SIZE(mess_vfs_lc_fdpair);
 
 typedef struct {
 	off_t offset;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_vfs_lc_lseek;
 _ASSERT_MSG_SIZE(mess_vfs_lc_lseek);
 
 typedef struct {
 	unsigned int len;	/* socklen_t */
 
-	uint8_t padding[52];
+	uint8_t padding[116];
 } mess_vfs_lc_socklen;
 _ASSERT_MSG_SIZE(mess_vfs_lc_socklen);
 
@@ -2221,7 +2261,7 @@ typedef struct {
 	endpoint_t id;
 	devminor_t minor;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_vfs_lchardriver_cancel;
 _ASSERT_MSG_SIZE(mess_vfs_lchardriver_cancel);
 
@@ -2231,7 +2271,7 @@ typedef struct {
 	devminor_t minor;
 	int access;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_vfs_lchardriver_openclose;
 _ASSERT_MSG_SIZE(mess_vfs_lchardriver_openclose);
 
@@ -2245,7 +2285,7 @@ typedef struct {
 	endpoint_t user;
 	devminor_t minor;
 
-	uint8_t padding[20];
+	uint8_t padding[72];
 } mess_vfs_lchardriver_readwrite;
 _ASSERT_MSG_SIZE(mess_vfs_lchardriver_readwrite);
 
@@ -2253,7 +2293,7 @@ typedef struct {
 	devminor_t minor;
 	int ops;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_vfs_lchardriver_select;
 _ASSERT_MSG_SIZE(mess_vfs_lchardriver_select);
 
@@ -2265,7 +2305,7 @@ typedef struct {
 	endpoint_t user_endpt;
 	int sflags;
 
-	uint8_t padding[32];
+	uint8_t padding[96];
 } mess_vfs_lsockdriver_addr;
 _ASSERT_MSG_SIZE(mess_vfs_lsockdriver_addr);
 
@@ -2277,7 +2317,7 @@ typedef struct {
 	cp_grant_id_t grant;
 	unsigned int len;
 
-	uint8_t padding[32];
+	uint8_t padding[96];
 } mess_vfs_lsockdriver_getset;
 _ASSERT_MSG_SIZE(mess_vfs_lsockdriver_getset);
 
@@ -2289,7 +2329,7 @@ typedef struct {
 	endpoint_t user_endpt;
 	int sflags;
 
-	uint8_t padding[32];
+	uint8_t padding[92];
 } mess_vfs_lsockdriver_ioctl;
 _ASSERT_MSG_SIZE(mess_vfs_lsockdriver_ioctl);
 
@@ -2297,7 +2337,7 @@ typedef struct {
 	int32_t sock_id;
 	int ops;
 
-	uint8_t padding[48];
+	uint8_t padding[112];
 } mess_vfs_lsockdriver_select;
 _ASSERT_MSG_SIZE(mess_vfs_lsockdriver_select);
 
@@ -2313,7 +2353,7 @@ typedef struct {
 	endpoint_t user_endpt;
 	int flags;
 
-	uint8_t padding[16];
+	uint8_t padding[72];
 } mess_vfs_lsockdriver_sendrecv;
 _ASSERT_MSG_SIZE(mess_vfs_lsockdriver_sendrecv);
 
@@ -2322,7 +2362,7 @@ typedef struct {
 	int32_t sock_id;
 	int param;
 
-	uint8_t padding[44];
+	uint8_t padding[108];
 } mess_vfs_lsockdriver_simple;
 _ASSERT_MSG_SIZE(mess_vfs_lsockdriver_simple);
 
@@ -2333,7 +2373,7 @@ typedef struct {
 	int protocol;
 	endpoint_t user_endpt;
 
-	uint8_t padding[36];
+	uint8_t padding[100];
 } mess_vfs_lsockdriver_socket;
 _ASSERT_MSG_SIZE(mess_vfs_lsockdriver_socket);
 
@@ -2341,7 +2381,7 @@ typedef struct {
 	cp_grant_id_t grant;
 	size_t size;
 
-	uint8_t padding[48];
+	uint8_t padding[104];
 } mess_vfs_lsys_gcov;
 _ASSERT_MSG_SIZE(mess_vfs_lsys_gcov);
 
@@ -2349,7 +2389,7 @@ typedef struct {
 	dev_t device;
 	ino_t inode;
 
-	uint8_t padding[40];
+	uint8_t padding[104];
 } mess_vfs_lsys_socketpath;
 _ASSERT_MSG_SIZE(mess_vfs_lsys_socketpath);
 
@@ -2362,7 +2402,7 @@ typedef struct {
 	char *name;
 	int fd;
 	int flags;
-	uint8_t padding[16];
+	uint8_t padding[64];
 } mess_vfs_utimens;
 _ASSERT_MSG_SIZE(mess_vfs_utimens);
 
@@ -2376,7 +2416,7 @@ typedef struct {
 	u32_t flags;
 	u32_t fd;
 	u16_t clearend;
-	uint8_t padding[8];
+	uint8_t padding[74];
 } mess_vm_vfs_mmap;
 _ASSERT_MSG_SIZE(mess_vm_vfs_mmap);
 
@@ -2389,14 +2429,14 @@ typedef struct {
 	u32_t *flags_ptr;
 	u8_t pages;
 	u8_t flags;
-	uint8_t padding[12];
+	uint8_t padding[70];
 } mess_vmmcp;
 _ASSERT_MSG_SIZE(mess_vmmcp);
 
 typedef struct {
 	void *addr;
 	u8_t flags;
-	uint8_t padding[51];
+	uint8_t padding[111];
 } mess_vmmcp_reply;
 _ASSERT_MSG_SIZE(mess_vmmcp_reply);
 
@@ -2667,12 +2707,16 @@ typedef struct noxfer_message {
 		mess_vmmcp		m_vmmcp;
 		mess_vmmcp_reply	m_vmmcp_reply;
 
-		u8_t size[56];	/* message payload may have 56 bytes at most */
+		/* The payload is this wide whatever the variants come to, so a
+		 * message is the same size under every data model.
+		 */
+		u8_t size[M_PAYLOAD_SIZE];
 	};
-} message __ALIGNED(16);
+} message __ALIGNED(M_MESSAGE_ALIGN);
 
 /* Ensure the complete union respects the IPC assumptions. */
-typedef int _ASSERT_message[/* CONSTCOND */sizeof(message) == 64 ? 1 : -1];
+typedef int _ASSERT_message[/* CONSTCOND */
+	sizeof(message) == M_MESSAGE_SIZE ? 1 : -1];
 
 /* The following defines provide names for useful members. */
 #define m1_i1  m_m1.m1i1

@@ -16,6 +16,7 @@
 #include "bsp_serial.h"
 #include "kprint.h"
 #include "mmu.h"
+#include "trap.h"
 
 /* Provided by the link script. */
 extern char __kernel_start[];
@@ -83,6 +84,15 @@ read_sp(void)
 	return sp;
 }
 
+static uint64_t
+read_vbar(void)
+{
+	uint64_t vbar;
+
+	__asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
+	return vbar;
+}
+
 /*
  * Report one mapping as the hardware sees it: where it points, and which of
  * the accesses we meant to allow it actually allows.
@@ -115,11 +125,77 @@ report_mapping(const char *label, uint64_t va)
 	kputs("\n");
 }
 
+/*
+ * An address in the kernel half that nothing maps. Well clear of the linear
+ * map, which only ever needs the first 16 TiB of it.
+ */
+#define UNMAPPED_ADDR	0xffff800000000000UL
+
+/* Somewhere writable to aim the control case at. */
+static volatile uint32_t writable_probe;
+
+/*
+ * Try one access and say what the hardware did with it.
+ *
+ * This is what stage 2.3 could not do. AT S1E1W reports what the tables say;
+ * this performs the access, so it reports what the CPU does - and it needs
+ * exception vectors, because the answer arrives as a data abort.
+ */
+static void
+check_access(const char *label, uint64_t va, int write)
+{
+	uint64_t esr, far;
+
+	kputs(label);
+
+	trap_expect_fault();
+	if (write)
+		*(volatile uint32_t *)va = 0xdeadbeefU;
+	else
+		writable_probe = *(volatile uint32_t *)va;
+
+	if (!trap_took_fault(&esr, &far)) {
+		kputs("succeeded\n");
+		return;
+	}
+
+	kputs("data abort, ESR ");
+	kput_hex(esr);
+	kputs(" FAR ");
+	kput_hex(far);
+	kputs("\n");
+}
+
+static void
+check_permissions(void)
+{
+	kputs("\nwhat the mappings actually refuse\n");
+	kputs("---------------------------------\n");
+
+	/*
+	 * __text_start is the first instruction of head.S, which has already
+	 * run and will not run again - so if this write were to succeed
+	 * despite everything, it would corrupt nothing that matters.
+	 */
+	check_access("write .text        : ", (uint64_t)__text_start, 1);
+	check_access("write .rodata      : ", (uint64_t)__rodata_start, 1);
+	check_access("write .bss         : ", (uint64_t)&writable_probe, 1);
+	check_access("read  unmapped     : ", UNMAPPED_ADDR, 0);
+}
+
 void
 kernel_early_main(uint64_t dtb)
 {
 	bsp_ser_init();
 	boot_dtb = dtb;
+
+	/*
+	 * Vectors before anything else that can go wrong. The table's address
+	 * is physical here, which is exactly what is needed: a mistake in the
+	 * page tables below faults with the MMU still off, and without
+	 * vectors that fault is a machine that stops without a word.
+	 */
+	trap_init();
 
 	kputs("\n");
 	kputs("MINIX/aarch64 early boot\n");
@@ -143,6 +219,7 @@ kernel_early_main(uint64_t dtb)
 	 */
 	kput_line("PC          : ", read_pc());
 	kput_line("SP          : ", read_sp());
+	kput_line("VBAR_EL1    : ", read_vbar());
 	kput_line("kernel start: ", (uint64_t)__kernel_start);
 	kput_line("kernel end  : ", (uint64_t)__kernel_end);
 	kput_line("bss start   : ", (uint64_t)__bss_start);
@@ -173,11 +250,20 @@ kernel_main(void)
 	bsp_ser_phys_range(&uart_base, &uart_size);
 	bsp_ser_set_base(phys_to_virt(uart_base));
 
+	/*
+	 * Same call as in early boot, different answer: the vector table's
+	 * address is now the kernel-virtual one. VBAR_EL1 still holds the
+	 * physical address until this runs, and that mapping is about to be
+	 * taken away.
+	 */
+	trap_init();
+
 	kputs("\n");
 	kputs("running in the upper half\n");
 	kputs("-------------------------\n");
 	kput_line("PC          : ", read_pc());
 	kput_line("SP          : ", read_sp());
+	kput_line("VBAR_EL1    : ", read_vbar());
 	kput_line("kernel start: ", (uint64_t)__kernel_start);
 	kput_line("kernel end  : ", (uint64_t)__kernel_end);
 
@@ -210,12 +296,25 @@ kernel_main(void)
 	kputs("identity map gone, kernel runs on TTBR1 alone\n");
 	report_mapping("identity    : ", virt_to_phys((uint64_t)__kernel_start));
 
-	kputs("\nboot reached the upper half, halting.\n");
+	check_permissions();
+
+	kputs("\nboot reached the upper half.\n");
 
 	/*
-	 * Nothing to go on to yet. Halt in a way that leaves the emulator
-	 * idle rather than spinning a host core at 100%.
+	 * Deliberate, and the last thing this stage does: take a fault nobody
+	 * is expecting, so the report the kernel produces for a real one can
+	 * be seen. It goes away at stage 2.5, when there is something to do
+	 * after boot instead.
 	 */
+	kputs("\ntaking an unhandled fault on purpose\n");
+	*(volatile uint64_t *)UNMAPPED_ADDR = 0;
+
+	/*
+	 * Not reached: trap_handler() halts. If this line ever runs, the
+	 * fault above was handled by something that should not have handled
+	 * it.
+	 */
+	kputs("the fault was swallowed - that is a bug\n");
 	for (;;)
 		__asm__ volatile("wfi");
 }

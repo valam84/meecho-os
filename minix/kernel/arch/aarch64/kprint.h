@@ -16,4 +16,11 @@ void kputs(const char *s);
 void kput_hex(uint64_t value);
 void kput_line(const char *label, uint64_t value);
 
+/*
+ * The same in a chosen width. Sixteen digits is right for an address and
+ * wrong for a six-bit field: an exception class printed as
+ * 0x0000000000000025 buries the two digits that carry the meaning.
+ */
+void kput_hexn(uint64_t value, unsigned digits);
+
 #endif /* _AARCH64_KPRINT_H_ */

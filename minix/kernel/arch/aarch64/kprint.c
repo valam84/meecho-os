@@ -23,14 +23,20 @@ kputs(const char *s)
 }
 
 void
-kput_hex(uint64_t value)
+kput_hexn(uint64_t value, unsigned digits)
 {
-	static const char digits[] = "0123456789abcdef";
+	static const char digit[] = "0123456789abcdef";
 	int shift;
 
 	kputs("0x");
-	for (shift = 60; shift >= 0; shift -= 4)
-		bsp_ser_putc(digits[(value >> shift) & 0xf]);
+	for (shift = (int)(digits - 1) * 4; shift >= 0; shift -= 4)
+		bsp_ser_putc(digit[(value >> shift) & 0xf]);
+}
+
+void
+kput_hex(uint64_t value)
+{
+	kput_hexn(value, 16);
 }
 
 void

@@ -76,7 +76,8 @@ ASFLAGS=	-mcpu=$(CPU) -g
 LDFLAGS=	-nostdlib -static -no-pie -T kernel.lds \
 		--defsym=KERNEL_VA_OFFSET=$(KERNEL_VA_OFFSET)
 
-OBJS=		head.o start.o kprint.o mmu.o bsp/qemu-virt/virt_serial.o
+OBJS=		head.o exception.o start.o kprint.o mmu.o trap.o \
+		bsp/qemu-virt/virt_serial.o
 
 KERNEL=		kernel.elf
 

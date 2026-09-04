@@ -73,7 +73,7 @@ int getuctx(ucontext_t *ucp)
 void makecontext(ucontext_t *ucp, void (*func)(void), int argc, ...)
 {
   va_list ap;
-  unsigned int *stack_top;
+  uintptr_t *stack_top;	/* one slot per argument, whatever the word size */
 
   /* There are a number of situations that are erroneous, but we can't actually
      tell the caller something is wrong, because this is a void function.
@@ -109,12 +109,12 @@ void makecontext(ucontext_t *ucp, void (*func)(void), int argc, ...)
 	   be executed (i.e., uc_link != NULL) or exit(2)s the process. */
 
 	/* Find the top of the stack from which we grow downwards. */
-	stack_top = (unsigned int *) ((uintptr_t ) ucp->uc_stack.ss_sp +
+	stack_top = (uintptr_t *) ((uintptr_t ) ucp->uc_stack.ss_sp +
 						   ucp->uc_stack.ss_size);
 
 	/* Align the arguments to 16 bytes (we might lose a few bytes of stack
 	   space here).*/
-	stack_top = (unsigned int *) ((uintptr_t) stack_top & ~0xf);
+	stack_top = (uintptr_t *) ((uintptr_t) stack_top & ~0xf);
 	
 	/* Make room for 'func', the `func' routine arguments, and ucp. */
 	stack_top -= (1 + argc + 1);
@@ -167,12 +167,12 @@ void makecontext(ucontext_t *ucp, void (*func)(void), int argc, ...)
 	   (i.e., uc_link != NULL) or exit(2)s the process. */
 
 	/* Find the top of the stack from which we grow downwards. */
-	stack_top = (unsigned int *) ((uintptr_t ) ucp->uc_stack.ss_sp +
+	stack_top = (uintptr_t *) ((uintptr_t ) ucp->uc_stack.ss_sp +
 						   ucp->uc_stack.ss_size);
 
 	/* Align the arguments to 16 bytes (we might lose a few bytes of stack
 	   space here).*/
-	stack_top = (unsigned int *) ((uintptr_t) stack_top & ~0xf);
+	stack_top = (uintptr_t *) ((uintptr_t) stack_top & ~0xf);
 
 	/* Make room for `func' routine arguments that don't fit in r0-r3 */
 	if (argc > 4)
@@ -198,6 +198,50 @@ void makecontext(ucontext_t *ucp, void (*func)(void), int argc, ...)
 		_UC_MACHINE_SET_R2(ucp, va_arg(ap, uintptr_t));
 	if (argc-- > 0)
 		_UC_MACHINE_SET_R3(ucp, va_arg(ap, uintptr_t));
+	/* Pass the rest on the stack. */
+	while (argc-- > 0) {
+		*stack_top++ = va_arg(ap, uintptr_t);
+	}
+	va_end(ap);
+
+	/* If we ran out of stack space, invalidate stack pointer. Eventually,
+	   swapcontext will choke on this and return ENOMEM. */
+	if (stack_top == ucp->uc_stack.ss_sp) {
+		_UC_MACHINE_SET_STACK(ucp, 0);
+	}
+#elif defined(__aarch64__)
+	/* The same scheme as on arm, with the AArch64 procedure call standard:
+	   the first eight arguments travel in x0-x7 and the rest on the stack,
+	   and the stack pointer must stay 16-byte aligned, so the overflow area
+	   is rounded up to an even number of slots. The ucp is parked in x19,
+	   callee-saved, from where ctx_start moves it to x0 for resumecontext. */
+	int i;
+
+	/* Find the top of the stack from which we grow downwards. */
+	stack_top = (uintptr_t *) ((uintptr_t ) ucp->uc_stack.ss_sp +
+						   ucp->uc_stack.ss_size);
+
+	/* Align the arguments to 16 bytes (we might lose a few bytes of stack
+	   space here).*/
+	stack_top = (uintptr_t *) ((uintptr_t) stack_top & ~0xf);
+
+	/* Make room for `func' routine arguments that don't fit in x0-x7 */
+	if (argc > 8)
+		stack_top -= (argc - 8 + 1) & ~1;
+
+	/* Adjust the machine context to point to the top of this stack and the
+	   program counter to the 'func' entry point. Set lr to ctx_start, so
+	   ctx_start runs after 'func'. Save ucp in x19 */
+	_UC_MACHINE_SET_FP(ucp, 0); /* Clear frame pointer */
+	_UC_MACHINE_SET_STACK(ucp, (reg_t) stack_top);
+	_UC_MACHINE_SET_PC(ucp, (reg_t) func);
+	_UC_MACHINE_SET_LR(ucp, (reg_t) ctx_start);
+	_UC_MACHINE_SET_X(ucp, 19, (reg_t) ucp);
+
+	/* Copy arguments to x0-x7 and stack. */
+	va_start(ap, argc);
+	for (i = 0; i < 8 && argc > 0; i++, argc--)
+		_UC_MACHINE_SET_X(ucp, i, va_arg(ap, uintptr_t));
 	/* Pass the rest on the stack. */
 	while (argc-- > 0) {
 		*stack_top++ = va_arg(ap, uintptr_t);

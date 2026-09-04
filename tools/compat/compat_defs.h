@@ -63,6 +63,17 @@
 #if HAVE_STDDEF_H
 #include <stddef.h>
 #endif
+#if HAVE_ERR_H
+/*
+ * err(), warnx() and friends. Sources built for the tools take the
+ * HAVE_NBTOOL_CONFIG_H branch, which skips their own <err.h> include, and
+ * the declarations further down in this file are compiled only when the
+ * host lacks the header. So on a host that has <err.h> nothing declared
+ * these at all; callers such as lib/libc/gen/pw_scan.c relied on an
+ * implicit declaration, which GCC 14 made an error.
+ */
+#include <err.h>
+#endif
 
 #if HAVE_RPC_TYPES_H
 #include <rpc/types.h>
@@ -233,6 +244,11 @@ int asnprintf(char **, size_t, const char *, ...);
 
 #if !HAVE_BASENAME
 char *basename(char *);
+#endif
+
+#if !HAVE_FPURGE
+/* Implemented for the tools by tools/compat/fpurge.c. */
+int fpurge(FILE *);
 #endif
 
 #if !HAVE_DECL_OPTIND
@@ -993,6 +1009,16 @@ int	 cgetnum(char *, const char *, long *);
 int	 cgetset(const char *);
 int	 cgetstr(char *, const char *, char **);
 int	 cgetustr(char *, const char *, char **);
+
+/*
+ * mi_vector_hash() lives in NetBSD's <stdlib.h>, so no host system declares
+ * it. The implementation is built for the tools by tools/compat/Makefile
+ * (mi_vector_hash.c), only the prototype was missing. Callers such as
+ * lib/libc/cdb/cdbw.c used to get away with an implicit declaration; GCC 14
+ * turned that into an error.
+ */
+void	 mi_vector_hash(const void * __restrict, size_t, uint32_t,
+	    uint32_t[3]);
 
 /* <sys/endian.h> */
 

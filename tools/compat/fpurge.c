@@ -39,11 +39,30 @@
 #include <stdio.h>
 #include <fcntl.h>
 
-void
+#if HAVE___FPURGE
+/*
+ * __fpurge() is declared in <stdio_ext.h> on the systems that have it,
+ * which are the same ones the HAVE___FPURGE test selects (glibc, Solaris).
+ * Without the declaration this used to compile anyway, as an implicit
+ * declaration; GCC 14 turned that into an error.
+ */
+#include <stdio_ext.h>
+#endif
+
+/*
+ * NetBSD's fpurge() returns int (0 on success, EOF on error), as declared in
+ * include/stdio.h. This stub used to return void, and callers such as
+ * external/historical/nawk/dist/run.c compare the result against EOF. That
+ * mismatch went unnoticed because without a visible declaration the compiler
+ * assumed a function returning int. __fpurge() itself reports no errors, so
+ * there is nothing to fail and we always report success.
+ */
+int
 fpurge(FILE *fp)
 {
 #if HAVE___FPURGE
 	__fpurge(fp);
 #endif
+	return 0;
 }
 #endif

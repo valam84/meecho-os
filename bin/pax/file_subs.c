@@ -48,6 +48,7 @@ __RCSID("$NetBSD: file_subs.c,v 1.63 2013/07/29 17:46:36 christos Exp $");
 
 #include <sys/types.h>
 #include <sys/time.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/param.h>

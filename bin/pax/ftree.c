@@ -77,6 +77,7 @@ __RCSID("$NetBSD: ftree.c,v 1.42 2012/09/27 00:44:59 christos Exp $");
 
 #include <sys/types.h>
 #include <sys/time.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <sys/param.h>
 #include <ctype.h>

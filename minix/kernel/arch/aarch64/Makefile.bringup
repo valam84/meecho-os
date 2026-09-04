@@ -3,7 +3,9 @@
 #
 #	make -f Makefile.bringup		build kernel.elf
 #	make -f Makefile.bringup run		boot it under QEMU
-#	make -f Makefile.bringup debug		same, but wait for gdb
+#	make -f Makefile.bringup run-el2	same, entered at EL2 as U-Boot does
+#	make -f Makefile.bringup debug		wait for gdb before the first insn
+#	make -f Makefile.bringup debug-el2	same, entered at EL2
 #	make -f Makefile.bringup gdb		attach to a waiting instance
 #
 # This is scaffolding, not the final build. The kernel eventually belongs to
@@ -118,8 +120,21 @@ run-el2: $(KERNEL)
 debug: $(KERNEL)
 	$(QEMU) $(QEMUFLAGS) -S -s
 
+debug-el2: $(KERNEL)
+	$(QEMU) $(QEMUFLAGS_EL2) -S -s
+
+# The kernel exists at two addresses, so gdb is given two symbol tables: the
+# link addresses in the upper half, and the same symbols shifted down to the
+# physical addresses the kernel actually runs at until the MMU is on. Without
+# the second one, single-stepping through early boot - which is the whole
+# reason this target exists - shows no symbols and no source at all.
 gdb:
-	gdb-multiarch -ex 'target remote :1234' -ex 'symbol-file $(KERNEL)'
+	gdb-multiarch \
+		-ex 'set confirm off' \
+		-ex 'target remote :1234' \
+		-ex 'symbol-file $(KERNEL)' \
+		-ex 'add-symbol-file $(KERNEL) -o -$(KERNEL_VA_OFFSET)' \
+		-ex 'set confirm on'
 
 disasm: $(KERNEL)
 	$(OBJDUMP) -d $(KERNEL)
@@ -127,4 +142,4 @@ disasm: $(KERNEL)
 clean:
 	rm -f $(OBJS) $(KERNEL)
 
-.PHONY: all run debug gdb disasm clean
+.PHONY: all run run-el2 debug debug-el2 gdb disasm clean

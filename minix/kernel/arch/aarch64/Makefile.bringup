@@ -69,15 +69,17 @@ CFLAGS=		-Wall -Wextra -Werror -O2 -g \
 		-fno-tree-loop-distribute-patterns \
 		-fno-common \
 		-DKERNEL_VA_OFFSET=$(KERNEL_VA_OFFSET)UL \
-		-Ibsp/include
+		-I. -Ibsp/include
 
 ASFLAGS=	-mcpu=$(CPU) -g
 
 LDFLAGS=	-nostdlib -static -no-pie -T kernel.lds \
 		--defsym=KERNEL_VA_OFFSET=$(KERNEL_VA_OFFSET)
 
-OBJS=		head.o exception.o start.o kprint.o mmu.o trap.o \
-		bsp/qemu-virt/virt_serial.o
+OBJS=		head.o exception.o start.o kprint.o mmu.o trap.o intr.o \
+		bsp/qemu-virt/virt_serial.o \
+		bsp/qemu-virt/virt_intr.o \
+		bsp/qemu-virt/virt_timer.o
 
 KERNEL=		kernel.elf
 
@@ -85,15 +87,21 @@ KERNEL=		kernel.elf
 #
 # -net none matters: without it QEMU adds a default NIC and fails looking for
 # efi-virtio.rom, which is in a package we have no other reason to install.
+#
+# gic-version=2 is what virt already defaults to - the dumped device tree says
+# intc compatible "arm,cortex-a15-gic" - but it is pinned rather than assumed.
+# The CM4 has a GIC-400, which is GICv2, and that is the only interrupt
+# controller the BSP knows how to drive; a QEMU release that changed its
+# default would otherwise turn into a kernel that boots and never ticks.
 QEMU=		qemu-system-aarch64
-QEMUFLAGS=	-M virt -cpu $(CPU) -m 512 -display none -serial mon:stdio \
-		-net none -kernel $(KERNEL)
+QEMUFLAGS=	-M virt,gic-version=2 -cpu $(CPU) -m 512 -display none \
+		-serial mon:stdio -net none -kernel $(KERNEL)
 
 # On the real board U-Boot hands control over at EL2, so the drop to EL1 in
 # head.S has to work. Plain "virt" enters at EL1 and never exercises that
 # path; virtualization=on does. Test both.
-QEMUFLAGS_EL2=	-M virt,virtualization=on -cpu $(CPU) -m 512 -display none \
-		-serial mon:stdio -net none -kernel $(KERNEL)
+QEMUFLAGS_EL2=	-M virt,virtualization=on,gic-version=2 -cpu $(CPU) -m 512 \
+		-display none -serial mon:stdio -net none -kernel $(KERNEL)
 
 all: $(KERNEL)
 

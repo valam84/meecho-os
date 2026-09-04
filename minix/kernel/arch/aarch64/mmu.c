@@ -169,6 +169,23 @@ static unsigned early_pt_used;
 static uint64_t *identity_root;
 static uint64_t *kernel_root;
 
+/*
+ * Device register ranges the BSP has asked for, with the variable each driver
+ * keeps its base address in. Small and fixed: a bring-up kernel knows every
+ * device it has, and a driver that cannot register is better than one that
+ * silently gets no mapping.
+ */
+#define MAX_DEVICE_MAPS		8
+
+struct device_map {
+	uint64_t base;
+	uint64_t size;
+	uint64_t *slot;
+};
+
+static struct device_map device_map[MAX_DEVICE_MAPS];
+static unsigned device_maps;
+
 static void
 early_stop(const char *why)
 {
@@ -178,6 +195,51 @@ early_stop(const char *why)
 
 	for (;;)
 		__asm__ volatile("wfi");
+}
+
+void
+mmu_map_device(uint64_t base, uint64_t size, uint64_t *slot)
+{
+	if (device_maps >= MAX_DEVICE_MAPS)
+		early_stop("too many device mappings");
+
+	device_map[device_maps].base = base;
+	device_map[device_maps].size = size;
+	device_map[device_maps].slot = slot;
+	device_maps++;
+
+	/*
+	 * Until the tables exist the physical address is the usable one, and
+	 * drivers do talk to their hardware in that window - the console
+	 * prints from it, and the interrupt controller is programmed there.
+	 */
+	*slot = base;
+}
+
+void
+mmu_activate_device_maps(void)
+{
+	unsigned i;
+
+	for (i = 0; i < device_maps; i++)
+		*device_map[i].slot = phys_to_virt(device_map[i].base);
+}
+
+unsigned
+mmu_device_map_count(void)
+{
+	return device_maps;
+}
+
+int
+mmu_device_map_get(unsigned i, uint64_t *base, uint64_t *size)
+{
+	if (i >= device_maps)
+		return 0;
+
+	*base = device_map[i].base;
+	*size = device_map[i].size;
+	return 1;
 }
 
 static uint64_t *
@@ -334,16 +396,15 @@ supported_ips(void)
 void
 mmu_setup(void)
 {
-	uint64_t uart_base, uart_size;
 	uint64_t mair, tcr, sctlr;
+	unsigned i;
 
 	identity_root = early_alloc_table();
 	kernel_root = early_alloc_table();
 
-	bsp_ser_phys_range(&uart_base, &uart_size);
-
 	/*
-	 * The kernel map: the image at its link address, plus the console.
+	 * The kernel map: the image at its link address, plus every device
+	 * range the BSP registered.
 	 *
 	 * There is no linear map of RAM yet. Nothing needs one before there
 	 * is a device tree to say where RAM is and how much of it there is,
@@ -351,17 +412,23 @@ mmu_setup(void)
 	 * something that never gets diagnosed.
 	 */
 	map_kernel_image(kernel_root, KERNEL_VA_OFFSET);
-	map_range(kernel_root, phys_to_virt(uart_base), uart_base, uart_size,
-	    MMU_DEVICE);
 
 	/*
 	 * The identity map exists for one instruction: the one after
 	 * SCTLR_EL1.M is set, which is still fetched from a physical PC. It
-	 * carries the console too, so that window is debuggable rather than
-	 * blind.
+	 * carries the devices too, so that window is debuggable rather than
+	 * blind, and so a driver keeps working across it.
 	 */
 	map_kernel_image(identity_root, 0);
-	map_range(identity_root, uart_base, uart_base, uart_size, MMU_DEVICE);
+
+	for (i = 0; i < device_maps; i++) {
+		uint64_t base = device_map[i].base;
+		uint64_t size = device_map[i].size;
+
+		map_range(kernel_root, phys_to_virt(base), base, size,
+		    MMU_DEVICE);
+		map_range(identity_root, base, base, size, MMU_DEVICE);
+	}
 
 	dcache_clean_inval((uint64_t)early_pt_pool, sizeof(early_pt_pool));
 
@@ -500,4 +567,5 @@ mmu_report(void)
 	__asm__ volatile("mrs %0, ttbr1_el1" : "=r"(v));
 	kput_line("TTBR1_EL1   : ", v);
 	kput_line("tables used : ", early_pt_used);
+	kput_line("device maps : ", device_maps);
 }

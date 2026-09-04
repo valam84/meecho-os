@@ -40,6 +40,26 @@ kput_hex(uint64_t value)
 }
 
 void
+kput_dec(uint64_t value)
+{
+	char buf[20];
+	unsigned n = 0;
+
+	if (value == 0) {
+		bsp_ser_putc('0');
+		return;
+	}
+
+	while (value != 0) {
+		buf[n++] = (char)('0' + (value % 10));
+		value /= 10;
+	}
+
+	while (n != 0)
+		bsp_ser_putc(buf[--n]);
+}
+
+void
 kput_line(const char *label, uint64_t value)
 {
 	kputs(label);

@@ -51,6 +51,38 @@ virt_to_phys(uint64_t va)
 }
 
 /*
+ * Ask for a range of device registers to be mapped, and for *slot to be kept
+ * pointing at it.
+ *
+ * This is the bring-up form of kern_phys_map_ptr(), which the BSPs on earm
+ * call from their init routines: the driver says where its registers are and
+ * hands over the variable holding its base, and the address in that variable
+ * is corrected once paging exists. There the correction comes from VM; here
+ * it comes from mmu_activate_device_maps(), and there is no VM to ask.
+ *
+ * Must be called before mmu_setup(), which is what actually builds the
+ * mappings. Until then *slot holds the physical address, which is the right
+ * answer while the MMU is off.
+ */
+void mmu_map_device(uint64_t base, uint64_t size, uint64_t *slot);
+
+/*
+ * Repoint every registered device base at its kernel mapping. Call after the
+ * move to the upper half and before the identity map is dropped - between
+ * those two points either address works, which is the only window where the
+ * change can be made without a driver losing its registers mid-write.
+ */
+void mmu_activate_device_maps(void);
+
+/*
+ * Walk what the BSP registered. Lets the boot path report the device
+ * mappings without knowing which board it is on, which is the whole point of
+ * the BSP being a separate thing.
+ */
+unsigned mmu_device_map_count(void);
+int mmu_device_map_get(unsigned i, uint64_t *base, uint64_t *size);
+
+/*
  * Build the translation tables and set SCTLR_EL1.M. Runs with the MMU off and
  * returns with it on, still executing from the identity map.
  */

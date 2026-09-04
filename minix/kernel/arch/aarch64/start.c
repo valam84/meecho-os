@@ -13,7 +13,10 @@
 
 #include <stdint.h>
 
+#include "bsp_intr.h"
 #include "bsp_serial.h"
+#include "bsp_timer.h"
+#include "intr.h"
 #include "kprint.h"
 #include "mmu.h"
 #include "trap.h"
@@ -183,6 +186,106 @@ check_permissions(void)
 	check_access("read  unmapped     : ", UNMAPPED_ADDR, 0);
 }
 
+/*
+ * Whatever the BSP asked to have mapped, whichever board this is. The boot
+ * path has no business naming the console's address or the GIC's.
+ */
+static void
+report_device_mappings(void)
+{
+	uint64_t base, size;
+	unsigned i;
+
+	for (i = 0; i < mmu_device_map_count(); i++) {
+		if (!mmu_device_map_get(i, &base, &size))
+			break;
+		kputs("device      : ");
+		report_mapping("", phys_to_virt(base));
+	}
+}
+
+/*
+ * Tick rate. MINIX calls this system_hz and gets it from the generic kernel;
+ * there is no generic kernel here, so it is a constant until there is.
+ */
+#define SYSTEM_HZ	100
+
+static volatile uint64_t ticks;
+
+static void
+timer_tick(int irq)
+{
+	(void)irq;
+
+	/*
+	 * Re-arm first. On earm this is the same order: arch_clock.c's
+	 * timer_int_handler() calls bsp_timer_int_handler() before doing
+	 * anything of its own, so that a slow handler costs a late tick
+	 * rather than a lost one.
+	 */
+	bsp_timer_int_handler();
+	ticks++;
+}
+
+static void
+irq_enable(void)
+{
+	/* Clear PSTATE.I. head.S masked everything until there were vectors. */
+	__asm__ volatile("msr daifclr, #2" ::: "memory");
+}
+
+static void
+start_ticking(void)
+{
+	uint64_t seen = 0;
+
+	kputs("\ninterrupts and the tick\n");
+	kputs("-----------------------\n");
+
+	kputs("GIC lines   : ");
+	kput_dec((uint64_t)bsp_irq_lines());
+	kputs("\n");
+
+	bsp_timer_init(SYSTEM_HZ);
+
+	kputs("counter     : ");
+	kput_dec(bsp_timer_counter_hz());
+	kputs(" Hz\n");
+	kputs("tick        : ");
+	kput_dec(SYSTEM_HZ);
+	kputs(" Hz\n");
+
+	bsp_register_timer_handler(timer_tick);
+	irq_enable();
+	kputs("interrupts unmasked, waiting\n\n");
+
+	for (;;) {
+		/*
+		 * Sleep until something happens. If the timer were not
+		 * running this would never wake, which is exactly the failure
+		 * this stage is meant to rule out.
+		 */
+		__asm__ volatile("wfi");
+
+		if (ticks == seen)
+			continue;
+		seen = ticks;
+
+		/*
+		 * The first few ticks prove interrupts arrive at all; one
+		 * line a second afterwards proves they keep arriving at the
+		 * rate asked for.
+		 */
+		if (seen <= 3 || seen % SYSTEM_HZ == 0) {
+			kputs("tick ");
+			kput_dec(seen);
+			kputs("  counter ");
+			kput_dec(bsp_timer_counter());
+			kputs("\n");
+		}
+	}
+}
+
 void
 kernel_early_main(uint64_t dtb)
 {
@@ -225,6 +328,14 @@ kernel_early_main(uint64_t dtb)
 	kput_line("bss start   : ", (uint64_t)__bss_start);
 	kput_line("bss end     : ", (uint64_t)__bss_end);
 
+	/*
+	 * The interrupt controller is set up before paging because it has to
+	 * register its register ranges with mmu_map_device() before the
+	 * tables are built. It is programmed here through physical addresses,
+	 * which is what the identity map is for.
+	 */
+	intr_init(0);
+
 	kputs("\nbuilding translation tables\n");
 	mmu_setup();
 
@@ -240,15 +351,12 @@ kernel_early_main(uint64_t dtb)
 void
 kernel_main(void)
 {
-	uint64_t uart_base, uart_size;
-
 	/*
-	 * Move the console to its kernel mapping before the identity map
-	 * disappears. Until this returns, output still goes through the
-	 * physical alias.
+	 * Move every driver onto its kernel mapping before the identity map
+	 * disappears. Until this returns, the console and the interrupt
+	 * controller are still reaching their registers physically.
 	 */
-	bsp_ser_phys_range(&uart_base, &uart_size);
-	bsp_ser_set_base(phys_to_virt(uart_base));
+	mmu_activate_device_maps();
 
 	/*
 	 * Same call as in early boot, different answer: the vector table's
@@ -282,7 +390,7 @@ kernel_main(void)
 	report_mapping(".text       : ", (uint64_t)__text_start);
 	report_mapping(".rodata     : ", (uint64_t)__rodata_start);
 	report_mapping(".bss        : ", (uint64_t)__bss_start);
-	report_mapping("console     : ", phys_to_virt(uart_base));
+	report_device_mappings();
 
 	/*
 	 * Take the identity map away. If anything above still depended on a
@@ -297,24 +405,5 @@ kernel_main(void)
 	report_mapping("identity    : ", virt_to_phys((uint64_t)__kernel_start));
 
 	check_permissions();
-
-	kputs("\nboot reached the upper half.\n");
-
-	/*
-	 * Deliberate, and the last thing this stage does: take a fault nobody
-	 * is expecting, so the report the kernel produces for a real one can
-	 * be seen. It goes away at stage 2.5, when there is something to do
-	 * after boot instead.
-	 */
-	kputs("\ntaking an unhandled fault on purpose\n");
-	*(volatile uint64_t *)UNMAPPED_ADDR = 0;
-
-	/*
-	 * Not reached: trap_handler() halts. If this line ever runs, the
-	 * fault above was handled by something that should not have handled
-	 * it.
-	 */
-	kputs("the fault was swallowed - that is a bug\n");
-	for (;;)
-		__asm__ volatile("wfi");
+	start_ticking();
 }

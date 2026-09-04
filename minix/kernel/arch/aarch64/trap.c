@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "bsp_intr.h"
 #include "bsp_serial.h"
 #include "kprint.h"
 #include "trap.h"
@@ -246,6 +247,16 @@ trap_handler(struct stackframe_s *frame, uint64_t kind, uint64_t esr,
 	uint64_t far)
 {
 	uint32_t ec = (uint32_t)ESR_EC(esr);
+
+	/*
+	 * An interrupt. Hand it to the controller, which works out what
+	 * happened and dispatches it. Nothing else here applies: an IRQ is
+	 * not a fault, it carries no ESR worth decoding, and it returns.
+	 */
+	if (kind == EXC_EL1H_IRQ) {
+		bsp_irq_handle();
+		return;
+	}
 
 	/*
 	 * A data abort the kernel asked for. Record it, step over the

@@ -23,4 +23,11 @@ void kput_line(const char *label, uint64_t value);
  */
 void kput_hexn(uint64_t value, unsigned digits);
 
+/*
+ * Decimal, for the things that are counts rather than addresses: a tick
+ * number, a frequency in hertz, how many interrupt lines the controller has.
+ * Reading those in hex is a needless translation.
+ */
+void kput_dec(uint64_t value);
+
 #endif /* _AARCH64_KPRINT_H_ */

@@ -71,10 +71,12 @@ static bool libc_initialised;
 void _libc_init(void);
 
 /*
- * Declare as common symbol to allow new libc with older binaries to
- * not trigger an undefined reference.
+ * Defined weak, so that the definition crt0 makes always wins and an older
+ * binary that has none still links against a newer libc.  This was a common
+ * symbol until compilers stopped merging tentative definitions by default;
+ * weak says the same thing and says it on purpose.
  */
-struct ps_strings *__ps_strings;
+__weak struct ps_strings *__ps_strings;
 
 /*
  * _libc_init is called twice.  The first time explicitly by crt0.o

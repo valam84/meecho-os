@@ -47,7 +47,12 @@ __RCSID("$NetBSD: getprogname.c,v 1.4 2011/10/06 20:31:41 christos Exp $");
 __weak_alias(getprogname,_getprogname)
 #endif
 
-const char *__progname;
+/*
+ * Defined by crt0.  Defined weak here too, so that a binary that predates it
+ * still finds one -- it was a common symbol until compilers stopped merging
+ * tentative definitions by default.
+ */
+__weak const char *__progname;
 
 const char *
 getprogname(void)

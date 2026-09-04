@@ -55,10 +55,11 @@ __weak_alias(setproctitle,_setproctitle)
 #define	MAX_PROCTITLE	2048
 
 /*
- * For compatibility with old versions of crt0 that didn't define __ps_strings,
- * define it as a common here.
+ * Defined by crt0, and weakly by initfini.c for the binaries that predate it.
+ * This file used to carry a second common definition of its own, which is a
+ * duplicate definition once the compiler stops merging them.
  */
-struct ps_strings *__ps_strings;
+extern struct ps_strings *__ps_strings;
 
 void
 setproctitle(const char *fmt, ...)

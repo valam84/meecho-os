@@ -94,7 +94,8 @@ __warn_references(__findenv,
 /* Our initialization function. */
 void __libc_env_init(void);
 
-char **environ;
+/* Defined, with the magic value crt0 checks for, in minix/lib/libc/sys. */
+extern char **environ;
 
 /*ARGSUSED*/
 static signed int

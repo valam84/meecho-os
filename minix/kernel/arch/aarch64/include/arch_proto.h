@@ -50,9 +50,12 @@ void __user_copy_msg_pointer_failure(void);
 void add_memmap(kinfo_t *cbi, u64_t addr, u64_t len);
 
 /*
- * Kernel stacks. k_stacks_start is placed by the linker script; k_stacks is
- * it rounded up to a page. Two pages are reserved per CPU and the top of the
- * upper one is the stack pointer, which leaves the lower page as the guard.
+ * Kernel stacks, one pair of pages per CPU: the top of the upper page is the
+ * stack pointer, which leaves the lower one as the guard. k_stacks_start
+ * labels the reservation, which the architecture layer makes in its own
+ * assembly the way the two 32-bit ports do - not in the link script, so that
+ * the size can be written in terms of K_STACK_SIZE and CONFIG_MAX_CPUS.
+ * k_stacks is that address rounded up to a page.
  */
 EXTERN void *k_stacks_start;
 extern void *k_stacks;

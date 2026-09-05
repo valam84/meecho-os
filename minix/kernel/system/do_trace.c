@@ -156,13 +156,20 @@ int do_trace(struct proc * caller, message * m_ptr)
 		SETPSW(rp, tr_data);
 	else
 		*(reg_t *) ((char *) &rp->p_reg + i) = (reg_t) tr_data;
-#elif defined(__arm__)
-	if (i == (int) &((struct proc *) 0)->p_reg.psr) {
+#elif defined(__arm__) || defined(__aarch64__)
+	/*
+	 * offsetof, not the address of a field of a null pointer: the older
+	 * spelling casts a pointer to int, which is a narrowing conversion
+	 * where a pointer is 64 bits wide.
+	 */
+	if (i == (int) offsetof(struct proc, p_reg.psr)) {
 		/* only selected bits are changeable */
 		SET_USR_PSR(rp, tr_data);
 	} else {
 		*(reg_t *) ((char *) &rp->p_reg + i) = (reg_t) tr_data;
 	}
+#else
+#error T_SETUSER does not know this architecture
 #endif
 	m_ptr->m_krn_lsys_sys_trace.data = 0;
 	break;

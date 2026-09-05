@@ -29,7 +29,7 @@ CFLAGS+=	-mcmodel=small
 
 .PATH:	${HERE}
 
-SRCS+=	head.S
+SRCS+=	head.S arch_system.c
 
 # The rest of the architecture layer is written by taking the bring-up kernel
 # in arch/aarch64/bringup - mmu.c, trap.c, proc.c, intr.c, usercopy.S

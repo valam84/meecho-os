@@ -152,6 +152,14 @@ SUBDIR += \
 	mkfs.mfs \
 	partition \
 	toproto
+#
+# The AArch64 kernel is handed its boot images as a single blob, because a
+# device tree can name only one extra range; this writes it. The other ports
+# get their module list from a boot monitor and need nothing here.
+#
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+=	mkbootarchive
+.endif
 .else
 SUBDIR+= .WAIT config
 .endif # defined(__MINIX)

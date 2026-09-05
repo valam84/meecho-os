@@ -1,0 +1,80 @@
+.Dd September 6, 2026
+.Dt MKBOOTARCHIVE 8
+.Os
+.Sh NAME
+.Nm mkbootarchive
+.Nd build an AArch64 boot archive
+.Sh SYNOPSIS
+.Nm
+.Op Fl v
+.Fl o Ar archive
+.Oo Ar name Ns = Oc Ns Ar file Ar ...
+.Nm
+.Fl t Ar archive
+.Sh DESCRIPTION
+.Nm
+packs the boot images of a MINIX system into a single file for the AArch64
+kernel to unpack at boot.
+.Pp
+A device tree can name one extra memory range,
+.Pa /chosen/linux,initrd-start
+and
+.Pa -end ,
+while the kernel needs a dozen separate ELF images.
+The loader is therefore handed one blob holding all of them behind a small
+index, and
+.Nm
+is what writes it.
+The kernel reads the index in
+.Fn pre_init ,
+matches the names against its boot image table, and enters each image in the
+module list.
+.Pp
+Each argument names one image.
+A bare
+.Ar file
+is stored under its last path component; the
+.Ar name Ns = Ns Ar file
+form stores it under
+.Ar name
+instead, which is what a build needs when the binary sits in a per-program
+object directory under a name of its own.
+Names are at most 32 bytes.
+Every image must be an ELF file.
+.Pp
+The order of the arguments is the order of the index, but the kernel matches
+by name, so it does not have to agree with the kernel's boot image table.
+.Pp
+The options are:
+.Bl -tag -width Ds
+.It Fl o Ar archive
+Write the archive to
+.Ar archive .
+.It Fl t Ar archive
+Print the table of contents of an existing archive and exit.
+.It Fl v
+Print the table of contents of the archive being written.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /usr/include/aarch64/bootarchive.h
+The format, as both this program and the kernel read it.
+.El
+.Sh EXAMPLES
+Build an archive of the twelve boot images in the order the kernel's boot
+image table lists them, and show what went in:
+.Bd -literal -offset indent
+mkbootarchive -v -o boot.mba ds rs pm sched vfs memory \e
+    tty mib vm pfs mfs init
+.Ed
+.Sh SEE ALSO
+.Xr boot 8
+.Sh HISTORY
+.Nm
+appeared in MINIX 3 with the AArch64 port.
+.Sh BUGS
+Numbers in the archive are little-endian, and the kernel does not byte-swap
+them.
+A big-endian AArch64 target would need both ends changed; the magic number
+would not match in the meantime, so it would be noticed rather than
+misread.

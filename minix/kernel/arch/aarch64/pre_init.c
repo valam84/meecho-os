@@ -32,6 +32,7 @@
 #include <minix/const.h>
 #include <minix/type.h>
 
+#include <machine/bootarchive.h>
 #include <machine/memory.h>
 #include <machine/vm.h>
 
@@ -234,9 +235,9 @@ scan_chosen(struct dtb_scan *s, const struct fdt_node *node)
 	/*
 	 * The one range the device tree can name. It is not a module list -
 	 * MINIX needs NR_BOOT_MODULES separate images and the tree has no way
-	 * to describe them - so turning this into one needs a boot archive
-	 * format, which is stage 5's business. Until then the range is kept
-	 * out of the free memory list and reported, and nothing is invented.
+	 * to describe them - so what the loader leaves here is a boot archive
+	 * holding all of them, and load_boot_archive() takes it apart. The
+	 * range itself is cut out of free memory either way.
 	 */
 	if ((p = fdt_getprop(node, "linux,initrd-start", &len)) != NULL &&
 	    (len == 4 || len == 8))
@@ -292,6 +293,131 @@ scan_node(void *cookie, int depth, const char *name,
 		s->ncpu++;
 
 	return 0;
+}
+
+/*===========================================================================*
+ *				the boot archive			     *
+ *===========================================================================*/
+/*
+ * An archive name against a boot image name. The field is fixed width and
+ * NUL-padded, and a name is allowed to fill it, so this is not strcmp.
+ */
+static int
+name_is(const struct boot_archive_entry *e, const char *want)
+{
+	unsigned i;
+
+	for (i = 0; i < BOOT_ARCHIVE_NAMELEN; i++) {
+		if (e->name[i] != want[i])
+			return 0;
+		if (want[i] == '\0')
+			return 1;
+	}
+
+	/*
+	 * Thirty-two bytes matched and none of them was a terminator, so the
+	 * field is full; want matches only if it ends exactly there.
+	 */
+	return want[BOOT_ARCHIVE_NAMELEN] == '\0';
+}
+
+/*
+ * Turn the loader's one range into the module list.
+ *
+ * The images are not copied and not moved. They stay where the loader put
+ * them, their range is already cut out of free memory, and the linear map
+ * will make all of it addressable a moment from now; what the list holds is
+ * physical addresses, which is what the generic kernel and VM both expect.
+ * arch_boot_proc() reads VM's image straight out of the archive, and hands
+ * the memory back when it is done with it.
+ *
+ * Images are matched by name rather than taken in order. Order is what the
+ * 32-bit ports use, because a boot monitor loads their modules in the order
+ * its own configuration lists them, and the two lists are maintained
+ * together. Here the archive is built by a separate program from arguments a
+ * build script writes, and one transposed argument would load pm's image as
+ * sched and leave nothing to say so. The names are already in the boot image
+ * table; using them costs a string compare per module and turns that mistake
+ * into a message.
+ */
+static void
+load_boot_archive(kinfo_t *cbi, phys_bytes start, phys_bytes end)
+{
+	const struct boot_archive_header *hdr;
+	const struct boot_archive_entry *ent;
+	phys_bytes total, avail;
+	unsigned count, i, m;
+
+	if (end <= start)
+		panic("no boot archive: the loader passed no initrd, and "
+		    "there is nowhere else the boot images can come from");
+
+	avail = end - start;
+
+	/*
+	 * Every field in the archive is naturally aligned within it, so the
+	 * archive has to be aligned too. This is worth checking rather than
+	 * assuming: the MMU is still off, which makes all of memory
+	 * Device-nGnRnE, and an unaligned access there faults whatever
+	 * SCTLR_EL1.A says. The fault would arrive as a silent stop, because
+	 * the message being printed would be the one describing it.
+	 */
+	if (start % 8 != 0)
+		panic("boot archive at %016lx is not 8-byte aligned", start);
+
+	if (avail < sizeof(*hdr))
+		panic("boot archive at %016lx is %lu bytes, shorter than its "
+		    "own header", start, (unsigned long)avail);
+
+	hdr = (const struct boot_archive_header *)start;
+
+	if (hdr->magic != BOOT_ARCHIVE_MAGIC)
+		panic("no boot archive at %016lx: first word %08x, expected "
+		    "%08x", start, hdr->magic, BOOT_ARCHIVE_MAGIC);
+	if (hdr->version != BOOT_ARCHIVE_VERSION)
+		panic("boot archive is version %u, this kernel reads %u",
+		    hdr->version, BOOT_ARCHIVE_VERSION);
+
+	count = hdr->count;
+	total = (phys_bytes)hdr->total_size;
+
+	if (total > avail)
+		panic("boot archive says %lu bytes, the loader left %lu",
+		    (unsigned long)total, (unsigned long)avail);
+	if (count == 0 || count > MULTIBOOT_MAX_MODS)
+		panic("boot archive holds %u images", count);
+	if (sizeof(*hdr) + (phys_bytes)count * sizeof(*ent) > total)
+		panic("boot archive index of %u entries does not fit in %lu "
+		    "bytes", count, (unsigned long)total);
+
+	ent = hdr->entry;
+
+	for (m = 0; m < NR_BOOT_MODULES; m++) {
+		const char *want = image[NR_TASKS + m].proc_name;
+
+		for (i = 0; i < count; i++)
+			if (name_is(&ent[i], want))
+				break;
+		if (i == count)
+			panic("boot archive has no image named %s", want);
+
+		if (ent[i].offset > total ||
+		    ent[i].size > total - ent[i].offset)
+			panic("boot image %s runs past the end of the archive",
+			    want);
+		if (ent[i].size == 0)
+			panic("boot image %s is empty", want);
+
+		cbi->module_list[m].mod_start =
+		    start + (phys_bytes)ent[i].offset;
+		cbi->module_list[m].mod_end =
+		    start + (phys_bytes)(ent[i].offset + ent[i].size);
+	}
+
+	cbi->mbi.mi_mods_count = NR_BOOT_MODULES;
+
+	printf("boot archive %016lx-%016lx, %u images\n", start, start + total,
+	    count);
 }
 
 /*===========================================================================*
@@ -378,14 +504,18 @@ get_parameters(kinfo_t *cbi, phys_bytes dtb)
 	if (initrd_end > initrd_start)
 		cut_memmap(cbi, initrd_start, initrd_end);
 
+	printf("MINIX/aarch64: %u core%s, memory ", scan.ncpu,
+	    scan.ncpu == 1 ? "" : "s");
+	print_memmap(cbi);
+
+	load_boot_archive(cbi, initrd_start, initrd_end);
+
 	/*
 	 * The multiboot structure is a husk on this architecture: there is no
 	 * multiboot loader, and the fields that would point back into its
-	 * tables have nothing to point at. Only the module count means
-	 * anything, and it is zero until there is a boot archive format to
-	 * describe the images - stage 5. kmain() answers that with its own
-	 * "expecting %d boot processes/modules, found %d", which is a better
-	 * failure than a list of made-up addresses.
+	 * tables have nothing to point at. What means anything is the module
+	 * list and its count, and those load_boot_archive() has just filled in
+	 * from the archive the loader was given.
 	 *
 	 * The kernel is entered in the list as an extra module, as it is on
 	 * the other two ports: VM reads it from there to find out what to
@@ -397,13 +527,6 @@ get_parameters(kinfo_t *cbi, phys_bytes dtb)
 	cbi->module_list[k].mod_end = kern_end;
 	cbi->mods_with_kernel = k + 1;
 	cbi->kern_mod = k;
-
-	printf("MINIX/aarch64: %u core%s, memory ", scan.ncpu,
-	    scan.ncpu == 1 ? "" : "s");
-	print_memmap(cbi);
-	if (initrd_end > initrd_start)
-		printf("initrd %016lx-%016lx, no boot archive format yet\n",
-		    initrd_start, initrd_end);
 }
 
 /*===========================================================================*

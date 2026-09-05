@@ -93,9 +93,23 @@ extern char boot_stack_top[];
  * User mappings for the boot process. Non-global, so their TLB entries carry
  * an ASID; PXN because EL1 must not execute a page EL0 can write, which is
  * the shape of a large family of exploits.
+ *
+ * Not UXN, unlike every set above, and this is the only place in the kernel
+ * where that is so: these are the pages the boot process executes from. UXN
+ * here cost exactly one instruction - entering EL0 raised an instruction
+ * abort on the first fetch, level 3 permission fault, before the process ran
+ * at all.
+ *
+ * One class covers the whole image, text and data alike, so the boot process
+ * runs with pages that are both writable and executable. The 32-bit ports do
+ * the same and for the same reason: pg_map() is driven by libexec's
+ * allocator callback, which is given an address and a length and not which
+ * segment they belong to, so there is nothing here to separate on. It lasts
+ * only as long as the bootstrap page table - VM builds its own, with its own
+ * per-segment protections, as soon as it runs.
  */
 #define PG_USER_RW	(PG_NORMAL | AARCH64_VM_AP_RW_ALL | AARCH64_VM_PXN | \
-			 AARCH64_VM_UXN | AARCH64_VM_NG)
+			 AARCH64_VM_NG)
 
 /* MAIR_EL1, laid out to match the indices in <machine/vm.h>. */
 #define MAIR_ATTR_DEVICE_nGnRnE	0x00UL

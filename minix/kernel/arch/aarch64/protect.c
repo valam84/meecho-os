@@ -153,7 +153,15 @@ arch_boot_proc(struct boot_image *ip, struct proc *rp)
 		execi.stack_high = kinfo.user_sp;
 		execi.stack_size = 64 * 1024;	/* must be preallocated */
 		execi.proc_e = ip->endpoint;
-		execi.hdr = (char *)mod->mod_start;	/* physical, mapped 1:1 */
+		/*
+		 * The image is read where the loader left it, through the
+		 * linear map. mod_start is physical, and a physical pointer
+		 * is not usable here: pre_init() dropped the identity map
+		 * before calling kmain(), and TTBR0 now holds the page table
+		 * this function is loading VM into. phys2vir() is the upper
+		 * half, which covers all of RAM and is never switched.
+		 */
+		execi.hdr = (char *)phys2vir(mod->mod_start);
 		execi.filesize = execi.hdr_len = mod->mod_end - mod->mod_start;
 		strlcpy(execi.progname, ip->proc_name, sizeof(execi.progname));
 		execi.frame_len = 0;

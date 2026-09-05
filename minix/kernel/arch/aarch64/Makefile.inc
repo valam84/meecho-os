@@ -31,7 +31,8 @@ CFLAGS+=	-mcmodel=small
 
 SRCS+=	head.S arch_system.c memory.c direct_tty_utils.c \
 	fdt.c pg_utils.c pre_init.c protect.c arch_do_vmctl.c \
-	arch_reset.c arch_clock.c psci.c fpu.c
+	arch_reset.c arch_clock.c psci.c fpu.c \
+	usercopy.S exception.c
 
 .include "bsp/qemu-virt/Makefile.inc"
 

@@ -10,4 +10,4 @@
 
 .PATH: ${.CURDIR}/arch/${MACHINE_ARCH}/bsp/qemu-virt
 
-SRCS+=	virt_serial.c
+SRCS+=	virt_serial.c virt_reset.c

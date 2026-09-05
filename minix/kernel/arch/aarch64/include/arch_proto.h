@@ -50,6 +50,44 @@ void __user_copy_msg_pointer_failure(void);
 void add_memmap(kinfo_t *cbi, u64_t addr, u64_t len);
 
 /*
+ * A range of physical memory the kernel needs mapped for itself: device
+ * registers, in practice.
+ *
+ * A driver has to touch its registers before paging exists, when the address
+ * it needs is the physical one, and after, when the address it needs is the
+ * one VM chose. So it registers the range early, naming a variable that holds
+ * its base, and VM calls back with the new address once the mapping is in
+ * force. The list entry is the driver's own static, because this all runs
+ * before there is anything to allocate from.
+ *
+ * The bring-up kernel has the same mechanism under the name
+ * mmu_map_device(), with itself in the place of VM. This is the tree's
+ * version, and it is the one ARM already had.
+ */
+typedef int (*kern_phys_map_mapped)(vir_bytes id, vir_bytes new_addr);
+
+typedef struct kern_phys_map {
+	phys_bytes addr;		/* physical address to map */
+	vir_bytes size;			/* size of the mapping */
+	vir_bytes id;			/* passed back to the callback */
+	int vm_flags;			/* flags for VM */
+	kern_phys_map_mapped cb;	/* called once the mapping is live */
+	phys_bytes vir;			/* the address VM chose */
+	int index;			/* index VM asks about it by */
+	struct kern_phys_map *next;
+} kern_phys_map;
+
+int kern_req_phys_map(phys_bytes base_address, vir_bytes io_size,
+	int vm_flags, kern_phys_map *priv, kern_phys_map_mapped cb,
+	vir_bytes id);
+
+/* The common case: the callback just writes the new base into *ptr. */
+int kern_phys_map_ptr(phys_bytes base_address, vir_bytes io_size,
+	int vm_flags, kern_phys_map *priv, vir_bytes ptr);
+
+int kern_phys_map_mapped_ptr(vir_bytes id, phys_bytes address);
+
+/*
  * Kernel stacks, one pair of pages per CPU: the top of the upper page is the
  * stack pointer, which leaves the lower one as the guard. k_stacks_start
  * labels the reservation, which the architecture layer makes in its own

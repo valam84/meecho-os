@@ -321,11 +321,25 @@ struct multiboot_info
 };
 typedef struct multiboot_info multiboot_info_t;
 
+/*
+ * There is no multiboot loader on this architecture. The kernel synthesises
+ * this structure from the device tree, so only what it fills in means
+ * anything - the module list and its count - and the fields that would point
+ * back into a loader's own tables stay zero. See arch/aarch64/pre_init.c.
+ *
+ * mod_start and mod_end are physical addresses and are therefore 64 bits
+ * wide here, where the other two ports have them 32. Both ends of the
+ * interface already speak in phys_bytes: the kernel copies them into
+ * boot_image.start_addr, VM reads them back out of kernel_boot_info. A
+ * 32-bit field between two 64-bit users is the same silent truncation the
+ * port has been finding elsewhere, and this header is private to aarch64, so
+ * i386 and earm are untouched.
+ */
 struct multiboot_mod_list
 {
 	/* Memory used goes from bytes 'mod_start' to 'mod_end-1' inclusive */
-	u32_t mod_start;
-	u32_t mod_end;
+	u64_t mod_start;
+	u64_t mod_end;
 	/* Module command line */
 	u32_t cmdline;
 	/* Pad struct to 16 bytes (must be zero) */

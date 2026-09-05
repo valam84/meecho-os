@@ -45,6 +45,28 @@ arch_proc_reset(struct proc *pr)
 }
 
 /*===========================================================================*
+ *				arch_proc_init				     *
+ *===========================================================================*/
+void
+arch_proc_init(struct proc *pr, const vir_bytes ip, const vir_bytes sp,
+	const vir_bytes ps_str, char *name)
+{
+	arch_proc_reset(pr);
+	strlcpy(pr->p_name, name, sizeof(pr->p_name));
+
+	pr->p_reg.pc = ip;
+	pr->p_reg.sp = sp;
+
+	/*
+	 * The first argument of a fresh process is the address of its
+	 * ps_strings block, and the procedure call standard puts a first
+	 * argument in x0 - which is retreg, the same register a system call
+	 * returns in. The two 32-bit ports do the same with r0 and eax.
+	 */
+	pr->p_reg.retreg = ps_str;
+}
+
+/*===========================================================================*
  *				arch_proc_setcontext			     *
  *===========================================================================*/
 void

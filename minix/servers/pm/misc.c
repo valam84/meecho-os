@@ -38,6 +38,13 @@ struct utsname uts_val = {
   "i386",		/* machine (cpu) type */
 #elif defined(__arm__)
   "evbarm",		/* machine (cpu) type */
+#elif defined(__aarch64__)
+  /*
+   * The MACHINE name, not the MACHINE_ARCH: build.sh calls this port
+   * evbarm64, and the two entries above make the same choice - "evbarm"
+   * rather than "arm", "i386" for both there.
+   */
+  "evbarm64",		/* machine (cpu) type */
 #else
 #error			/* oops, no 'uname -mk' */
 #endif
@@ -48,6 +55,8 @@ static char *uts_tbl[] = {
   "i386",		/* architecture */
 #elif defined(__arm__)
   "evbarm",		/* architecture */
+#elif defined(__aarch64__)
+  "evbarm64",		/* architecture */
 #endif
   NULL,			/* No kernel architecture */
   uts_val.machine,

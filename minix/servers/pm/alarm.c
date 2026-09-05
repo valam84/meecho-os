@@ -52,14 +52,29 @@ struct timeval *tv;
 
   /* In any case, the following conversion must always round up. */
 
+  /*
+   * The ceiling is the largest value that fits in a clock_t and is still
+   * positive when this interface hands it on as a long - which is what the
+   * comment above is complaining about.
+   *
+   * It used to be spelled LONG_MAX, which is that same number for as long as
+   * long and clock_t are both 32 bits wide. On LP64 they are not: clock_t
+   * stays 32 bits and LONG_MAX becomes 2^63-1, so the clamp truncated to
+   * 0xffffffff - a larger value than the overflow it was meant to guard
+   * against, and a negative one when read back as a long. Said in terms of
+   * clock_t it is 0x7fffffff on every port, the two 32-bit ones included.
+   */
+#define TICKS_MAX	((clock_t)-1 >> 1)
+
   ticks = system_hz * (unsigned long) tv->tv_sec;
   if ( (ticks / system_hz) != (unsigned long)tv->tv_sec) {
-	ticks = LONG_MAX;
+	ticks = TICKS_MAX;
   } else {
 	ticks += ((system_hz * (unsigned long)tv->tv_usec + (US-1)) / US);
   }
 
-  if (ticks > LONG_MAX) ticks = LONG_MAX;
+  if (ticks > TICKS_MAX) ticks = TICKS_MAX;
+#undef TICKS_MAX
 
   return(ticks);
 }

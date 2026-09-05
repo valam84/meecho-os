@@ -102,7 +102,8 @@ int do_rename(void);
 int do_truncate(void);
 int do_ftruncate(void);
 int truncate_vnode(struct vnode *vp, off_t newsize);
-int rdlink_direct(char *orig_path, char *link_path, struct fproc *rfp);
+int rdlink_direct(char *orig_path, char link_path[PATH_MAX],
+	struct fproc *rfp);
 
 /* lock.c */
 int lock_op(int fd, int req, vir_bytes arg);
@@ -141,9 +142,18 @@ int do_mount(void);
 int do_umount(void);
 int is_nonedev(dev_t dev);
 void mount_pfs(void);
-int mount_fs(dev_t dev, char mount_dev[PATH_MAX], char mount_path[PATH_MAX],
-	endpoint_t fs_e, int rdonly, char mount_type[FSTYPE_MAX],
-	char mount_label[LABEL_MAX]);
+/*
+ * Pointers, not arrays with bounds.
+ *
+ * The bounds said the caller must hand over buffers of those sizes, and the
+ * callers do not: main.c mounts the boot ramdisk with the literals
+ * "bootramdisk" and "/". GCC 15 checks the claim now and rejects the call,
+ * which is fair - mount_fs only ever reads these strings, and saying
+ * otherwise described a contract nobody kept.
+ */
+int mount_fs(dev_t dev, char *mount_dev, char *mount_path,
+	endpoint_t fs_e, int rdonly, char *mount_type,
+	char *mount_label);
 int unmount(dev_t dev, char label[LABEL_MAX]);
 void unmount_all(int force);
 
@@ -168,8 +178,15 @@ struct vnode *eat_path(struct lookup *resolve, struct fproc *rfp);
 struct vnode *last_dir(struct lookup *resolve, struct fproc *rfp);
 void lookup_init(struct lookup *resolve, char *path, int flags, struct
 	vmnt **vmp, struct vnode **vp);
-int get_name(struct vnode *dirp, struct vnode *entry, char *_name);
-int canonical_path(char *orig_path, struct fproc *rfp);
+/*
+ * The array bounds are part of these two declarations because the definitions
+ * state them, and GCC 15 compares the two: a prototype saying "char *" where
+ * the definition says "char[NAME_MAX + 1]" is now a diagnostic. Saying the
+ * same thing in both places is what it asks for, and it documents a contract
+ * the callers already have to honour.
+ */
+int get_name(struct vnode *dirp, struct vnode *entry, char _name[NAME_MAX + 1]);
+int canonical_path(char orig_path[PATH_MAX], struct fproc *rfp);
 int do_socketpath(void);
 
 /* pipe.c */

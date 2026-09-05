@@ -113,6 +113,15 @@ CLEANFILES+= ${f:C/\.o/.bc/}
 
 CPPFLAGS.rb.c+=		-D_LIBC
 
+# execle() calls alloca(), and <stdlib.h> only says anything about alloca
+# under _NETBSD_SOURCE, which libminc does not define.  Older GCC recognised
+# the name and expanded the builtin regardless of any declaration; GCC 15
+# under -fno-builtin emits a call instead, and alloca cannot be a library
+# function, so rs failed to link.  See also the __GNUC__ branch in
+# include/stdlib.h, which is what makes the declaration expand once it is
+# visible at all.
+CPPFLAGS.execle.c+=	-D_NETBSD_SOURCE
+
 .for f in \
 	sha2.o
 ${f} ${f:C/\.o/.bc/}:	${LIBCOMMONCDIR}/hash/sha2/${f:C/\.o/.c/}
@@ -168,8 +177,14 @@ CLEANFILES+= ${f:C/\.o/.bc/}
 CPPFLAGS.strtoul.c+=	-D_STANDALONE
 CPPFLAGS.strtoul.c+=	-I${NETBSDSRCDIR}/sys
 
+# strspn.o is here for strcspn, not for strspn.  On a 64-bit platform
+# strcspn.c compiles to nothing at all - it is guarded by "#if ULONG_MAX !=
+# 0xffffffffffffffffull" and its comment says the 64-bit version lives in
+# strspn.c, which defines both functions.  So strcspn.o alone leaves strcspn
+# undefined, which is what stopped the first server from linking.  On 32-bit
+# platforms strcspn.c still provides it and this only adds strspn.
 .for f in \
-	strcasecmp.o strcspn.o strncasecmp.o strnlen.o strlcat.o
+	strcasecmp.o strcspn.o strspn.o strncasecmp.o strnlen.o strlcat.o
 ${f} ${f:C/\.o/.bc/}:	${LIBCOMMONCDIR}/string/${f:C/\.o/.c/}
 ${f} ${f:C/\.o/.go/}:	${LIBCOMMONCDIR}/string/${f:C/\.o/.c/}
 OBJS+=	${f}

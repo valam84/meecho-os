@@ -507,8 +507,16 @@ close_filp(struct filp * f, int may_suspend)
 	f->filp_mode = FILP_CLOSED;
 	f->filp_count = 0;
   } else if (f->filp_count < 0) {
+	/*
+	 * dev_t and ino_t are 64 bits wide on every port, but the type that
+	 * is 64 bits is not the same one: unsigned long long on ILP32,
+	 * unsigned long on LP64. The %ll conversions here are right for the
+	 * first and wrong for the second, so the values are cast to what the
+	 * format actually asks for.
+	 */
 	panic("VFS: invalid filp count: %d ino %llx/%llu", f->filp_count,
-	      vp->v_dev, vp->v_inode_nr);
+	      (unsigned long long)vp->v_dev,
+	      (unsigned long long)vp->v_inode_nr);
   } else {
 	unlock_vnode(f->filp_vno);
   }

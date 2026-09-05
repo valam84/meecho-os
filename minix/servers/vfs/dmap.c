@@ -58,7 +58,7 @@ void unlock_dmap(struct dmap *dp)
 /*===========================================================================*
  *				map_driver		 		     *
  *===========================================================================*/
-static int map_driver(const char label[LABEL_MAX], devmajor_t major,
+static int map_driver(const char *label, devmajor_t major,
 	endpoint_t proc_nr_e)
 {
 /* Add a new device driver mapping in the dmap table. If the proc_nr is set to

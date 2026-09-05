@@ -255,11 +255,41 @@ int	 posix_memalign(void **, size_t, size_t);
 /*
  * Implementation-defined extensions
  */
+/*
+ * alloca, for GCC, whatever the feature-test macros say.
+ *
+ * It cannot be a library function - it has to allocate in its caller's frame
+ * - so the declarations below rely on the compiler recognising the name and
+ * expanding the builtin. Modern GCC does not do that under -fno-builtin,
+ * which is how libc and the servers are built, and then emits a call to a
+ * function nobody defines. That is not hypothetical: rs failed to link on it,
+ * through execle() in libminc, which is compiled without _NETBSD_SOURCE and
+ * so never saw any of the declarations below at all.
+ *
+ * Naming the builtin outright is what every other libc does, and it has to
+ * happen out here rather than inside _NETBSD_SOURCE for exactly the reason
+ * above. The definition inside that block is identical, so it is harmless.
+ */
+#if defined(__GNUC__) && !defined(alloca)
+#define alloca(size) __builtin_alloca(size)
+#endif
+
 #if defined(_NETBSD_SOURCE)
 #if defined(alloca) && (alloca == __builtin_alloca) && \
 	defined(__GNUC__) && (__GNUC__ < 2)
 void	*alloca(int);     /* built-in for gcc */
 #elif defined(__PCC__) && !defined(__GNUC__)
+#define alloca(size) __builtin_alloca(size)
+#elif defined(__GNUC__)
+/*
+ * alloca cannot be a library function - it has to allocate in its caller's
+ * frame - so what the plain declaration below relies on is the compiler
+ * recognising the name and expanding it regardless.  Modern GCC does not do
+ * that under -fno-builtin, which is how the servers and libc are built, and
+ * the declaration then produces a call to a function nobody defines: rs
+ * failed to link on exactly this, through execle().  Name the builtin
+ * outright, the way every other libc does.
+ */
 #define alloca(size) __builtin_alloca(size)
 #else
 void	*alloca(size_t);

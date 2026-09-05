@@ -153,7 +153,15 @@ static int get_read_vp(struct vfs_exec_info *execi,
 	return OK;
 }
 
-#define FAILCHECK(expr) if((r=(expr)) != OK) { goto pm_execfinal; } while(0)
+/*
+ * The "do" was missing. This expanded to an if statement followed by an
+ * unrelated empty "while(0)" loop - two statements, of which only the first
+ * would be governed by any enclosing if. It happens to have worked because
+ * every use stands alone as a statement; GCC 15 says so out loud.
+ */
+#define FAILCHECK(expr) do { \
+	if((r=(expr)) != OK) { goto pm_execfinal; }			\
+	} while(0)
 #define Get_read_vp(e,f,p,s,rs,fp) do { \
 	r=get_read_vp(&e,f,p,s,rs,fp); if(r != OK) { FAILCHECK(r); }	\
 	} while(0)

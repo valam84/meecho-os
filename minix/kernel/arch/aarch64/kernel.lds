@@ -25,12 +25,24 @@
 OUTPUT_ARCH(aarch64)
 
 /*
- * Where the image is loaded. 0x40000000 is the base of RAM on QEMU's virt
- * machine. On the BCM2711 RAM starts at 0 and U-Boot puts the image where it
- * likes, so this is a per-board value and will move into the board support
- * package; the virtual address the kernel runs at does not move with it.
+ * Where the image is loaded.
+ *
+ * RAM on QEMU's virt machine starts at 0x40000000, but the image does not go
+ * there. A loader placing an arm64 image puts it at the 2 MiB-aligned base of
+ * RAM plus the text_offset in the image header, and it rounds up: with a
+ * text_offset of zero QEMU lands on 0x40200000, two megabytes in. That was
+ * measured, not assumed - the first flat boot ran with the linker believing
+ * 0x40000000 and the image actually at 0x40200000, and it survived long
+ * enough to print its memory map only because early boot is PC-relative. The
+ * first absolute address taken from the link script faulted.
+ *
+ * So the number here is the one the loader actually uses, and head.S declares
+ * the matching text_offset. On the BCM2711 RAM starts at 0 and U-Boot follows
+ * the same rule with the same header, so this is a per-board value and will
+ * move into the board support package; the virtual address the kernel runs at
+ * does not move with it.
  */
-_kern_phys_base = 0x40000000;
+_kern_phys_base = 0x40200000;
 _kern_vir_base = _kern_phys_base + KERNEL_VA_OFFSET;
 _kern_offset = KERNEL_VA_OFFSET;
 
@@ -132,6 +144,14 @@ SECTIONS
 
 	/* What the architecture layer reports to VM as the kernel's extent. */
 	_kern_size = . - _kern_vir_base;
+
+	/*
+	 * The same number as an absolute symbol, for the arm64 image header in
+	 * head.S. The header needs it as a value, and an assembler cannot
+	 * subtract two symbols it will not resolve itself - so the link script,
+	 * which knows both, computes it here and the header just names it.
+	 */
+	__image_size = __kernel_end - __kernel_start;
 
 	/DISCARD/ : {
 		*(.comment)

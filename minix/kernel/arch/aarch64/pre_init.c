@@ -415,6 +415,22 @@ pre_init(phys_bytes dtb)
 	 */
 	kinfo.do_serial_debug = 1;
 
+	/*
+	 * The kernel may take memory for itself from here until kmain() says
+	 * otherwise, and it has to be allowed to before the device tree scan
+	 * below, which calls add_memmap().
+	 *
+	 * Set rather than defined. Both 32-bit ports write "int
+	 * kernel_may_alloc = 1;" at file scope in their own pre_init.c, and
+	 * that is a second definition of a variable kernel/table.c already
+	 * defines through EXTERN - which links only because those ports are
+	 * built with -fcommon, where duplicate definitions are merged. With
+	 * -fno-common, the default since GCC 10, it is a link error. This
+	 * kernel is built that way on purpose, so the value is assigned here
+	 * instead.
+	 */
+	kernel_may_alloc = 1;
+
 	boot_dtb = dtb;
 
 	get_parameters(&boot_kinfo, dtb);

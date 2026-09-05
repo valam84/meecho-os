@@ -57,6 +57,45 @@
 	.globl	_start
 _start:
 	/*
+	 * The arm64 Linux image header.
+	 *
+	 * This is what makes the image something a loader recognises as a
+	 * kernel, and that recognition is what gets the device tree handed
+	 * over: QEMU passes the blob in x0 only to an image it is willing to
+	 * treat as one, and U-Boot's "booti" wants the same header. An ELF
+	 * given to -kernel is started with x0 = 0 instead, which is a kernel
+	 * that cannot find out what machine it is on.
+	 *
+	 * The header is 64 bytes and starts with two instruction slots, since
+	 * control arrives at offset 0. The first branches over the rest of it.
+	 *
+	 * text_offset is zero on purpose. The loader places the image at the
+	 * 2 MiB-aligned base of RAM plus this offset, so zero puts it exactly
+	 * at _kern_phys_base, where the link script already expects it. The
+	 * usual Linux value of 0x80000 would land the image somewhere the
+	 * linker did not put it, which is the mismatch that kept the flat
+	 * image unusable.
+	 */
+	b	_start_boot		/* code0: branch over the header */
+	.long	0			/* code1 */
+	/*
+	 * text_offset: where in RAM the loader should put the image, counted
+	 * from the 2 MiB-aligned base. It has to agree with _kern_phys_base
+	 * in kernel.lds, and 2 MiB is what QEMU chooses when this is zero -
+	 * so saying it here rather than leaving it zero makes the agreement
+	 * explicit instead of accidental.
+	 */
+	.quad	0x200000		/* text_offset */
+	.quad	__image_size		/* image_size, computed in kernel.lds */
+	.quad	0			/* flags: 4 KiB pages, LE, any base */
+	.quad	0			/* res2 */
+	.quad	0			/* res3 */
+	.quad	0			/* res4 */
+	.ascii	"ARM\x64"		/* magic */
+	.long	0			/* res5: no PE header */
+
+_start_boot:
+	/*
 	 * The loader leaves the physical address of the device tree blob in
 	 * x0. It is the only copy we are given, so keep it in a register the
 	 * C prologue will preserve until it can be handed to pre_init.

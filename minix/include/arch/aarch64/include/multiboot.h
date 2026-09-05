@@ -349,6 +349,22 @@ typedef struct multiboot_mod_list multiboot_module_t;
 
 #define MULTIBOOT_MEMORY_AVAILABLE              1
 #define MULTIBOOT_MEMORY_RESERVED               2
+/*
+ * Not packed, unlike every other port's copy of this structure.
+ *
+ * packed is there so the layout matches what a multiboot loader writes into
+ * memory. There is no multiboot loader on AArch64 and there will not be: the
+ * kernel builds this list itself from the device tree, and nothing outside
+ * the kernel ever reads it. What packed buys instead is mm_base_addr at
+ * offset 4, misaligned for a 64-bit access.
+ *
+ * Here that is not merely slow. Until the MMU is on every access is to
+ * Device memory, where an unaligned access faults regardless of
+ * SCTLR_EL1.A - and this list is filled by add_memmap() during the device
+ * tree scan, long before the MMU is on. GCC emits a plain "ldr" for the
+ * field, because unaligned access is fine on Normal memory, and the kernel
+ * died on the first entry it wrote.
+ */
 struct multiboot_mmap_entry
 {
 	u32_t size;
@@ -357,7 +373,7 @@ struct multiboot_mmap_entry
 #define MULTIBOOT_MEMORY_AVAILABLE              1
 #define MULTIBOOT_MEMORY_RESERVED               2
 	u32_t type;
-} __attribute__((packed));
+};
 typedef struct multiboot_mmap_entry multiboot_memory_map_t;
 
 #endif /* __ASSEMBLY__ */

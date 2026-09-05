@@ -76,7 +76,7 @@ CFLAGS=		-Wall -Wextra -Werror -O2 -g \
 # tree build reaches the same directory through
 # minix/kernel/Makefile; the register frame (stackframe.h) lives there so
 # that the kernel, libc and the signal context agree on one layout.
-MINIX_ARCH_INCLUDE=	../../../include/arch/aarch64/include
+MINIX_ARCH_INCLUDE=	../../../../include/arch/aarch64/include
 
 ASFLAGS=	-mcpu=$(CPU) -g
 

@@ -37,7 +37,9 @@
 
 #include "archconst.h"
 #include "arch_proto.h"
+#include "trap.h"
 #include "bsp_serial.h"
+#include "bsp_intr.h"
 #include "fdt.h"
 
 /* Section boundaries from kernel.lds; physical here, the MMU being off. */
@@ -418,6 +420,23 @@ pre_init(phys_bytes dtb)
 	get_parameters(&boot_kinfo, dtb);
 
 	/*
+	 * The exception vectors, against their physical address. From here on
+	 * a fault is diagnosable; before this point one stops the machine
+	 * without a word, which is why the console came first. VBAR_EL1 is
+	 * written again after the move to the upper half, where the same
+	 * expression yields the virtual address.
+	 */
+	trap_init();
+
+	/*
+	 * Where the interrupt controller's registers are, so that the maps
+	 * built below cover them. intr_init() itself runs much later, from
+	 * kmain(), by which time this address has been rewritten to its
+	 * kernel-virtual value by the callback loop in pre_init_high().
+	 */
+	bsp_intr_pre_init();
+
+	/*
 	 * Two maps. The identity map keeps this code addressable for the few
 	 * instructions between setting SCTLR_EL1.M and branching high; the
 	 * kernel map is where the kernel lives from then on.
@@ -456,6 +475,14 @@ pre_init_high(void)
 	 */
 	for (m = kern_phys_map_list(); m != NULL; m = m->next)
 		m->cb(m->id, (phys_bytes)phys2vir(m->addr));
+
+	/*
+	 * VBAR_EL1 again, now that taking the address of the vector table
+	 * yields its upper-half address. This has to happen before the
+	 * identity map goes: between the two calls the old value still
+	 * points at something mapped, so a fault in here is still reportable.
+	 */
+	trap_init();
 
 	pg_drop_identity();
 

@@ -34,6 +34,8 @@
 #include "archconst.h"
 #include "arch_proto.h"
 
+#include "bsp_timer.h"
+
 /*
  * How the system counter relates to the units the rest of the kernel counts
  * in. Filled in by cycles_accounting_init().
@@ -66,6 +68,66 @@ read_tsc_64(u64_t *t)
 	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(v));
 
 	*t = v;
+}
+
+/*===========================================================================*
+ *				init_local_timer			     *
+ *===========================================================================*/
+int
+init_local_timer(unsigned freq)
+{
+	/*
+	 * ARM also works out its counter rate here, because there the counter
+	 * is the timer peripheral and nothing reports its frequency until the
+	 * driver is up. Here the rate is in CNTFRQ_EL0 and
+	 * cycles_accounting_init() has already read it - which is just as
+	 * well, since the generic kernel calls that first.
+	 */
+	bsp_timer_init(freq);
+
+	return 0;
+}
+
+/*===========================================================================*
+ *				stop_local_timer			     *
+ *===========================================================================*/
+void
+stop_local_timer(void)
+{
+	bsp_timer_stop();
+}
+
+/*===========================================================================*
+ *				restart_local_timer			     *
+ *===========================================================================*/
+void
+restart_local_timer(void)
+{
+	/*
+	 * Nothing to restart. This exists for architectures whose timer is
+	 * one-shot and has to be rearmed after an idle period; the generic
+	 * timer's comparator is advanced by every tick in
+	 * bsp_timer_int_handler() and keeps running through idle, so there is
+	 * no state to recover. ARM's is empty for the same reason.
+	 */
+}
+
+/*===========================================================================*
+ *			   register_local_timer_handler			     *
+ *===========================================================================*/
+int
+register_local_timer_handler(const irq_handler_t handler)
+{
+	return bsp_register_timer_handler(handler);
+}
+
+/*===========================================================================*
+ *			     arch_timer_int_handler			     *
+ *===========================================================================*/
+void
+arch_timer_int_handler(void)
+{
+	bsp_timer_int_handler();
 }
 
 /*===========================================================================*

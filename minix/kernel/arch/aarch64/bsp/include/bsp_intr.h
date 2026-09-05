@@ -3,20 +3,31 @@
 
 /*
  * The interrupt controller, as the board support package provides it. The
- * same three calls ARM has, so that the contract keeps its shape across the
- * two architectures.
+ * same set ARM has, so that the contract keeps its shape across the two
+ * architectures.
  *
  * bsp_irq_handle() is called from the IRQ vector with nothing decided yet: it
- * is the controller that knows which line fired and how to acknowledge it,
- * and on GICv2 both of those are reads and writes of the CPU interface
- * registers. Everything above it - the hook table, the notification to the
- * driver - is generic.
+ * is the controller that knows which line fired and how to retire it, and on
+ * GICv2 both are reads and writes of the CPU interface. Everything above it -
+ * the hook chain, the notification to the driver - is generic, and this
+ * reaches it by calling irq_handle().
  *
- * The implementations arrive with group 3; the exception path calls into them
- * from group 4, which is why the header is here first.
+ * bsp_intr_pre_init() is the odd one out and is not in ARM's contract. It
+ * registers the controller's registers with kern_phys_map before paging
+ * exists, which has to happen inside pre_init() while the mappings are still
+ * being built; intr_init() itself runs much later, from kmain(), by which
+ * time the addresses have been rewritten to their kernel-virtual values.
+ * ARM does not need it because bsp_init() runs early enough there.
  */
+void bsp_intr_pre_init(void);
+
+int intr_init(int auto_eoi);
+
 void bsp_irq_handle(void);
 void bsp_irq_unmask(int irq);
 void bsp_irq_mask(int irq);
+
+/* How many interrupt IDs this controller actually implements. */
+int bsp_irq_lines(void);
 
 #endif /* _BSP_INTR_H_ */

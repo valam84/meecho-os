@@ -58,6 +58,15 @@ aarch64/vm.h
 #define AARCH64_VM_AP_RO_EL1	(2UL << 6)	/* EL1 read-only, EL0 no access */
 #define AARCH64_VM_AP_RO_ALL	(3UL << 6)	/* EL1 and EL0 read-only */
 #define AARCH64_VM_AP_MASK	(3UL << 6)
+/*
+ * AP[2] on its own: the read-only bit, and it means the same thing in both
+ * of the encodings above. The kernel needs the question in that form,
+ * because it reaches a process's pages through the linear map and therefore
+ * with its own permissions - a mapping VM made read-only, a copy-on-write
+ * page for instance, has to be recognised by reading the descriptor rather
+ * than by taking a fault the way the 32-bit ports do.
+ */
+#define AARCH64_VM_AP_RO	(2UL << 6)
 #define AARCH64_VM_SH_NONE	(0UL << 8)
 #define AARCH64_VM_SH_OUTER	(2UL << 8)
 #define AARCH64_VM_SH_INNER	(3UL << 8)

@@ -252,6 +252,35 @@ pg_add_ram(phys_bytes base, phys_bytes size)
 }
 
 /*===========================================================================*
+ *				pg_is_ram				     *
+ *===========================================================================*/
+/*
+ * Whether a physical address is one the linear map covers.
+ *
+ * phys2vir() is arithmetic and will happily produce an address for anything,
+ * but only RAM is mapped in the upper half: device registers are mapped
+ * where kern_phys_map asked for them and everything else is not mapped at
+ * all. So the memory code has to ask before it dereferences a physical
+ * address that came out of a page table, or out of a process. Getting it
+ * wrong would be a data abort inside the kernel with no handler - a panic
+ * where the honest answer is EFAULT.
+ *
+ * The list is one or two entries long on every machine we have seen, so this
+ * is a couple of comparisons and not worth an index.
+ */
+int
+pg_is_ram(phys_bytes pa)
+{
+	unsigned i;
+
+	for (i = 0; i < nram; i++)
+		if (pa >= ram[i].base && pa - ram[i].base < ram[i].size)
+			return 1;
+
+	return 0;
+}
+
+/*===========================================================================*
  *				add_memmap				     *
  *===========================================================================*/
 void

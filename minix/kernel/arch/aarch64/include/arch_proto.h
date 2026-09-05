@@ -16,10 +16,19 @@
 
 #include "cpufunc.h"
 
-/* klib.S */
 __dead void reset(void);
 phys_bytes vir2phys(void *);
-vir_bytes phys_memset(phys_bytes ph, u32_t c, phys_bytes bytes);
+
+/*
+ * There is deliberately no phys_copy() or phys_memset() here, and no klib.S
+ * for them to live in. On the 32-bit ports those are the fault-catching
+ * primitives the memory code copies through: it opens a window onto a page
+ * that is not in the current address space and then has to survive the page
+ * turning out to be unmapped or read-only. Here the kernel resolves an
+ * address to a physical page itself and reaches it through the linear map,
+ * so what would have been a fault is a descriptor it has already read. See
+ * memory.c.
+ */
 
 /*
  * The other direction: the kernel's view of a physical address.
@@ -86,8 +95,12 @@ extern phys_bytes boot_dtb;
  *
  * pg_clear(), pg_load(), pg_map() and pg_info() are about the other page
  * table: the lower-half one the boot process is loaded into and VM inherits.
+ *
+ * pg_is_ram() answers whether phys2vir() of an address is a pointer the
+ * kernel may dereference: the linear map covers RAM and nothing else.
  */
 void pg_add_ram(phys_bytes base, phys_bytes size);
+int pg_is_ram(phys_bytes pa);
 phys_bytes pg_alloc_page(kinfo_t *cbi);
 phys_bytes pg_roundup(phys_bytes b);
 phys_bytes pg_rounddown(phys_bytes b);

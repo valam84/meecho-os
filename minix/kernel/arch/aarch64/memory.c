@@ -1,13 +1,46 @@
 /*
- * Physical memory as the kernel hands it to VM.
+ * How the kernel reaches memory that is not its own.
  *
- * Two things live here so far. One is the list of physical ranges the kernel
- * needs mapped for itself - device registers, almost always - which drivers
- * register before paging exists and VM maps once it does. The other is the
- * pair of calls VM walks that list with.
+ * Three things live here. Reading a process's translation tables
+ * (vm_lookup); copying and clearing memory in another address space
+ * (virtual_copy_f, vm_memset and the calls that wrap them); and the list of
+ * physical ranges the kernel needs mapped for itself, which drivers register
+ * before paging exists and VM maps once it does.
  *
- * The kernel's own page table work is not here yet; it is the next piece of
- * the memory group and comes over from arch/aarch64/bringup/mmu.c.
+ *
+ * Why there are no windows here
+ * -----------------------------
+ * i386 and earm cannot see all of physical memory at once, so their version
+ * of this file is built around freepdes: a pair of page directory entries
+ * kept free so the kernel can point one at a foreign page, use it, and put
+ * it back. Everything else there follows from that - createpde(), the
+ * reload after a changed mapping, the per-CPU stale TLB bitmap.
+ *
+ * None of it exists here. All of RAM is mapped in the upper half at a fixed
+ * offset, so phys2vir() of a physical address is already a pointer the
+ * kernel can use, for any page, at any time. What is left of "copy between
+ * two address spaces" is: walk the source table, walk the destination table,
+ * memcpy through the linear map.
+ *
+ *
+ * What that costs, and what has to be checked by hand
+ * --------------------------------------------------
+ * The linear map is the kernel's own mapping, with the kernel's own
+ * permissions. It does not carry the permissions VM gave the page in the
+ * process. So a write the process itself would not be allowed to make - to a
+ * copy-on-write page, above all - goes through silently unless somebody
+ * looks.
+ *
+ * On the 32-bit ports nobody has to look: they reach the page through a
+ * window carrying the process's own descriptor, the write faults, and the
+ * fault is turned into a request for VM to sort the page out. Here the fault
+ * would never happen, so the permission is read out of the descriptor
+ * instead and the same request is made deliberately. That is why vm_lookup
+ * has a private form that returns the descriptor, and why the copy paths ask
+ * for read or for write rather than just for an address.
+ *
+ * This is also why there is no fault-catching primitive in this file. See
+ * PORTING-LOG.md, stage 4 group 2.
  */
 
 #include "kernel/kernel.h"
@@ -24,6 +57,14 @@
 #include "arch_proto.h"
 #include "kernel/proto.h"
 #include "kernel/debug.h"
+
+/*
+ * Whether a process has an address space of its own. The kernel tasks do
+ * not: they run in the upper half, which every address space shares. A user
+ * process does not either until VM has given it one, which is what
+ * VMCTL_SETADDRSPACE does.
+ */
+#define HASPT(procptr)	((procptr)->p_seg.p_ttbr != 0)
 
 /* Ranges drivers have asked for, newest first. */
 static kern_phys_map *kern_phys_map_head;
@@ -74,6 +115,556 @@ memory_init(void)
 	 * has a freepde() of its own in servers/vm/pt.c, and it will go the
 	 * same way when that file learns about four levels of tables.
 	 */
+}
+
+/*===========================================================================*
+ *				mem_clear_mapcache			     *
+ *===========================================================================*/
+void
+mem_clear_mapcache(void)
+{
+	/*
+	 * VM calls this through VMCTL_CLEARMAPCACHE to say that it has
+	 * changed a mapping the kernel may have cached. The kernel caches
+	 * none: every access to another address space walks that space's
+	 * tables at the moment of the access, so there is nothing to forget.
+	 *
+	 * The 32-bit ports clear their freepde slots here, which is the
+	 * cache in question.
+	 */
+}
+
+/*===========================================================================*
+ *				mem_kern_ptr				     *
+ *===========================================================================*/
+/*
+ * A pointer the kernel may use for the physical page at pa, or NULL.
+ *
+ * Only RAM is in the linear map. A physical address that came out of a page
+ * table can name device registers, or nothing at all if the table is
+ * damaged, and phys2vir() would produce an address for either. Dereferencing
+ * it would be a data abort in the kernel with no handler, where the honest
+ * answer to the caller is EFAULT.
+ */
+static void *
+mem_kern_ptr(phys_bytes pa)
+{
+	if (!pg_is_ram(pa))
+		return NULL;
+
+	return (void *)phys2vir(pa);
+}
+
+/*===========================================================================*
+ *				vm_lookup_desc				     *
+ *===========================================================================*/
+/*
+ * Translate a virtual address in a process the way the hardware would, and
+ * hand back the leaf descriptor as well as the physical address.
+ *
+ * The descriptor is what the callers in this file are really after: it
+ * carries the permission bits, and on this architecture the kernel has to
+ * consult them itself. It is a 64-bit value, which is why this is a private
+ * function and not vm_lookup()'s ptent parameter.
+ */
+static int
+vm_lookup_desc(const struct proc *proc, vir_bytes virtual,
+	phys_bytes *physical, u64_t *desc)
+{
+	phys_bytes table_pa;
+	int level;
+
+	assert(proc);
+	assert(physical);
+	assert(!isemptyp(proc));
+	assert(HASPT(proc));
+
+	/*
+	 * A process's table translates the lower half only. An upper-half
+	 * address does not merely have no entry in it: bits 48 and above are
+	 * not part of any index, so walking one would quietly answer for a
+	 * different address altogether. 0xffff_0000_4000_0000 would be looked
+	 * up as 0x4000_0000. Refuse it here rather than return a plausible
+	 * wrong page.
+	 */
+	if (virtual >= (1UL << AARCH64_VA_BITS))
+		return EFAULT;
+
+	table_pa = proc->p_seg.p_ttbr & AARCH64_VM_ADDR_MASK;
+
+	for (level = 0; ; level++) {
+		unsigned shift = AARCH64_VM_LEVEL_SHIFT(level);
+		u64_t *table = mem_kern_ptr(table_pa);
+		u64_t e;
+
+		if (table == NULL)
+			return EFAULT;
+
+		e = table[AARCH64_VM_INDEX(virtual, level)];
+
+		if (!(e & AARCH64_VM_VALID))
+			return EFAULT;
+
+		if (level == 3) {
+			/*
+			 * At the last level bit 1 distinguishes a page from a
+			 * reserved encoding, not a table from a block.
+			 */
+			if (!(e & AARCH64_VM_PAGE))
+				return EFAULT;
+		} else if (e & AARCH64_VM_TABLE) {
+			table_pa = AARCH64_VM_PFA(e);
+			continue;
+		} else if (level == 0) {
+			/* The 4 KiB granule has no level 0 block. */
+			return EFAULT;
+		}
+
+		/* A leaf: a page at level 3, a block at level 1 or 2. */
+		if (desc != NULL)
+			*desc = e;
+		*physical = AARCH64_VM_PFA(e) | (virtual & ((1UL << shift) - 1));
+
+		return OK;
+	}
+}
+
+/*===========================================================================*
+ *				vm_lookup				     *
+ *===========================================================================*/
+int
+vm_lookup(const struct proc *proc, const vir_bytes virtual,
+	phys_bytes *physical, u32_t *ptent)
+{
+	/*
+	 * ptent is not supported and cannot be. The generic prototype types
+	 * it as a pointer to a 32-bit word, which was a page table entry when
+	 * every port had 32-bit ones; a VMSAv8-64 descriptor is 64 bits wide
+	 * and would arrive here with its upper attributes - PXN, UXN, the
+	 * software bits - cut off. Handing back a truncated descriptor is
+	 * worse than not answering.
+	 *
+	 * Nothing in the tree asks: every caller of vm_lookup(), in the
+	 * generic kernel and in the two 32-bit ports alike, passes NULL. If
+	 * one ever wants the descriptor, the prototype in kernel/proto.h is
+	 * what has to widen, and vm_lookup_desc() above is already the
+	 * function it wants.
+	 */
+	if (ptent != NULL)
+		panic("vm_lookup: ptent cannot hold an aarch64 descriptor");
+
+	return vm_lookup_desc(proc, virtual, physical, NULL);
+}
+
+/*===========================================================================*
+ *				vm_lookup_range				     *
+ *===========================================================================*/
+size_t
+vm_lookup_range(const struct proc *proc, vir_bytes vir_addr,
+	phys_bytes *phys_addr, size_t bytes)
+{
+	/*
+	 * How much of the range starting at vir_addr is contiguous in
+	 * physical memory: between 0 and bytes. If nonzero and phys_addr is
+	 * not NULL, the physical address of the start is stored there. The
+	 * caller has already established that the range is valid for the
+	 * process; this only answers about contiguity.
+	 */
+	phys_bytes phys, next_phys;
+	size_t len;
+
+	assert(proc);
+	assert(bytes > 0);
+	assert(HASPT(proc));
+
+	if (vm_lookup_desc(proc, vir_addr, &phys, NULL) != OK)
+		return 0;
+
+	if (phys_addr != NULL)
+		*phys_addr = phys;
+
+	len = AARCH64_PAGE_SIZE - (vir_addr % AARCH64_PAGE_SIZE);
+	vir_addr += len;
+	next_phys = phys + len;
+
+	while (len < bytes) {
+		if (vm_lookup_desc(proc, vir_addr, &phys, NULL) != OK)
+			break;
+
+		if (next_phys != phys)
+			break;
+
+		len += AARCH64_PAGE_SIZE;
+		vir_addr += AARCH64_PAGE_SIZE;
+		next_phys += AARCH64_PAGE_SIZE;
+	}
+
+	/* The last step may have gone past what was asked for. */
+	return MIN(bytes, len);
+}
+
+/*===========================================================================*
+ *				vm_check_range				     *
+ *===========================================================================*/
+int
+vm_check_range(struct proc *caller, struct proc *target, vir_bytes vir_addr,
+	size_t bytes, int writeflag)
+{
+	/*
+	 * Ask VM to make a range of the target's memory usable, on behalf of
+	 * caller. The call suspends caller and is expected to be made a
+	 * second time once VM has answered, which is when the result of the
+	 * first attempt is returned.
+	 */
+	int r;
+
+	if ((caller->p_misc_flags & MF_KCALL_RESUME) &&
+	    (r = caller->p_vmrequest.vmresult) != OK)
+		return r;
+
+	vm_suspend(caller, target, vir_addr, bytes, VMSTYPE_KERNELCALL,
+	    writeflag);
+
+	return VMSUSPEND;
+}
+
+/*===========================================================================*
+ *			      check_resumed_caller			     *
+ *===========================================================================*/
+/* What VM decided, if this call is the second half of a suspended one. */
+static int
+check_resumed_caller(struct proc *caller)
+{
+	if (caller && (caller->p_misc_flags & MF_KCALL_RESUME)) {
+		assert(caller->p_vmrequest.vmresult != VMSUSPEND);
+		return caller->p_vmrequest.vmresult;
+	}
+
+	return OK;
+}
+
+/*===========================================================================*
+ *				resolve					     *
+ *===========================================================================*/
+/*
+ * Turn an address in some address space into one the kernel can use, and say
+ * how far it stays usable.
+ *
+ * pr == NULL means the address is physical; a kernel task means it is
+ * already a kernel address; anything else means a walk of that process's
+ * tables. *bytes is truncated to what this one answer covers, which for a
+ * user process is the rest of the page.
+ *
+ * Failure is EFAULT and covers both "not mapped" and "not writable by the
+ * process", because both of them are things VM can fix and the caller treats
+ * them the same way.
+ */
+static int
+resolve(const struct proc *pr, vir_bytes addr, vir_bytes *bytes, int write,
+	void **kaddr)
+{
+	phys_bytes pa;
+	u64_t desc;
+
+	if (pr == NULL) {
+		/*
+		 * A physical address. The linear map is a fixed offset, so a
+		 * physically contiguous range is contiguous there too and
+		 * needs no chunking - but a range running off the end of RAM
+		 * would leave the map, so both ends are checked.
+		 */
+		if ((*kaddr = mem_kern_ptr(addr)) == NULL)
+			return EFAULT;
+		if (!pg_is_ram(addr + *bytes - 1))
+			return EFAULT;
+
+		return OK;
+	}
+
+	if (iskernelp(pr)) {
+		/*
+		 * A kernel address, and the kernel half is mapped the same way
+		 * in every address space because it is in TTBR1 and TTBR1 is
+		 * never switched. Nothing to translate.
+		 */
+		*kaddr = (void *)addr;
+		return OK;
+	}
+
+	if (!HASPT(pr))
+		return EFAULT;
+
+	if (vm_lookup_desc(pr, addr, &pa, &desc) != OK)
+		return EFAULT;
+
+	/*
+	 * The write permission is the process's, not the kernel's. Through
+	 * the linear map the kernel could write here regardless; that is
+	 * exactly what must not happen to a page VM is holding read-only for
+	 * copy-on-write. Refusing sends the caller to vm_suspend(), which is
+	 * where the 32-bit ports arrive by way of a page fault.
+	 */
+	if (write && (desc & AARCH64_VM_AP_RO))
+		return EFAULT;
+
+	if ((*kaddr = mem_kern_ptr(pa)) == NULL)
+		return EFAULT;
+
+	/*
+	 * One page at a time. A block descriptor would let this go further,
+	 * but VM builds user address spaces out of 4 KiB pages, so the case
+	 * does not arise and guessing at it would be untested code.
+	 */
+	*bytes = MIN(*bytes,
+	    AARCH64_PAGE_SIZE - (addr % AARCH64_PAGE_SIZE));
+
+	return OK;
+}
+
+/*===========================================================================*
+ *				lin_lin_copy				     *
+ *===========================================================================*/
+/*
+ * Copy between two address spaces, either of which may be physical memory,
+ * the kernel, or a process.
+ *
+ * The name is the one i386 and earm use for the same job, so that the three
+ * can be compared; the body is not. There is no window to open, no page
+ * directory to reload and no fault to catch - just two lookups and a copy,
+ * bounded by whichever side runs out of contiguous memory first.
+ */
+static int
+lin_lin_copy(struct proc *srcproc, vir_bytes srclinaddr,
+	struct proc *dstproc, vir_bytes dstlinaddr, vir_bytes bytes)
+{
+	if (srcproc)
+		assert(!RTS_ISSET(srcproc, RTS_SLOT_FREE));
+	if (dstproc)
+		assert(!RTS_ISSET(dstproc, RTS_SLOT_FREE));
+	if (srcproc)
+		assert(!RTS_ISSET(srcproc, RTS_VMINHIBIT));
+	if (dstproc)
+		assert(!RTS_ISSET(dstproc, RTS_VMINHIBIT));
+
+	while (bytes > 0) {
+		vir_bytes chunk = bytes;
+		void *src, *dst;
+
+		if (resolve(srcproc, srclinaddr, &chunk, 0, &src) != OK)
+			return EFAULT_SRC;
+		if (resolve(dstproc, dstlinaddr, &chunk, 1, &dst) != OK)
+			return EFAULT_DST;
+
+		/*
+		 * The source lookup ran before the destination shortened the
+		 * chunk. That is fine - it answered about the first byte, and
+		 * a shorter run starting there is still inside what it
+		 * covered.
+		 */
+		memcpy(dst, src, chunk);
+
+		bytes -= chunk;
+		srclinaddr += chunk;
+		dstlinaddr += chunk;
+	}
+
+	return OK;
+}
+
+/*===========================================================================*
+ *				virtual_copy_f				     *
+ *===========================================================================*/
+int
+virtual_copy_f(struct proc *caller, struct vir_addr *src_addr,
+	struct vir_addr *dst_addr, vir_bytes bytes, int vmcheck)
+{
+	struct vir_addr *vir_addr[2];
+	struct proc *procs[2];
+	int i, r;
+
+	assert((vmcheck && caller) || (!vmcheck && !caller));
+
+	if (bytes <= 0)
+		return EDOM;
+
+	vir_addr[_SRC_] = src_addr;
+	vir_addr[_DST_] = dst_addr;
+
+	for (i = _SRC_; i <= _DST_; i++) {
+		endpoint_t proc_e = vir_addr[i]->proc_nr_e;
+		int proc_nr;
+
+		if (proc_e == NONE) {
+			procs[i] = NULL;	/* a physical address */
+		} else {
+			if (!isokendpt(proc_e, &proc_nr)) {
+				printf("virtual_copy: no reasonable "
+				    "endpoint\n");
+				return ESRCH;
+			}
+			procs[i] = proc_addr(proc_nr);
+		}
+	}
+
+	if ((r = check_resumed_caller(caller)) != OK)
+		return r;
+
+	r = lin_lin_copy(procs[_SRC_], vir_addr[_SRC_]->offset,
+	    procs[_DST_], vir_addr[_DST_]->offset, bytes);
+	if (r == OK)
+		return OK;
+
+	if (r != EFAULT_SRC && r != EFAULT_DST)
+		panic("lin_lin_copy failed: %d", r);
+
+	if (!vmcheck || !caller)
+		return r;
+
+	/*
+	 * One side was unmapped, or - and this is the case the 32-bit ports
+	 * reach through a page fault instead - mapped in a way that forbids
+	 * the access. Either way VM is the one who can do something about it,
+	 * and the call is suspended until it has.
+	 */
+	if (r == EFAULT_SRC) {
+		assert(procs[_SRC_]);
+		vm_suspend(caller, procs[_SRC_], vir_addr[_SRC_]->offset,
+		    bytes, VMSTYPE_KERNELCALL, 0);
+	} else {
+		assert(procs[_DST_]);
+		vm_suspend(caller, procs[_DST_], vir_addr[_DST_]->offset,
+		    bytes, VMSTYPE_KERNELCALL, 1);
+	}
+
+	return VMSUSPEND;
+}
+
+/*===========================================================================*
+ *				data_copy				     *
+ *===========================================================================*/
+int
+data_copy(const endpoint_t from_proc, const vir_bytes from_addr,
+	const endpoint_t to_proc, const vir_bytes to_addr, size_t bytes)
+{
+	struct vir_addr src, dst;
+
+	src.offset = from_addr;
+	dst.offset = to_addr;
+	src.proc_nr_e = from_proc;
+	dst.proc_nr_e = to_proc;
+	assert(src.proc_nr_e != NONE);
+	assert(dst.proc_nr_e != NONE);
+
+	return virtual_copy(&src, &dst, bytes);
+}
+
+/*===========================================================================*
+ *				data_copy_vmcheck			     *
+ *===========================================================================*/
+int
+data_copy_vmcheck(struct proc *caller, const endpoint_t from_proc,
+	const vir_bytes from_addr, const endpoint_t to_proc,
+	const vir_bytes to_addr, size_t bytes)
+{
+	struct vir_addr src, dst;
+
+	src.offset = from_addr;
+	dst.offset = to_addr;
+	src.proc_nr_e = from_proc;
+	dst.proc_nr_e = to_proc;
+	assert(src.proc_nr_e != NONE);
+	assert(dst.proc_nr_e != NONE);
+
+	return virtual_copy_vmcheck(caller, &src, &dst, bytes);
+}
+
+/*===========================================================================*
+ *				vm_memset				     *
+ *===========================================================================*/
+int
+vm_memset(struct proc *caller, endpoint_t who, phys_bytes ph, int c,
+	phys_bytes count)
+{
+	struct proc *whoptr = NULL;
+	phys_bytes left = count;
+	vir_bytes cur = ph;
+	int r;
+
+	if ((r = check_resumed_caller(caller)) != OK)
+		return r;
+
+	/* NONE means ph is physical; anything else means it is virtual. */
+	if (who != NONE && !(whoptr = endpoint_lookup(who)))
+		return ESRCH;
+
+	c &= 0xFF;
+
+	while (left > 0) {
+		vir_bytes chunk = left;
+		void *dst;
+
+		if (resolve(whoptr, cur, &chunk, 1, &dst) != OK) {
+			/*
+			 * A process can be helped; a bad physical address
+			 * cannot, and the caller had no business handing one
+			 * over.
+			 */
+			if (whoptr == NULL)
+				panic("vm_memset: bad physical address "
+				    "0x%lx", (unsigned long)cur);
+
+			vm_suspend(caller, whoptr, ph, count,
+			    VMSTYPE_KERNELCALL, 1);
+			return VMSUSPEND;
+		}
+
+		memset(dst, c, chunk);
+
+		cur += chunk;
+		left -= chunk;
+	}
+
+	return OK;
+}
+
+/*===========================================================================*
+ *			     __switch_address_space			     *
+ *===========================================================================*/
+void
+__switch_address_space(struct proc *p, struct proc **__ptproc)
+{
+	reg_t new_ttbr = p->p_seg.p_ttbr;
+
+	if (new_ttbr == 0)
+		return;
+
+	/*
+	 * Only TTBR0 changes. The kernel is in TTBR1 and stays there through
+	 * every switch, which is the whole reason the upper half was chosen
+	 * at stage 2.3: there is no kernel mapping to rebuild and no window
+	 * to invalidate, and a process cannot even name a kernel address.
+	 */
+	if (new_ttbr == read_ttbr0())
+		return;
+
+	write_ttbr0(new_ttbr);
+
+	/*
+	 * And the whole TLB goes, because every address space is currently
+	 * ASID 0. User mappings are made non-global precisely so that this
+	 * would not be necessary - a tagged entry survives a switch and is
+	 * still valid when its process runs again - but nothing allocates
+	 * ASIDs yet, and two address spaces sharing a tag is not a slow
+	 * kernel, it is a wrong one.
+	 *
+	 * What replaces this is an ASID allocator and "tlbi aside1is" for the
+	 * outgoing tag only; it belongs with the scheduler, which is the
+	 * thing that can say how often this path runs. Recorded in
+	 * PORTING-LOG.md, stage 4 group 2.
+	 */
+	refresh_tlb();
+
+	*__ptproc = p;
 }
 
 /*===========================================================================*

@@ -630,12 +630,19 @@ static int insert_arg(char stack[ARG_MAX], size_t *stk_bytes, char *arg,
 
 	int const arg_len = strlen(arg) + 1;
 
-	/* Offset to argv[0][0] in the stack frame. */
-	int const a0 = (int)(((char **)stack)[1] - *vsp);
+	/*
+	 * Offset to argv[0][0] in the stack frame.
+	 *
+	 * long, not int: this is the difference between two addresses in the
+	 * process, and on LP64 an int cannot hold one. It has to stay signed,
+	 * because the check below is what catches an argv[0] pointing outside
+	 * the frame.
+	 */
+	long const a0 = (long)(vir_bytes)((char **)stack)[1] - (long)*vsp;
 
 	/* Check that argv[0] points within the stack frame. */
 	if ((a0 < 0) || (a0 >= old_bytes)) {
-		printf("vfs:: argv[0][] not within stack range!! %i\n", a0);
+		printf("vfs:: argv[0][] not within stack range!! %ld\n", a0);
 		return FALSE;
 	}
 
@@ -674,7 +681,7 @@ static int insert_arg(char stack[ARG_MAX], size_t *stk_bytes, char *arg,
 	}
 
 	/* set argv[0] correctly */
-	((char **) stack)[1] = (char *) a0 - arg_len + *vsp;
+	((char **) stack)[1] = (char *)((vir_bytes)(a0 - arg_len) + *vsp);
 
 	/* Update stack pointer in the process address space. */
 	*vsp -= offset;
@@ -719,7 +726,7 @@ static int read_seg(struct exec_info *execi, off_t off, vir_bytes seg_addr, size
   if (r == OK && cum_io != seg_bytes)
 	printf("VFS: read_seg segment has not been read properly\n");
 
-	return(r);
+  return(r);
 }
 
 

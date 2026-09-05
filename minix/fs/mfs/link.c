@@ -14,8 +14,8 @@
 static int freesp_inode(struct inode *rip, off_t st, off_t end);
 static int remove_dir(struct inode *rldirp, struct inode *rip, char
 	dir_name[MFS_NAME_MAX]);
-static int unlink_file(struct inode *dirp, struct inode *rip, char
-	file_name[MFS_NAME_MAX]);
+static int unlink_file(struct inode *dirp, struct inode *rip,
+	const char *file_name);
 static off_t nextblock(off_t pos, int zone_size);
 static void zerozone_half(struct inode *rip, off_t pos, int half, int
 	zone_size);
@@ -219,7 +219,7 @@ char dir_name[MFS_NAME_MAX];		/* name of directory to be removed */
 static int unlink_file(dirp, rip, file_name)
 struct inode *dirp;		/* parent directory of file */
 struct inode *rip;		/* inode of file, may be NULL too. */
-char file_name[MFS_NAME_MAX];	/* name of file to be removed */
+const char *file_name;		/* name of file to be removed */
 {
 /* Unlink 'file_name'; rip must be the inode of 'file_name' or NULL. */
 

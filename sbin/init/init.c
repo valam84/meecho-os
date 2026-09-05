@@ -127,6 +127,18 @@ static void badsys(int);
  * The following at least guarantees that the return type of (*state_t)()
  * is sufficiently wide to hold a function pointer.
  */
+/*
+ * The state machine below is a set of functions that each return the next
+ * function to run. C cannot express that type - it would have to name itself
+ * - so init does what every BSD init does: declare a plain function pointer
+ * and cast on the way in and out.
+ *
+ * GCC 15 objects to those casts under -Wcast-function-type, and it is right
+ * that the two function types are incompatible; that is the trick. Routing
+ * each cast through void * says the same thing in a form the compiler
+ * accepts, without turning the warning off for the file - a mismatch that is
+ * not this deliberate one would still be reported.
+ */
 typedef long (*state_func_t)(void);
 typedef state_func_t (*state_t)(void);
 
@@ -635,7 +647,7 @@ transition(state_t s)
 		current_state = s;
 #endif
 #endif
-		s = (state_t)(*s)();
+		s = (state_t)(void *)(*s)();
 	}
 }
 
@@ -819,7 +831,7 @@ single_user(void)
 			continue;
 		(void)sigaction(SIGTSTP, &satstp, NULL);
 		(void)sigaction(SIGHUP, &sahup, NULL);
-		return (state_func_t)single_user;
+		return (state_func_t)(void *)single_user;
 	}
 
 	requested_transition = 0;
@@ -831,7 +843,7 @@ single_user(void)
 				continue;
 			warning("wait for single-user shell failed: %m; "
 			    "restarting");
-			return (state_func_t)single_user;
+			return (state_func_t)(void *)single_user;
 		}
 		if (wpid == pid && WIFSTOPPED(status)) {
 			warning("shell stopped, restarting");
@@ -843,7 +855,7 @@ single_user(void)
 	if (requested_transition) {
 		(void)sigaction(SIGTSTP, &satstp, NULL);
 		(void)sigaction(SIGHUP, &sahup, NULL);
-		return (state_func_t)requested_transition;
+		return (state_func_t)(void *)requested_transition;
 	}
 
 	if (WIFSIGNALED(status)) {
@@ -859,7 +871,7 @@ single_user(void)
 				status);
 			(void)sigaction(SIGTSTP, &satstp, NULL);
 			(void)sigaction(SIGHUP, &sahup, NULL);
-			return (state_func_t)single_user;
+			return (state_func_t)(void *)single_user;
 		}
 	}
 
@@ -867,9 +879,9 @@ single_user(void)
 	(void)sigaction(SIGTSTP, &satstp, NULL);
 	(void)sigaction(SIGHUP, &sahup, NULL);
 #ifndef LETS_GET_SMALL
-	return (state_func_t)runcom;
+	return (state_func_t)(void *)runcom;
 #else /* LETS_GET_SMALL */
-	return (state_func_t)single_user;
+	return (state_func_t)(void *)single_user;
 #endif /* LETS_GET_SMALL */
 }
 
@@ -920,7 +932,7 @@ runetcrc(int trychroot)
 		while (waitpid(-1, NULL, WNOHANG) > 0)
 			continue;
 		(void)sleep(STALL_TIMEOUT);
-		return (state_func_t)single_user;
+		return (state_func_t)(void *)single_user;
 	default:
 		break;
 	}
@@ -936,7 +948,7 @@ runetcrc(int trychroot)
 				continue;
 			warning("wait for `%s' on `%s' failed: %m; going to "
 			    "single user mode", INIT_BSHELL, _PATH_RUNCOM);
-			return (state_func_t)single_user;
+			return (state_func_t)(void *)single_user;
 		}
 		if (wpid == pid && WIFSTOPPED(status)) {
 			warning("`%s' on `%s' stopped, restarting",
@@ -959,13 +971,13 @@ runetcrc(int trychroot)
 	if (!WIFEXITED(status)) {
 		warning("`%s' on `%s' terminated abnormally, going to "
 		    "single user mode", INIT_BSHELL, _PATH_RUNCOM);
-		return (state_func_t)single_user;
+		return (state_func_t)(void *)single_user;
 	}
 
 	if (WEXITSTATUS(status))
-		return (state_func_t)single_user;
+		return (state_func_t)(void *)single_user;
 
-	return (state_func_t)read_ttys;
+	return (state_func_t)(void *)read_ttys;
 }
 
 /*
@@ -978,8 +990,8 @@ runcom(void)
 
 	/* Run /etc/rc and choose next state depending on the result. */
 	next_step = runetcrc(0);
-	if (next_step != (state_func_t)read_ttys)
-		return (state_func_t)next_step;
+	if (next_step != (state_func_t)(void *)read_ttys)
+		return (state_func_t)(void *)next_step;
 
 #ifdef CHROOT
 	/*
@@ -989,8 +1001,8 @@ runcom(void)
 	 */
 	if (shouldchroot()) {
 		next_step = runetcrc(1);
-		if (next_step != (state_func_t)read_ttys)
-			return (state_func_t)next_step;
+		if (next_step != (state_func_t)(void *)read_ttys)
+			return (state_func_t)(void *)next_step;
 
 		did_multiuser_chroot = 1;
 	} else {
@@ -1010,7 +1022,7 @@ runcom(void)
 #ifdef SUPPORT_UTMP
 	logwtmp("~", "reboot", "");
 #endif
-	return (state_func_t)read_ttys;
+	return (state_func_t)(void *)read_ttys;
 }
 
 /*
@@ -1264,10 +1276,10 @@ read_ttys(void)
 #ifdef CHROOT
 		/* If /etc/rc ran in chroot, we want to kill any survivors. */
 		if (did_multiuser_chroot)
-			return (state_func_t)death;
+			return (state_func_t)(void *)death;
 		else
 #endif /* CHROOT */
-			return (state_func_t)single_user;
+			return (state_func_t)(void *)single_user;
 	}
 
 	(void)do_setttyent();
@@ -1281,7 +1293,7 @@ read_ttys(void)
 			sp = snext;
 	(void)endttyent();
 
-	return (state_func_t)multi_user;
+	return (state_func_t)(void *)multi_user;
 }
 
 /*
@@ -1401,7 +1413,16 @@ make_utmpx(const char *name, const char *line, int type, pid_t pid,
 	eline = line + strlen(line);
 	if ((size_t)(eline - line) >= sizeof(ut.ut_id))
 		line = eline - sizeof(ut.ut_id);
-	(void)strncpy(ut.ut_id, line, sizeof(ut.ut_id));
+	/*
+	 * ut_id is a fixed-width field in the utmp record and is not a C
+	 * string: it is padded with NULs and may fill the field completely.
+	 * strncpy does exactly that, which is why it is here - and why GCC
+	 * warns, since it cannot tell a deliberate unterminated field from a
+	 * mistake. Spelling the two halves out says which this is.
+	 */
+	(void)memset(ut.ut_id, 0, sizeof(ut.ut_id));
+	(void)memcpy(ut.ut_id, line,
+	    MIN(strlen(line), sizeof(ut.ut_id)));
 
 	if (pututxline(&ut) == NULL)
 		warning("can't add utmpx record for `%s': %m", ut.ut_line);
@@ -1560,7 +1581,7 @@ multi_user(void)
 		if ((pid = waitpid(-1, &status, 0)) != -1)
 			collect_child(pid, status);
 
-	return (state_func_t)requested_transition;
+	return (state_func_t)(void *)requested_transition;
 }
 
 /*
@@ -1625,7 +1646,7 @@ clean_ttys(void)
 				(void)kill(sp->se_process, SIGHUP);
 		}
 
-	return (state_func_t)multi_user;
+	return (state_func_t)(void *)multi_user;
 }
 
 /*
@@ -1639,7 +1660,7 @@ catatonia(void)
 	for (sp = sessions; sp; sp = sp->se_next)
 		sp->se_flags |= SE_SHUTDOWN;
 
-	return (state_func_t)multi_user;
+	return (state_func_t)(void *)multi_user;
 }
 #endif /* LETS_GET_SMALL */
 
@@ -1679,7 +1700,7 @@ death(void)
 
 	for (i = 0; i < 3; ++i) {
 		if (kill(-1, death_sigs[i]) == -1 && errno == ESRCH)
-			return (state_func_t)single_user;
+			return (state_func_t)(void *)single_user;
 
 		clang = 0;
 		(void)alarm(DEATH_WATCH);
@@ -1689,12 +1710,12 @@ death(void)
 		while (clang == 0 && errno != ECHILD);
 
 		if (errno == ECHILD)
-			return (state_func_t)single_user;
+			return (state_func_t)(void *)single_user;
 	}
 
 	warning("some processes would not die; ps axl advised");
 
-	return (state_func_t)single_user;
+	return (state_func_t)(void *)single_user;
 }
 #endif /* LETS_GET_SMALL */
 
@@ -1797,7 +1818,16 @@ do_setttyent(void)
 	if (did_multiuser_chroot) {
 		char path[PATH_MAX];
 
-		(void)snprintf(path, sizeof(path), "%s/%s", rootdir, _PATH_TTYS);
+		/*
+		 * A chroot deep enough to leave no room for the ttys path
+		 * would silently read the wrong file, so check rather than
+		 * discard the result.
+		 */
+		if ((size_t)snprintf(path, sizeof(path), "%s/%s", rootdir,
+		    _PATH_TTYS) >= sizeof(path)) {
+			warning("chroot path too long for %s", _PATH_TTYS);
+			return 0;
+		}
 
 		return setttyentpath(path);
 	} else

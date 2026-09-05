@@ -320,9 +320,16 @@ int read_super(struct super_block *sp)
   	return(EINVAL);
   }
 
-  /* Limit s_max_size to LONG_MAX */
-  if ((unsigned long)sp->s_max_size > LONG_MAX) 
-	sp->s_max_size = LONG_MAX;
+  /*
+   * Limit s_max_size to what the field can hold.
+   *
+   * This was written as LONG_MAX, which is that same number only while a
+   * long is 32 bits wide. s_max_size is an int32_t - the on-disk superblock
+   * says so - and on LP64 the assignment overflowed to -1, which would have
+   * made every file look as though it could not grow at all.
+   */
+  if ((unsigned long)sp->s_max_size > INT32_MAX)
+	sp->s_max_size = INT32_MAX;
 
   sp->s_isearch = 0;		/* inode searches initially start at 0 */
   sp->s_zsearch = 0;		/* zone searches initially start at 0 */

@@ -50,6 +50,7 @@ __RCSID("$NetBSD: logwtmpx.c,v 1.2 2003/08/07 16:44:59 agc Exp $");
 #include <unistd.h>
 #include <utmp.h>
 #include <utmpx.h>
+#include <sys/param.h>
 #include <util.h>
 
 void
@@ -62,10 +63,16 @@ logwtmpx(const char *line, const char *name, const char *host, int status,
 	_DIAGASSERT(name != NULL);
 	_DIAGASSERT(host != NULL);
 
+	/*
+	 * Fixed-width utmpx fields, not C strings. The record is zeroed just
+	 * above, and a value filling its field completely is allowed to leave
+	 * no terminator - which is what strncpy did here and what the
+	 * compiler cannot tell from an oversight.
+	 */
 	(void)memset(&ut, 0, sizeof(ut));
-	(void)strncpy(ut.ut_line, line, sizeof(ut.ut_line));
-	(void)strncpy(ut.ut_name, name, sizeof(ut.ut_name));
-	(void)strncpy(ut.ut_host, host, sizeof(ut.ut_host));
+	(void)memcpy(ut.ut_line, line, MIN(strlen(line), sizeof(ut.ut_line)));
+	(void)memcpy(ut.ut_name, name, MIN(strlen(name), sizeof(ut.ut_name)));
+	(void)memcpy(ut.ut_host, host, MIN(strlen(host), sizeof(ut.ut_host)));
 	ut.ut_type = type;
 	if (WIFEXITED(status))
 		ut.ut_exit.e_exit = (uint16_t)WEXITSTATUS(status);

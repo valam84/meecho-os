@@ -115,7 +115,16 @@ void chardriver_announce(void)
   if ((r = ds_retrieve_label_name(label, sef_self())) != OK)
 	panic("chardriver_announce: unable to get own label: %d", r);
 
-  snprintf(key, DS_MAX_KEYLEN, "%s%s", driver_prefix, label);
+  /*
+   * key and label are both DS_MAX_KEYLEN, so a maximum-length label plus the
+   * prefix does not fit and snprintf would truncate. A truncated key would
+   * publish this driver under a name that may already belong to another, so
+   * refuse instead. GCC 15 is what pointed at it; the check earns its place
+   * regardless.
+   */
+  if (snprintf(key, sizeof(key), "%s%s", driver_prefix, label) >=
+      (int)sizeof(key))
+	panic("chardriver_announce: label too long: %s", label);
   if ((r = ds_publish_u32(key, DS_DRIVER_UP, DSF_OVERWRITE)) != OK)
 	panic("chardriver_announce: unable to publish driver up event: %d", r);
 

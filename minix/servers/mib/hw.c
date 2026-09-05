@@ -8,6 +8,11 @@ static const char arch[] = "i386";	/* architecture */
 #elif defined(__arm__)
 static const char mach[] = "evbarm";	/* machine (cpu) type */
 static const char arch[] = "evbarm";	/* architecture */
+#elif defined(__aarch64__)
+/* The MACHINE name, the same choice pm/misc.c makes: build.sh calls this
+ * port evbarm64, and the entries above say evbarm rather than arm. */
+static const char mach[] = "evbarm64";	/* machine (cpu) type */
+static const char arch[] = "evbarm64";	/* architecture */
 #else
 #error "unknown machine architecture"
 #endif

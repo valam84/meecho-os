@@ -49,11 +49,25 @@ __RCSID("$NetBSD: efun.c,v 1.10 2015/07/26 02:20:30 kamil Exp $");
 
 static void (*efunc)(int, const char *, ...) = err;
 
+/*
+ * Passing NULL to esetfunc() means "just exit with the status, say nothing".
+ * That used to be written as a cast of exit() into this slot, which is a cast
+ * between incompatible function types - exit takes one int, this slot is
+ * printf-like - and is undefined behaviour if it is ever called through.
+ * A one-line wrapper of the right type does the same thing and is defined.
+ */
+__dead static void
+exit_quietly(int status, const char *fmt, ...)
+{
+
+	exit(status);
+}
+
 void (*
 esetfunc(void (*ef)(int, const char *, ...)))(int, const char *, ...)
 {
 	void (*of)(int, const char *, ...) = efunc;
-	efunc = ef == NULL ? (void (*)(int, const char *, ...))exit : ef;
+	efunc = ef == NULL ? exit_quietly : ef;
 	return of;
 }
 

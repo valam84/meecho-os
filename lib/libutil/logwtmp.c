@@ -48,6 +48,7 @@ __RCSID("$NetBSD: logwtmp.c,v 1.14 2003/08/07 16:44:59 agc Exp $");
 #include <time.h>
 #include <unistd.h>
 #include <utmp.h>
+#include <sys/param.h>
 #include <util.h>
 
 void
@@ -64,9 +65,22 @@ logwtmp(const char *line, const char *name, const char *host)
 	if ((fd = open(_PATH_WTMP, O_WRONLY|O_APPEND, 0)) < 0)
 		return;
 	if (fstat(fd, &buf) == 0) {
-		(void) strncpy(ut.ut_line, line, sizeof(ut.ut_line));
-		(void) strncpy(ut.ut_name, name, sizeof(ut.ut_name));
-		(void) strncpy(ut.ut_host, host, sizeof(ut.ut_host));
+		/*
+		 * Fixed-width utmp fields, not C strings: NUL-padded, and
+		 * allowed to fill the field completely. That is exactly what
+		 * strncpy does and why it was used; GCC cannot tell a
+		 * deliberately unterminated field from an oversight, so the
+		 * two halves are written out.
+		 */
+		(void) memset(ut.ut_line, 0, sizeof(ut.ut_line));
+		(void) memcpy(ut.ut_line, line,
+		    MIN(strlen(line), sizeof(ut.ut_line)));
+		(void) memset(ut.ut_name, 0, sizeof(ut.ut_name));
+		(void) memcpy(ut.ut_name, name,
+		    MIN(strlen(name), sizeof(ut.ut_name)));
+		(void) memset(ut.ut_host, 0, sizeof(ut.ut_host));
+		(void) memcpy(ut.ut_host, host,
+		    MIN(strlen(host), sizeof(ut.ut_host)));
 		(void) time(&ut.ut_time);
 		if (write(fd, &ut, sizeof(struct utmp)) != sizeof(struct utmp))
 			(void) ftruncate(fd, buf.st_size);

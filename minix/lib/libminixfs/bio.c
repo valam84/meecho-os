@@ -135,7 +135,15 @@ lmfs_bio(dev_t dev, struct fsdriver_data * data, size_t bytes, off_t pos,
 	if (bytes == 0)
 		return 0; /* just in case */
 
-	if (pos < 0 || bytes > SSIZE_MAX || pos > INT64_MAX - bytes + 1)
+	/*
+	 * The last test compares a signed off_t against an unsigned size_t
+	 * expression. On LP64 the usual conversions then make pos unsigned
+	 * and the comparison means something else than it reads. pos is known
+	 * non-negative by the first test, so casting both sides to one
+	 * unsigned type says what was meant.
+	 */
+	if (pos < 0 || bytes > SSIZE_MAX ||
+	    (uint64_t)pos > (uint64_t)INT64_MAX - bytes + 1)
 		return EINVAL;
 
 	/*

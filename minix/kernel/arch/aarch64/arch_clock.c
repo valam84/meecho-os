@@ -17,14 +17,36 @@
 
 #include "kernel/kernel.h"
 #include "kernel/proc.h"
+#include "kernel/clock.h"
+#include "kernel/glo.h"
 
 #include <assert.h>
 #include <minix/u64.h>
+
+#include <sys/sched.h>		/* CP_*, CPUSTATES */
+#if CPUSTATES != MINIX_CPUSTATES
+/* If this breaks, the accounting below has to be adapted accordingly. */
+#error "MINIX_CPUSTATES value is out of sync with NetBSD's!"
+#endif
 
 #include <machine/vm.h>
 
 #include "archconst.h"
 #include "arch_proto.h"
+
+/*
+ * How the system counter relates to the units the rest of the kernel counts
+ * in. Filled in by cycles_accounting_init().
+ *
+ * ARM hardcodes these per board - 16250 counts per millisecond on a
+ * BeagleBoard-xM, 15000 on a BeagleBone, and a panic on anything else -
+ * because its counter is a board peripheral whose rate nothing reports. Here
+ * the rate is in CNTFRQ_EL0, so there is nothing to know about the board and
+ * nothing to get wrong when a new one appears.
+ */
+static unsigned tsc_per_ms[CONFIG_MAX_CPUS];
+static unsigned tsc_per_tick[CONFIG_MAX_CPUS];
+static uint64_t tsc_per_state[CONFIG_MAX_CPUS][CPUSTATES];
 
 /*===========================================================================*
  *				read_tsc_64				     *
@@ -44,6 +66,162 @@ read_tsc_64(u64_t *t)
 	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(v));
 
 	*t = v;
+}
+
+/*===========================================================================*
+ *			     cycles_accounting_init			     *
+ *===========================================================================*/
+void
+cycles_accounting_init(void)
+{
+	u64_t freq;
+#ifdef CONFIG_SMP
+	unsigned cpu = cpuid;
+#else
+	unsigned cpu = 0;
+#endif
+
+	/*
+	 * CNTFRQ_EL0 is not hardware: it is a note the firmware leaves saying
+	 * how fast the counter it started runs. A zero means nobody left the
+	 * note, and every interval this kernel measures afterwards - a
+	 * scheduling quantum, a process's CPU time, the load average - would
+	 * be measured with a ruler of unknown length. There is no sensible
+	 * default to fall back to, so say so here rather than mis-schedule
+	 * everything from now on.
+	 */
+	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
+	if (freq == 0)
+		panic("CNTFRQ_EL0 is zero: firmware did not set the timer "
+		    "frequency");
+
+	tsc_per_ms[cpu] = (unsigned)(freq / 1000);
+	tsc_per_tick[cpu] = (unsigned)(freq / system_hz);
+
+	read_tsc_64(get_cpu_var_ptr(cpu, tsc_ctr_switch));
+
+	get_cpu_var(cpu, cpu_last_tsc) = 0;
+	get_cpu_var(cpu, cpu_last_idle) = 0;
+}
+
+/*===========================================================================*
+ *				ms_2_cpu_time				     *
+ *===========================================================================*/
+u64_t
+ms_2_cpu_time(unsigned ms)
+{
+	return (u64_t)tsc_per_ms[cpuid] * ms;
+}
+
+/*===========================================================================*
+ *				cpu_time_2_ms				     *
+ *===========================================================================*/
+unsigned
+cpu_time_2_ms(u64_t cpu_time)
+{
+	return (unsigned)(cpu_time / tsc_per_ms[cpuid]);
+}
+
+/*===========================================================================*
+ *				get_cpu_ticks				     *
+ *===========================================================================*/
+void
+get_cpu_ticks(unsigned int cpu, uint64_t ticks[CPUSTATES])
+{
+	int i;
+
+	/* TODO: make this inter-CPU safe! */
+	for (i = 0; i < CPUSTATES; i++) {
+		ticks[i] = tsc_per_tick[cpu] ?
+		    tsc_per_state[cpu][i] / tsc_per_tick[cpu] : 0;
+	}
+}
+
+/*===========================================================================*
+ *				context_stop				     *
+ *===========================================================================*/
+void
+context_stop(struct proc *p)
+{
+	/*
+	 * Charge everything since the last switch to p, and start a new
+	 * interval. Called on every crossing between a process and the
+	 * kernel, so this is the single place that says where the machine's
+	 * time went.
+	 */
+	u64_t tsc, tsc_delta;
+	u64_t *__tsc_ctr_switch = get_cpulocal_var_ptr(tsc_ctr_switch);
+	unsigned int cpu, tpt, counter;
+
+#ifdef CONFIG_SMP
+#error CONFIG_SMP is unsupported on aarch64
+#else
+	read_tsc_64(&tsc);
+	p->p_cycles = p->p_cycles + tsc - *__tsc_ctr_switch;
+	cpu = 0;
+#endif
+
+	tsc_delta = tsc - *__tsc_ctr_switch;
+
+	if (kbill_ipc) {
+		kbill_ipc->p_kipc_cycles += tsc_delta;
+		kbill_ipc = NULL;
+	}
+
+	if (kbill_kcall) {
+		kbill_kcall->p_kcall_cycles += tsc_delta;
+		kbill_kcall = NULL;
+	}
+
+	/*
+	 * CPU average accounting happens here rather than in the generic
+	 * clock handler, so that time spent in the kernel is counted and so
+	 * that a process with a lot of short activity - one that burns real
+	 * CPU but is never the one running when a tick arrives - is counted
+	 * too. The loop is a loop because a tick's worth of counts may have
+	 * accumulated more than once; in practice it runs zero or one times.
+	 */
+	tpt = tsc_per_tick[cpu];
+
+	p->p_tick_cycles += tsc_delta;
+	while (tpt > 0 && p->p_tick_cycles >= tpt) {
+		p->p_tick_cycles -= tpt;
+		cpuavg_increment(&p->p_cpuavg, kclockinfo.uptime, system_hz);
+	}
+
+	/*
+	 * Take the cycles just spent out of what is left of this process's
+	 * quantum. The kernel tasks have no quantum to spend, but their time
+	 * is still counted for the machine as a whole.
+	 */
+	if (p->p_endpoint >= 0) {
+		/* On MINIX3, the "system" counter covers system processes. */
+		if (p->p_priv != priv_addr(USER_PRIV_ID))
+			counter = CP_SYS;
+		else if (p->p_misc_flags & MF_NICED)
+			counter = CP_NICE;
+		else
+			counter = CP_USER;
+
+#if DEBUG_RACE
+		p->p_cpu_time_left = 0;
+#else
+		if (tsc_delta < p->p_cpu_time_left)
+			p->p_cpu_time_left -= tsc_delta;
+		else
+			p->p_cpu_time_left = 0;
+#endif
+	} else {
+		/* On MINIX3, the "interrupts" counter covers the kernel. */
+		if (p->p_endpoint == IDLE)
+			counter = CP_IDLE;
+		else
+			counter = CP_INTR;
+	}
+
+	tsc_per_state[cpu][counter] += tsc_delta;
+
+	*__tsc_ctr_switch = tsc;
 }
 
 /*===========================================================================*

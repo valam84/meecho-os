@@ -70,7 +70,13 @@ static char *sbuf, *ebuf;
 static int  scount;
 #endif /* defined(__minix) */
 
-const char hexdigits[16] = "0123456789abcdef";
+/*
+ * Sized [] rather than [16]: every use is a lookup by index, stand.h declares
+ * it without a size, and pinning the size to 16 made this a string literal
+ * with its terminator cut off - which is what the compiler now objects to.
+ * The cost is one byte in the boot-time text.
+ */
+const char hexdigits[] = "0123456789abcdef";
 
 #define LONG		0x01
 #ifdef LIBSA_PRINTF_LONGLONG_SUPPORT

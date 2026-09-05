@@ -1624,7 +1624,13 @@ timesub(const time_t *timep, int_fast32_t offset,
 						sp->lsis[i - 1].ls_trans + 1 &&
 						sp->lsis[i].ls_corr ==
 						sp->lsis[i - 1].ls_corr + 1) {
-							++hit;
+							/* hit is bool and already
+							   true here, so this only
+							   ever meant "still a
+							   hit"; ++ on a bool is
+							   what the compiler
+							   objects to. */
+							hit = true;
 							--i;
 					}
 			}

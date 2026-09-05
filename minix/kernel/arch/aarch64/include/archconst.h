@@ -35,11 +35,31 @@
 			 AARCH64_PSR_A | AARCH64_PSR_F)
 
 /*
- * Bytes reserved at the top of a kernel stack for what has to be found
- * without a register to point at it: the process running on this CPU and the
- * CPU's own number. Same arrangement, and the same size, as on ARM.
+ * One page of kernel stack per CPU. The exception frame is 34 registers,
+ * 272 bytes, and nothing in the kernel recurses deeply, so a page is ample;
+ * what matters more is that the stacks are page-aligned and page-apart, so
+ * that an overrun lands in a guard page instead of in the neighbouring CPU's
+ * stack.
+ *
+ * Here rather than in arch_proto.h because vectors.S makes the reservation
+ * and has to agree with the C side about its size.
  */
-#define AARCH64_STACK_TOP_RESERVED	(2 * sizeof(reg_t))
+#define K_STACK_SIZE	AARCH64_PAGE_SIZE
+
+/*
+ * Bytes reserved at the top of a kernel stack for what has to be found
+ * without a register to point at it: the CPU's own number, and on ARM the
+ * process running on it. Same arrangement, and the same size, as on ARM.
+ *
+ * The process half turned out not to be needed here: an exception from EL0
+ * arrives with SP_EL1 already pointing into that process's p_reg, because
+ * that is where restore_user_context() left it - see vectors.S. The
+ * reservation stays for the CPU number, which SMP will want.
+ *
+ * Written as a number rather than as sizeof(reg_t) because vectors.S reads
+ * this header too, and the assembler has no sizeof.
+ */
+#define AARCH64_STACK_TOP_RESERVED	(2 * 8)		/* two 64-bit words */
 
 /*
  * A process may change the condition flags and nothing else. The mode bits

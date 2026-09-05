@@ -254,6 +254,10 @@ void release_address_space(struct proc *pr);
 void enable_fpu_exception(void);
 void disable_fpu_exception(void);
 void release_fpu(struct proc * p);
+/* Defined in proc.c. i386 and earm reach it from assembly, so it has never
+ * needed a prototype; aarch64 routes the FP trap in C and does.
+ */
+void copr_not_available_handler(void);
 void arch_pause(void);
 short cpu_load(void);
 void busy_delay_ms(int ms);

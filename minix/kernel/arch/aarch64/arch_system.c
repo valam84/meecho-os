@@ -8,6 +8,7 @@
 
 #include "archconst.h"
 #include "arch_proto.h"
+#include "trap.h"
 #include "kernel/proc.h"
 #include "kernel/debug.h"
 
@@ -181,12 +182,52 @@ arch_init(void)
 	__asm__ volatile("msr cntkctl_el1, %0" :: "r"(cntkctl));
 
 	/*
-	 * The per-CPU kernel stacks are not set up here yet. They are what
-	 * the exception path lands on, and the reservation belongs beside the
-	 * code that switches to it; both arrive with the exception vectors.
-	 * ARM also calls bsp_init() here, which this BSP does not have: it is
-	 * a console and nothing else so far.
+	 * The per-CPU kernel stacks. exception.S reserves them and the EL0
+	 * entry path switches onto them; this is where the pointer the two
+	 * agree on gets set, exactly as ARM does it.
 	 */
+	k_stacks = (void *)&k_stacks_start;
+	assert(!((vir_bytes)k_stacks % K_STACK_SIZE));
+
+	/*
+	 * The vectors are already installed - pre_init() writes VBAR_EL1
+	 * twice, once against the table's physical address and once against
+	 * its virtual one after the move, because a fault in between has to
+	 * be diagnosable. Doing it once more here costs two instructions and
+	 * means VBAR_EL1 is known to be right on a CPU that never went
+	 * through pre_init(), which is what the secondary cores will be.
+	 *
+	 * ARM also calls bsp_init() here, which this BSP does not have: it is
+	 * a console and a reset path so far.
+	 */
+	trap_init();
+}
+
+/*===========================================================================*
+ *			  arch_finish_switch_to_user			     *
+ *===========================================================================*/
+struct proc *
+arch_finish_switch_to_user(void)
+{
+	struct proc *p = get_cpulocal_var(proc_ptr);
+
+	/*
+	 * ARM records the process on the kernel stack here, so that entry
+	 * from user mode can find it again without a spare register to point
+	 * with. This does not have to: restore_user_context() sets SP_EL1 to
+	 * the end of p->p_reg, so the stack pointer an exception from EL0
+	 * arrives with already is the process. See exception.S.
+	 *
+	 * AARCH64_STACK_TOP_RESERVED stays reserved anyway - SMP will want
+	 * the CPU number in it - but nothing needs it while there is one CPU.
+	 *
+	 * What is left is making sure the process runs with interrupts
+	 * enabled. A process that could not be interrupted would make the
+	 * scheduler advisory: the quantum would never end.
+	 */
+	p->p_reg.psr &= ~(reg_t)AARCH64_PSR_I;
+
+	return p;
 }
 
 /*===========================================================================*

@@ -19,7 +19,17 @@ aarch64/vm.h
  */
 
 #define AARCH64_PAGE_SHIFT	12
+/*
+ * The assembler has no unsigned-long suffix and would choke on 1UL, but the
+ * kernel's exception path reserves its stacks in terms of a page - so the
+ * same name has to work in both languages. The value is identical; only the
+ * spelling differs.
+ */
+#ifdef __ASSEMBLER__
+#define AARCH64_PAGE_SIZE	(1 << AARCH64_PAGE_SHIFT)
+#else
 #define AARCH64_PAGE_SIZE	(1UL << AARCH64_PAGE_SHIFT)
+#endif
 #define AARCH64_PAGE_MASK	(AARCH64_PAGE_SIZE - 1)
 #define AARCH64_VA_BITS		48
 

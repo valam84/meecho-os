@@ -4,13 +4,11 @@
 #include <machine/vm.h>
 
 /*
- * One page of kernel stack per CPU. The exception frame is 34 registers,
- * 272 bytes, and nothing in the kernel recurses deeply, so a page is ample;
- * what matters more is that the stacks are page-aligned and page-apart, so
- * that an overrun lands in a guard page instead of in the neighbouring CPU's
- * stack.
+ * K_STACK_SIZE has moved to archconst.h, because vectors.S reserves the
+ * stacks and needs the same number. It is still spelled the same and means
+ * the same thing; only the header changed.
  */
-#define K_STACK_SIZE	AARCH64_PAGE_SIZE
+#include "archconst.h"
 
 #ifndef __ASSEMBLY__
 

@@ -52,6 +52,31 @@ vir2phys(void *ptr)
 }
 
 /*===========================================================================*
+ *				memory_init				     *
+ *===========================================================================*/
+void
+memory_init(void)
+{
+	/*
+	 * Nothing to set up. Both 32-bit ports reserve a pair of page
+	 * directory entries here - freepdes - which the kernel then borrows
+	 * whenever it has to look at a page that is not in the current
+	 * address space: it writes the page's physical address into a spare
+	 * directory slot, uses the window, and puts the slot back.
+	 *
+	 * That whole mechanism exists because a 32-bit kernel cannot see all
+	 * of physical memory at once. This one can: RAM is mapped in the
+	 * upper half at a fixed offset, so phys2vir() of any physical address
+	 * is already a usable pointer and there is no window to open. See
+	 * pg_utils.c and port/PORTING-LOG.md, stage 4 group 1.
+	 *
+	 * kinfo.freepde_start is left at zero for the same reason. VM still
+	 * has a freepde() of its own in servers/vm/pt.c, and it will go the
+	 * same way when that file learns about four levels of tables.
+	 */
+}
+
+/*===========================================================================*
  *			      kern_req_phys_map				     *
  *===========================================================================*/
 int
@@ -89,6 +114,15 @@ kern_phys_map_mapped_ptr(vir_bytes id, phys_bytes address)
 	/* The id is the address of the driver's base variable. */
 	*((vir_bytes *)id) = address;
 	return 0;
+}
+
+/*===========================================================================*
+ *			      kern_phys_map_list			     *
+ *===========================================================================*/
+kern_phys_map *
+kern_phys_map_list(void)
+{
+	return kern_phys_map_head;
 }
 
 /*===========================================================================*

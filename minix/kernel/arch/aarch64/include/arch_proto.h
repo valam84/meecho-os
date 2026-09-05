@@ -22,6 +22,21 @@ phys_bytes vir2phys(void *);
 vir_bytes phys_memset(phys_bytes ph, u32_t c, phys_bytes bytes);
 
 /*
+ * The other direction: the kernel's view of a physical address.
+ *
+ * Physical memory appears in the upper half at a fixed offset, so this is an
+ * addition rather than a page table walk, and it is valid for every byte of
+ * RAM - not just the kernel image - once pg_mapkernel() has run. It is what
+ * lets the kernel edit a page table, copy between two address spaces or load
+ * a process image without borrowing a mapping first, which is why there is no
+ * equivalent of the 32-bit ports' freepdes here.
+ *
+ * A macro rather than a function because early boot uses it before there is
+ * anything to call, and because vir2phys() is its inverse and equally cheap.
+ */
+#define phys2vir(pa)	((vir_bytes)((phys_bytes)(pa) + KERNEL_VA_OFFSET))
+
+/*
  * Switching address spaces is a write to TTBR0 alone: the kernel half lives
  * in TTBR1 and never changes. The caller's current ptproc is passed in so
  * that the switch can be skipped when the space is already loaded, which is
@@ -48,6 +63,44 @@ void __user_copy_msg_pointer_failure(void);
  * code that the generic kernel uses by name.
  */
 void add_memmap(kinfo_t *cbi, u64_t addr, u64_t len);
+void cut_memmap(kinfo_t *cbi, phys_bytes start, phys_bytes end);
+void print_memmap(kinfo_t *cbi);
+
+/* pre_init.c: where head.S goes, and what it keeps for the rest of boot. */
+__dead void pre_init(phys_bytes dtb);
+extern phys_bytes boot_dtb;
+
+/*
+ * pg_utils.c - physical memory and the kernel's own translation tables.
+ *
+ * pg_add_ram() takes the RAM ranges as the device tree describes them, all of
+ * them; add_memmap() takes what of that is free. The two are not the same
+ * list: the linear map has to cover the kernel image and the boot modules as
+ * well, and those are exactly what is cut out of the free one.
+ *
+ * pg_identity() builds the map that keeps early boot addressable across the
+ * switch, pg_mapkernel() the map the kernel then lives in, and
+ * vm_enable_paging() turns translation on with both of them loaded.
+ * pg_enter_high() moves the stack and the program counter into the upper half
+ * and does not return; pg_drop_identity() then takes the low map away.
+ *
+ * pg_clear(), pg_load(), pg_map() and pg_info() are about the other page
+ * table: the lower-half one the boot process is loaded into and VM inherits.
+ */
+void pg_add_ram(phys_bytes base, phys_bytes size);
+phys_bytes pg_alloc_page(kinfo_t *cbi);
+phys_bytes pg_roundup(phys_bytes b);
+phys_bytes pg_rounddown(phys_bytes b);
+void pg_identity(kinfo_t *cbi);
+void pg_mapkernel(kinfo_t *cbi);
+void vm_enable_paging(void);
+__dead void pg_enter_high(void (*entry)(void));
+void pg_drop_identity(void);
+void pg_clear(void);
+phys_bytes pg_load(void);
+void pg_map(phys_bytes phys, vir_bytes vaddr, vir_bytes vaddr_end,
+	kinfo_t *cbi);
+void pg_info(reg_t *ttbr_ph, u64_t **ttbr_v);
 
 /*
  * A range of physical memory the kernel needs mapped for itself: device
@@ -86,6 +139,14 @@ int kern_phys_map_ptr(phys_bytes base_address, vir_bytes io_size,
 	int vm_flags, kern_phys_map *priv, vir_bytes ptr);
 
 int kern_phys_map_mapped_ptr(vir_bytes id, phys_bytes address);
+
+/*
+ * The ranges registered so far. The kernel walks the list itself, twice: to
+ * put the ranges into its own tables at boot, and to hand each driver the
+ * address it can use once the kernel is running high. VM walks the same list
+ * afterwards, through arch_phys_map().
+ */
+kern_phys_map *kern_phys_map_list(void);
 
 /*
  * Kernel stacks, one pair of pages per CPU: the top of the upper page is the

@@ -307,7 +307,20 @@ get_parameters(kinfo_t *cbi, phys_bytes dtb)
 
 	memset(cbi, 0, sizeof(*cbi));
 
-	cbi->kmessages = &kmessages;
+	/*
+	 * The upper-half address, not the one this code sees.
+	 *
+	 * Everything in cbi is read by kmain(), which runs after the move; a
+	 * pointer taken here is physical, because early boot reaches kernel
+	 * symbols PC-relatively and the program counter is still low. This is
+	 * the only pointer pre_init() puts in the boot information, and
+	 * leaving it physical is what made kmain() fault in its first memcpy -
+	 * it copies the early message buffer out of exactly this pointer.
+	 *
+	 * Same reasoning, and the same expression, as vir_kern_start below.
+	 */
+	cbi->kmessages = (struct kmessages *)((vir_bytes)&kmessages +
+	    KERNEL_VA_OFFSET);
 	cbi->do_serial_debug = 1;
 	cbi->serial_debug_baud = 115200;
 

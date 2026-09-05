@@ -66,8 +66,34 @@
  */
 #define HASPT(procptr)	((procptr)->p_seg.p_ttbr != 0)
 
-/* Ranges drivers have asked for, newest first. */
+/*
+ * Ranges drivers have asked for, newest first.
+ *
+ * The pointers in it - the head, each next, each id and each callback - are
+ * kernel-virtual, even for the entries registered before the MMU was on. See
+ * kern_req_phys_map() for why, and pg_utils.c's map_devices() for the one
+ * walk that has to undo it.
+ */
 static kern_phys_map *kern_phys_map_head;
+
+/*===========================================================================*
+ *				kern_virt				     *
+ *===========================================================================*/
+/*
+ * The upper-half form of an address that names something in the kernel
+ * image, whichever form it arrives in.
+ *
+ * Idempotent on purpose: early boot reaches a kernel symbol at its physical
+ * address and later code reaches the same symbol at its virtual one, and this
+ * has to give the same answer to both without being told which is which. It
+ * is the inverse of sym_phys() in pg_utils.c, which folds the other way for
+ * the same reason.
+ */
+static vir_bytes
+kern_virt(vir_bytes a)
+{
+	return a >= KERNEL_VA_OFFSET ? a : a + KERNEL_VA_OFFSET;
+}
 
 /* Defined in kernel.lds. */
 extern char usermapped_start, usermapped_end, usermapped_nonglo_start;
@@ -683,15 +709,38 @@ kern_req_phys_map(phys_bytes base_address, vir_bytes io_size, int vm_flags,
 	assert(io_size % AARCH64_PAGE_SIZE == 0);
 	assert(cb != NULL);
 
-	priv->addr = base_address;
+	/*
+	 * Every address that names something in the kernel image is stored as
+	 * the upper-half one, whichever world the caller is in.
+	 *
+	 * This list is the only structure the kernel builds on one side of the
+	 * MMU switch and walks on the other. Drivers register their ranges
+	 * from pre_init(), where taking the address of a static yields a
+	 * physical address, and pre_init_high() walks the list afterwards to
+	 * hand each driver its new base - by which time those addresses are
+	 * not mapped at all, because the identity map covers only the image
+	 * and the device registers and is about to go entirely.
+	 *
+	 * Storing the upper-half form settles it once, at the one point every
+	 * entry passes through, rather than at each of the places that walk
+	 * the list. The one walk that happens before the switch -
+	 * map_devices() in pg_utils.c - converts back, which it is already
+	 * equipped to do: that file deals in both worlds by construction.
+	 *
+	 * kern_virt() is idempotent, so it does not matter whether this is
+	 * called before or after the move. That is deliberate: a helper that
+	 * had to know would be one more thing to get wrong on a path that
+	 * cannot be single-stepped.
+	 */
+	priv->addr = base_address;		/* a device address: physical */
 	priv->size = io_size;
 	priv->vm_flags = vm_flags;
-	priv->cb = cb;
-	priv->id = id;
+	priv->cb = (kern_phys_map_mapped)kern_virt((vir_bytes)cb);
+	priv->id = kern_virt(id);
 	priv->index = -1;
 
 	priv->next = kern_phys_map_head;
-	kern_phys_map_head = priv;
+	kern_phys_map_head = (kern_phys_map *)kern_virt((vir_bytes)priv);
 
 	return 0;
 }

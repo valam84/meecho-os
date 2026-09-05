@@ -556,12 +556,30 @@ map_kernel_image(kinfo_t *cbi, phys_bytes root, vir_bytes offset)
  * - which is the difference between debugging that window and being blind
  * in it.
  */
+/*
+ * One entry of the device list, addressable from here.
+ *
+ * The list is built in upper-half addresses - see kern_req_phys_map() in
+ * memory.c - because it is walked after the switch by code that has no other
+ * way to reach it. This is the one walk that happens before the switch, so it
+ * is the one place that has to fold those addresses back down. sym_phys() is
+ * idempotent, so this is right in both worlds and needs no flag.
+ */
+static kern_phys_map *
+kpm(kern_phys_map *m)
+{
+	if (m == NULL)
+		return NULL;
+
+	return running_high() ? m : (kern_phys_map *)sym_phys(m);
+}
+
 static void
 map_devices(kinfo_t *cbi, phys_bytes root, vir_bytes offset)
 {
 	kern_phys_map *m;
 
-	for (m = kern_phys_map_list(); m != NULL; m = m->next)
+	for (m = kpm(kern_phys_map_list()); m != NULL; m = kpm(m->next))
 		map_range(cbi, root, (vir_bytes)m->addr + offset, m->addr,
 		    m->size, PG_DEVICE);
 }

@@ -130,6 +130,25 @@ at_el1:
 	msr	sctlr_el1, x0
 	isb
 
+	/*
+	 * Let EL1 use FP and SIMD, and keep trapping EL0.
+	 *
+	 * The kernel's own C is built with -mgeneral-regs-only, so this looks
+	 * unnecessary until it runs: it links against libminc, and the AArch64
+	 * procedure call standard makes every variadic function save q0..q7 on
+	 * entry. The first printf() of early boot therefore executes "ldr q31"
+	 * and traps - before fpu_init() exists to have set this, and before
+	 * there are vectors to report it, which is a machine that stops
+	 * without a word.
+	 *
+	 * CPACR_EL1.FPEN = 0b01 is "trap EL0, allow EL1". EL0 stays trapped
+	 * because nothing saves those registers across an exception yet; see
+	 * fpu.c.
+	 */
+	mov	x0, #(1 << 20)
+	msr	cpacr_el1, x0
+	isb
+
 	/* Mask everything until the exception vectors exist. */
 	msr	daifset, #0xf
 

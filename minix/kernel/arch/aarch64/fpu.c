@@ -45,11 +45,21 @@
 #include "archconst.h"
 #include "arch_proto.h"
 
-/* CPACR_EL1.FPEN, bits [21:20]. 0b11 is "do not trap"; 0b00 traps at EL0
- * and EL1 alike, which is the reset value and the one we keep. */
+/*
+ * CPACR_EL1.FPEN, bits [21:20]: 0b00 traps at EL0 and EL1 alike, 0b01 traps
+ * at EL0 only, 0b11 does not trap at all.
+ *
+ * The kernel needs FP for itself, which was not obvious until it ran. Its own
+ * C is built with -mgeneral-regs-only, but it links against libminc, and the
+ * AArch64 procedure call standard makes every variadic function save q0..q7
+ * on entry - so the first printf() the kernel reaches executes "ldr q31" and
+ * traps. Nothing else in the kernel touches FP, and nothing saves those
+ * registers across an exception, which is safe only for as long as EL0 cannot
+ * use them at all. That is exactly the state these stubs enforce.
+ */
 #define CPACR_FPEN_SHIFT	20
 #define CPACR_FPEN_MASK		(3UL << CPACR_FPEN_SHIFT)
-#define CPACR_FPEN_TRAP_ALL	(0UL << CPACR_FPEN_SHIFT)
+#define CPACR_FPEN_TRAP_EL0	(1UL << CPACR_FPEN_SHIFT)
 #define CPACR_FPEN_TRAP_NONE	(3UL << CPACR_FPEN_SHIFT)
 
 static void
@@ -83,7 +93,7 @@ fpu_init(void)
 	 */
 	get_cpulocal_var(fpu_presence) = 0;
 
-	set_fpen(CPACR_FPEN_TRAP_ALL);
+	set_fpen(CPACR_FPEN_TRAP_EL0);
 }
 
 /*===========================================================================*
@@ -130,7 +140,7 @@ restore_fpu(struct proc *pr)
 void
 enable_fpu_exception(void)
 {
-	set_fpen(CPACR_FPEN_TRAP_ALL);
+	set_fpen(CPACR_FPEN_TRAP_EL0);
 }
 
 /*===========================================================================*

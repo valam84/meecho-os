@@ -157,6 +157,39 @@ cpu_identify(void)
 }
 
 /*===========================================================================*
+ *				arch_init				     *
+ *===========================================================================*/
+void
+arch_init(void)
+{
+	u64_t cntkctl;
+
+	/*
+	 * Let EL0 read the virtual counter. libsys reads it for read_tsc()
+	 * and for the free-running clock, and this bit is what makes that a
+	 * plain instruction instead of a trap into the kernel. It is the
+	 * counter and not the PMU cycle counter on purpose: one timebase for
+	 * every core, which the cycle counter is not. See
+	 * port/PORTING-LOG.md, stage 1.
+	 *
+	 * The event stream and EL0 access to the timer registers stay off:
+	 * nothing in userland programs a timer, and a bit granted without a
+	 * user is a bit nobody will think to revoke.
+	 */
+	__asm__ volatile("mrs %0, cntkctl_el1" : "=r"(cntkctl));
+	cntkctl |= AARCH64_CNTKCTL_EL0VCTEN;
+	__asm__ volatile("msr cntkctl_el1, %0" :: "r"(cntkctl));
+
+	/*
+	 * The per-CPU kernel stacks are not set up here yet. They are what
+	 * the exception path lands on, and the reservation belongs beside the
+	 * code that switches to it; both arrive with the exception vectors.
+	 * ARM also calls bsp_init() here, which this BSP does not have: it is
+	 * a console and nothing else so far.
+	 */
+}
+
+/*===========================================================================*
  *				do_ser_debug				     *
  *===========================================================================*/
 void

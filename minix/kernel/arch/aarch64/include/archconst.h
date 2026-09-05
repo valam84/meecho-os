@@ -52,6 +52,14 @@
 	((rp)->p_reg.psr = ((rp)->p_reg.psr & ~AARCH64_PSR_USER_MASK) |	\
 	    ((npsr) & AARCH64_PSR_USER_MASK))
 
+/*
+ * CNTKCTL_EL1: what EL0 may do with the generic timer. Only the counter is
+ * ever handed over; the timer registers and the event stream are the
+ * kernel's.
+ */
+#define AARCH64_CNTKCTL_EL0PCTEN	(1UL << 0)	/* physical counter */
+#define AARCH64_CNTKCTL_EL0VCTEN	(1UL << 1)	/* virtual counter */
+
 #define PG_ALLOCATEME ((phys_bytes)-1)
 
 #endif /* _AARCH64_ACONST_H */

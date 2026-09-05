@@ -249,6 +249,18 @@
 #define	__returns_twice	/* nothing */
 #endif
 
+/*
+ * A character array that holds text but is not a C string: it is padded to a
+ * fixed width and may be completely full, with no terminator. utmp records
+ * are full of them, and so is the bcrypt ciphertext constant. GCC 8 and later
+ * warn about initialising or filling such an array unless it is marked.
+ */
+#if __GNUC_PREREQ__(8, 0)
+#define	__nonstring	__attribute__((__nonstring__))
+#else
+#define	__nonstring	/* nothing */
+#endif
+
 #if __GNUC_PREREQ__(4, 5)
 #define	__noclone	__attribute__((__noclone__))
 #else

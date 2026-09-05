@@ -216,7 +216,14 @@ __bcrypt(const char *key, const char *salt)
 	u_int32_t rounds, i, k;
 	u_int16_t j;
 	u_int8_t key_len, salt_len, logr, minor;
-	u_int8_t ciphertext[4 * BCRYPT_BLOCKS] = "OrpheanBeholderScryDoubt";
+	/*
+	 * Exactly 24 bytes of plaintext and no terminator: bcrypt encrypts
+	 * this constant, and the array is sized to hold just it. __nonstring
+	 * says so, which is what GCC 15 wants before accepting an initialiser
+	 * that drops the NUL.
+	 */
+	u_int8_t ciphertext[4 * BCRYPT_BLOCKS] __nonstring =
+	    "OrpheanBeholderScryDoubt";
 	u_int8_t csalt[BCRYPT_MAXSALT];
 	u_int32_t cdata[BCRYPT_BLOCKS];
 	int n;

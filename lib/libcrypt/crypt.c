@@ -288,7 +288,7 @@ typedef union {
 #endif /* LARGEDATA */
 
 STATIC	init_des(void);
-STATIC	init_perm(C_block [64/CHUNKBITS][1<<CHUNKBITS],
+STATIC	init_perm(C_block (*)[1<<CHUNKBITS],
 		       const unsigned char [64], int, int);
 #ifndef LARGEDATA
 STATIC	permute(const unsigned char *, C_block *, C_block *, int);
@@ -923,7 +923,7 @@ init_des(void)
  * "perm" must be all-zeroes on entry to this routine.
  */
 STATIC
-init_perm(C_block perm[64/CHUNKBITS][1<<CHUNKBITS], const unsigned char p[64],
+init_perm(C_block perm[][1<<CHUNKBITS], const unsigned char p[64],
     int chars_in, int chars_out)
 {
 	int i, j, k, l;

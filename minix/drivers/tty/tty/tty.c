@@ -82,6 +82,8 @@ static ssize_t do_read(devminor_t minor, u64_t position, endpoint_t endpt,
 	cp_grant_id_t grant, size_t size, int flags, cdev_id_t id);
 static ssize_t do_write(devminor_t minor, u64_t position, endpoint_t endpt,
 	cp_grant_id_t grant, size_t size, int flags, cdev_id_t id);
+static ssize_t tty_kernel_write(devminor_t minor, char *buf, size_t size,
+	int flags);
 static int do_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 	cp_grant_id_t grant, int flags, endpoint_t user_endpt, cdev_id_t id);
 static int do_cancel(devminor_t minor, endpoint_t endpt, cdev_id_t id);
@@ -244,8 +246,8 @@ set_color(tty_t *tp, int color)
 
 	buf[0] = '\033';
 	snprintf(&buf[1], sizeof(buf) - 1, "[1;%dm", color);
-	do_write(tp->tty_minor, 0, KERNEL, (cp_grant_id_t) buf, sizeof(buf),
-		CDEV_NONBLOCK, 0);
+	tty_kernel_write(tp->tty_minor, buf, sizeof(buf),
+		CDEV_NONBLOCK);
 }
 
 static void
@@ -256,8 +258,8 @@ reset_color(tty_t *tp)
 #define SGR_COLOR_RESET	39
 	buf[0] = '\033';
 	snprintf(&buf[1], sizeof(buf) - 1, "[0;%dm", SGR_COLOR_RESET);
-	do_write(tp->tty_minor, 0, KERNEL, (cp_grant_id_t) buf, sizeof(buf),
-		CDEV_NONBLOCK, 0);
+	tty_kernel_write(tp->tty_minor, buf, sizeof(buf),
+		CDEV_NONBLOCK);
 }
 
 tty_t *
@@ -429,9 +431,8 @@ do_new_kmess(void)
 
 		if (kernel_msg_color != 0)
 			set_color(tp, kernel_msg_color);
-		do_write(tp->tty_minor, 0, KERNEL,
-			(cp_grant_id_t) kernel_buf_copy, bytes,
-			CDEV_NONBLOCK, 0);
+		tty_kernel_write(tp->tty_minor, kernel_buf_copy, bytes,
+			CDEV_NONBLOCK);
 		if (kernel_msg_color != 0)
 			reset_color(tp);
 		if (restore) {
@@ -535,9 +536,36 @@ static ssize_t do_read(devminor_t minor, u64_t UNUSED(position),
 /*===========================================================================*
  *				do_write				     *
  *===========================================================================*/
+/*
+ * Where the data comes from is a grant when a process writes, and a plain
+ * address when the kernel does - tty prints kernel messages by calling
+ * itself. cp_grant_id_t is an int and cannot hold an address on LP64, so the
+ * two meet here as a vir_bytes and are told apart by the caller's endpoint,
+ * which is what the copy in rs232.c already does.
+ *
+ * do_write() keeps the signature chardriver dictates; tty_kernel_write() is
+ * the other door into the same room.
+ */
+static ssize_t do_write_common(devminor_t minor, endpoint_t endpt,
+	vir_bytes grant, size_t size, int flags, cdev_id_t id);
+
 static ssize_t do_write(devminor_t minor, u64_t UNUSED(position),
 	endpoint_t endpt, cp_grant_id_t grant, size_t size, int flags,
 	cdev_id_t id)
+{
+
+  return do_write_common(minor, endpt, (vir_bytes)grant, size, flags, id);
+}
+
+static ssize_t tty_kernel_write(devminor_t minor, char *buf, size_t size,
+	int flags)
+{
+
+  return do_write_common(minor, KERNEL, (vir_bytes)buf, size, flags, 0);
+}
+
+static ssize_t do_write_common(devminor_t minor, endpoint_t endpt,
+	vir_bytes grant, size_t size, int flags, cdev_id_t id)
 {
 /* A process wants to write on a terminal. */
   tty_t *tp;

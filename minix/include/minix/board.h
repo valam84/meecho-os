@@ -128,6 +128,14 @@
 	| MINIX_BOARD_VARIANT_GENERIC\
 	)
 
+/*
+ * QEMU's virt machine, ignoring the variant bits the way the entries below
+ * do. tty asks this to decide where its UART is: the kernel learns that from
+ * the device tree, but what it learns does not reach user space.
+ */
+#define BOARD_IS_QEMU_VIRT(v) \
+		( (BOARD_ID_QEMU_VIRT & ~MINIX_BOARD_VARIANT_MASK) == (v & ~MINIX_BOARD_VARIANT_MASK))
+
 #define BOARD_IS_BBXM(v) \
 		( (BOARD_ID_BBXM & ~MINIX_BOARD_VARIANT_MASK) == (v & ~MINIX_BOARD_VARIANT_MASK))
 /* Either one of the known BeagleBones */

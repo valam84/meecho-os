@@ -29,7 +29,7 @@ CFLAGS+=	-mcmodel=small
 
 .PATH:	${HERE}
 
-SRCS+=	head.S arch_system.c memory.c direct_tty_utils.c
+SRCS+=	head.S arch_system.c memory.c direct_tty_utils.c fdt.c
 
 .include "bsp/qemu-virt/Makefile.inc"
 

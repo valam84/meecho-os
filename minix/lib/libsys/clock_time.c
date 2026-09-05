@@ -1,5 +1,6 @@
 
 #include "sysutil.h"
+#include <stdint.h>
 #include <sys/time.h>
 
 /*
@@ -30,14 +31,20 @@ clock_time(struct timespec *tv)
 		tv->tv_sec = sec;
 
 		/*
-		 * We do not want to overflow, and system_hz can be as high as
-		 * 50kHz.
+		 * Ticks to nanoseconds, in one step and without an
+		 * intermediate that can overflow: system_hz can be as high as
+		 * 50kHz and the numerator is a billion, so the product needs
+		 * 64 bits and is given them.
+		 *
+		 * What this replaced multiplied by 40000 and then by 25000 to
+		 * stay inside 32 bits, and guarded itself with LONG_MAX /
+		 * 40000 - a limit belonging to a type the arithmetic was not
+		 * done in. Where long is 64 bits that test is always true, so
+		 * the guard protected nothing and the fallback that returned
+		 * no subsecond time at all was unreachable.
 		 */
-		if (system_hz < LONG_MAX / 40000)
-			tv->tv_nsec = (realtime % system_hz) * 40000 /
-			    system_hz * 25000;
-		else
-			tv->tv_nsec = 0;	/* bad, but what's better? */
+		tv->tv_nsec = (long)((uint64_t)(realtime % system_hz) *
+		    1000000000ULL / system_hz);
 	}
 
 	return sec;

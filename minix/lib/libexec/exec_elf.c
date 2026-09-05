@@ -171,7 +171,8 @@ int libexec_load_elf(struct exec_info *execi)
 	for (i = 0; i < hdr->e_phnum; i++) {
 		vir_bytes seg_membytes, page_offset, p_vaddr, vaddr;
 		vir_bytes chunk, vfileend, vmemend;
-		off_t foffset, fbytes;
+		off_t foffset;
+		vir_bytes fbytes;
 		Elf_Phdr *ph = &phdr[i];
 		int try_mmap = 1;
 		u16_t clearend = 0;
@@ -247,7 +248,7 @@ int libexec_load_elf(struct exec_info *execi)
 #endif
 
 			if(seg_membytes > fbytes) {
-				int rem_mem = seg_membytes - fbytes;;
+				vir_bytes rem_mem = seg_membytes - fbytes;
 				vir_bytes remstart = vaddr + fbytes;
 				if(execi->allocmem_ondemand(execi,
 					remstart, rem_mem) != OK) {

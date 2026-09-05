@@ -9,9 +9,14 @@ Copyright 1995 Philip Homburg
 #include <stdio.h>
 #include <string.h>
 #include <minix/sysutil.h>
+#include <machine/archtypes.h>
 
-typedef unsigned int reg_t;
-
+/*
+ * reg_t comes from the architecture, which is the only place that knows how
+ * wide a register is. This file used to declare its own as unsigned int:
+ * right by accident on a 32-bit machine, and on a 64-bit one a frame pointer
+ * cut in half before it was ever dereferenced.
+ */
 extern reg_t get_bp(void);
 
 void util_stacktrace(void)

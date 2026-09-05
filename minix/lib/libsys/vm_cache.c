@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <assert.h>
+#include <stdint.h>
 
 #include <sys/mman.h>
 
@@ -21,12 +22,12 @@ static int vm_cachecall(message *m, int call, void *addr, dev_t dev,
 		blocksize, PAGE_SIZE);
 
     if(ino_offset % PAGE_SIZE)
-    	panic("inode offset %lld should be a multiple of pagesize %d\n",
-		ino_offset, PAGE_SIZE);
+    	panic("inode offset %jd should be a multiple of pagesize %d\n",
+		(intmax_t)ino_offset, PAGE_SIZE);
 
     if(dev_offset % PAGE_SIZE)
-    	panic("dev offset offset %lld should be a multiple of pagesize %d\n",
-		dev_offset, PAGE_SIZE);
+    	panic("dev offset offset %jd should be a multiple of pagesize %d\n",
+		(intmax_t)dev_offset, PAGE_SIZE);
 
     memset(m, 0, sizeof(*m));
 

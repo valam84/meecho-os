@@ -10,6 +10,7 @@
 #include <lib.h>
 
 #include <unistd.h>
+#include <stdint.h>
 #include <string.h>
 #include <stddef.h>
 #include <sys/exec_elf.h>
@@ -62,10 +63,14 @@
 /* The minimum size of the frame is composed of:
  * argc, the NULL terminator for argv as well as one for
  * environ, the ELF Aux vectors, executable name and the
- * ps_strings struct. */
+ * ps_strings struct.
+ *
+ * argc is counted as a stack word, not as an int: it occupies a whole slot
+ * at the top of the stack, ahead of the argv pointers. The two are the same
+ * width on a 32-bit machine, which is why this said sizeof(int) for years. */
 #define STACK_MIN_SZ \
 ( \
-	sizeof(int) + sizeof(void *) * 2 + \
+	sizeof(void *) + sizeof(void *) * 2 + \
 	sizeof(AuxInfo) * PMEF_AUXVECTORS + PMEF_EXECNAMELEN1 + \
 	sizeof(struct ps_strings) \
 )
@@ -134,7 +139,7 @@ void minix_stack_fill(const char *path, int argc, char * const *argv,
 
 	/* Fill in the frame now. */
 	fpw = (char **) frame;
-	*fpw++ = (char *) argc;
+	*fpw++ = (char *)(uintptr_t) argc;
 
 	/* The strings themselves are stored after the aux vectors,
 	 * cf. top comment. */
@@ -165,7 +170,8 @@ void minix_stack_fill(const char *path, int argc, char * const *argv,
 	/* Fill in the ps_string struct*/
 	*psp = (struct ps_strings *) fp;
 
-	(*psp)->ps_argvstr = (char **)(*vsp + sizeof(argc));
+	/* argv starts one stack word in, after the argc slot written above. */
+	(*psp)->ps_argvstr = (char **)(*vsp + sizeof(char *));
 	(*psp)->ps_nargvstr = argc;
 	(*psp)->ps_envstr = (*psp)->ps_argvstr + argc + 1;
 	(*psp)->ps_nenvstr = envc;

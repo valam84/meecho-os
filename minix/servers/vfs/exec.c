@@ -405,7 +405,7 @@ pm_execfinal:
  * Keep it synchronized. */
 #define STACK_MIN_SZ \
 ( \
-       sizeof(int) + sizeof(void *) * 2 + \
+       sizeof(void *) + sizeof(void *) * 2 + \
        sizeof(AuxInfo) * PMEF_AUXVECTORS + PMEF_EXECNAMELEN1 + \
        sizeof(struct ps_strings) \
 )

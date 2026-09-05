@@ -126,7 +126,13 @@ void kmain(kinfo_t *local_cbi)
 
   /* save a global copy of the boot parameters */
   memcpy(&kinfo, local_cbi, sizeof(kinfo));
-  memcpy(&kmess, kinfo.kmess, sizeof(kmess));
+  /* On the two 32-bit ports the early boot code has a diagnostics buffer of
+   * its own, in the unpaged copy, and this is what carries its contents over.
+   * Where early boot writes straight into this one there is nothing to copy,
+   * and memcpy onto itself is undefined rather than merely pointless.
+   */
+  if (kinfo.kmess != &kmess)
+	memcpy(&kmess, kinfo.kmess, sizeof(kmess));
 
    /* We have done this exercise in pre_init so we expect this code
       to simply work! */

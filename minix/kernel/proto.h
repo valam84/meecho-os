@@ -46,7 +46,20 @@ void fpu_sigcontext(struct proc *, struct sigframe_sigcontext *fr, struct
 	sigcontext *sc);
 
 /* main.c */
-#ifndef UNPAGED
+/*
+ * i386 and earm link a second copy of their early boot objects with every
+ * symbol prefixed __k_unpaged_, because that code runs against physical
+ * addresses the linker resolved to virtual ones. The call out of that copy
+ * therefore names __k_unpaged_kmain, and renaming the definition here is
+ * what makes the two meet; pre_init.c undoes the rename for itself with
+ * UNPAGED.
+ *
+ * AArch64 has no such copy - its early code is PC-relative and turns the MMU
+ * on itself - so there kmain keeps its own name, and a symbol claiming an
+ * unpaged mechanism that does not exist would be a lie in the disassembly.
+ * See minix/kernel/arch/aarch64/Makefile.inc.
+ */
+#if !defined(UNPAGED) && !defined(__aarch64__)
 #define kmain __k_unpaged_kmain
 #endif
 void kmain(kinfo_t *cbi);

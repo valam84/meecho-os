@@ -341,6 +341,19 @@ typedef struct {
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_umap);
 
 typedef struct {
+	vir_bytes addr;		/* address the fault was on */
+	vir_bytes addr2;	/* address in the source process */
+	vir_bytes length;
+	endpoint_t target;	/* process the memory belongs to */
+	endpoint_t ep2;		/* source process, for a copy */
+	endpoint_t requestor;	/* process that asked, and is suspended */
+	int flag;		/* was the access a write */
+
+	uint8_t padding[80];
+} mess_krn_lsys_sys_vmctl_memreq;
+_ASSERT_MSG_SIZE(mess_krn_lsys_sys_vmctl_memreq);
+
+typedef struct {
 	int pcount;
 
 	uint8_t padding[116];
@@ -2482,6 +2495,7 @@ typedef struct noxfer_message {
 		mess_krn_lsys_sys_times	m_krn_lsys_sys_times;
 		mess_krn_lsys_sys_trace	m_krn_lsys_sys_trace;
 		mess_krn_lsys_sys_umap	m_krn_lsys_sys_umap;
+		mess_krn_lsys_sys_vmctl_memreq	m_krn_lsys_sys_vmctl_memreq;
 		mess_krn_lsys_sys_vumap	m_krn_lsys_sys_vumap;
 		mess_lbdev_lblockdriver_msg m_lbdev_lblockdriver_msg;
 		mess_lblockdriver_lbdev_reply m_lblockdriver_lbdev_reply;

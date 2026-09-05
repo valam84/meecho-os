@@ -5,7 +5,7 @@
 # Every variant is filled out to the payload size with an explicit padding
 # array, so that the space left in a message is visible in the header and
 # taking some of it is a deliberate act.  Widening the payload therefore means
-# recomputing 256 of those arrays, which is what this script does.  The edit is
+# recomputing every one of those arrays, which is what this script does.  The edit is
 # mechanical and must stay reproducible: the header is the generator's output,
 # not something to correct by hand.  Run it again after any change to a
 # variant's fields, or to the payload size.
@@ -18,7 +18,7 @@
 # the payload, which _ASSERT_MSG_SIZE allows and the union's own size[] array
 # covers: sizeof(message) is the same on both.  Making a variant exact under
 # both data models at once would take a padding value per model, i.e. an ABI
-# conditional in 256 places, to no benefit -- 32-bit is a reference build here.
+# conditional in every variant, to no benefit -- 32-bit is a reference build.
 #
 # Usage: python3 gen-msgpadding.py [--check] [path/to/ipc.h]
 #        --check verifies that the header already matches; it writes nothing
@@ -89,8 +89,9 @@ def main():
     out.append(body[pos:])
     newbody = "".join(out)
 
-    if len(blocks) != len(names) or len(names) != 256:
-        print("warning: %d variants, expected 256" % len(names))
+    if len(blocks) != len(names):
+        sys.exit("extraction disagrees with itself: %d blocks, %d names"
+                 % (len(blocks), len(names)))
 
     # ------------------------------------------------------------- verify
     # Nothing but padding may have moved, and the compiler -- not the layout

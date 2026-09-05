@@ -60,19 +60,26 @@
 /* We want to make it possible to use masks and therefore only try to use bits */
 #define MINIX_BOARD_ARCH_X86 MINIX_MK_BOARD_ARCH(1 << 0)
 #define MINIX_BOARD_ARCH_ARM MINIX_MK_BOARD_ARCH(1 << 1)
+/* AArch64 is its own architecture here, not a variant of ARM: the two do not
+ * run each other's binaries, and this field is what picks the userland. */
+#define MINIX_BOARD_ARCH_ARM64 MINIX_MK_BOARD_ARCH(1 << 2)
 
 #define MINIX_BOARD_ARCH_VARIANT_X86_GENERIC MINIX_MK_BOARD_ARCH_VARIANT(1<<0)
 #define MINIX_BOARD_ARCH_VARIANT_ARM_ARMV6 MINIX_MK_BOARD_ARCH_VARIANT(1<<1)
 #define MINIX_BOARD_ARCH_VARIANT_ARM_ARMV7 MINIX_MK_BOARD_ARCH_VARIANT(1<<2)
+#define MINIX_BOARD_ARCH_VARIANT_ARM_ARMV8 MINIX_MK_BOARD_ARCH_VARIANT(1<<3)
 
 #define MINIX_BOARD_VENDOR_INTEL MINIX_MK_BOARD_VENDOR(1<<0)
 #define MINIX_BOARD_VENDOR_TI MINIX_MK_BOARD_VENDOR(1<<1)
+#define MINIX_BOARD_VENDOR_QEMU MINIX_MK_BOARD_VENDOR(1<<2)
 
 #define MINIX_BOARD_GENERIC MINIX_MK_BOARD(1<<0)
 /* BeagleBoard XM */
 #define MINIX_BOARD_BBXM MINIX_MK_BOARD(1<<1)
 /* BeagleBone (Black and* white) */
 #define MINIX_BOARD_BB MINIX_MK_BOARD(1<<2)
+/* QEMU's virt machine - the development target while there is no hardware */
+#define MINIX_BOARD_VIRT MINIX_MK_BOARD(1<<3)
 
 /* Only  one  of a kind */
 #define MINIX_BOARD_VARIANT_GENERIC MINIX_MK_BOARD_VARIANT(1<<0)
@@ -111,6 +118,14 @@
 	| MINIX_BOARD_VENDOR_TI \
 	| MINIX_BOARD_BB \
 	| MINIX_BOARD_VARIANT_BBB\
+	)
+
+#define BOARD_ID_QEMU_VIRT \
+	( MINIX_BOARD_ARCH_ARM64 \
+	| MINIX_BOARD_ARCH_VARIANT_ARM_ARMV8 \
+	| MINIX_BOARD_VENDOR_QEMU \
+	| MINIX_BOARD_VIRT \
+	| MINIX_BOARD_VARIANT_GENERIC\
 	)
 
 #define BOARD_IS_BBXM(v) \
@@ -162,6 +177,7 @@ static struct board_id2name board_id2name[] = {
 	{.id = BOARD_ID_BBXM,.name = "ARM-ARMV7-TI-BBXM-GENERIC"},
 	{.id = BOARD_ID_BBW,.name = "ARM-ARMV7-TI-BB-WHITE"},
 	{.id = BOARD_ID_BBB,.name = "ARM-ARMV7-TI-BB-BLACK"},
+	{.id = BOARD_ID_QEMU_VIRT,.name = "ARM64-ARMV8-QEMU-VIRT-GENERIC"},
 };
 
 struct board_arch2arch
@@ -173,6 +189,7 @@ struct board_arch2arch
 static struct board_arch2arch board_arch2arch[] = {
 	{.board_arch = MINIX_BOARD_ARCH_ARM ,.arch = "earm"},
 	{.board_arch = MINIX_BOARD_ARCH_X86 ,.arch = "i386"},
+	{.board_arch = MINIX_BOARD_ARCH_ARM64 ,.arch = "aarch64"},
 };
 
 /* returns 0 if no board was found that match that id */

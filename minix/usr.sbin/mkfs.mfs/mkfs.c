@@ -34,11 +34,21 @@
 #include "type.h"
 #include "mfsdir.h"
 #include "super.h"
+/* The layouts of both formats, the same header the server reads.  The path
+ * is relative to this file, so that it is found the same way whether this
+ * is built for the system or as a host tool.
+ */
+#include "../../fs/mfs/ondisk.h"
 
 #define INODE_MAP	START_BLOCK
-/* inode zone indexes pointing to single and double indirect zones */
-#define S_INDIRECT_IDX	(NR_DZONES)
-#define D_INDIRECT_IDX	(NR_DZONES+1)
+
+/* The largest file a V3 file system can hold; V4 keeps its own limit in
+ * the superblock.  Stated here as well as in super(), which is where it
+ * used to be alone, because the inode writer checks against it too.
+ */
+#ifndef MAX_MAX_SIZE
+#define MAX_MAX_SIZE	(INT32_MAX)
+#endif
 
 
 #define MAX_TOKENS          10
@@ -73,6 +83,27 @@ zone_t next_zone, zoff, nr_indirzones;
 int inodes_per_block, indir_per_block, indir_per_zone;
 unsigned int zone_size;
 ino_t nrinodes, inode_offset, next_inode;
+
+/* Which format is being written, and the shape of an inode in it.  V3 is
+ * the default and is what the ramdisk is made of; -4 asks for V4.
+ */
+int fs_version = 3;
+size_t inode_size;
+unsigned nr_dzones, nr_tzones, nr_levels;
+
+/* An inode as this program handles it: as wide as the wider format, so
+ * that the code that fills one in does not have to know which is being
+ * written.  ino_get() and ino_put() convert.
+ */
+struct gen_inode {
+	uint16_t mode;
+	uint32_t nlinks;
+	uint32_t uid;
+	uint32_t gid;
+	uint64_t size;
+	int64_t atime, mtime, ctime, btime;
+	uint32_t zone[MFS4_NR_TZONES];
+};
 int lct = 0, fd, print = 0;
 int simple = 0, dflag = 0, verbose = 0;
 int donttest;			/* skip test if it fits on medium */
@@ -93,6 +124,13 @@ size_t block_size;
 FILE *proto;
 
 int main(int argc, char **argv);
+static void ino_get(ino_t n, struct gen_inode *gi);
+static void ino_put(ino_t n, const struct gen_inode *gi);
+static void map_insert(uint32_t *zone, uint64_t index, zone_t z);
+static zone_t map_get(const uint32_t *zone, uint64_t index);
+static void enter_dir_v4(ino_t parent, char const *name, ino_t child,
+	unsigned type);
+static unsigned dt_of_mode(uint16_t mode);
 void detect_fs_size(struct fs_size * fssize);
 void sizeup_dir(struct fs_size * fssize);
 block_t sizeup(char *device);
@@ -150,8 +188,14 @@ main(int argc, char *argv[])
 #endif
   zone_shift = 0;
   extra_space_percent = 0;
-  while ((ch = getopt(argc, argv, "B:b:di:ltvx:z:I:T:")) != EOF)
+  while ((ch = getopt(argc, argv, "34B:b:di:ltvx:z:I:T:")) != EOF)
 	switch (ch) {
+	    case '3':
+		fs_version = 3;
+		break;
+	    case '4':
+		fs_version = 4;
+		break;
 #ifndef MFS_STATIC_BLOCK_SIZE
 	    case 'B':
 		block_size = strtoul(optarg, &sfx, 0);
@@ -237,18 +281,42 @@ main(int argc, char *argv[])
   if (block_size > MAX_BLOCK_SIZE)
 	errx(4, "block size must be at most %d bytes", MAX_BLOCK_SIZE);
 #endif
-  if(block_size%INODE_SIZE)
-	errx(4, "block size must be a multiple of inode size (%d bytes)", INODE_SIZE);
+  /* The shape of an inode follows from the version, and everything else
+   * that differs between the two follows from these.
+   */
+  if (fs_version == 4) {
+	inode_size = MFS4_INODE_SIZE;
+	nr_dzones = MFS4_NR_DZONES;
+	nr_tzones = MFS4_NR_TZONES;
+	nr_levels = MFS4_NR_LEVELS;
+
+	if (block_size < MFS4_MIN_BLOCK_SIZE ||
+	    block_size > MFS4_MAX_BLOCK_SIZE)
+		errx(4, "V4 needs a block size between %d and %d bytes",
+		    MFS4_MIN_BLOCK_SIZE, MFS4_MAX_BLOCK_SIZE);
+  } else {
+	inode_size = INODE_SIZE;
+	nr_dzones = NR_DZONES;
+	nr_tzones = NR_TZONES;
+	nr_levels = MFS3_NR_LEVELS;
+  }
+
+  if(block_size % inode_size)
+	errx(4, "block size must be a multiple of inode size (%d bytes)",
+	    (int) inode_size);
 
   if(zone_shift < 0 || zone_shift > 14)
 	errx(4, "zone_shift must be a small non-negative integer");
+  /* V4 has no notion of a zone larger than a block. */
+  if (fs_version == 4 && zone_shift != 0)
+	errx(4, "V4 has no zones: -z is not for it");
   zone_per_block = 1 << zone_shift;	/* nr of blocks per zone */
 
-  inodes_per_block = INODES_PER_BLOCK(block_size);
+  inodes_per_block = block_size / inode_size;
   indir_per_block = INDIRECTS(block_size);
   indir_per_zone = INDIRECTS(block_size) << zone_shift;
   /* number of file zones we can address directly and with a single indirect*/
-  nr_indirzones = NR_DZONES + indir_per_zone;
+  nr_indirzones = nr_dzones + indir_per_zone;
   zone_size = block_size << zone_shift;
   /* Checks for an overflow: only with very big block size */
   if (zone_size <= 0)
@@ -470,16 +538,28 @@ sizeup_dir(struct fs_size * fssize)
   FILE *f;
   off_t size;
   int dir_entries = 2;
+  size_t dir_bytes = 2 * MFS4_DIRENT_LEN(2);	/* "." and ".." */
   zone_t dir_zones = 0, fzones, indirects;
 
   while (1) {
 	get_line(line, token);
 	p = token[0];
 	if (*p == '$') {
-		dir_zones = (dir_entries / (NR_DIR_ENTRIES(block_size) * zone_per_block));
-		if(dir_entries % (NR_DIR_ENTRIES(block_size) * zone_per_block))
-			dir_zones++;
-		if(dir_zones > NR_DZONES)
+		if (fs_version == 4) {
+			/* Records are variable-length, so the estimate is
+			 * by the bytes the names actually need, with the
+			 * longest possible record spared per block for the
+			 * one that does not fit at its end.
+			 */
+			dir_zones = (dir_bytes + block_size - 1) / block_size;
+			if (dir_zones == 0)
+				dir_zones = 1;
+		} else {
+			dir_zones = (dir_entries / (NR_DIR_ENTRIES(block_size) * zone_per_block));
+			if(dir_entries % (NR_DIR_ENTRIES(block_size) * zone_per_block))
+				dir_zones++;
+		}
+		if(dir_zones > nr_dzones)
 			dir_zones++;	/* Max single indir */
 		fssize->zonecount += dir_zones;
 		return;
@@ -488,13 +568,17 @@ sizeup_dir(struct fs_size * fssize)
 	p = token[1];
 	fssize->inocount++;
 	dir_entries++;
+	dir_bytes += MFS4_DIRENT_LEN(strlen(token[0]));
 
 	if (*p == 'd') {
 		sizeup_dir(fssize);
 	} else if (*p == 'b' || *p == 'c') {
 
 	} else if (*p == 's') {
-		fssize->zonecount++; /* Symlink contents is always stored a block */
+		/* A V4 target of 60 bytes or less lives in the inode. */
+		if (fs_version != 4 ||
+		    strlen(token[4]) > MFS4_FAST_SYMLINK_MAX)
+			fssize->zonecount++;
 	} else {
 		if ((f = fopen(token[4], "rb")) == NULL) {
 /* on minix natively, allow EACCES and skip the entry.
@@ -517,7 +601,7 @@ sizeup_dir(struct fs_size * fssize)
 			fzones = roundup(size, zone_size) / zone_size;
 			indirects = 0;
 			/* XXX overflow? fzones is u32, size is potentially 64-bit */
-			if (fzones > NR_DZONES)
+			if (fzones > nr_dzones)
 				indirects++; /* single indirect needed */
 			if (fzones > nr_indirzones) {
 				/* Each further group of 'indir_per_zone'
@@ -599,8 +683,328 @@ bitmapsize(bit_t nr_bits, size_t blk_size)
 }
 
 /*================================================================
+ *              inode and block-map access, either format
+ *===============================================================*/
+
+/* Read one inode into the shape this program works in. */
+static void
+ino_get(ino_t n, struct gen_inode *gi)
+{
+  block_t b;
+  unsigned off, i;
+  char *blk;
+
+  b = ((n - 1) / inodes_per_block) + inode_offset;
+  off = (n - 1) % inodes_per_block;
+
+  blk = alloc_block();
+  get_block(b, blk);
+  memset(gi, 0, sizeof(*gi));
+
+  if (fs_version == 4) {
+	struct mfs4_inode *d = (struct mfs4_inode *) (blk + off * inode_size);
+
+	gi->mode = d->i_mode;
+	gi->nlinks = d->i_nlinks;
+	gi->uid = d->i_uid;
+	gi->gid = d->i_gid;
+	gi->size = d->i_size;
+	gi->atime = d->i_atime;
+	gi->mtime = d->i_mtime;
+	gi->ctime = d->i_ctime;
+	gi->btime = d->i_btime;
+	for (i = 0; i < MFS4_NR_TZONES; i++)
+		gi->zone[i] = d->i_zone[i];
+  } else {
+	struct inode *d = (struct inode *) (blk + off * inode_size);
+
+	gi->mode = d->i_mode;
+	gi->nlinks = d->i_nlinks;
+	gi->uid = d->i_uid;
+	gi->gid = d->i_gid;
+	gi->size = d->i_size;
+	gi->atime = d->i_atime;
+	gi->mtime = d->i_mtime;
+	gi->ctime = d->i_ctime;
+	for (i = 0; i < NR_TZONES; i++)
+		gi->zone[i] = d->i_zone[i];
+  }
+
+  free(blk);
+}
+
+/* Write one inode back, narrowing it to what the format holds. */
+static void
+ino_put(ino_t n, const struct gen_inode *gi)
+{
+  block_t b;
+  unsigned off, i;
+  char *blk;
+
+  b = ((n - 1) / inodes_per_block) + inode_offset;
+  off = (n - 1) % inodes_per_block;
+
+  blk = alloc_block();
+  get_block(b, blk);
+
+  if (fs_version == 4) {
+	struct mfs4_inode *d = (struct mfs4_inode *) (blk + off * inode_size);
+
+	d->i_mode = gi->mode;
+	d->i_flags = 0;
+	d->i_nlinks = gi->nlinks;
+	d->i_uid = gi->uid;
+	d->i_gid = gi->gid;
+	d->i_size = gi->size;
+	d->i_atime = gi->atime;
+	d->i_mtime = gi->mtime;
+	d->i_ctime = gi->ctime;
+	d->i_btime = gi->btime;
+	d->i_atime_nsec = d->i_mtime_nsec = d->i_ctime_nsec = 0;
+	for (i = 0; i < MFS4_NR_TZONES; i++)
+		d->i_zone[i] = gi->zone[i];
+  } else {
+	struct inode *d = (struct inode *) (blk + off * inode_size);
+
+	d->i_mode = gi->mode;
+	d->i_nlinks = gi->nlinks;
+	if (d->i_nlinks != gi->nlinks)
+		pexit("too many links for this version of Minix FS");
+	d->i_uid = gi->uid;
+	d->i_gid = gi->gid;
+	d->i_size = gi->size;
+	if (gi->size > MAX_MAX_SIZE)
+		pexit("file too big for this version of Minix FS");
+	d->i_atime = gi->atime;
+	d->i_mtime = gi->mtime;
+	d->i_ctime = gi->ctime;
+	for (i = 0; i < NR_TZONES; i++)
+		d->i_zone[i] = gi->zone[i];
+  }
+
+  put_block(b, blk);
+  free(blk);
+}
+
+/* One entry of an indirect zone.  An indirect zone is one block unless -z
+ * asked for larger zones, in which case its entries run over several.
+ */
+static zone_t
+indir_get(zone_t z, uint64_t entry)
+{
+  uint32_t *blk = alloc_block();
+  zone_t r;
+
+  get_block((z << zone_shift) + entry / indir_per_block, blk);
+  r = blk[entry % indir_per_block];
+  free(blk);
+
+  return r;
+}
+
+static void
+indir_set(zone_t z, uint64_t entry, zone_t val)
+{
+  block_t b = (z << zone_shift) + entry / indir_per_block;
+  uint32_t *blk = alloc_block();
+
+  get_block(b, blk);
+  blk[entry % indir_per_block] = val;
+  put_block(b, blk);
+  free(blk);
+}
+
+/*
+ * Put block number 'z' at position 'index' of a file's block map, creating
+ * whatever indirect blocks the way there needs.  Written for any number of
+ * levels of indirection, because that number is exactly what differs between
+ * the formats: V3 has two, V4 has three.
+ */
+static void
+map_insert(uint32_t *zone, uint64_t index, zone_t z)
+{
+  uint64_t span = 1, ni = indir_per_zone, entry;
+  unsigned lv, slot;
+  zone_t cur, next;
+
+  if (index < nr_dzones) {
+	zone[index] = z;
+	return;
+  }
+  index -= nr_dzones;
+
+  for (lv = 1; lv <= nr_levels; lv++) {
+	span *= ni;
+	if (index < span) break;
+	index -= span;
+  }
+  if (lv > nr_levels)
+	pexit("file has grown beyond what this file system can address");
+
+  slot = nr_dzones + lv - 1;
+  if (zone[slot] == 0)
+	zone[slot] = alloc_zone();
+  cur = zone[slot];
+
+  while (lv > 1) {
+	span /= ni;
+	entry = index / span;
+	next = indir_get(cur, entry);
+	if (next == 0) {
+		next = alloc_zone();
+		indir_set(cur, entry, next);
+	}
+	cur = next;
+	index %= span;
+	lv--;
+  }
+
+  indir_set(cur, index, z);
+}
+
+/* The other way: the block at 'index', or 0 if there is none. */
+static zone_t
+map_get(const uint32_t *zone, uint64_t index)
+{
+  uint64_t span = 1, ni = indir_per_zone, entry;
+  unsigned lv, slot;
+  zone_t cur;
+
+  if (index < nr_dzones)
+	return zone[index];
+  index -= nr_dzones;
+
+  for (lv = 1; lv <= nr_levels; lv++) {
+	span *= ni;
+	if (index < span) break;
+	index -= span;
+  }
+  if (lv > nr_levels)
+	return 0;
+
+  slot = nr_dzones + lv - 1;
+  cur = zone[slot];
+
+  while (cur != 0 && lv > 1) {
+	span /= ni;
+	entry = index / span;
+	cur = indir_get(cur, entry);
+	index %= span;
+	lv--;
+  }
+
+  if (cur == 0)
+	return 0;
+
+  return indir_get(cur, index);
+}
+
+/* The DT_* a directory entry records, from the mode of what it names. */
+static unsigned
+dt_of_mode(uint16_t mode)
+{
+  switch (mode & S_IFMT) {
+  case S_IFREG:		return 8;	/* DT_REG */
+  case S_IFDIR:		return 4;	/* DT_DIR */
+  case S_IFLNK:		return 10;	/* DT_LNK */
+  case S_IFCHR:		return 2;	/* DT_CHR */
+  case S_IFBLK:		return 6;	/* DT_BLK */
+  case S_IFIFO:		return 1;	/* DT_FIFO */
+  case S_IFSOCK:	return 12;	/* DT_SOCK */
+  default:		return 0;	/* DT_UNKNOWN */
+  }
+}
+
+/*================================================================
  *                 super  -  construct a superblock
  *===============================================================*/
+
+/* The V4 superblock.  Its feature words are all zero: a file system made
+ * here has nothing in it that a V4 server does not know, which is what
+ * lets an older server refuse a newer volume by its features rather than
+ * by getting it wrong.
+ */
+static void
+super_v4(zone_t blocks, ino_t inodes)
+{
+  struct mfs4_super *sup;
+  block_t inodeblks, initblks, i;
+  uint64_t ni, maxsize;
+  void *buf;
+  unsigned k;
+
+  sup = buf = alloc_block();
+
+  sup->s_magic = MFS4_SUPER_MAGIC;
+  sup->s_disk_version = 0;
+  sup->s_block_size = block_size;
+  sup->s_ninodes = inodes;
+  sup->s_nblocks = blocks;
+  sup->s_inode_size = MFS4_INODE_SIZE;
+  sup->s_flags = MFS4_FLAG_CLEAN;
+
+  sup->s_imap_blocks = bitmapsize(1 + inodes, block_size);
+  sup->s_zmap_blocks = bitmapsize(blocks, block_size);
+
+  inode_offset = START_BLOCK + sup->s_imap_blocks + sup->s_zmap_blocks;
+  inodeblks = (inodes + inodes_per_block - 1) / inodes_per_block;
+  initblks = inode_offset + inodeblks;
+  if (initblks >= blocks)
+	errx(1, "bit maps too large");
+
+  sup->s_firstdatablock = initblks;
+  zoff = sup->s_firstdatablock - 1;
+
+  /* What the block map of one inode can address: twelve blocks plus the
+   * three trees.  At a 4 KB block that is about 4 TB.
+   */
+  ni = indir_per_zone;
+  maxsize = ((uint64_t) nr_dzones + ni + ni * ni + ni * ni * ni) * block_size;
+  sup->s_max_size = maxsize;
+
+  sup->s_mkfs_time = current_time;
+
+  /* An identifier for the volume, made from what made it rather than from
+   * a random source: two runs of mkfs with -d or -T produce the same image
+   * byte for byte, and a uuid out of rand() would be the one thing that
+   * did not.
+   */
+  for (k = 0; k < sizeof(sup->s_uuid); k++)
+	sup->s_uuid[k] = (uint8_t) ((current_time >> ((k % 8) * 8)) ^
+	    (blocks * (k + 1)) ^ (inodes << (k % 5)));
+  sup->s_uuid[6] = (sup->s_uuid[6] & 0x0f) | 0x40;	/* version 4 */
+  sup->s_uuid[8] = (sup->s_uuid[8] & 0x3f) | 0x80;	/* variant */
+
+  if (verbose > 1)
+	fprintf(stderr, "Super block values (V4):\n"
+	    "\tnumber of inodes\t%12u\n"
+	    "\tnumber of blocks\t%12u\n"
+	    "\tinode bit map blocks\t%12u\n"
+	    "\tblock bit map blocks\t%12u\n"
+	    "\tfirst data block\t%12u\n"
+	    "\tinode size\t\t%12u\n"
+	    "\tmaximum file size\t%12llu\n"
+	    "\tblock size\t\t%12u\n",
+	    sup->s_ninodes, sup->s_nblocks, sup->s_imap_blocks,
+	    sup->s_zmap_blocks, sup->s_firstdatablock, sup->s_inode_size,
+	    (unsigned long long) sup->s_max_size, sup->s_block_size);
+
+  mkfs_seek((off_t) SUPER_BLOCK_BYTES, SEEK_SET);
+  mkfs_write(buf, SUPER_BLOCK_BYTES);
+
+  /* Clear maps and inodes. */
+  for (i = START_BLOCK; i < initblks; i++) put_block((block_t) i, zero);
+
+  next_zone = sup->s_firstdatablock;
+  next_inode = 1;
+
+  zone_map = INODE_MAP + sup->s_imap_blocks;
+
+  insert_bit(zone_map, 0);		/* bit zero is always allocated */
+  insert_bit((block_t) INODE_MAP, 0);	/* inode zero is not used */
+
+  free(buf);
+}
 
 void
 super(zone_t zones, ino_t inodes)
@@ -610,6 +1014,11 @@ super(zone_t zones, ino_t inodes)
   long long ind_per_zone, zo;
   void *buf;
   struct super_block *sup;
+
+  if (fs_version == 4) {
+	super_v4(zones, inodes);
+	return;
+  }
 
   sup = buf = alloc_block();
 
@@ -627,7 +1036,7 @@ super(zone_t zones, ino_t inodes)
   /* Check for overflow; can only happen on V1 file systems */
   if(zones != sup->s_zones)
 	errx(1, "Too much zones (blocks) for that version of Minix FS.");
-  
+
 #ifndef MFS_STATIC_BLOCK_SIZE
 #define BIGGERBLOCKS "Please try a larger block size for an FS of this size."
 #else
@@ -727,8 +1136,15 @@ rootdir(ino_t inode)
 {
   zone_t z;
 
-  z = alloc_zone();
-  add_zone(inode, z, 2 * sizeof(struct direct), current_time);
+  /* On V4 the first block of a directory is made by the code that puts a
+   * name in it, because a block has to be laid out as records before it
+   * means anything.
+   */
+  if (fs_version != 4) {
+	z = alloc_zone();
+	add_zone(inode, z, 2 * sizeof(struct direct), current_time);
+  }
+
   enter_dir(inode, ".", inode);
   enter_dir(inode, "..", inode);
   incr_link(inode);
@@ -742,9 +1158,22 @@ enter_symlink(ino_t inode, char *lnk)
   size_t len;
   char *buf;
 
+  len = strlen(lnk);
+
+  /* A V4 target of 60 bytes or less lives in the inode itself. */
+  if (fs_version == 4 && len <= MFS4_FAST_SYMLINK_MAX) {
+	struct gen_inode gi;
+
+	ino_get(inode, &gi);
+	memcpy(gi.zone, lnk, len);
+	gi.size = len;
+	gi.mtime = gi.atime = gi.ctime = current_time;
+	ino_put(inode, &gi);
+	return;
+  }
+
   buf = alloc_block();
   z = alloc_zone();
-  len = strlen(lnk);
   if (len >= block_size)
 	pexit("symlink too long, max length is %u", (unsigned)block_size - 1);
   strcpy(buf, lnk);
@@ -780,16 +1209,22 @@ eat_dir(ino_t parent)
 	grpid = atoi(token[3]);
 	n = alloc_inode(mode, usrid, grpid);
 
-	/* Enter name in directory and update directory's size. */
+	/* Enter name in directory and update directory's size.  On V4 the
+	 * size of a directory is whole blocks, and enter_dir keeps it.
+	 */
 	enter_dir(parent, token[0], n);
-	incr_size(parent, sizeof(struct direct));
+	if (fs_version != 4)
+		incr_size(parent, sizeof(struct direct));
 
 	/* Check to see if file is directory or special. */
 	incr_link(n);
 	if (*p == 'd') {
 		/* This is a directory. */
-		z = alloc_zone();	/* zone for new directory */
-		add_zone(n, z, 2 * sizeof(struct direct), current_time);
+		if (fs_version != 4) {
+			z = alloc_zone();  /* zone for new directory */
+			add_zone(n, z, 2 * sizeof(struct direct),
+			    current_time);
+		}
 		enter_dir(n, ".", n);
 		enter_dir(n, "..", parent);
 		incr_link(parent);
@@ -887,6 +1322,115 @@ dir_try_enter(zone_t z, ino_t child, char const *name)
   return r;
 }
 
+/*
+ * Put one record into a V4 directory block that has room for it.  A record
+ * in use is split, keeping what its own name needs; a free record is taken
+ * whole, so that no gap too small for any name is left behind.  This is the
+ * same rule the server follows, and the two have to agree on it.
+ */
+static void
+dirent_place(struct mfs4_dirent *dp, ino_t child, char const *name,
+	size_t namelen, unsigned type)
+{
+  struct mfs4_dirent *nw;
+
+  if (dp->d_ino != 0) {
+	unsigned used = MFS4_DIRENT_LEN(dp->d_name_len);
+
+	nw = (struct mfs4_dirent *) ((char *) dp + used);
+	nw->d_rec_len = dp->d_rec_len - used;
+	dp->d_rec_len = used;
+	dp = nw;
+  }
+
+  dp->d_ino = (uint32_t) child;
+  dp->d_name_len = (uint8_t) namelen;
+  dp->d_type = (uint8_t) type;
+  memcpy(dp->d_name, name, namelen);
+  memset(dp->d_name + namelen, 0,
+      dp->d_rec_len - MFS4_DIRENT_HDR - namelen);
+}
+
+static void
+enter_dir_v4(ino_t parent, char const *name, ino_t child, unsigned type)
+{
+  struct gen_inode gi, child_gi;
+  struct mfs4_dirent *dp;
+  uint64_t index, nblocks;
+  size_t namelen, need;
+  unsigned off;
+  char *blk;
+  zone_t z;
+  int placed = 0;
+
+  namelen = strlen(name);
+  if (namelen == 0 || namelen > MFS4_NAME_MAX)
+	pexit("directory entry name of %u bytes", (unsigned) namelen);
+  need = MFS4_DIRENT_LEN(namelen);
+
+  /* The type is a property of what the name names, so it is read from
+   * there rather than passed down through every caller.
+   */
+  if (type == (unsigned) -1) {
+	ino_get(child, &child_gi);
+	type = dt_of_mode(child_gi.mode);
+  }
+
+  ino_get(parent, &gi);
+  nblocks = gi.size / block_size;
+  blk = alloc_block();
+
+  for (index = 0; index < nblocks && !placed; index++) {
+	z = map_get(gi.zone, index);
+	if (z == 0)
+		pexit("hole in a directory being built");
+
+	get_block(z << zone_shift, blk);
+
+	for (off = 0; off + MFS4_DIRENT_HDR <= block_size;
+	     off += dp->d_rec_len) {
+		dp = (struct mfs4_dirent *) (blk + off);
+
+		if (dp->d_rec_len < MFS4_DIRENT_HDR ||
+		    off + dp->d_rec_len > block_size)
+			pexit("corrupt directory record while building");
+
+		if (dp->d_ino == 0) {
+			if (dp->d_rec_len < need) continue;
+		} else if (dp->d_rec_len - MFS4_DIRENT_LEN(dp->d_name_len) <
+		    need) {
+			continue;
+		}
+
+		dirent_place(dp, child, name, namelen, type);
+		put_block(z << zone_shift, blk);
+		placed = 1;
+		break;
+	}
+  }
+
+  if (!placed) {
+	/* The directory grows by a block, which starts as one free record
+	 * covering all of it.
+	 */
+	z = alloc_zone();
+	map_insert(gi.zone, nblocks, z);
+
+	memset(blk, 0, block_size);
+	dp = (struct mfs4_dirent *) blk;
+	dp->d_rec_len = block_size;
+	dirent_place(dp, child, name, namelen, type);
+	put_block(z << zone_shift, blk);
+
+	gi.size += block_size;
+  }
+
+  gi.mtime = gi.ctime = gi.atime = current_time;
+  ino_put(parent, &gi);
+
+  free(blk);
+}
+
 /*================================================================
  *	    directory & inode management assist group
  *===============================================================*/
@@ -894,62 +1438,34 @@ void
 enter_dir(ino_t parent, char const *name, ino_t child)
 {
   /* Enter child in parent directory */
-  /* Works for dir > 1 block and zone > block */
-  unsigned int k;
-  block_t b, indir;
+  struct gen_inode gi;
+  uint64_t index;
   zone_t z;
-  int off;
-  struct inode *ino;
-  struct inode *inoblock = alloc_block();
-  zone_t *indirblock = alloc_block();
+
+  if (fs_version == 4) {
+	enter_dir_v4(parent, name, child, (unsigned) -1);
+	return;
+  }
 
   assert(!(block_size % sizeof(struct direct)));
 
-  /* Obtain the inode structure */
-  b = ((parent - 1) / inodes_per_block) + inode_offset;
-  off = (parent - 1) % inodes_per_block;
-  get_block(b, inoblock);
-  ino = inoblock + off;
+  ino_get(parent, &gi);
 
-  for (k = 0; k < NR_DZONES; k++) {
-	z = ino->i_zone[k];
+  for (index = 0; ; index++) {
+	z = map_get(gi.zone, index);
+
 	if (z == 0) {
+		/* The directory is full: give it another block, which is
+		 * empty and will therefore take the entry.
+		 */
 		z = alloc_zone();
-		ino->i_zone[k] = z;
+		map_insert(gi.zone, index, z);
+		ino_put(parent, &gi);
 	}
 
-	if(dir_try_enter(z, child, __UNCONST(name))) {
-		put_block(b, inoblock);
-		free(inoblock);
-		free(indirblock);
+	if (dir_try_enter(z, child, __UNCONST(name)))
 		return;
-	}
   }
-
-  /* no space in directory using just direct blocks; try indirect */
-  if (ino->i_zone[S_INDIRECT_IDX] == 0)
-  	ino->i_zone[S_INDIRECT_IDX] = alloc_zone();
-
-  indir = ino->i_zone[S_INDIRECT_IDX] << zone_shift;
-  --indir; /* Compensate for ++indir below */
-  for(k = 0; k < (indir_per_zone); k++) {
-	if (k % indir_per_block == 0)
-		get_block(++indir, indirblock);
-  	z = indirblock[k % indir_per_block];
-	if(!z) {
-		z = indirblock[k % indir_per_block] = alloc_zone();
-		put_block(indir, indirblock);
-	}
-	if(dir_try_enter(z, child, __UNCONST(name))) {
-		put_block(b, inoblock);
-		free(inoblock);
-		free(indirblock);
-		return;
-	}
-  }
-
-  pexit("Directory-inode %u beyond single indirect blocks.  Could not enter %s",
-         (unsigned)parent, name);
 }
 
 
@@ -957,89 +1473,27 @@ void
 add_zone(ino_t n, zone_t z, size_t bytes, time_t mtime)
 {
   /* Add zone z to inode n. The file has grown by 'bytes' bytes. */
+  struct gen_inode gi;
+  uint64_t index;
 
-  int off, i, j;
-  block_t b;
-  zone_t indir, dindir;
-  struct inode *p, *inode;
-  zone_t *blk, *dblk;
+  ino_get(n, &gi);
 
-  assert(inodes_per_block*sizeof(*inode) == block_size);
-  if(!(inode = alloc_block()))
-  	err(1, "Couldn't allocate block of inodes");
+  /* Files are written out in order, so the zone being added is the one
+   * after those the file already has.
+   */
+  index = gi.size / zone_size;
 
-  b = ((n - 1) / inodes_per_block) + inode_offset;
-  off = (n - 1) % inodes_per_block;
-  get_block(b, inode);
-  p = &inode[off];
-  p->i_size += bytes;
-  p->i_mtime = mtime;
+  gi.size += bytes;
+  gi.mtime = mtime;
 #ifndef MFS_INODE_ONLY_MTIME /* V1 file systems did not have them... */
-  p->i_atime = p->i_ctime = current_time;
+  gi.atime = gi.ctime = current_time;
 #endif
-  for (i = 0; i < NR_DZONES; i++)
-	if (p->i_zone[i] == 0) {
-		p->i_zone[i] = z;
-		put_block(b, inode);
-  		free(inode);
-		return;
-	}
+  if (fs_version == 4 && gi.btime == 0)
+	gi.btime = current_time;
 
-  assert(indir_per_block*sizeof(*blk) == block_size);
-  if(!(blk = alloc_block()))
-  	err(1, "Couldn't allocate indirect block");
+  map_insert(gi.zone, index, z);
 
-  /* File has grown beyond a small file. */
-  if (p->i_zone[S_INDIRECT_IDX] == 0)
-	p->i_zone[S_INDIRECT_IDX] = alloc_zone();
-  indir = p->i_zone[S_INDIRECT_IDX] << zone_shift;
-  put_block(b, inode);
-  --indir; /* Compensate for ++indir below */
-  for (i = 0; i < (indir_per_zone); i++) {
-	if (i % indir_per_block == 0)
-		get_block(++indir, blk);
-	if (blk[i % indir_per_block] == 0) {
-		blk[i] = z;
-		put_block(indir, blk);
-  		free(blk);
-  		free(inode);
-		return;
-	}
-  }
-
-  /* File has grown beyond single indirect; we need a double indirect */
-  assert(indir_per_block*sizeof(*dblk) == block_size);
-  if(!(dblk = alloc_block()))
-  	err(1, "Couldn't allocate double indirect block");
-
-  if (p->i_zone[D_INDIRECT_IDX] == 0)
-	p->i_zone[D_INDIRECT_IDX] = alloc_zone();
-  dindir = p->i_zone[D_INDIRECT_IDX] << zone_shift;
-  put_block(b, inode);
-  --dindir; /* Compensate for ++indir below */
-  for (j = 0; j < (indir_per_zone); j++) {
-	if (j % indir_per_block == 0)
-		get_block(++dindir, dblk);
-	if (dblk[j % indir_per_block] == 0)
-		dblk[j % indir_per_block] = alloc_zone();
-	indir = dblk[j % indir_per_block] << zone_shift;
-	--indir; /* Compensate for ++indir below */
-	for (i = 0; i < (indir_per_zone); i++) {
-		if (i % indir_per_block == 0)
-			get_block(++indir, blk);
-		if (blk[i % indir_per_block] == 0) {
-			blk[i] = z;
-			put_block(dindir, dblk);
-			put_block(indir, blk);
-	  		free(dblk);
-	  		free(blk);
-	  		free(inode);
-			return;
-		}
-	}
-  }
-
-  pexit("File has grown beyond double indirect");
+  ino_put(n, &gi);
 }
 
 
@@ -1047,27 +1501,17 @@ add_zone(ino_t n, zone_t z, size_t bytes, time_t mtime)
 void
 incr_link(ino_t n)
 {
-  int off;
+  struct gen_inode gi;
   static int enter = 0;
-  static struct inode *inodes = NULL;
-  block_t b;
 
   if (enter++) pexit("internal error: recursive call to incr_link()");
 
-  b = ((n - 1) / inodes_per_block) + inode_offset;
-  off = (n - 1) % inodes_per_block;
-  {
-	assert(sizeof(*inodes) * inodes_per_block == block_size);
-	if(!inodes && !(inodes = alloc_block()))
-		err(1, "couldn't allocate a block of inodes");
+  ino_get(n, &gi);
+  gi.nlinks++;
+  if (gi.nlinks == 0)
+	pexit("Too many links to a directory");
+  ino_put(n, &gi);
 
-	get_block(b, inodes);
-	inodes[off].i_nlinks++;
-	/* Check overflow (particularly on V1)... */
-	if (inodes[off].i_nlinks <= 0)
-		pexit("Too many links to a directory");
-	put_block(b, inodes);
-  }
   enter = 0;
 }
 
@@ -1076,27 +1520,11 @@ incr_link(ino_t n)
 void
 incr_size(ino_t n, size_t count)
 {
-  block_t b;
-  int off;
+  struct gen_inode gi;
 
-  b = ((n - 1) / inodes_per_block) + inode_offset;
-  off = (n - 1) % inodes_per_block;
-  {
-	struct inode *inodes;
-
-	assert(inodes_per_block * sizeof(*inodes) == block_size);
-	if(!(inodes = alloc_block()))
-		err(1, "couldn't allocate a block of inodes");
-
-	get_block(b, inodes);
-	/* Check overflow; avoid compiler spurious warnings */
-	if (inodes[off].i_size+(int)count < inodes[off].i_size ||
-	    inodes[off].i_size > MAX_MAX_SIZE-(int)count)
-		pexit("File has become too big to be handled by MFS");
-	inodes[off].i_size += count;
-	put_block(b, inodes);
-	free(inodes);
-  }
+  ino_get(n, &gi);
+  gi.size += count;
+  ino_put(n, &gi);
 }
 
 
@@ -1106,35 +1534,27 @@ incr_size(ino_t n, size_t count)
 static ino_t
 alloc_inode(int mode, int usrid, int grpid)
 {
+  struct gen_inode gi;
   ino_t num;
-  int off;
-  block_t b;
-  struct inode *inodes;
 
   num = next_inode++;
   if (num > nrinodes) {
   	pexit("File system does not have enough inodes (only %llu)", nrinodes);
   }
-  b = ((num - 1) / inodes_per_block) + inode_offset;
-  off = (num - 1) % inodes_per_block;
 
-  assert(inodes_per_block * sizeof(*inodes) == block_size);
-  if(!(inodes = alloc_block()))
-	err(1, "couldn't allocate a block of inodes");
-
-  get_block(b, inodes);
-  if (inodes[off].i_mode) {
+  ino_get(num, &gi);
+  if (gi.mode) {
 	pexit("allocation new inode %llu with non-zero mode - this cannot happen",
 		num);
   }
-  inodes[off].i_mode = mode;
-  inodes[off].i_uid = usrid;
-  inodes[off].i_gid = grpid;
-  if (verbose && (inodes[off].i_uid != usrid || inodes[off].i_gid != grpid))
-	fprintf(stderr, "Uid/gid %d.%d do not fit within inode, truncated\n", usrid, grpid);
-  put_block(b, inodes);
 
-  free(inodes);
+  gi.mode = mode;
+  gi.uid = usrid;
+  gi.gid = grpid;
+  gi.btime = current_time;
+  if (verbose && ((int) gi.uid != usrid || (int) gi.gid != grpid))
+	fprintf(stderr, "Uid/gid %d.%d do not fit within inode, truncated\n", usrid, grpid);
+  ino_put(num, &gi);
 
   /* Set the bit in the bit map. */
   insert_bit((block_t) INODE_MAP, num);
@@ -1157,7 +1577,7 @@ alloc_zone(void)
 	pexit("File system not big enough for all the files");
   for (i = 0; i < zone_per_block; i++)
 	put_block(b + i, zero);	/* give an empty zone */
-  
+
   insert_bit(zone_map, z - zoff);
   return z;
 }
@@ -1351,6 +1771,31 @@ print_fs(void)
 {
   int i, j;
   ino_t k;
+
+  /* The dump below reads V3 inodes and fixed-size directory entries out of
+   * raw blocks.  For V4 the same thing said through the accessors is a few
+   * lines, and there is no second copy of the layout to keep right.
+   */
+  if (fs_version == 4) {
+	struct gen_inode gi;
+	ino_t n;
+
+	printf("\nV4 file system, %u inodes, %u blocks, block size %u\n",
+	    (unsigned) nrinodes, (unsigned) nrblocks, (unsigned) block_size);
+
+	for (n = 1; n <= nrinodes; n++) {
+		ino_get(n, &gi);
+		if (gi.mode == 0) continue;
+		printf("Inode %3u:  mode=%06o  uid=%2u  gid=%2u  size=%6llu"
+		    "  zone[0]=%u\n", (unsigned) n, (unsigned) gi.mode,
+		    (unsigned) gi.uid, (unsigned) gi.gid,
+		    (unsigned long long) gi.size, (unsigned) gi.zone[0]);
+	}
+
+	printf("%d inodes used.     %u zones used.\n",
+	    (int) next_inode - 1, next_zone);
+	return;
+  }
   struct inode *inode2;
   unsigned short *usbuf;
   block_t b;
@@ -1449,8 +1894,9 @@ read_and_set(block_t n)
 __dead void
 usage(void)
 {
-  fprintf(stderr, "Usage: %s [-dltv] [-b blocks] [-i inodes]\n"
-	"\t[-z zone_shift] [-I offset] [-x extra] [-B blocksize] special [proto]\n",
+  fprintf(stderr, "Usage: %s [-34dltv] [-b blocks] [-i inodes]\n"
+	"\t[-z zone_shift] [-I offset] [-x extra] [-B blocksize] special [proto]\n"
+	"\t-4 writes the V4 format, -3 the V3 one, which is the default\n",
       progname);
   exit(4);
 }

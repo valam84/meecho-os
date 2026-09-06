@@ -124,6 +124,15 @@ dir.shutdown:=	sbin/shutdown
 # disk is a virtio device, a "virtio,mmio" node of the device tree.
 PROGRAMS+=		virtio_blk
 dir.virtio_blk:= minix/drivers/storage/virtio_blk
+# The real-time clock: the driver that finds it in the device tree, the
+# command that copies it into the system time, and date for the machine
+# that has no clock, so that the time never stays at the epoch.
+PROGRAMS+=		readclock.drv
+dir.readclock.drv:= minix/drivers/clock/readclock
+PROGRAMS+=		readclock
+dir.readclock:=	minix/commands/readclock
+PROGRAMS+=		date
+dir.date:=	bin/date
 # A filesystem that is only ever read can be sized to its contents exactly,
 # and that is what mkfs.mfs does by default.  This one is written to - utmpx,
 # wtmpx, lastlogx, /tmp - so it needs free inodes and free blocks, or the

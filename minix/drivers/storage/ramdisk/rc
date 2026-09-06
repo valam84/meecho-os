@@ -50,6 +50,14 @@ fi
 
 if [ X`sysenv arch` = Xaarch64 ]
 then
+	# The real-time clock, whatever the device tree says it is.  On a
+	# machine without one the driver stays up and answers "no clock",
+	# readclock fails quietly, and the date is set to a fixed one: a
+	# wrong date is better than the epoch, which init has already once
+	# read as "never".  -c for the same reason as the disk driver below.
+	minix-service -c up /service/readclock.drv
+	readclock -q || date 201301010000
+
 	# The disk is a virtio device the driver finds in the device tree.
 	# It is only started when the root is going to be on it: with
 	# bootramdisk=1 this image is the root, and a machine without a disk

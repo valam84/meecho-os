@@ -41,6 +41,8 @@ struct mem_type mem_type_shared = {
 static int shared_pt_flags(struct vir_region *vr){
 #if defined(__arm__)
 	return ARM_VM_PTE_CACHED;
+#elif defined(__aarch64__)
+	return AARCH64_VM_PTE_CACHED;
 #else
 	return 0;
 #endif

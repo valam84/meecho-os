@@ -774,8 +774,8 @@
 
 /* not handled as a normal VM call, thus at the end of the reserved rage */
 #define VM_PAGEFAULT		(VM_RQ_BASE+0xff)
-#	define VPF_ADDR		m1_i1
-#	define VPF_FLAGS	m1_i2
+#	define VPF_ADDR		m_krn_vm_pagefault.addr
+#	define VPF_FLAGS	m_krn_vm_pagefault.flags
 
 /* Basic vm calls allowed to every process. */
 #define VM_BASIC_CALLS \

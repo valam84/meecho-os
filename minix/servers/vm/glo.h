@@ -19,7 +19,11 @@
 
 EXTERN struct vmproc vmproc[VMP_NR];
 
-long enable_filemap;
+/* A definition rather than a declaration until now: every file that included
+ * this header defined an enable_filemap of its own, and only -fcommon - the
+ * default until GCC 10 - merged them into one.
+ */
+EXTERN long enable_filemap;
 
 typedef kinfo_t ixfer_kinfo_t;
 EXTERN ixfer_kinfo_t kernel_boot_info;
@@ -33,8 +37,14 @@ EXTERN const char *sc_lastfile;
 
 extern struct minix_kerninfo *_minix_kerninfo;
 
-/* mem types */
-EXTERN  mem_type_t mem_type_anon,       /* anonymous memory */
+/* mem types.
+ *
+ * extern, not EXTERN: each of these is defined, with its table of methods,
+ * by the file that implements it. EXTERN expands to nothing in main.c, which
+ * therefore made a second, empty definition of every one of them - harmless
+ * only for as long as -fcommon merged it with the real one.
+ */
+extern  mem_type_t mem_type_anon,       /* anonymous memory */
         mem_type_directphys,		/* direct physical mapping memory */
 	mem_type_anon_contig,		/* physically contig anon memory */
 	mem_type_cache,			/* disk cache */

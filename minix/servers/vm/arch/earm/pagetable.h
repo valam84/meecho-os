@@ -7,6 +7,13 @@
 
 #include "vm.h"
 
+/*
+ * A translation table entry, and with it the width of everything made out of
+ * one. Four bytes here; eight where the architecture translates through more
+ * levels than the two pagetable.c works in.
+ */
+typedef u32_t pt_entry_t;
+
 /* Mapping flags. */
 #define PTF_WRITE	ARM_VM_PTE_RW
 #define PTF_READ	ARM_VM_PTE_RO
@@ -30,6 +37,28 @@
 #define ARCH_VM_BIGPAGE		ARM_VM_SECTION
 #define ARCH_VM_PT_ENTRIES	ARM_VM_PT_ENTRIES
 #define ARCH_VM_PTE_RO		ARM_VM_PTE_RO
+#define ARCH_VM_PTE_CACHED	ARM_VM_PTE_CACHED
+#define ARCH_VM_PTE_SUPER	ARM_VM_PTE_SUPER
+
+/*
+ * The three questions pagetable.c has to ask an entry that it cannot ask
+ * with one mask on every architecture: see arch/i386/pagetable.h.
+ */
+#define ARCH_VM_PTE_ISWRITABLE(e)	(!((e) & ARM_VM_PTE_RO))
+#define ARCH_VM_IS_BIGPAGE(e)		((e) & ARM_VM_SECTION)
+#define ARCH_VM_PDE_MAKE(phys, flags)	\
+	(((phys) & ARM_VM_PDE_MASK) | ARM_VM_PDE_PRESENT | ARM_VM_PDE_DOMAIN)
+
+/* Alignment the page directory has to be allocated at: its own size, 16 KiB,
+ * which is what TTBR0 requires of it. */
+#define ARCH_PAGEDIR_ALIGN	ARCH_PAGEDIR_SIZE
+
+/* Two levels of translation: the directory is the whole of the block, and
+ * nothing sits above it. */
+#define ARCH_PT_SPINE_PAGES	0
+
+/* The kernel lives in the same page table as the process. */
+#define ARCH_VM_KERNEL_IN_PROC_PT	1
 
 /* For arch-specific PT routines to check if no bits outside
  * the regular flags are set.

@@ -779,11 +779,28 @@ kern_phys_map_ptr(phys_bytes base_address, vir_bytes io_size, int vm_flags,
 /*===========================================================================*
  *				arch_phys_map				     *
  *===========================================================================*/
+/*
+ * What VM has to map into every process's address space, and nothing else.
+ *
+ * Only the pages the kernel publishes to user space: minix_kerninfo and what
+ * it points at. The device ranges drivers registered through
+ * kern_phys_map_ptr() are deliberately not offered, and that is where this
+ * differs from earm.
+ *
+ * There they have to be, because the kernel and the process share one page
+ * table, so the kernel's own mapping of the console or the interrupt
+ * controller is a mapping VM makes. Here the kernel is in TTBR1: pre_init()
+ * mapped those ranges for itself before the MMU came on, and pre_init_high()
+ * ran the drivers' callbacks over them afterwards. Offering them again would
+ * have VM answer with an address in the process's half of the address space,
+ * and arch_enable_paging() would then point the console driver at an address
+ * that exists only while VM's page table is loaded - so the kernel would
+ * print into whatever the running process has there.
+ */
 int
 arch_phys_map(const int index, phys_bytes *addr, phys_bytes *len, int *flags)
 {
 	static int first = 1;
-	kern_phys_map *phys_maps;
 	int freeidx = 0;
 	vir_bytes glo_len = (vir_bytes)&usermapped_nonglo_start -
 	    (vir_bytes)&usermapped_start;
@@ -798,11 +815,6 @@ arch_phys_map(const int index, phys_bytes *addr, phys_bytes *len, int *flags)
 		if (usermapped_glo_index != -1)
 			first_um_idx = usermapped_glo_index;
 		first = 0;
-
-		/* Number the ranges drivers asked for, after those two. */
-		for (phys_maps = kern_phys_map_head; phys_maps != NULL;
-		    phys_maps = phys_maps->next)
-			phys_maps->index = freeidx++;
 	}
 
 	if (index == usermapped_glo_index) {
@@ -816,16 +828,6 @@ arch_phys_map(const int index, phys_bytes *addr, phys_bytes *len, int *flags)
 		    (vir_bytes)&usermapped_nonglo_start;
 		*flags = VMMF_USER;
 		return OK;
-	}
-
-	for (phys_maps = kern_phys_map_head; phys_maps != NULL;
-	    phys_maps = phys_maps->next) {
-		if (phys_maps->index == index) {
-			*addr = phys_maps->addr;
-			*len = phys_maps->size;
-			*flags = phys_maps->vm_flags;
-			return OK;
-		}
 	}
 
 	return EINVAL;
@@ -883,20 +885,7 @@ arch_phys_map_reply(const int index, const vir_bytes addr)
 	if (index == usermapped_index)
 		return OK;
 
-	for (phys_maps = kern_phys_map_head; phys_maps != NULL;
-	    phys_maps = phys_maps->next) {
-		if (phys_maps->index == index) {
-			assert(phys_maps->cb != NULL);
-			/*
-			 * Only record the address. The driver's base variable
-			 * is not rewritten until the mapping is actually in
-			 * force, which is what arch_enable_paging() does.
-			 */
-			phys_maps->vir = addr;
-			return OK;
-		}
-	}
-
+	/* There is nothing else to reply about; see arch_phys_map(). */
 	return EINVAL;
 }
 
@@ -906,25 +895,19 @@ arch_phys_map_reply(const int index, const vir_bytes addr)
 int
 arch_enable_paging(struct proc *caller)
 {
-	kern_phys_map *phys_maps;
-
 	assert(caller->p_seg.p_ttbr);
 
 	/* Load the caller's page table: the mappings VM made are now live. */
 	switch_address_space(caller);
 
 	/*
-	 * Move every driver onto its new base. There is no printing in here
-	 * on purpose: the console is one of the drivers being moved, and
-	 * until its callback has run its old address has gone and its new one
-	 * has not arrived.
+	 * And that is all there is to do. On earm this is where every driver
+	 * is moved onto the base VM chose for it, because until VM ran there
+	 * was no page table with those ranges in it. Here pre_init() built
+	 * the kernel's own and pre_init_high() moved the drivers then; VM is
+	 * not asked about those ranges at all, and there is nothing left for
+	 * it to answer. See arch_phys_map().
 	 */
-	for (phys_maps = kern_phys_map_head; phys_maps != NULL;
-	    phys_maps = phys_maps->next) {
-		assert(phys_maps->cb != NULL);
-		phys_maps->cb(phys_maps->id, phys_maps->vir);
-	}
-
 	return OK;
 }
 

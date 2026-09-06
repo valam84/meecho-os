@@ -402,9 +402,7 @@ int _brk(void *addr)
 			  ARCH_VM_PTE_PRESENT
 			| ARCH_VM_PTE_USER
 			| ARCH_VM_PTE_RW
-#if defined(__arm__)
-			| ARM_VM_PTE_CACHED
-#endif
+			| ARCH_VM_PTE_CACHED
 			, 0) != OK) {
 			free_mem(newpage, 1);
 			return -1;

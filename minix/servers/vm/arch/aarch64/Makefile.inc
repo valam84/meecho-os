@@ -3,12 +3,8 @@
 #Arch-specific sources
 .PATH: ${.CURDIR}/arch/${MACHINE_ARCH}
 
-# The pagetable.h that belongs beside this file is not here yet, and VM will
-# not compile without it. It is not a renaming layer over <machine/vm.h> the
-# way the other two are: those describe two levels of translation, a page
-# directory and a page table, and VM's pt.c is written to that shape. AArch64
-# translates through four levels, so the header cannot be written until pt.c
-# knows about more than two - which is the VM half of stage 4.
-#
-# This file exists so that the tree parses and every other directory can be
-# built. See port/PORTING-LOG.md, stage 4.
+# There are none: the pagetable.h beside this file is the whole of the
+# architecture layer, as it is on the other two ports. What it has to say is
+# longer, because four levels of translation do not rename onto the two that
+# pagetable.c works in - see the header itself, and port/PORTING-LOG.md,
+# stage 5.3.

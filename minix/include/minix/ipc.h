@@ -360,6 +360,28 @@ typedef struct {
 } mess_krn_lsys_sys_vumap;
 _ASSERT_MSG_SIZE(mess_krn_lsys_sys_vumap);
 
+/*
+ * The page fault the kernel cannot resolve, handed to VM.
+ *
+ * addr used to travel in m1_i1, an int, which was as wide as an address for
+ * as long as every MINIX was 32-bit. On LP64 it truncated the fault address
+ * and sign-extended it on the way out, so a fault anywhere above two
+ * gigabytes - a process stack, for one - reached VM as 0xffffffff_exxxxxxx,
+ * matched no region, and came back as a segmentation fault the process had
+ * not earned.
+ *
+ * flags is the architecture's own syndrome word, read through the PFERR_*
+ * macros in VM's arch/<arch>/pagetable.h: a page fault error code on i386, a
+ * fault status register on ARM, ESR_EL1.ISS on AArch64.
+ */
+typedef struct {
+	vir_bytes addr;		/* address that faulted */
+	uint32_t flags;		/* the architecture's fault syndrome */
+
+	uint8_t padding[108];
+} mess_krn_vm_pagefault;
+_ASSERT_MSG_SIZE(mess_krn_vm_pagefault);
+
 typedef struct {
 	off_t pos;
 
@@ -2497,6 +2519,7 @@ typedef struct noxfer_message {
 		mess_krn_lsys_sys_umap	m_krn_lsys_sys_umap;
 		mess_krn_lsys_sys_vmctl_memreq	m_krn_lsys_sys_vmctl_memreq;
 		mess_krn_lsys_sys_vumap	m_krn_lsys_sys_vumap;
+		mess_krn_vm_pagefault	m_krn_vm_pagefault;
 		mess_lbdev_lblockdriver_msg m_lbdev_lblockdriver_msg;
 		mess_lblockdriver_lbdev_reply m_lblockdriver_lbdev_reply;
 		mess_lc_ipc_semctl	m_lc_ipc_semctl;

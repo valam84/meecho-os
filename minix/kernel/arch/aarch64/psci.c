@@ -122,13 +122,31 @@ long
 psci_call(unsigned long fn, unsigned long a1, unsigned long a2,
 	unsigned long a3)
 {
+	/*
+	 * Asked before the argument registers are set up, and that ordering is
+	 * load-bearing.
+	 *
+	 * The four variables below are bound to particular registers, and the
+	 * compiler only promises to have the value there at the asm - not to
+	 * keep it there across a call, which is free to clobber every one of
+	 * them. With the test after the assignments, the first call was made
+	 * with three of its four arguments holding whatever psci_available()
+	 * had left behind; every call after it was fine, because by then the
+	 * answer was cached and the function returned without doing anything.
+	 *
+	 * Which is why this was invisible until now: system_off() and
+	 * system_reset() take no arguments and never return to check, so the
+	 * first user of this that could notice was CPU_ON - and it noticed by
+	 * failing to start exactly one core, the first.
+	 */
+	if (!psci_available())
+		return PSCI_NOT_SUPPORTED;
+
+	{
 	register unsigned long x0 __asm__("x0") = fn;
 	register unsigned long x1 __asm__("x1") = a1;
 	register unsigned long x2 __asm__("x2") = a2;
 	register unsigned long x3 __asm__("x3") = a3;
-
-	if (!psci_available())
-		return PSCI_NOT_SUPPORTED;
 
 	/*
 	 * The SMC calling convention returns in x0..x3 and may clobber the
@@ -148,6 +166,7 @@ psci_call(unsigned long fn, unsigned long a1, unsigned long a2,
 	}
 
 	return (long)x0;
+	}
 }
 
 /*===========================================================================*
@@ -166,4 +185,25 @@ void
 psci_system_reset(void)
 {
 	(void)psci_call(PSCI_FN_SYSTEM_RESET, 0, 0, 0);
+}
+
+/*===========================================================================*
+ *				psci_cpu_on				     *
+ *===========================================================================*/
+long
+psci_cpu_on(u64_t mpidr, phys_bytes entry, unsigned long context)
+{
+	/*
+	 * The core wakes at "entry" with its MMU off and "context" in x0.
+	 * Which exception level it lands at is the firmware's business, so
+	 * head.S normalises it there the same way it does for the boot core.
+	 *
+	 * Only the affinity fields of MPIDR name a core; the flag bits among
+	 * them (U, MT, and the bit that reads as one) name nobody, and passing
+	 * them through would ask the firmware to start a core that does not
+	 * exist.
+	 */
+	return psci_call(PSCI_FN_CPU_ON,
+	    (unsigned long)(mpidr & MPIDR_AFF_MASK),
+	    (unsigned long)entry, context);
 }

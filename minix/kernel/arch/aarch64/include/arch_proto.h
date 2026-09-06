@@ -107,6 +107,24 @@ void pg_mapkernel(kinfo_t *cbi);
 void vm_enable_paging(void);
 __dead void pg_enter_high(void (*entry)(void));
 void pg_drop_identity(void);
+
+/*
+ * The same two steps for a secondary core, which walks the same path over the
+ * same tables with its own copies of the registers: turn translation on
+ * against the identity map the boot core kept, and take that map away again
+ * once this core is running high.
+ */
+void pg_ap_paging_on(void);
+__dead void pg_ap_enter_high(unsigned cpu, void (*entry)(unsigned));
+void pg_ap_drop_identity(void);
+
+/*
+ * Let this core walk TTBR0 again, which pg_drop_identity() turned off. Per
+ * core, because TCR is: the boot core does it from pg_load(), a secondary as
+ * it joins.
+ */
+void pg_enable_user_walks(void);
+
 void pg_clear(void);
 phys_bytes pg_load(void);
 void pg_map(phys_bytes phys, vir_bytes vaddr, vir_bytes vaddr_end,

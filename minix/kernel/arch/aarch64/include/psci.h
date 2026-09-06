@@ -17,9 +17,9 @@
  * "hvc"; a board with ATF underneath U-Boot says "smc". Guessing would work
  * on one of them and hang on the other, and the tree is already being read.
  *
- * PSCI_FN_CPU_ON is unused so far and is here because it is the reason this
- * file is architecture code and not part of the console BSP: bringing up the
- * secondary cores at stage 6 is the same call through the same conduit.
+ * PSCI_FN_CPU_ON is the reason this file is architecture code and not part of
+ * the console BSP: bringing the secondary cores up is the same call through
+ * the same conduit as turning the machine off.
  */
 
 /*
@@ -37,6 +37,14 @@
 #define PSCI_NOT_SUPPORTED	(-1)
 
 /*
+ * The affinity fields of MPIDR_EL1, which are what names a core:
+ * Aff0 [7:0], Aff1 [15:8], Aff2 [23:16], Aff3 [39:32]. The bits between and
+ * above them are flags - U, MT, and one that reads as one - and are not part
+ * of the name.
+ */
+#define MPIDR_AFF_MASK		0x000000ff00ffffffULL
+
+/*
  * Whether the machine offers PSCI. Reads the device tree the first time it is
  * asked and remembers the answer, so it is safe to call from a panic path
  * that runs before anything has been initialised.
@@ -50,5 +58,16 @@ long psci_call(unsigned long fn, unsigned long a1, unsigned long a2,
 /* The two that do not return when they work. */
 void psci_system_off(void);
 void psci_system_reset(void);
+
+/*
+ * Start a secondary core.
+ *
+ * mpidr names the core the way the device tree and MPIDR_EL1 do; entry is a
+ * physical address, because the core arrives with its MMU off; context is
+ * handed to it in x0 and is how it learns which core it is. Returns
+ * PSCI_SUCCESS or one of the negative PSCI errors - the caller is expected to
+ * carry on with the cores that did start.
+ */
+long psci_cpu_on(u64_t mpidr, phys_bytes entry, unsigned long context);
 
 #endif /* _AARCH64_PSCI_H */

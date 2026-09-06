@@ -267,6 +267,73 @@ intr_init(int auto_eoi)
 }
 
 /*===========================================================================*
+ *				gic_dispatch				     *
+ *===========================================================================*/
+/*
+ * Where an acknowledged interrupt goes, whichever version acknowledged it.
+ *
+ * The two IPIs are recognised here rather than in the hook table because they
+ * are not device interrupts: nothing registers a handler for them, and the
+ * generic SMP code expects to be called directly. On i386 they never reach
+ * this path at all - they have interrupt vectors of their own - which is why
+ * the generic code has no idea this test exists.
+ */
+void
+gic_dispatch(int irq)
+{
+#ifdef CONFIG_SMP
+	switch (irq) {
+	case GIC_IPI_SCHED:
+		smp_ipi_sched_handler();
+		return;
+	case GIC_IPI_HALT:
+		smp_ipi_halt_handler();	/* does not return */
+		return;
+	}
+#endif
+
+	/*
+	 * The generic dispatcher asserts the number is inside its tables, so a
+	 * GIC reporting more lines than NR_IRQ_VECTORS must not reach it -
+	 * intr_init() clamped nr_irqs, but a controller can still acknowledge
+	 * an INTID above that.
+	 */
+	if (irq < NR_IRQ_VECTORS)
+		irq_handle(irq);
+}
+
+/*===========================================================================*
+ *				gic_cpu_init				     *
+ *===========================================================================*/
+/*
+ * What a core does for itself. The boot core does it as part of intr_init();
+ * a secondary calls this and nothing else, because the distributor is already
+ * set up and belongs to the machine rather than to any one core.
+ */
+void
+gic_cpu_init(void)
+{
+	if (gic.version == 3)
+		gicv3_cpu_init();
+	else
+		gicv2_cpu_init();
+}
+
+#ifdef CONFIG_SMP
+/*===========================================================================*
+ *				gic_send_ipi				     *
+ *===========================================================================*/
+void
+gic_send_ipi(unsigned cpu, int sgi)
+{
+	if (gic.version == 3)
+		gicv3_send_ipi(cpu, sgi);
+	else
+		gicv2_send_ipi(cpu, sgi);
+}
+#endif /* CONFIG_SMP */
+
+/*===========================================================================*
  *				bsp_irq_lines				     *
  *===========================================================================*/
 int

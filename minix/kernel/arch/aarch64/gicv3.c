@@ -299,6 +299,26 @@ cpu_init(void)
 	val = 1;
 	__asm__ volatile("msr icc_igrpen1_el1, %0" :: "r"(val));
 	__asm__ volatile("isb");
+
+	/* The software generated interrupts this kernel uses for its IPIs. */
+	mmio_write(gic.sgi_base + GICR_ISENABLER0,
+	    (1U << GIC_IPI_SCHED) | (1U << GIC_IPI_HALT));
+}
+
+/*===========================================================================*
+ *				gicv3_cpu_init				     *
+ *===========================================================================*/
+/*
+ * Everything a core has to do for itself: find its redistributor, wake it,
+ * and set up its CPU interface. The distributor is not touched - it belongs
+ * to the machine and the boot core has already done it.
+ */
+void
+gicv3_cpu_init(void)
+{
+	find_redistributor();
+	wake_redistributor();
+	cpu_init();
 }
 
 /*===========================================================================*
@@ -315,6 +335,40 @@ gicv3_init(void)
 	dist_init();
 	cpu_init();
 }
+
+#ifdef CONFIG_SMP
+/*===========================================================================*
+ *				gicv3_send_ipi				     *
+ *===========================================================================*/
+/*
+ * There is no register to write and no distributor involved: a GICv3 core
+ * sends an interrupt to another by naming it in ICC_SGI1R_EL1, by affinity.
+ *
+ * The three upper affinity levels select a cluster and the bottom sixteen
+ * bits are a list of cores within it, so Aff0 has to be small enough to
+ * name in that list. It is on any machine this runs on - four cores in one
+ * cluster - and a machine that numbered them otherwise would need the
+ * range-selector field this does not use.
+ */
+void
+gicv3_send_ipi(unsigned cpu, int sgi)
+{
+	u64_t mpidr = cpu_mpidr[cpu];
+	u64_t aff0 = mpidr & 0xff;
+	u64_t val;
+
+	assert(aff0 < 16);
+
+	val = ((mpidr >> 32 & 0xff) << 48) |	/* Aff3 */
+	    ((mpidr >> 16 & 0xff) << 32) |	/* Aff2 */
+	    ((mpidr >> 8 & 0xff) << 16) |	/* Aff1 */
+	    ((u64_t)sgi << 24) |
+	    (1ULL << aff0);			/* the core within the list */
+
+	__asm__ volatile("msr icc_sgi1r_el1, %0" :: "r"(val));
+	__asm__ volatile("isb");
+}
+#endif /* CONFIG_SMP */
 
 /*===========================================================================*
  *				gicv3_handle				     *
@@ -344,14 +398,7 @@ gicv3_handle(void)
 	if (irq >= GIC_FIRST_SPECIAL_INTID)
 		return;
 
-	/*
-	 * The generic dispatcher asserts the number is inside its tables, so
-	 * a GIC reporting more lines than NR_IRQ_VECTORS must not reach it -
-	 * intr_init() clamped nr_irqs, but a controller can still report an
-	 * INTID above that.
-	 */
-	if (irq < NR_IRQ_VECTORS)
-		irq_handle(irq);
+	gic_dispatch(irq);
 
 	__asm__ volatile("msr icc_eoir1_el1, %0" :: "r"(iar));
 	__asm__ volatile("isb");

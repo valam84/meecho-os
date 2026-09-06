@@ -29,9 +29,14 @@ struct file root_files[] = {
 	{ "pci",	REG_ALL_MODE,	(data_t) root_pci	},
 #endif
 	{ "dmap",	REG_ALL_MODE,	(data_t) root_dmap	},
-#if defined(__i386__)
+	/*
+	 * Not x86-only. The first thing this file says is how many processors
+	 * the machine has, which every architecture has an answer to and which
+	 * there is otherwise no way to ask from userland. Only the vendor and
+	 * feature lines below it are x86, and they are guarded where they are
+	 * printed.
+	 */
 	{ "cpuinfo",	REG_ALL_MODE,	(data_t) root_cpuinfo	},
-#endif
 	{ "ipcvecs",	REG_ALL_MODE,	(data_t) root_ipcvecs	},
 	{ "mounts",	REG_ALL_MODE,	(data_t) root_mounts	},
 	{ NULL,		0,		NULL			}

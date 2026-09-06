@@ -65,6 +65,9 @@ fi
 : ${QEMU=qemu-system-aarch64}
 : ${QEMU_CPU=cortex-a72}
 : ${QEMU_MEM=512}
+# How many cores the machine has. The kernel finds them in the device tree
+# and starts them itself; four is what the target board has.
+: ${QEMU_SMP=1}
 # Empty means "run until the user quits".  The kernel parks on wfi when it is
 # done, so QEMU never exits by itself; a scripted run wants a timeout here.
 : ${QEMU_TIMEOUT=}
@@ -232,7 +235,7 @@ then
 	virt="${virt},gic-version=3"
 fi
 
-cmd="${QEMU} -M ${virt} -cpu ${QEMU_CPU} -m ${QEMU_MEM}"
+cmd="${QEMU} -M ${virt} -cpu ${QEMU_CPU} -m ${QEMU_MEM} -smp ${QEMU_SMP}"
 cmd="${cmd} -display none -serial stdio -net none"
 cmd="${cmd} -kernel ${KERNEL_BIN} -initrd ${ARCHIVE}"
 cmd="${cmd} -append \"${BOOTARGS}\""

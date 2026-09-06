@@ -220,12 +220,6 @@ do_syscall(struct proc *pr, u64_t esr)
 	 */
 	unsigned imm = (unsigned)(ESR_ISS(esr) & 0xffff);
 
-	/*
-	 * Stop charging the process for time before running kernel code on
-	 * its behalf. Everything below this point is the kernel's time.
-	 */
-	context_stop(pr);
-
 	switch (imm) {
 	case KERVEC_INTR:
 		/* A kernel call: the message pointer is in x0. */
@@ -264,6 +258,30 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 		assert((struct proc *)frame == pr);
 		assert(!iskernelp(pr));
 	}
+
+	/*
+	 * Stop charging whoever was running and start charging the kernel.
+	 * Once, here, for every way into the kernel - the two 32-bit ports do
+	 * the same at every entry point in their assembly.
+	 *
+	 * It is also where the big kernel lock is taken, which is why it has
+	 * to be every entry and not just the system call: context_stop() for
+	 * anything other than KERNEL takes the lock, and context_stop(KERNEL)
+	 * on the way out releases it. With this call only in do_syscall(), an
+	 * interrupt entered the kernel without the lock, and on a machine with
+	 * one core nothing noticed.
+	 *
+	 * An exception from EL1 is either the interrupt that ends a halt_cpu()
+	 * in idle(), where the lock was released before halting, or a fault in
+	 * the kernel itself. The first needs the accounting for the idle
+	 * process and the lock back; the second is a disaster on its way to a
+	 * panic, and must not touch the lock at all - this core may be holding
+	 * it, and waiting for itself would replace the panic with a hang.
+	 */
+	if (from_user)
+		context_stop(pr);
+	else if (kind == EXC_EL1H_IRQ)
+		context_stop_idle();
 
 	switch (kind) {
 	case EXC_EL1H_IRQ:

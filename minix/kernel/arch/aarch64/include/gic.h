@@ -107,6 +107,13 @@
 
 #define GICC_CTLR_ENABLE	(1 << 0)
 
+/*
+ * GICv2 software generated interrupts: the distributor sends them, and the
+ * target is a bitmap of CPU interfaces in the upper half of the word.
+ */
+#define GICD_SGIR		0x0f00
+#define GICD_SGIR_TARGET_SHIFT	16
+
 /* ======================================================================
  * GICv3 redistributor: one per core, two 64 KiB frames.
  *
@@ -193,16 +200,42 @@ struct gic {
 
 extern struct gic gic;
 
+/*
+ * The two software generated interrupts this kernel uses, matching the two
+ * IPIs the generic SMP code knows about. Numbers rather than names in the
+ * hardware: an SGI is just an INTID below 16, so these arrive through
+ * bsp_irq_handle() like everything else and are recognised there.
+ */
+#define GIC_IPI_SCHED		0
+#define GIC_IPI_HALT		1
+
 /* gicv2.c */
 void gicv2_init(void);
+void gicv2_cpu_init(void);
 void gicv2_handle(void);
 void gicv2_mask(int irq);
 void gicv2_unmask(int irq);
+void gicv2_send_ipi(unsigned cpu, int sgi);
 
 /* gicv3.c */
 void gicv3_init(void);
+void gicv3_cpu_init(void);
 void gicv3_handle(void);
 void gicv3_mask(int irq);
 void gicv3_unmask(int irq);
+void gicv3_send_ipi(unsigned cpu, int sgi);
+
+/*
+ * What every core has to do for itself. The distributor is set up once, by
+ * the boot core; the CPU interface, the redistributor and the banked SGI and
+ * PPI registers are per-core and nobody can do them on another core's behalf.
+ */
+void gic_cpu_init(void);
+
+/* Poke another core. */
+void gic_send_ipi(unsigned cpu, int sgi);
+
+/* Where an acknowledged interrupt goes, IPIs included. */
+void gic_dispatch(int irq);
 
 #endif /* _AARCH64_GIC_H_ */

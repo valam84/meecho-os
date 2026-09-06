@@ -307,10 +307,18 @@ void kmain(kinfo_t *local_cbi)
   add_memmap(&kinfo, kinfo.bootstrap_start, kinfo.bootstrap_len);
 
 #ifdef CONFIG_SMP
+  /*
+   * SMP does not imply an APIC: that is an x86 fact, and config_no_apic only
+   * exists on an architecture that has one. Everything else about the choice
+   * below is architecture-neutral.
+   */
+#ifdef USE_APIC
   if (config_no_apic) {
 	  DEBUGBASIC(("APIC disabled, disables SMP, using legacy PIC\n"));
 	  smp_single_cpu_fallback();
-  } else if (config_no_smp) {
+  } else
+#endif
+  if (config_no_smp) {
 	  DEBUGBASIC(("SMP disabled, using legacy PIC\n"));
 	  smp_single_cpu_fallback();
   } else {
@@ -471,8 +479,11 @@ void cstart(void)
 #endif
 
 #ifdef CONFIG_SMP
+#ifdef USE_APIC
+  /* Where SMP is delivered by the APIC, turning that off turns this off. */
   if (config_no_apic)
 	  config_no_smp = 1;
+#endif
   value = env_get("no_smp");
   if(value)
 	config_no_smp = atoi(value);

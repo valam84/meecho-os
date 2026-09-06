@@ -73,6 +73,19 @@ BITCODE_LD_FLAGS_1ST?= \
 
 BITCODE_LD_FLAGS_2ND?=${BITCODE_LD_FLAGS_1ST}
 
+# SMP is what this fork is for, so on aarch64 it is on unless a build says
+# otherwise. Elsewhere it stays opt-in, as it has always been.
+#
+# It belongs here rather than in the kernel's own makefile because it is not
+# only the kernel's: the scheduler decides which core a process runs on, and
+# without these flags its pick_cpu() compiles down to "the boot core", so
+# every other core would come up and then idle. The kernel would be SMP and
+# the system would not.
+.if !empty(MACHINE_ARCH:Maarch64)
+CONFIG_SMP?=		1
+CONFIG_MAX_CPUS?=	8
+.endif
+
 .ifdef CONFIG_SMP
 SMP_FLAGS += -DCONFIG_SMP
 .ifdef CONFIG_MAX_CPUS

@@ -20,6 +20,12 @@
 #include "hw_intr.h"
 #include "gic.h"
 
+/*
+ * Which bit in a target list means which core, learned by each core from its
+ * own banked copy of ITARGETSR. Zero for a core that has not come up.
+ */
+static u32_t gicv2_cpu_mask[CONFIG_MAX_CPUS];
+
 /*===========================================================================*
  *				gicv2_init				     *
  *===========================================================================*/
@@ -66,15 +72,63 @@ gicv2_init(void)
 
 	mmio_write(gic.dist_base + GICD_CTLR, GICD_CTLR_ENABLE);
 
+	gicv2_cpu_init();
+}
+
+/*===========================================================================*
+ *				gicv2_cpu_init				     *
+ *===========================================================================*/
+/*
+ * The part every core does for itself: its own CPU interface, and the first
+ * 32 INTIDs, which the distributor banks per core even though they are read
+ * and written at the same addresses.
+ */
+void
+gicv2_cpu_init(void)
+{
 	/*
-	 * CPU interface. A priority mask of 0xf0 passes everything with a
-	 * priority numerically below it, which covers the 0xa0 set above.
+	 * Which bit in ITARGETSR means this core. The first eight of those
+	 * registers are banked and read back the reading core's own bit, which
+	 * is the only way to learn it - the mapping from a logical CPU number
+	 * to a CPU interface number is not written down anywhere else.
+	 */
+	gicv2_cpu_mask[cpuid] = mmio_read(gic.dist_base + GICD_ITARGETSR(0))
+	    & 0xff;
+
+	/* The software generated interrupts this kernel uses for its IPIs. */
+	mmio_write(gic.dist_base + GICD_ISENABLER(0),
+	    (1U << GIC_IPI_SCHED) | (1U << GIC_IPI_HALT));
+
+	/*
+	 * A priority mask of 0xf0 passes everything with a priority
+	 * numerically below it, which covers the 0xa0 every line was given.
 	 * Binary point 0 turns off preemption grouping, which is unused.
 	 */
 	mmio_write(gic.cpu_base + GICC_PMR, GIC_PRIORITY_MASK);
 	mmio_write(gic.cpu_base + GICC_BPR, 0);
 	mmio_write(gic.cpu_base + GICC_CTLR, GICC_CTLR_ENABLE);
 }
+
+#ifdef CONFIG_SMP
+/*===========================================================================*
+ *				gicv2_send_ipi				     *
+ *===========================================================================*/
+void
+gicv2_send_ipi(unsigned cpu, int sgi)
+{
+	u32_t mask = gicv2_cpu_mask[cpu];
+
+	assert(mask != 0);
+
+	/*
+	 * Target list filter 0 means "the cores in the list", and the list is
+	 * a bitmap of CPU interfaces - not of logical CPU numbers, which is
+	 * why each core recorded its own bit above.
+	 */
+	mmio_write(gic.dist_base + GICD_SGIR,
+	    (mask << GICD_SGIR_TARGET_SHIFT) | (u32_t)sgi);
+}
+#endif /* CONFIG_SMP */
 
 /*===========================================================================*
  *				gicv2_handle				     *
@@ -96,15 +150,7 @@ gicv2_handle(void)
 	if (irq >= GIC_FIRST_SPECIAL_INTID)
 		return;
 
-	/*
-	 * The generic dispatcher masks the line, runs the hook chain and
-	 * unmasks it again if the handlers say so. It asserts the number is
-	 * inside its tables, so a GIC reporting more lines than
-	 * NR_IRQ_VECTORS must not reach it - intr_init() clamped nr_irqs, but
-	 * a controller can still report an INTID above that.
-	 */
-	if (irq < NR_IRQ_VECTORS)
-		irq_handle(irq);
+	gic_dispatch(irq);
 
 	/*
 	 * Write the whole IAR value back rather than just the INTID: for SGIs

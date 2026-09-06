@@ -40,10 +40,19 @@
 
 static struct virt_timer {
 	u64_t interval;		/* counter ticks between system ticks */
-	u64_t next;		/* value the comparator is set to */
 	int intid;		/* which PPI the timer raises */
-	int running;
 } virt_timer;
+
+/*
+ * Where each core's comparator stands, and whether it is armed at all.
+ *
+ * Per core and not part of the struct above, because CNTP_CVAL_EL0 and
+ * CNTP_CTL_EL0 are per-CPU registers: every core arms its own timer and
+ * advances its own deadline. Only the interval and the interrupt number are
+ * shared, and those are properties of the machine.
+ */
+static u64_t timer_next[CONFIG_MAX_CPUS];
+static int timer_running[CONFIG_MAX_CPUS];
 
 static inline u64_t
 read_cntfrq(void)
@@ -157,6 +166,32 @@ find_timer(void *cookie, int depth, const char *name,
 }
 
 /*===========================================================================*
+ *				arm_this_cpu				     *
+ *===========================================================================*/
+/*
+ * Set this core's comparator one interval ahead and let the line through.
+ *
+ * All of it is per core. The comparator is a system register, and the timer
+ * is a PPI, so its enable bit belongs to this core too - on GICv3 it is not
+ * even in the same block of registers as a shared interrupt, and no other
+ * core can set it.
+ */
+static void
+arm_this_cpu(void)
+{
+	/* Off while it is programmed. */
+	write_ctl(0);
+
+	timer_next[cpuid] = read_cntpct() + virt_timer.interval;
+	write_cval(timer_next[cpuid]);
+	write_ctl(CNTP_CTL_ENABLE);
+
+	bsp_irq_unmask(virt_timer.intid);
+
+	timer_running[cpuid] = 1;
+}
+
+/*===========================================================================*
  *				bsp_timer_init				     *
  *===========================================================================*/
 void
@@ -177,25 +212,45 @@ bsp_timer_init(unsigned freq)
 		panic("CNTFRQ_EL0 is zero: firmware did not set the timer "
 		    "frequency");
 
-	memset(&scan, 0, sizeof(scan));
-	dtb = (const void *)phys2vir(boot_dtb);
+	/*
+	 * Which interrupt and how long a tick is are the same on every core,
+	 * so they are worked out once. Everything below this is per core, and
+	 * every core runs it: a secondary calls in here through
+	 * app_cpu_init_timer() to arm its own comparator and let its own copy
+	 * of the line through.
+	 */
+	if (virt_timer.intid == 0) {
+		memset(&scan, 0, sizeof(scan));
+		dtb = (const void *)phys2vir(boot_dtb);
 
-	if (!fdt_valid(dtb) || fdt_walk(dtb, find_timer, &scan) == 0 ||
-	    !scan.found)
-		panic("device tree does not say which interrupt the timer "
-		    "raises");
+		if (!fdt_valid(dtb) || fdt_walk(dtb, find_timer, &scan) == 0 ||
+		    !scan.found)
+			panic("device tree does not say which interrupt the "
+			    "timer raises");
 
-	virt_timer.intid = scan.intid;
-	virt_timer.interval = hz / freq;
+		virt_timer.intid = scan.intid;
+		virt_timer.interval = hz / freq;
+	}
 
-	/* Off while it is programmed. */
-	write_ctl(0);
+	arm_this_cpu();
+}
 
-	virt_timer.next = read_cntpct() + virt_timer.interval;
-	write_cval(virt_timer.next);
-	write_ctl(CNTP_CTL_ENABLE);
+/*===========================================================================*
+ *				bsp_timer_restart			     *
+ *===========================================================================*/
+void
+bsp_timer_restart(void)
+{
+	/*
+	 * Called on every return to user, so the common case is a core whose
+	 * timer never stopped and there is nothing to do. The case that
+	 * matters is a secondary coming back from idle, where stop_local_timer()
+	 * really did switch it off.
+	 */
+	if (timer_running[cpuid])
+		return;
 
-	virt_timer.running = 1;
+	arm_this_cpu();
 }
 
 /*===========================================================================*
@@ -206,7 +261,7 @@ bsp_timer_stop(void)
 {
 	write_ctl(0);
 	bsp_irq_mask(virt_timer.intid);
-	virt_timer.running = 0;
+	timer_running[cpuid] = 0;
 }
 
 /*===========================================================================*
@@ -227,9 +282,6 @@ bsp_register_timer_handler(irq_handler_t handler)
 	 */
 	put_irq_handler(&timer_hook, virt_timer.intid, handler);
 
-	/* Only let the line through once there is something behind it. */
-	bsp_irq_unmask(virt_timer.intid);
-
 	return 0;
 }
 
@@ -243,7 +295,10 @@ bsp_timer_int_handler(void)
 	 * Moving the comparator is what clears the condition; there is no
 	 * separate acknowledge register. Advancing from the previous value
 	 * keeps the tick period exact even when a tick is serviced late.
+	 *
+	 * The deadline is this core's: the interrupt is a PPI, so whichever
+	 * core is running this is the core whose timer fired.
 	 */
-	virt_timer.next += virt_timer.interval;
-	write_cval(virt_timer.next);
+	timer_next[cpuid] += virt_timer.interval;
+	write_cval(timer_next[cpuid]);
 }

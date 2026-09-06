@@ -159,6 +159,21 @@ static phys_bytes kernel_root;
 static phys_bytes boot_user_root;
 
 /*
+ * The same identity map, kept after the boot core has dropped it.
+ *
+ * A secondary core turns its own MMU on from a physical program counter and
+ * needs that map for the same one instruction the boot core did. TTBR0 and
+ * TCR are per-CPU registers, so the boot core dropping the map says nothing
+ * about the others; only the table itself has to survive, and this is what
+ * remembers where it is.
+ *
+ * Those pages are early allocations, and main.c hands that memory back to the
+ * free list before the secondaries are started. Nothing consumes it in
+ * between: VM, which would, does not run until every core is up.
+ */
+static phys_bytes ap_identity_root;
+
+/*
  * The extent of the pages handed out as translation tables, so they can be
  * flushed from the data caches in one go before the MMU is switched on. They
  * come one after another out of the same memory chunk, so this is normally
@@ -611,6 +626,7 @@ pg_identity(kinfo_t *cbi)
 	 * leftover physical pointer faults instead of quietly working.
 	 */
 	identity_root = alloc_table(cbi);
+	ap_identity_root = identity_root;
 
 	map_kernel_image(cbi, identity_root, 0);
 	map_devices(cbi, identity_root, 0);
@@ -689,24 +705,51 @@ pg_clear(void)
 }
 
 /*===========================================================================*
+ *			      pg_enable_user_walks			     *
+ *===========================================================================*/
+/*
+ * Let this core translate addresses in the lower half again.
+ *
+ * pg_drop_identity() switched TTBR0 walks off with TCR.EPD0 as soon as the
+ * kernel was running high, so that a leftover physical pointer would fault
+ * rather than quietly work. TCR is a per-CPU register, so that says nothing
+ * about any other core - and each core has to switch the walks back on for
+ * itself before it is handed a process.
+ *
+ * The boot core does it from pg_load(). A secondary never calls pg_load, and
+ * without this would load a process's TTBR0 and then fault on every user
+ * address it was given: the register would be right and the walk still
+ * disabled.
+ */
+void
+pg_enable_user_walks(void)
+{
+	u64_t tcr;
+
+	__asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr));
+	tcr &= ~TCR_EPD0;
+
+	/* isb, or the next access may still be translated the old way. */
+	__asm__ volatile(
+		"msr	tcr_el1, %0\n\t"
+		"isb"
+		:: "r"(tcr) : "memory");
+}
+
+/*===========================================================================*
  *				pg_load					     *
  *===========================================================================*/
 phys_bytes
 pg_load(void)
 {
-	u64_t tcr;
-
 	assert(boot_user_root != 0);
 
 	/*
-	 * Turn TTBR0 walks back on: pg_drop_identity() switched them off at
-	 * the end of boot, and the lower half has a legitimate occupant
-	 * again. ASID 0 is the boot process's; handing out the rest is the
-	 * scheduler's business, once there is one.
+	 * The lower half has a legitimate occupant again. ASID 0 is the boot
+	 * process's; handing out the rest is the scheduler's business, once
+	 * there is one.
 	 */
-	__asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr));
-	tcr &= ~TCR_EPD0;
-	__asm__ volatile("msr tcr_el1, %0" :: "r"(tcr) : "memory");
+	pg_enable_user_walks();
 
 	write_ttbr0(boot_user_root | AARCH64_TTBR_ASID(0));
 	refresh_tlb();
@@ -813,18 +856,23 @@ supported_ips(void)
 }
 
 /*===========================================================================*
- *				vm_enable_paging			     *
+ *				paging_on				     *
  *===========================================================================*/
-void
-vm_enable_paging(void)
+/*
+ * Turn translation on for the core running this, with the given tree in
+ * TTBR0 and the kernel's in TTBR1.
+ *
+ * Every core does exactly this, and each does it for itself: the registers
+ * written here are all per-CPU, so a secondary is not repeating the boot
+ * core's work, it is doing its own.
+ */
+static void
+paging_on(phys_bytes low_root)
 {
 	u64_t tcr, sctlr;
 
-	assert(identity_root != 0);
+	assert(low_root != 0);
 	assert(kernel_root != 0);
-
-	/* Publish the tables to a walker that will read them as cacheable. */
-	dcache_clean_inval(tables_lo, tables_hi - tables_lo);
 
 	/*
 	 * Both halves alike: 4 KiB granule, 48-bit addresses, inner
@@ -845,7 +893,7 @@ vm_enable_paging(void)
 		"msr	ttbr1_el1, %3\n\t"
 		"isb"
 		:: "r"((u64_t)MAIR_VALUE), "r"(tcr),
-		   "r"((u64_t)identity_root), "r"((u64_t)kernel_root)
+		   "r"((u64_t)low_root), "r"((u64_t)kernel_root)
 		: "memory");
 
 	/*
@@ -874,6 +922,33 @@ vm_enable_paging(void)
 }
 
 /*===========================================================================*
+ *				vm_enable_paging			     *
+ *===========================================================================*/
+void
+vm_enable_paging(void)
+{
+	/*
+	 * Publish the tables to a walker that will read them as cacheable.
+	 * Once only, by the boot core: the tables do not change afterwards,
+	 * and a secondary core's walker reads them through the same coherent
+	 * inner-shareable domain.
+	 */
+	dcache_clean_inval(tables_lo, tables_hi - tables_lo);
+
+	paging_on(identity_root);
+}
+
+/*===========================================================================*
+ *				pg_ap_paging_on				     *
+ *===========================================================================*/
+/* The same, for a secondary core: same tables, its own registers. */
+void
+pg_ap_paging_on(void)
+{
+	paging_on(ap_identity_root);
+}
+
+/*===========================================================================*
  *				pg_enter_high				     *
  *===========================================================================*/
 void
@@ -898,21 +973,57 @@ pg_enter_high(void (*entry)(void))
 }
 
 /*===========================================================================*
- *				pg_drop_identity			     *
+ *				pg_ap_enter_high			     *
  *===========================================================================*/
+/*
+ * The same branch for a secondary core, onto its own kernel stack.
+ *
+ * The boot core moves to the upper-half alias of the stack it was already
+ * using; a secondary leaves the shared early stack behind entirely and takes
+ * the per-CPU one arch_init() set up, which is an upper-half address already.
+ * The core number is carried across in x0, because on the other side of this
+ * branch there is nothing left to ask.
+ */
 void
-pg_drop_identity(void)
+pg_ap_enter_high(unsigned cpu, void (*entry)(unsigned))
+{
+	register vir_bytes target __asm__("x1") =
+	    (vir_bytes)entry + KERNEL_VA_OFFSET;
+	register vir_bytes stack __asm__("x2") =
+	    (vir_bytes)get_k_stack_top(cpu);
+	register u64_t arg __asm__("x0") = cpu;
+
+	/*
+	 * Fixed registers, so that setting the argument cannot overwrite the
+	 * address about to be branched to. There is no return path across
+	 * this branch and there is not meant to be.
+	 */
+	__asm__ volatile(
+		"mov	sp, %1\n\t"
+		"br	%0"
+		:: "r"(target), "r"(stack), "r"(arg) : "memory");
+
+	__builtin_unreachable();
+}
+
+/*===========================================================================*
+ *				drop_identity				     *
+ *===========================================================================*/
+/*
+ * Take the low half away from the core running this.
+ *
+ * Clearing TTBR0_EL1 on its own would leave the walker pointed at physical
+ * address zero rather than switched off. EPD0 is what makes a low address
+ * fault, and that is the point: from here on a leftover physical pointer is a
+ * bug that announces itself.
+ */
+static void
+drop_identity(void)
 {
 	u64_t tcr;
 
 	assert(running_high());
 
-	/*
-	 * Clearing TTBR0_EL1 on its own would leave the walker pointed at
-	 * physical address zero rather than switched off. EPD0 is what makes
-	 * a low address fault, and that is the point: from here on a leftover
-	 * physical pointer is a bug that announces itself.
-	 */
 	__asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr));
 	tcr |= TCR_EPD0;
 
@@ -923,6 +1034,30 @@ pg_drop_identity(void)
 		:: "r"(tcr) : "memory");
 
 	refresh_tlb();
+}
 
+/*===========================================================================*
+ *				pg_drop_identity			     *
+ *===========================================================================*/
+void
+pg_drop_identity(void)
+{
+	drop_identity();
+
+	/*
+	 * The boot core is done with the map. ap_identity_root still names
+	 * the table, because the secondaries have not been started yet and
+	 * each of them will want it once.
+	 */
 	identity_root = 0;
+}
+
+/*===========================================================================*
+ *				pg_ap_drop_identity			     *
+ *===========================================================================*/
+/* The same for a secondary, which must not disturb the table others need. */
+void
+pg_ap_drop_identity(void)
+{
+	drop_identity();
 }

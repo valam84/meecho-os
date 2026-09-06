@@ -900,6 +900,18 @@ arch_enable_paging(struct proc *caller)
 	/* Load the caller's page table: the mappings VM made are now live. */
 	switch_address_space(caller);
 
+#ifdef CONFIG_SMP
+	/*
+	 * VM is running, which is where i386 also waits for the secondaries,
+	 * and for the same reason: it is the last moment at which the system
+	 * is still orderly enough for a count of cores that failed to come up
+	 * to mean anything, and the first at which letting them run costs
+	 * nothing.
+	 */
+	barrier();
+	wait_for_APs_to_finish_booting();
+#endif
+
 	/*
 	 * And that is all there is to do. On earm this is where every driver
 	 * is moved onto the base VM chose for it, because until VM ran there

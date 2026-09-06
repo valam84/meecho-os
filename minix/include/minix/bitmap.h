@@ -1,6 +1,17 @@
 #ifndef _BITMAP_H
 #define _BITMAP_H
 
+/*
+ * For bitchunk_t, which the inline functions further down take a pointer to.
+ * This header used to depend on whoever included it having included
+ * <sys/types.h> first - which the kernel does and <minix/drivers.h> does not,
+ * so the functions compiled where they were used and nowhere else. Nothing
+ * noticed while they were reachable only on a CONFIG_SMP build, on an
+ * architecture whose userland was never built that way.
+ */
+#include <sys/types.h>
+#include <limits.h>	/* CHAR_BIT, for BITCHUNK_BITS */
+
 /* Bit map operations to manipulate bits of a simple mask variable. */
 #define bit_set(mask, n)	((mask) |= (1 << (n)))
 #define bit_unset(mask, n)	((mask) &= ~(1 << (n)))

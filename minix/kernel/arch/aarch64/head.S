@@ -110,42 +110,57 @@ _start_boot:
 	mov	x21, x0
 
 	/*
-	 * Only the boot CPU goes on. The kernel is uniprocessor for now and
-	 * there is exactly one boot stack; a secondary core running this
-	 * code would quietly corrupt it. Park the others rather than leaving
-	 * them loose.
+	 * Only the boot CPU goes on here. The others are started later and
+	 * deliberately, by smp_init() through PSCI, and they arrive at
+	 * _start_ap below with a stack and a number of their own. One that
+	 * wandered in here would run the boot core's path on the boot core's
+	 * stack.
 	 *
-	 * Aff0 is enough to identify the boot CPU on the boards we care
-	 * about. This will need revisiting for SMP, which is the point of
-	 * the whole exercise, so it is deliberately conservative: anything
-	 * that is not CPU 0 stops here.
+	 * Aff0 is enough to tell them apart on the machines this runs on. A
+	 * firmware that releases the secondaries at the kernel entry point
+	 * rather than holding them - the old spin-table way - would need the
+	 * park below; PSCI machines never get here at all.
 	 */
 	mrs	x1, mpidr_el1
 	and	x1, x1, #0xff
 	cbnz	x1, park_secondary
 
 	/* Normalise the exception level: enter C at EL1 either way. */
-	mrs	x0, CurrentEL
-	lsr	x0, x0, #2
-	cmp	x0, #2
-	b.ne	at_el1
+	adr	x9, at_el1
+	b	to_el1
+
+/*
+ * Return to EL1 at the address in x9, from whichever level this core was
+ * started at. Clobbers x9 and x10, and nothing else - _start_boot is holding
+ * the device tree pointer in x21 across this.
+ *
+ * Both entry points come through here. A secondary started by PSCI wakes at
+ * the exception level of whoever called CPU_ON, which is EL1 on the machines
+ * in front of us; a firmware that hands it EL2 instead is allowed to, and
+ * Linux makes the same allowance for the same reason.
+ */
+to_el1:
+	mrs	x10, CurrentEL
+	lsr	x10, x10, #2
+	cmp	x10, #2
+	b.ne	already_el1
 
 	/*
 	 * Entered at EL2. Configure EL1 and drop into it.
 	 */
 
 	/* EL1 is AArch64, not AArch32. */
-	mov	x0, #HCR_EL2_RW
-	msr	hcr_el2, x0
+	mov	x10, #HCR_EL2_RW
+	msr	hcr_el2, x10
 
 	/*
 	 * Let EL1 read the physical counter and timers. Without this the
 	 * first thing the timer code does at EL1 traps, which is a confusing
 	 * way to discover the problem.
 	 */
-	mrs	x0, cnthctl_el2
-	orr	x0, x0, #3		/* EL1PCTEN | EL1PCEN */
-	msr	cnthctl_el2, x0
+	mrs	x10, cnthctl_el2
+	orr	x10, x10, #3		/* EL1PCTEN | EL1PCEN */
+	msr	cnthctl_el2, x10
 	msr	cntvoff_el2, xzr
 
 	/*
@@ -160,29 +175,35 @@ _start_boot:
 	 * kernel that boots perfectly under plain -M virt would die under
 	 * -M virt,virtualization=on, which is the branch a real board takes.
 	 *
+	 * These are per-CPU registers, which is why this sits in the shared
+	 * path and not in the boot core's: a secondary that came up at EL2
+	 * has to do it for itself.
+	 *
 	 * Guarded on ID_AA64PFR0_EL1.GIC, bits [27:24]: zero means this CPU
 	 * has no system register interface at all and ICC_SRE_EL2 does not
 	 * exist to be written. ICH_HCR_EL2 is cleared for the same reason
 	 * Linux clears it - the virtual interface is nothing this kernel
 	 * uses, and firmware need not have left it off.
 	 */
-	mrs	x0, id_aa64pfr0_el1
-	ubfx	x0, x0, #24, #4
-	cbz	x0, no_gicv3
-	mrs	x0, icc_sre_el2
-	orr	x0, x0, #ICC_SRE_EL2_SRE
-	orr	x0, x0, #ICC_SRE_EL2_ENABLE
-	msr	icc_sre_el2, x0
+	mrs	x10, id_aa64pfr0_el1
+	ubfx	x10, x10, #24, #4
+	cbz	x10, no_gicv3
+	mrs	x10, icc_sre_el2
+	orr	x10, x10, #ICC_SRE_EL2_SRE
+	orr	x10, x10, #ICC_SRE_EL2_ENABLE
+	msr	icc_sre_el2, x10
 	isb
 	msr	ich_hcr_el2, xzr
 no_gicv3:
 
-	/* Fake an exception return into EL1, landing at at_el1. */
-	mov	x0, #SPSR_EL1H
-	msr	spsr_el2, x0
-	adr	x0, at_el1
-	msr	elr_el2, x0
+	/* Fake an exception return into EL1, landing where x9 says. */
+	mov	x10, #SPSR_EL1H
+	msr	spsr_el2, x10
+	msr	elr_el2, x9
 	eret
+
+already_el1:
+	br	x9
 
 at_el1:
 	/*
@@ -227,6 +248,19 @@ at_el1:
 	/* Mask everything until the exception vectors exist. */
 	msr	daifset, #0xf
 
+	/*
+	 * This is CPU 0, and say so before any C runs.
+	 *
+	 * TPIDR_EL1 is where cpuid reads the core's number from, and on an SMP
+	 * build every per-CPU variable in the kernel is indexed by it - from
+	 * the first line of kmain(), long before anything has read the device
+	 * tree. Its reset value is not architecturally defined, so leaving it
+	 * alone would mean indexing those arrays with whatever the firmware
+	 * happened to leave. smp_init() renumbers the cores so that this one
+	 * really is zero.
+	 */
+	msr	tpidr_el1, xzr
+
 	/* Stack grows down from the top of the boot stack. */
 	adrp	x0, boot_stack_top
 	add	x0, x0, :lo12:boot_stack_top
@@ -263,6 +297,67 @@ park_secondary:
 	.size	_start, . - _start
 
 /*
+ * Where a secondary core starts.
+ *
+ * smp_init() hands this address to PSCI CPU_ON as a physical address, and
+ * the logical CPU number as the context PSCI puts in x0. So a core knows
+ * which core it is from its first instruction, and needs no table to look
+ * itself up in - which matters, because it has no stack yet to look with.
+ *
+ * The state it arrives in is the same as the boot core's: MMU off, caches
+ * unknown, exception level whatever the firmware chose. So it takes the same
+ * path through to_el1 and then repeats the same three settings, all of which
+ * are per-CPU registers and none of which the boot core could have set on its
+ * behalf.
+ */
+	.globl	_start_ap
+	.type	_start_ap, %function
+_start_ap:
+	mov	x20, x0			/* logical cpu number, from PSCI */
+
+	adr	x9, ap_el1
+	b	to_el1
+
+ap_el1:
+	/* SCTLR_EL1 to the same known state the boot core starts from. */
+	mov	x0, #(SCTLR_EL1_RES1 & 0xffff)
+	movk	x0, #(SCTLR_EL1_RES1 >> 16), lsl #16
+	msr	sctlr_el1, x0
+	isb
+
+	/* FP and SIMD for EL1, trapped for EL0, as on the boot core. */
+	mov	x0, #(1 << 20)
+	msr	cpacr_el1, x0
+	isb
+
+	/* Masked until this core has vectors and a controller of its own. */
+	msr	daifset, #0xf
+
+	/*
+	 * One stack, shared by every secondary in turn.
+	 *
+	 * That is safe because the cores are started one at a time: smp_init()
+	 * does not call CPU_ON for the next core until this one has reported
+	 * itself up, and by then it is long since running on its own per-CPU
+	 * stack in the upper half. Giving each core its own early stack would
+	 * mean computing where it is from assembly, and this file deliberately
+	 * knows no constant that another file defines.
+	 */
+	adrp	x0, ap_boot_stack_top
+	add	x0, x0, :lo12:ap_boot_stack_top
+	mov	sp, x0
+
+	/*
+	 * Into C, still physical. smp_ap_start() turns this core's MMU on and
+	 * leaves for the upper half; it does not come back.
+	 */
+	mov	x0, x20
+	bl	smp_ap_start
+	b	park_secondary
+
+	.size	_start_ap, . - _start_ap
+
+/*
  * Boot stack. 16 KiB is generous for early boot and costs nothing; the
  * per-CPU kernel stacks come later, from the architecture layer's process
  * code.
@@ -276,3 +371,14 @@ boot_stack:
 	.space	16384
 	.globl	boot_stack_top
 boot_stack_top:
+
+/*
+ * And the one the secondaries share while they are physical. A page: all it
+ * carries is smp_ap_start() and what turns the MMU on.
+ */
+	.align	12
+	.globl	ap_boot_stack
+ap_boot_stack:
+	.space	4096
+	.globl	ap_boot_stack_top
+ap_boot_stack_top:

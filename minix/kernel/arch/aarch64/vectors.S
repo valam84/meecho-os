@@ -57,6 +57,47 @@
 	b	exception_entry_user
 	.endm
 
+/*
+ * An interrupt taken at EL1. Its own entry, because it is the one EL1
+ * exception that is not a fault: the only place the kernel runs with
+ * interrupts unmasked is halt_cpu(), so this is always an idle core waking
+ * up. See exception_entry_idle.
+ */
+	.macro	VECTOR_IDLE kind
+	.balign	0x80
+	sub	sp, sp, #FRAME_SIZE
+	stp	x0, x1, [sp, #FRAME_X(0)]
+	mov	x0, #\kind
+	b	exception_entry_idle
+	.endm
+
+/*
+ * SP onto this CPU's kernel stack. k_stacks points at the reservation at the
+ * end of this file; each CPU owns two pages and the top of the upper one is
+ * its stack pointer, which leaves the lower page as a guard.
+ *
+ * Which CPU this is comes from TPIDR_EL1, where the core wrote its own number
+ * as the last thing it did on the way up - the same number cpuid reads in C
+ * and the same index get_k_stack_top() uses. head.S writes zero there on the
+ * boot core before any of this can run, so this is also right in a kernel
+ * built for one core.
+ *
+ * Sharing one stack between cores is not a subtle failure: the second core to
+ * take an exception lays its frame over the first one's, and the kernel
+ * returns into whatever is left - an address inside the stack, so it faults
+ * fetching an instruction out of its own data.
+ */
+	.macro	KERNEL_STACK
+	adrp	x4, k_stacks
+	ldr	x4, [x4, #:lo12:k_stacks]
+	mrs	x5, tpidr_el1
+	add	x5, x5, #1
+	mov	x6, #(2 * K_STACK_SIZE)
+	madd	x4, x5, x6, x4
+	sub	x4, x4, #AARCH64_STACK_TOP_RESERVED
+	mov	sp, x4
+	.endm
+
 	.balign	2048
 	.globl	exception_vectors
 exception_vectors:
@@ -70,9 +111,9 @@ exception_vectors:
 	VECTOR_KERNEL	EXC_EL1T_FIQ
 	VECTOR_KERNEL	EXC_EL1T_SERROR
 
-	/* Current EL on SP_EL1: the kernel's own faults and interrupts. */
+	/* Current EL on SP_EL1: the kernel's own faults, and the idle wakeup. */
 	VECTOR_KERNEL	EXC_EL1H_SYNC
-	VECTOR_KERNEL	EXC_EL1H_IRQ
+	VECTOR_IDLE	EXC_EL1H_IRQ
 	VECTOR_KERNEL	EXC_EL1H_FIQ
 	VECTOR_KERNEL	EXC_EL1H_SERROR
 
@@ -148,20 +189,8 @@ exception_entry_user:
 	mrs	x2, esr_el1
 	mrs	x3, far_el1
 
-	/*
-	 * Onto this CPU's kernel stack. k_stacks points at the reservation
-	 * below; the top of the upper of each CPU's two pages is the stack
-	 * pointer, which leaves the lower page as a guard.
-	 *
-	 * One CPU for now, so this is the first pair. When there are more,
-	 * the index comes from MPIDR_EL1 and the two extra instructions go
-	 * here.
-	 */
-	adrp	x4, k_stacks
-	ldr	x4, [x4, #:lo12:k_stacks]
-	add	x4, x4, #(2 * K_STACK_SIZE)
-	sub	x4, x4, #AARCH64_STACK_TOP_RESERVED
-	mov	sp, x4
+	/* The handler must not write below a struct proc. */
+	KERNEL_STACK
 
 	/*
 	 * A zero frame pointer stops a stack trace here rather than letting
@@ -183,9 +212,42 @@ exception_entry_user:
 	.size	exception_entry_user, . - exception_entry_user
 
 /*
- * From EL1: a fault inside the kernel, or an interrupt taken while the kernel
- * was running. The frame is on the kernel stack and the return goes back
- * through it, resuming exactly what was interrupted.
+ * An interrupt taken at EL1, which means an idle core waking up: halt_cpu()
+ * is the one place the kernel unmasks interrupts.
+ *
+ * It does not return to what it interrupted, and that is the point. The
+ * interrupted context is idle() inside switch_to_user(), and an interrupt
+ * from there is the signal to go and look for work - so this ends in
+ * switch_to_user() exactly as the entry from EL0 does, with the stack reset
+ * to the top and the frames of the abandoned idle loop left to be overwritten.
+ * Both 32-bit ports do the same, and it is not only tidiness: context_stop()
+ * takes the big kernel lock on the way in and releases it on the way out
+ * through switch_to_user(), so a path that returns instead would come back
+ * from every idle wakeup holding the lock.
+ */
+exception_entry_idle:
+	SAVE_FRAME_TAIL
+
+	mov	x1, x0			/* vector number */
+	mov	x0, sp			/* frame */
+
+	mrs	x2, esr_el1
+	mrs	x3, far_el1
+
+	bl	trap_handler
+
+	KERNEL_STACK
+	mov	x29, xzr
+
+	bl	switch_to_user
+	b	.
+
+	.size	exception_entry_idle, . - exception_entry_idle
+
+/*
+ * From EL1: a fault inside the kernel. The frame is on the kernel stack and
+ * the return goes back through it, resuming exactly what was interrupted -
+ * which is what lets trap_expect_fault() step over a deliberate one.
  */
 exception_entry_kernel:
 	SAVE_FRAME_TAIL

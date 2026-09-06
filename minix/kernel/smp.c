@@ -4,11 +4,13 @@
 #include "interrupt.h"
 #include "clock.h"
 
-unsigned ncpus;
-unsigned ht_per_core;
-unsigned bsp_cpu_id;
-
-struct cpu cpus[CONFIG_MAX_CPUS];
+/*
+ * ncpus, ht_per_core, bsp_cpu_id and cpus[] are not defined here. They are
+ * declared EXTERN in smp.h and instantiated by table.c, which is what EXTERN
+ * is for and where every other global of the kernel lives. Defining them
+ * again here was a second definition of each, and only -fcommon - the
+ * compiler default until GCC 10 - made that link.
+ */
 
 /* info passed to another cpu along with a sched ipi */
 struct sched_ipi_data {

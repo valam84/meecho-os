@@ -104,12 +104,17 @@ void
 restart_local_timer(void)
 {
 	/*
-	 * Nothing to restart. This exists for architectures whose timer is
-	 * one-shot and has to be rearmed after an idle period; the generic
-	 * timer's comparator is advanced by every tick in
-	 * bsp_timer_int_handler() and keeps running through idle, so there is
-	 * no state to recover. ARM's is empty for the same reason.
+	 * Almost always nothing: the generic timer's comparator is advanced
+	 * by every tick and keeps running through idle, so a core that never
+	 * stopped its timer has no state to recover. ARM's is empty for that
+	 * reason and this one was too.
+	 *
+	 * What made it not enough is SMP. idle() stops the timer on a
+	 * secondary - the boot core keeps time for the machine - and nothing
+	 * else would ever start it again, so the first process scheduled
+	 * there would run without a quantum and never be preempted.
 	 */
+	bsp_timer_restart();
 }
 
 /*===========================================================================*
@@ -216,7 +221,53 @@ context_stop(struct proc *p)
 	unsigned int cpu, tpt, counter;
 
 #ifdef CONFIG_SMP
-#error CONFIG_SMP is unsupported on aarch64
+	int must_bkl_unlock = 0;
+
+	cpu = cpuid;
+
+	/*
+	 * This runs on every crossing between the kernel and a process and on
+	 * no other occasion, which makes it the one place where the big
+	 * kernel lock can be taken and released without threading it through
+	 * the entry and exit paths in assembly. Ending the account for KERNEL
+	 * means the kernel is being left, so the lock goes; ending it for
+	 * anything else means the kernel is being entered, so it is taken.
+	 */
+	if (p == proc_addr(KERNEL)) {
+		u64_t tmp;
+
+		read_tsc_64(&tsc);
+		tmp = tsc - *__tsc_ctr_switch;
+		kernel_ticks[cpu] = kernel_ticks[cpu] + tmp;
+		p->p_cycles = p->p_cycles + tmp;
+		must_bkl_unlock = 1;
+	} else {
+		u64_t bkl_tsc;
+		atomic_t succ;
+
+		read_tsc_64(&bkl_tsc);
+		/* Only an estimate: it may be taken between here and there. */
+		succ = big_kernel_lock.val;
+
+		BKL_LOCK();
+
+		read_tsc_64(&tsc);
+
+		bkl_ticks[cpu] = bkl_ticks[cpu] + tsc - bkl_tsc;
+		bkl_tries[cpu]++;
+		bkl_succ[cpu] += !(!(succ == 0));
+
+		p->p_cycles = p->p_cycles + tsc - *__tsc_ctr_switch;
+
+		/*
+		 * A scheduling IPI may have arrived while this core was
+		 * waiting for the lock, and the core that sent it may in turn
+		 * be waiting on one of ours. Handling it here, before doing
+		 * anything else, is what keeps two cores from waiting on each
+		 * other forever.
+		 */
+		smp_sched_handler();
+	}
 #else
 	read_tsc_64(&tsc);
 	p->p_cycles = p->p_cycles + tsc - *__tsc_ctr_switch;
@@ -284,6 +335,46 @@ context_stop(struct proc *p)
 	tsc_per_state[cpu][counter] += tsc_delta;
 
 	*__tsc_ctr_switch = tsc;
+
+#ifdef CONFIG_SMP
+	if (must_bkl_unlock)
+		BKL_UNLOCK();
+#endif
+}
+
+/*===========================================================================*
+ *				context_stop_idle			     *
+ *===========================================================================*/
+/*
+ * The same, for a core coming out of idle.
+ *
+ * Separate because idle() is the one place that leaves the kernel without a
+ * process to come back to: it stops the account for KERNEL and halts, so the
+ * interrupt that wakes the core has to charge the idle process and, on the
+ * way, take the big kernel lock back.
+ */
+void
+context_stop_idle(void)
+{
+	int is_idle;
+#ifdef CONFIG_SMP
+	unsigned cpu = cpuid;
+#else
+	unsigned cpu = 0;
+#endif
+
+	is_idle = get_cpu_var(cpu, cpu_is_idle);
+	get_cpu_var(cpu, cpu_is_idle) = 0;
+
+	context_stop(get_cpulocal_var_ptr(idle_proc));
+
+	/*
+	 * A core that went idle may have stopped its timer - the secondaries
+	 * do, since the boot core keeps the time for everyone - so it has to
+	 * be armed again before anything is scheduled here.
+	 */
+	if (is_idle)
+		restart_local_timer();
 }
 
 /*===========================================================================*

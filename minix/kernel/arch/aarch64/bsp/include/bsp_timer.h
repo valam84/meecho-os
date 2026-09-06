@@ -24,4 +24,14 @@ void bsp_timer_stop(void);
 void bsp_timer_int_handler(void);
 int bsp_register_timer_handler(irq_handler_t handler);
 
+/*
+ * Five, not four, and the fifth is SMP's doing: a secondary core stops its
+ * timer whenever it goes idle - the boot core keeps time for the machine -
+ * and something has to arm it again before a process is scheduled there.
+ * Called on every return to user, so it does nothing on a core whose timer
+ * is already running, which is every core that has not idled and the boot
+ * core always.
+ */
+void bsp_timer_restart(void);
+
 #endif /* _BSP_TIMER_H_ */

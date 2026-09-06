@@ -40,6 +40,13 @@ SRCS+=	head.S arch_system.c memory.c direct_tty_utils.c \
 	gic.c gicv2.c gicv3.c \
 	usercopy.S exception.c vectors.S trap.c hw_intr.c fpu_asm.S
 
+# CONFIG_SMP and CONFIG_MAX_CPUS are set for the whole tree in
+# share/mk/bsd.own.mk, because the scheduler needs them as much as the kernel
+# does. All that is left here is what an SMP kernel is built from.
+.ifdef CONFIG_SMP
+SRCS+=	arch_smp.c spinlock.S
+.endif
+
 .include "bsp/qemu-virt/Makefile.inc"
 
 # The rest of the architecture layer is written by taking the bring-up kernel

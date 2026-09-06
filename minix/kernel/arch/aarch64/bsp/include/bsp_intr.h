@@ -2,15 +2,20 @@
 #define _BSP_INTR_H_
 
 /*
- * The interrupt controller, as the board support package provides it. The
- * same set ARM has, so that the contract keeps its shape across the two
- * architectures.
+ * The interrupt controller, as the platform provides it. The same set ARM
+ * has, so that the contract keeps its shape across the two architectures -
+ * which is where the bsp_ prefix comes from, and on this architecture it is
+ * now historical. The implementation is arch/aarch64/gic.c and the two
+ * version-specific files beside it, not a per-board driver: a board does not
+ * settle which GIC it has in a way a build can read, so the device tree is
+ * asked. QEMU's virt machine alone answers either version.
  *
  * bsp_irq_handle() is called from the IRQ vector with nothing decided yet: it
- * is the controller that knows which line fired and how to retire it, and on
- * GICv2 both are reads and writes of the CPU interface. Everything above it -
- * the hook chain, the notification to the driver - is generic, and this
- * reaches it by calling irq_handle().
+ * is the controller that knows which line fired and how to retire it - two
+ * accesses to the CPU interface, which is memory on GICv2 and a pair of
+ * system registers on GICv3. Everything above it - the hook chain, the
+ * notification to the driver - is generic, and this reaches it by calling
+ * irq_handle().
  *
  * bsp_intr_pre_init() is the odd one out and is not in ARM's contract. It
  * registers the controller's registers with kern_phys_map before paging

@@ -55,55 +55,21 @@
 #define PL011_INT_ALL		0x7ff
 
 /* ======================================================================
- * GICv2 -- the interrupt controller
+ * The interrupt controller is not here.
  *
- * Register offsets only. Unlike the UART above, the GIC's base addresses are
- * read out of the device tree rather than written here, and the asymmetry is
- * deliberate.
+ * It used to be, and the asymmetry with the console above is worth keeping
+ * on record. The console has to come up before anything else, because a
+ * failure to parse the device tree has to be reportable - bsp_ser_init()
+ * runs as the first statement of pre_init(), before the kernel has even
+ * recorded where the tree is, so it has no choice but to know its own
+ * address. The GIC is needed later, once the tree has been read, so it can
+ * be asked instead.
  *
- * The console has to come up before anything else, because a failure to parse
- * the device tree has to be reportable - so bsp_ser_init() runs as the first
- * statement of pre_init(), before the kernel has even recorded where the tree
- * is. It has no choice but to know its own address. The GIC is needed later,
- * once the tree has been read, so it can be asked instead. That is what lets
- * the same source answer for a GIC-400 on a BCM2711, which sits at
- * 0xff841000 and 0xff842000 and is otherwise the same GICv2.
+ * Being asked is what eventually took it out of this file: a GIC version and
+ * its addresses are properties of the machine rather than of the board this
+ * package describes, and this one machine reports either version depending
+ * on QEMU gic-version=. It now lives in arch/aarch64/gic.c, gicv2.c and
+ * gicv3.c, with its registers in <gic.h>.
  * ====================================================================== */
-
-/* Distributor: what is enabled, at what priority, and where it goes. */
-#define GICD_CTLR		0x000
-#define GICD_TYPER		0x004
-#define GICD_IIDR		0x008
-#define GICD_IGROUPR(n)		(0x080 + 4 * (n))
-#define GICD_ISENABLER(n)	(0x100 + 4 * (n))
-#define GICD_ICENABLER(n)	(0x180 + 4 * (n))
-#define GICD_ISPENDR(n)		(0x200 + 4 * (n))
-#define GICD_ICPENDR(n)		(0x280 + 4 * (n))
-#define GICD_IPRIORITYR(n)	(0x400 + 4 * (n))
-#define GICD_ITARGETSR(n)	(0x800 + 4 * (n))
-#define GICD_ICFGR(n)		(0xc00 + 4 * (n))
-
-#define GICD_CTLR_ENABLE	(1 << 0)
-
-/* GICD_TYPER: ITLinesNumber is bits [4:0]; supported INTIDs = 32 * (N + 1) */
-#define GICD_TYPER_ITLINES(v)	((((v) & 0x1f) + 1) * 32)
-
-/* CPU interface: acknowledge and retire. */
-#define GICC_CTLR		0x000
-#define GICC_PMR		0x004	/* priority mask */
-#define GICC_BPR		0x008	/* binary point */
-#define GICC_IAR		0x00c	/* interrupt acknowledge */
-#define GICC_EOIR		0x010	/* end of interrupt */
-
-#define GICC_CTLR_ENABLE	(1 << 0)
-
-/* GICC_IAR: INTID is bits [9:0]; 1023 means there was nothing to take */
-#define GICC_IAR_INTID_MASK	0x3ff
-#define GIC_SPURIOUS_INTID	1023
-
-/* Where the three classes of interrupt ID begin. */
-#define GIC_SGI_BASE		0	/* software generated */
-#define GIC_PPI_BASE		16	/* per-CPU, where the timer arrives */
-#define GIC_SPI_BASE		32	/* shared peripherals */
 
 #endif /* _VIRT_REGISTERS_H_ */

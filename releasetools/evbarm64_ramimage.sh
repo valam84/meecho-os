@@ -77,6 +77,13 @@ usage: $0 [-b] [-r] [-2]
 	-r  run QEMU on the result
 	-2  enter at EL2, where U-Boot leaves a kernel on a real board
 	    (implies -r)
+	-3  give the machine a GICv3 instead of the default GICv2, which is
+	    what the target board has (implies -r)
+
+The two run flags combine, and all four combinations are worth checking: the
+entry level and the GIC version are independent, and each has code of its own
+- the drop from EL2 in head.S enables the GICv3 system registers for EL1, so
+a mistake there shows up in one combination only.
 EOF
 	exit 1
 }
@@ -84,12 +91,14 @@ EOF
 do_build=0
 do_run=0
 el2=0
-while getopts "br2h" c
+gicv3=0
+while getopts "br23h" c
 do
 	case "$c" in
 	b)	do_build=1 ;;
 	r)	do_run=1 ;;
 	2)	do_run=1; el2=1 ;;
+	3)	do_run=1; gicv3=1 ;;
 	*)	usage ;;
 	esac
 done
@@ -216,7 +225,11 @@ ${MKBOOTARCHIVE} -o "${ARCHIVE}" ${mods}
 virt=virt
 if [ ${el2} -eq 1 ]
 then
-	virt=virt,virtualization=on
+	virt="${virt},virtualization=on"
+fi
+if [ ${gicv3} -eq 1 ]
+then
+	virt="${virt},gic-version=3"
 fi
 
 cmd="${QEMU} -M ${virt} -cpu ${QEMU_CPU} -m ${QEMU_MEM}"
@@ -235,8 +248,9 @@ echo ""
 echo "To boot it:"
 echo "${cmd}"
 echo ""
-echo "Add virtualization=on to -M to enter at EL2, which is where U-Boot"
-echo "leaves a kernel on a real board.  Both branches have to be checked."
+echo "virtualization=on enters at EL2, where U-Boot leaves a kernel on a real"
+echo "board; gic-version=3 gives the interrupt controller the target board"
+echo "has.  Both are independent, and all four combinations want checking."
 echo ""
 
 if [ ${do_run} -eq 1 ]

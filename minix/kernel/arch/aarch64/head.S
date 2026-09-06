@@ -53,6 +53,13 @@
  */
 #define SPSR_EL1H	0x3c5
 
+/*
+ * ICC_SRE_EL2: SRE selects the GICv3 system register interface for EL2,
+ * Enable lets EL1 use its own without trapping to EL2.
+ */
+#define ICC_SRE_EL2_SRE		(1 << 0)
+#define ICC_SRE_EL2_ENABLE	(1 << 3)
+
 	.section .text.boot, "ax"
 	.globl	_start
 _start:
@@ -140,6 +147,35 @@ _start_boot:
 	orr	x0, x0, #3		/* EL1PCTEN | EL1PCEN */
 	msr	cnthctl_el2, x0
 	msr	cntvoff_el2, xzr
+
+	/*
+	 * Let EL1 reach a GICv3 CPU interface.
+	 *
+	 * On GICv3 the CPU interface is not memory but the ICC_* system
+	 * registers, and EL1 may only touch them once EL2 has said so:
+	 * ICC_SRE_EL2.SRE selects the system register interface for EL2
+	 * itself, and ICC_SRE_EL2.Enable is what keeps EL1 accesses from
+	 * trapping. Without this the driver's very first mrs takes an
+	 * undefined instruction trap - and only on this entry path, so a
+	 * kernel that boots perfectly under plain -M virt would die under
+	 * -M virt,virtualization=on, which is the branch a real board takes.
+	 *
+	 * Guarded on ID_AA64PFR0_EL1.GIC, bits [27:24]: zero means this CPU
+	 * has no system register interface at all and ICC_SRE_EL2 does not
+	 * exist to be written. ICH_HCR_EL2 is cleared for the same reason
+	 * Linux clears it - the virtual interface is nothing this kernel
+	 * uses, and firmware need not have left it off.
+	 */
+	mrs	x0, id_aa64pfr0_el1
+	ubfx	x0, x0, #24, #4
+	cbz	x0, no_gicv3
+	mrs	x0, icc_sre_el2
+	orr	x0, x0, #ICC_SRE_EL2_SRE
+	orr	x0, x0, #ICC_SRE_EL2_ENABLE
+	msr	icc_sre_el2, x0
+	isb
+	msr	ich_hcr_el2, xzr
+no_gicv3:
 
 	/* Fake an exception return into EL1, landing at at_el1. */
 	mov	x0, #SPSR_EL1H

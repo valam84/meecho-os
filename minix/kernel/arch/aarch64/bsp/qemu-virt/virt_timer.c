@@ -27,6 +27,7 @@
 
 #include "arch_proto.h"
 #include "fdt.h"
+#include "gic.h"
 
 #include "bsp_intr.h"
 #include "bsp_timer.h"

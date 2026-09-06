@@ -10,4 +10,8 @@
 
 .PATH: ${.CURDIR}/arch/${MACHINE_ARCH}/bsp/qemu-virt
 
-SRCS+=	virt_serial.c virt_reset.c virt_intr.c virt_timer.c
+# No interrupt controller here any more. The GIC was virt_intr.c and is now
+# arch/aarch64/gic*.c, because it is not board support: the board does not
+# decide the version, the device tree reports it, and this one machine
+# reports either.
+SRCS+=	virt_serial.c virt_reset.c virt_timer.c

@@ -39,9 +39,22 @@ int do_settime(struct proc * caller, message * m_ptr)
   timediff = m_ptr->m_lsys_krn_sys_settime.sec - boottime;
   timediff_ticks = timediff * system_hz;
 
-  /* prevent a negative value for realtime */
+  /*
+   * Prevent a negative value for realtime, and one that clock_t cannot
+   * hold: realtime is a clock_t of ticks since boottime, so a date too far
+   * from boottime has to move boottime instead of the tick count.
+   *
+   * The headroom used to be spelled LONG_MAX/2, which names this bound
+   * only where long and clock_t are the same width. On LP64 long is 64
+   * bits and clock_t stays 32, so the test let through a tick count that
+   * set_realtime() then truncated: "date 201301010000" on a machine whose
+   * boottime was still zero gave a clock reading October 1970. Said in
+   * terms of clock_t the bound is the same number on the 32-bit ports.
+   */
+#define TICKS_MAX	((clock_t)-1 >> 1)
   if (m_ptr->m_lsys_krn_sys_settime.sec <= boottime ||
-      timediff_ticks < LONG_MIN/2 || timediff_ticks > LONG_MAX/2) {
+      timediff_ticks < -(time_t)(TICKS_MAX/2) ||
+      timediff_ticks > (time_t)(TICKS_MAX/2)) {
   	/* boottime was likely wrong, try to correct it. */
 	set_boottime(m_ptr->m_lsys_krn_sys_settime.sec);
 	set_realtime(1);

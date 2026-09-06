@@ -634,6 +634,12 @@ void lmfs_free_block(dev_t dev, block64_t block)
   }
 
   if ((bp = find_block(dev, block)) != NULL) {
+	/* If the block is in the open transaction, it does not belong there
+	 * any more: its contents are about to mean nothing, and writing them
+	 * anywhere would be writing rubbish.
+	 */
+	lmfs_journal_forget(bp);
+
 	lmfs_markclean(bp);
 
 	/* Invalidate the block. The block may or may not be in use right now,
@@ -1249,6 +1255,14 @@ void lmfs_buf_pool(int new_nr_bufs)
 
   assert(new_nr_bufs >= MINBUFS);
 
+  /*
+   * The journal holds pointers into the buffer array, and the array is
+   * about to be freed.  Committing empties it; this is the one place that
+   * commits even in the middle of an operation, because the alternative is
+   * a set of pointers into memory that no longer exists.
+   */
+  lmfs_journal_commit();
+
   if(nr_bufs > 0) {
 	assert(buf);
 	lmfs_flushall();
@@ -1295,6 +1309,15 @@ void lmfs_buf_pool(int new_nr_bufs)
 void lmfs_flushall(void)
 {
 	struct buf *bp;
+
+	/*
+	 * Everything the journal holds goes out first, and with it the
+	 * metadata blocks it was keeping back: a sync is the promise that
+	 * what was written is on the medium, and for a journaled file system
+	 * that promise is kept by committing.
+	 */
+	lmfs_journal_sync();
+
 	for(bp = &buf[0]; bp < &buf[nr_bufs]; bp++)
 		if(bp->lmfs_dev != NO_DEV && !lmfs_isclean(bp)) {
 			lmfs_flushdev(bp->lmfs_dev);

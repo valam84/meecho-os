@@ -499,11 +499,35 @@ int read_super(struct super_block *sp)
  *===========================================================================*/
 int write_super(struct super_block *sp)
 {
+  int r;
+
   if(sp->s_rd_only)
   	panic("can't write superblock of readonly filesystem");
 
   if (sp->s_version == V4)
 	sp->s_write_time = clock_time(NULL);
 
-  return rw_super(sp, 1);
+  r = rw_super(sp, 1);
+
+  /*
+   * The superblock is written at exactly two moments, and both are
+   * statements about the medium rather than about the cache: at mount it
+   * says "this file system is now being changed", and at unmount "it is
+   * whole again".  Neither means anything unless it is on the disk before
+   * the next thing happens, so both go out at once, and the device is told
+   * to empty its own write cache behind them.
+   *
+   * This was not so, and it did not show: the block went into the cache,
+   * unmount then dropped the cache, and every volume was left dirty.  On
+   * V3 the next boot ran fsck, which repaired the file system and marked
+   * it clean, so the mount after that found what it expected.  V4 has no
+   * fsck yet, so the same volume came up read-only - which is how a
+   * missing flush of the one block that says "clean" was finally seen.
+   */
+  if (r == OK) {
+	lmfs_flushdev(sp->s_dev);
+	(void) bdev_flush(sp->s_dev);
+  }
+
+  return r;
 }

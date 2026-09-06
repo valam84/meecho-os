@@ -60,7 +60,21 @@
 #define FILE struct output
 #define stdout out1
 #define stderr out2
-#define _RETURN_INT(x)	((x), 0) /* map from void foo() to int bar() */
+/*
+ * Map from void foo() to int bar(): the shell's own output routines return
+ * void, but the code shared with the standalone commands calls them where
+ * it expects the stdio functions that return int.  Spelled ((x), 0) this
+ * draws a warning at every call site that discards the value - which is
+ * nearly all of them - because the constant 0 has no effect there.  A call
+ * has, so produce the zero from a function.
+ */
+static inline int
+_return_zero(void)
+{
+
+	return 0;
+}
+#define _RETURN_INT(x)	((x), _return_zero())
 #define fprintf(...)	_RETURN_INT(outfmt(__VA_ARGS__))
 #define printf(...)	_RETURN_INT(out1fmt(__VA_ARGS__))
 #define putc(c, file)	_RETURN_INT(outc(c, file))

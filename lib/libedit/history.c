@@ -374,21 +374,29 @@ private int
 history_def_add(void *p, TYPE(HistEvent) *ev, const Char *str)
 {
 	history_t *h = (history_t *) p;
-	size_t len;
+	size_t curlen, addlen, len;
 	Char *s;
 	HistEventPrivate *evp = (void *)&h->cursor->ev;
 
 	if (h->cursor == &h->list)
 		return history_def_enter(p, ev, str);
-	len = Strlen(evp->str) + Strlen(str) + 1;
+	/*
+	 * Both lengths are already known here, so concatenate with them
+	 * rather than with a strncat() whose bound is derived from the
+	 * source string - which is what the compiler objects to, and it is
+	 * right that the bound then guards nothing.
+	 */
+	curlen = Strlen(evp->str);
+	addlen = Strlen(str);
+	len = curlen + addlen + 1;
 	s = h_malloc(len * sizeof(*s));
 	if (s == NULL) {
 		he_seterrev(ev, _HE_MALLOC_FAILED);
 		return -1;
 	}
-	(void) Strncpy(s, h->cursor->ev.str, len);
-        s[len - 1] = '\0';
-	(void) Strncat(s, str, len - Strlen(s) - 1);
+	(void) memcpy(s, h->cursor->ev.str, curlen * sizeof(*s));
+	(void) memcpy(s + curlen, str, addlen * sizeof(*s));
+	s[len - 1] = '\0';
 	h_free(evp->str);
 	evp->str = s;
 	*ev = h->cursor->ev;

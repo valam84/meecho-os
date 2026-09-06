@@ -594,7 +594,13 @@ void rw_super(int put)
   if (sb.s_log_zone_size < 0) fatal("zone size < block size");
   if (sb.s_max_size <= 0) {
 	printf("warning: invalid max file size %d\n", sb.s_max_size);
-  	sb.s_max_size = LONG_MAX;
+	/*
+	 * s_max_size is an i32_t: an on-disk field, not a host long.  The
+	 * bound was written as LONG_MAX back when the two agreed, which is
+	 * no longer true under LP64.  mfs/super.c clamps to INT32_MAX for
+	 * the same reason.
+	 */
+  	sb.s_max_size = INT32_MAX;
   }
 }
 

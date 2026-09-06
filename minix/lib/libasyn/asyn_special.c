@@ -61,8 +61,14 @@ int asyn_special(asynchio_t *asyn, int fd, int op)
 
 	/* Try to read if I/O is pending. */
 	if (!seen || afd->afd_state[op] == PENDING) {
-		sigemptyset(&mask);
-		if (sigprocmask(SIG_SETMASK, &mask, &mask) < 0) return -1;
+		/*
+		 * The set to install and the place to save the old one are
+		 * restrict-qualified, so they may not be the same object.
+		 */
+		sigset_t empty;
+
+		sigemptyset(&empty);
+		if (sigprocmask(SIG_SETMASK, &empty, &mask) < 0) return -1;
 		(void) fcntl(fd, F_SETFL, afd->afd_flags | O_NONBLOCK);
 
 		/* Let the caller try the system call. */

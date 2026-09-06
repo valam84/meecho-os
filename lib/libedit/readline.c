@@ -521,7 +521,8 @@ _rl_compat_sub(const char *str, const char *what, const char *with,
 	s = str;
 	while (*s) {
 		if (*s == *what && !strncmp(s, what, what_len)) {
-			(void)strncpy(r, with, with_len);
+			/* Exactly with_len bytes, no terminator: memcpy. */
+			(void)memcpy(r, with, with_len);
 			r += with_len;
 			s += what_len;
 			if (!globally) {
@@ -960,7 +961,7 @@ history_expand(char *str, char **output)
 			}						\
 			result = nresult;				\
 		}							\
-		(void)strncpy(&result[idx], what, len);			\
+		(void)memcpy(&result[idx], what, len);			\
 		idx += len;						\
 		result[idx] = '\0';					\
 	}

@@ -365,7 +365,12 @@ terminal_alloc(EditLine *el, const struct termcapstr *t, const char *cap)
          */
 	tlen = 0;
 	for (tmp = tlist; tmp < &tlist[T_str]; tmp++)
-		if (*tmp != NULL && *tmp != '\0' && *tmp != *str) {
+		/*
+		 * The middle test wants to skip empty capabilities; written
+		 * without the second dereference it compared the pointer
+		 * itself against '\0', which is just the NULL test again.
+		 */
+		if (*tmp != NULL && **tmp != '\0' && *tmp != *str) {
 			char *ptr;
 
 			for (ptr = *tmp; *ptr != '\0'; termbuf[tlen++] = *ptr++)

@@ -201,7 +201,14 @@ fs_getdents(ino_t ino_nr, struct fsdriver_data * data, size_t bytes,
 	off_t pos;
 	int r, skip, get_next, indexed;
 
-	if (*posp >= ULONG_MAX)
+	/*
+	 * The position is fed to int arithmetic below ("skip", the index
+	 * passed to get_inode_by_index()), so it has to fit in an int.  The
+	 * bound used to be ULONG_MAX, which said the same thing only where
+	 * unsigned long was 32 bits wide; under LP64 that test can never be
+	 * true, and it compares a signed off_t against an unsigned bound.
+	 */
+	if (*posp >= INT_MAX)
 		return EIO;
 
 	if ((node = find_inode(ino_nr)) == NULL)

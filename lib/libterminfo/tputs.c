@@ -49,6 +49,27 @@ static const short tmspc10[] = {
 short ospeed;
 char PC;
 
+/*
+ * _ti_puts() writes through an int (*)(int, void *).  The two public entry
+ * points that have only an int (*)(int) to offer reach it through these
+ * thunks: casting the narrower function pointer and calling it through the
+ * wider type is undefined behaviour, and GCC diagnoses it.
+ */
+static int
+_ti_putchar(int c, void *args __unused)
+{
+
+	return putchar(c);
+}
+
+static int
+_ti_outc1(int c, void *args)
+{
+	int (*const *outc)(int) = args;
+
+	return (*outc)(c);
+}
+
 static int
 _ti_calcdelay(const char **str, int affcnt, int *mand)
 {
@@ -156,7 +177,7 @@ ti_putp(const TERMINAL *term, const char *str)
 
 	_DIAGASSERT(term != NULL);
 	_DIAGASSERT(str != NULL);
-	return ti_puts(term, str, 1, (int (*)(int, void *))putchar, NULL);
+	return ti_puts(term, str, 1, _ti_putchar, NULL);
 }
 
 int
@@ -165,8 +186,7 @@ tputs(const char *str, int affcnt, int (*outc)(int))
 
 	_DIAGASSERT(str != NULL);
 	_DIAGASSERT(outc != NULL);
-	return _ti_puts(1, ospeed, PC, str, affcnt,
-	    (int (*)(int, void *))outc, NULL);
+	return _ti_puts(1, ospeed, PC, str, affcnt, _ti_outc1, &outc);
 }
 
 int

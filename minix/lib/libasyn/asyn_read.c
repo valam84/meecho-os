@@ -30,12 +30,16 @@ ssize_t asyn_read(asynchio_t *asyn, int fd, void *buf, size_t len)
 
 	/* Try to read if I/O is pending. */
 	if (afd->afd_state[SEL_READ] == PENDING) {
-		sigset_t mask;
+		/*
+		 * The set to install and the place to save the old one are
+		 * restrict-qualified, so they may not be the same object.
+		 */
+		sigset_t mask, empty;
 		ssize_t result;
 		int err;
 
-		sigemptyset(&mask);
-		if (sigprocmask(SIG_SETMASK, &mask, &mask) < 0) return -1;
+		sigemptyset(&empty);
+		if (sigprocmask(SIG_SETMASK, &empty, &mask) < 0) return -1;
 		(void) fcntl(fd, F_SETFL, afd->afd_flags | O_NONBLOCK);
 
 		/* Try the actual read. */

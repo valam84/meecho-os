@@ -505,6 +505,7 @@ TRACE(("expecting DO got %s %s\n", tokname[got], got == TWORD ? wordtext : ""));
 		 */
 		if (!redir)
 			synexpect(-1);
+		/* FALLTHROUGH */
 	case TAND:
 	case TOR:
 	case TNL:

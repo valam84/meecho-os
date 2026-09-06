@@ -13,12 +13,23 @@ incinstall::	# ensure existence
 .PHONY:		incinstall
 
 # -c is forced on here, in order to preserve modtimes for "make depend"
+#
+# ${PRESERVE} (-p) is filtered out, because on this path it breaks "make
+# depend" instead of helping it.  install -p stamps the installed header with
+# the *source* file's mtime, so a header edited at T1 and installed at T2 lands
+# in DESTDIR carrying T1.  Anything compiled from the old DESTDIR copy between
+# T1 and T2 -- one stray kernel build is enough -- is then newer than the
+# header it is stale against, and make reports the tree up to date forever
+# after.  The cmp above is what actually makes reinstalling an unchanged header
+# a no-op, so -p buys nothing here that we do not already have.
+_INCINSTALL_FILE=	${INSTALL_FILE:N-p}
+
 __incinstall: .USE
 	@cmp -s ${.ALLSRC} ${.TARGET} > /dev/null 2>&1 || \
 	    (${_MKSHMSG_INSTALL} ${.TARGET}; \
-	     ${_MKSHECHO} "${INSTALL_FILE} -c -o ${BINOWN} -g ${BINGRP} \
+	     ${_MKSHECHO} "${_INCINSTALL_FILE} -c -o ${BINOWN} -g ${BINGRP} \
 		-m ${NONBINMODE} ${.ALLSRC} ${.TARGET}" && \
-	     ${INSTALL_FILE} -c -o ${BINOWN} -g ${BINGRP} \
+	     ${_INCINSTALL_FILE} -c -o ${BINOWN} -g ${BINGRP} \
 		-m ${NONBINMODE} ${.ALLSRC} ${.TARGET})
 
 .for F in ${INCS:O:u}

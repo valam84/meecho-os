@@ -40,12 +40,20 @@ ${DESTDIR}${INCSDIR}: .EXEC
 	fi
 
 # -c is forced on here, in order to preserve modtimes for "make depend"
+#
+# ${PRESERVE} (-p) is filtered out for the same reason as in bsd.inc.mk: it
+# stamps the installed header with the source file's mtime, which can be older
+# than objects already compiled against the previous DESTDIR copy, and make
+# then never rebuilds them.  The cmp above is what keeps a reinstall of an
+# unchanged header from touching anything.
+_INCINSTALL_FILE=	${INSTALL_FILE:N-p}
+
 __incinstall: .USE
 	@cmp -s ${.ALLSRC} ${.TARGET} > /dev/null 2>&1 || \
 	    (${_MKSHMSG_INSTALL} ${.TARGET}; \
-	     ${_MKSHECHO} "${INSTALL_FILE} -c -o ${BINOWN} -g ${BINGRP} \
+	     ${_MKSHECHO} "${_INCINSTALL_FILE} -c -o ${BINOWN} -g ${BINGRP} \
 		-m ${NONBINMODE} ${.ALLSRC} ${.TARGET}" && \
-	     ${INSTALL_FILE} -c -o ${BINOWN} -g ${BINGRP} \
+	     ${_INCINSTALL_FILE} -c -o ${BINOWN} -g ${BINGRP} \
 		-m ${NONBINMODE} ${.ALLSRC} ${.TARGET})
 
 .for F in ${INCS:O:u} ${DEPINCS:O:u}

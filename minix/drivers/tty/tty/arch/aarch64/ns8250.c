@@ -49,6 +49,7 @@
 #define NS8250_FCR	2	/* FIFO control (write) */
 #define NS8250_LCR	3	/* line control */
 #define NS8250_LSR	5	/* line status */
+#define NS8250_MSR	6	/* modem status */
 
 /* DesignWare only, and the reason UART_F_DW exists. */
 #define DW_USR		31	/* UART status; reading it clears busy */
@@ -58,17 +59,32 @@
 #define IER_RLSI	0x04	/* receiver line status */
 
 #define IIR_NO_INT	0x01	/* no interrupt pending */
-#define IIR_ID_MASK	0x0e
+/*
+ * Four bits, not three. A 16550 numbers its causes in bits 3:1 and leaves
+ * bit 0 to say "none pending", which is why a mask of 0x0e is the usual
+ * one; the DesignWare part adds busy detect as 0x07, and under that mask it
+ * arrives indistinguishable from receiver line status - whose acknowledgement
+ * does not clear it. The handler then has a cause it cannot silence.
+ */
+#define IIR_ID_MASK	0x0f
+#define IIR_ID_MODEM	0x00	/* modem status */
 #define IIR_ID_THRI	0x02	/* transmit holding register empty */
 #define IIR_ID_RDI	0x04	/* received data available */
 #define IIR_ID_RLSI	0x06	/* receiver line status */
+#define IIR_ID_BUSY	0x07	/* DesignWare: write to LCR while busy */
 #define IIR_ID_RTO	0x0c	/* character timeout */
-#define IIR_ID_BUSY	0x0e	/* DesignWare: write to LCR while busy */
 
 #define FCR_ENABLE	0x01
 #define FCR_CLR_RCVR	0x02
 #define FCR_CLR_XMIT	0x04
-#define FCR_TRIG_QUARTER 0x40	/* receive trigger: quarter full */
+/*
+ * Receive trigger of one character. The quarter-full setting a 16550 driver
+ * would reach for means sixteen characters on this part - its FIFO is 64
+ * deep, not 16 - and a console that answers after sixteen keystrokes is a
+ * console that does not answer. The interrupt count that costs is bounded by
+ * the handler, which empties the FIFO in one go however it was woken.
+ */
+#define FCR_TRIG_ONE	0x00
 
 #define LCR_WLEN8	0x03
 #define LCR_SBC		0x40	/* set break control */
@@ -76,6 +92,7 @@
 
 #define LSR_DR		0x01	/* data ready */
 #define LSR_THRE	0x20	/* transmit holding register empty */
+#define LSR_TEMT	0x40	/* transmitter completely idle */
 
 /*
  * A DesignWare register block is 0x100 bytes. The generic part needs the
@@ -145,13 +162,24 @@ static void
 ns8250_config(struct uart *u, int up)
 {
 	/*
+	 * Wait for the transmitter to go idle before touching the line
+	 * control register. A write to it while the part is busy is refused
+	 * and answered with an interrupt instead - see IIR_ID_BUSY - and the
+	 * moment this is most likely is exactly the one that happens: a
+	 * program prints a prompt and configures the line straight after.
+	 * Handling that interrupt is not the same as not causing it.
+	 */
+	while (!(reg_read(u, NS8250_LSR) & LSR_TEMT))
+		;
+
+	/*
 	 * DLAB stays down and the divisor is not written: the firmware set
 	 * the rate and the kernel has been printing at it since boot. See
 	 * the file comment.
 	 */
 	reg_write(u, NS8250_LCR, LCR_WLEN8);
 	reg_write(u, NS8250_FCR,
-	    FCR_ENABLE | FCR_CLR_RCVR | FCR_CLR_XMIT | FCR_TRIG_QUARTER);
+	    FCR_ENABLE | FCR_CLR_RCVR | FCR_CLR_XMIT | FCR_TRIG_ONE);
 
 	/*
 	 * B0 means hang up. There is no modem control line here to drop, so
@@ -218,14 +246,27 @@ ns8250_intr(struct uart *u)
 		/*
 		 * DesignWare only: a write to LCR while the transmitter was
 		 * busy. Reading USR is what clears it, and not reading it
-		 * means this handler is called again immediately, forever.
+		 * means this handler is called again immediately, forever -
+		 * with the console alive for output, which needs no
+		 * interrupt, and deaf.
 		 */
 		if (u->flags & UART_F_DW)
 			(void)reg_read(u, DW_USR);
 		return UART_EV_AGAIN;
 
-	default:
+	case IIR_ID_MODEM:
+		/* Cleared by reading MSR. Nothing here has modem lines. */
+		(void)reg_read(u, NS8250_MSR);
 		return UART_EV_AGAIN;
+
+	default:
+		/*
+		 * A cause this driver does not know. Saying "again" would
+		 * spin on it until the handler's own limit; saying "nothing
+		 * pending" leaves it asserted and the next interrupt finds
+		 * it again. Neither is good, and the second is quieter.
+		 */
+		return 0;
 	}
 }
 

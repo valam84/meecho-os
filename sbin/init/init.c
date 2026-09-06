@@ -1359,7 +1359,21 @@ start_getty(session_t *sp)
 		}
 #endif /* CHROOT */
 
-	if (current_time > sp->se_started.tv_sec &&
+	/*
+	 * se_started stays zero until this session has actually run a getty,
+	 * so it is a sentinel and not a time. Read as a time, it makes the
+	 * very first getty on a port look like the restart of one that
+	 * "started" at the epoch - and a machine whose clock begins at the
+	 * epoch is not exotic, it is every machine without a battery-backed
+	 * one, on every boot.
+	 *
+	 * The existing test for current_time being strictly greater was
+	 * aimed at the same thing and covers only the first second of it:
+	 * boot one second slower and the first login prompt arrives
+	 * GETTY_SLEEP late, for no reason at all.
+	 */
+	if (sp->se_started.tv_sec != 0 &&
+	    current_time > sp->se_started.tv_sec &&
 	    current_time - sp->se_started.tv_sec < GETTY_SPACING) {
 		warning("getty repeating too quickly on port `%s', sleeping",
 		    sp->se_device);

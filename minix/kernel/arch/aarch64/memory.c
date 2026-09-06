@@ -193,7 +193,7 @@ mem_kern_ptr(phys_bytes pa)
  * consult them itself. It is a 64-bit value, which is why this is a private
  * function and not vm_lookup()'s ptent parameter.
  */
-static int
+int
 vm_lookup_desc(const struct proc *proc, vir_bytes virtual,
 	phys_bytes *physical, u64_t *desc)
 {
@@ -663,6 +663,34 @@ __switch_address_space(struct proc *p, struct proc **__ptproc)
 
 	if (new_ttbr == 0)
 		return;
+
+	/*
+	 * VM has rewritten this process's mappings since it last ran, and on
+	 * this architecture that has to be acted on here.
+	 *
+	 * proc.c raises MF_FLUSH_TLB when VM inhibits a process in order to
+	 * rewrite its page tables, and retires the TLB itself only when that
+	 * process's address space is the one already loaded. Every other case
+	 * is left to this function - because on i386 reaching it means
+	 * reloading CR3, and reloading CR3 empties the TLB. Here it does not:
+	 * that a switch leaves the other space's entries in place is the
+	 * entire point of tagging address spaces. The stale entries would
+	 * survive exactly the rewrite that was meant to invalidate them.
+	 *
+	 * The CB2 found this, and nothing else could have. init's fork took a
+	 * copy-on-write fault, VM copied the page and marked it writable, and
+	 * the process came back to a TLB entry that still said read-only: one
+	 * address faulting twenty thousand times over a descriptor that
+	 * plainly permitted the write. QEMU cannot show it - its TCG TLB is
+	 * untagged and a switch empties it, which is the assumption this code
+	 * deliberately broke.
+	 *
+	 * By tag, because the process is known here; before the switch,
+	 * because the entries belong to the space being entered. The flag
+	 * itself is cleared by proc.c after this returns.
+	 */
+	if ((p->p_misc_flags & MF_FLUSH_TLB) && pg_asids_usable())
+		refresh_tlb_asid(AARCH64_PROC_ASID(p));
 
 	/*
 	 * Only TTBR0 changes. The kernel is in TTBR1 and stays there through

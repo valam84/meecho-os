@@ -230,8 +230,10 @@ smp_start_aps(void)
 		}
 
 		cpu_set_flag(cpu, CPU_IS_READY);
+		BOOT_TRACE(("boot: ap %d up\n", cpu));
 	}
 
+	BOOT_TRACE(("boot: aps done\n"));
 	bsp_finish_booting();
 	NOT_REACHABLE;
 }

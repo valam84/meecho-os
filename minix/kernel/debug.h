@@ -39,12 +39,34 @@
  */
 #define DEBUG_RACE			0
 
-/* DEBUG_DUMPIPC dumps all IPC to serial; due to the amount of logging it is 
- * strongly recommended to set "ctty 0" in the boot monitor and run inside a 
- * virtual machine if you enable this; on the hardware it would take forever 
+/* DEBUG_DUMPIPC dumps all IPC to serial; due to the amount of logging it is
+ * strongly recommended to set "ctty 0" in the boot monitor and run inside a
+ * virtual machine if you enable this; on the hardware it would take forever
  * just to boot
  */
 #define DEBUG_DUMPIPC			0
+
+/*
+ * DEBUG_BOOT_TRACE marks the steps between the memory map and the first
+ * process, one line each.
+ *
+ * For the case the other debugging aids do not reach: a kernel that stops
+ * before there is anything to attach a debugger to. On a board there is no
+ * gdbstub, and the only thing that comes back is what the console already
+ * printed - so the question "how far did it get" has to be answerable by the
+ * output itself. Cheap enough to leave in the source and switched off: a
+ * dozen lines on a boot that works.
+ *
+ * Set to 1, rebuild the kernel, and set it back afterwards, the same way
+ * DEBUG_DUMPIPC is used.
+ */
+#define DEBUG_BOOT_TRACE		1
+
+#if DEBUG_BOOT_TRACE
+#define BOOT_TRACE(x)			printf x
+#else
+#define BOOT_TRACE(x)			((void)0)
+#endif
 
 /* DEBUG_DUMPIPCF dumps filtered IPC to serial.
  */

@@ -20,6 +20,7 @@
 #include "kernel/kernel.h"
 #include "kernel/vm.h"
 #include "kernel/proto.h"
+#include "kernel/debug.h"
 
 #include "arch_proto.h"
 #include "hw_intr.h"
@@ -260,6 +261,80 @@ intr_init(int auto_eoi)
 void
 gic_dispatch(int irq)
 {
+#if DEBUG_BOOT_TRACE
+	/*
+	 * Whether anything arrives at all, and what - then, once, who is
+	 * waiting for whom.
+	 *
+	 * A board that goes quiet cannot be asked. The first few of each line
+	 * separate "the controller delivers nothing to EL1" from "interrupts
+	 * arrive and the system is stuck for another reason". The timer
+	 * having answered that on the CB2 - it ticks, and the system is still
+	 * stuck - what remains is the process table, which is the dump worth
+	 * having when a microkernel stops: every process is blocked on a
+	 * message, and p_rts_flags with p_getfrom_e and p_sendto_e say on
+	 * whose.
+	 *
+	 * Printed from the timer because there is no other way in: the keys
+	 * that ask for this dump on other ports arrive through tty, and tty
+	 * is exactly what does not work here yet.
+	 */
+	{
+		static unsigned seen[NR_IRQ_VECTORS];
+		static unsigned total;
+
+		if (irq >= 0 && irq < NR_IRQ_VECTORS) {
+			if (seen[irq] < 3 || (total % 100) == 0)
+				printf("irq %d (#%u)\n", irq, total);
+			seen[irq]++;
+		}
+
+		/* Ten seconds in at 100 Hz: long past the point where a boot
+		 * that is going to finish has finished. */
+		if (total == 1000 || total == 3000) {
+			struct proc *rp;
+
+			unsigned c, q;
+
+			printf("--- procs at tick %u ---\n", total);
+			for (rp = BEG_PROC_ADDR; rp < END_PROC_ADDR; rp++) {
+				if (isemptyp(rp))
+					continue;
+				printf("%-8s ep=%d rts=%04x get=%d send=%d "
+				    "cpu=%u pri=%d left=%u\n",
+				    rp->p_name, rp->p_endpoint,
+				    rp->p_rts_flags, rp->p_getfrom_e,
+				    rp->p_sendto_e, rp->p_cpu,
+				    (int)rp->p_priority,
+				    (unsigned)rp->p_cpu_time_left);
+			}
+
+			/*
+			 * And the queues themselves. A process with rts == 0
+			 * is ready; whether the kernel can find it is another
+			 * question, and this is the difference between the
+			 * two.
+			 */
+			for (c = 0; c < ncpus; c++) {
+				printf("cpu%u: idle=%d cur=%s\n", c,
+				    get_cpu_var(c, cpu_is_idle),
+				    get_cpu_var(c, proc_ptr) ?
+				    get_cpu_var(c, proc_ptr)->p_name : "-");
+				for (q = 0; q < NR_SCHED_QUEUES; q++) {
+					struct proc *h =
+					    get_cpu_var(c, run_q_head)[q];
+					if (h != NULL)
+						printf("  q%u: %s\n", q,
+						    h->p_name);
+				}
+			}
+			printf("--- end ---\n");
+		}
+
+		total++;
+	}
+#endif
+
 #ifdef CONFIG_SMP
 	switch (irq) {
 	case GIC_IPI_SCHED:

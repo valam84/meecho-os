@@ -79,11 +79,23 @@ ns8250_putc(vir_bytes base, unsigned shift, unsigned width, char c)
 	reg_write(base, NS8250_THR, shift, width, (u32_t)(unsigned char)c);
 
 	/*
-	 * Drain before returning, for the same reason the PL011 driver does:
-	 * the output that matters most is the output of a panic, and a
-	 * character still sitting in a FIFO when the machine stops is a
-	 * character nobody ever sees.
+	 * Drain at the end of a line, not after every character.
+	 *
+	 * The output that matters most is a panic's, and a character still
+	 * sitting in a FIFO when the machine stops is a character nobody
+	 * sees - which argues for draining always, as the PL011 driver does.
+	 * But draining per character halves an already slow console, and this
+	 * is the port where the console is the only instrument there is: a
+	 * kernel-side IPC dump is over a megabyte, and at that rate it takes
+	 * minutes during which the system barely runs, which changes the
+	 * timing of the very thing being diagnosed.
+	 *
+	 * Draining per line keeps the guarantee where it counts - a panic
+	 * ends its line - and loses at most one line's worth if the machine
+	 * stops mid-sentence.
 	 */
-	while (!(reg_read(base, NS8250_LSR, shift, width) & NS8250_LSR_TEMT))
-		;
+	if (c == '\n')
+		while (!(reg_read(base, NS8250_LSR, shift, width) &
+		    NS8250_LSR_TEMT))
+			;
 }

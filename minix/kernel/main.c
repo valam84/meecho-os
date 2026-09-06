@@ -42,7 +42,10 @@ void bsp_finish_booting(void)
   sprofiling = 0;      /* we're not profiling until instructed to */
 #endif /* SPROFILE */
 
+  BOOT_TRACE(("boot: bsp_finish_booting\n"));
+
   cpu_identify();
+  BOOT_TRACE(("boot: cpu_identify\n"));
 
   vm_running = 0;
   krandom.random_sources = RANDOM_SOURCES;
@@ -55,6 +58,7 @@ void bsp_finish_booting(void)
   /* it should point somewhere */
   get_cpulocal_var(bill_ptr) = get_cpulocal_var_ptr(idle_proc);
   get_cpulocal_var(proc_ptr) = get_cpulocal_var_ptr(idle_proc);
+  BOOT_TRACE(("boot: cpulocal\n"));
   announce();				/* print MINIX startup banner */
 
   /*
@@ -69,11 +73,13 @@ void bsp_finish_booting(void)
    * CPU accounting values, as the timer initialization (indirectly) uses them.
    */
   cycles_accounting_init();
+  BOOT_TRACE(("boot: cycles_accounting_init\n"));
 
   if (boot_cpu_init_timer(system_hz)) {
 	  panic("FATAL : failed to initialize timer interrupts, "
 			  "cannot continue without any clock source!");
   }
+  BOOT_TRACE(("boot: timer\n"));
 
   fpu_init();
 
@@ -104,6 +110,7 @@ void bsp_finish_booting(void)
   /* Kernel may no longer use bits of memory as VM will be running soon */
   kernel_may_alloc = 0;
 
+  BOOT_TRACE(("boot: switch_to_user\n"));
   switch_to_user();
   NOT_REACHABLE;
 }

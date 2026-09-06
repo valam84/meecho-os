@@ -117,8 +117,17 @@ pagefault(struct proc *pr, struct stackframe_s *frame, int is_nested,
 	 * not something anyone can resolve.
 	 */
 	if (pr->p_endpoint == VM_PROC_NR) {
-		printf("pagefault for VM, pc 0x%lx addr 0x%lx esr 0x%lx\n",
-		    (unsigned long)pr->p_reg.pc, (unsigned long)far,
+		/*
+		 * The link register and the stack pointer alongside the
+		 * program counter. A fault at pc 0 says nothing on its own -
+		 * it is a jump through a null pointer, and what matters is
+		 * what jumped - and VM is the one process whose faults nobody
+		 * can resolve, so this line is the whole of the diagnosis.
+		 */
+		printf("pagefault for VM, pc 0x%lx lr 0x%lx sp 0x%lx "
+		    "addr 0x%lx esr 0x%lx\n",
+		    (unsigned long)pr->p_reg.pc, (unsigned long)pr->p_reg.lr,
+		    (unsigned long)pr->p_reg.sp, (unsigned long)far,
 		    (unsigned long)esr);
 		proc_stacktrace(pr);
 		panic("pagefault in VM");

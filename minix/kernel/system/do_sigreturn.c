@@ -77,6 +77,18 @@ int do_sigreturn(struct proc * caller, message * m_ptr)
   rp->p_reg.pc = sc.sc_pc;
 #endif
 
+#if defined(__aarch64__)
+  /*
+   * The register file back in one block, and then the status register put
+   * right: a process may change the condition flags and nothing else. The
+   * mode bits say which exception level to return to, and a process able to
+   * set them could ask to be resumed at EL1 with its own program counter.
+   * SET_USR_PSR is the same guard do_trace() uses for the same reason.
+   */
+  memcpy(&rp->p_reg, &sc.sc_x[0], sizeof(rp->p_reg));
+  SET_USR_PSR(rp, sc.sc_spsr);
+#endif
+
   /* Restore the registers. */
   arch_proc_setcontext(rp, &rp->p_reg, 1, sc.trap_style);
 

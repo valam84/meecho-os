@@ -75,6 +75,29 @@
 	sizeof(struct ps_strings) \
 )
 
+/*
+ * What the initial stack pointer has to be aligned to.
+ *
+ * A stack word was enough for as long as every MINIX was 32-bit, and the
+ * frame size below was rounded to sizeof(void *) for that reason. AArch64
+ * makes it architecture: SP must be a multiple of 16 whenever it is used as
+ * a base register, and the procedure call standard is written on that
+ * assumption throughout.
+ *
+ * Getting it wrong does not fault. The stack pointer starts eight bytes low,
+ * every frame the process builds is eight bytes low with it, prologues and
+ * epilogues still agree with each other - and then one routine that aligns
+ * the stack itself, or one hand-written epilogue, is off by a word and the
+ * process returns to whatever was next to its saved link register. That was
+ * three of the boot servers returning to address zero, with nothing in the
+ * fault to say the stack had been misaligned since exec.
+ */
+#if defined(__aarch64__)
+#define STACK_ALIGN	16
+#else
+#define STACK_ALIGN	sizeof(void *)
+#endif
+
 /***************************************************************************** 
  * Computes stack size, argc, envc, for a given set of path, argv, envp.     *
  *****************************************************************************/
@@ -109,8 +132,8 @@ void minix_stack_params(const char *path, char * const *argv, char * const *envp
 	}
 
 	/* Compute the aligned frame size. */
-	*stack_size = (*stack_size + sizeof(void *) - 1) &
-		 ~(sizeof(void *) - 1);
+	*stack_size = (*stack_size + STACK_ALIGN - 1) &
+		 ~((size_t)STACK_ALIGN - 1);
 
 	if (*stack_size < min_size) {
 		/* This is possible only in case of overflow. */
@@ -123,7 +146,7 @@ void minix_stack_params(const char *path, char * const *argv, char * const *envp
  *****************************************************************************/
 void minix_stack_fill(const char *path, int argc, char * const *argv,
 	int envc, char * const *envp, size_t stack_size, char *frame,
-	int *vsp, struct ps_strings **psp)
+	vir_bytes *vsp, struct ps_strings **psp)
 {
 	char * const *p;
 

@@ -25,6 +25,16 @@
  */
 void *k_stacks;
 
+/*
+ * Somewhere to keep each process's FP/SIMD registers.
+ *
+ * A fixed array indexed by process number, as on i386, and for the same
+ * reason: this is handed out during arch_proc_reset(), which runs before
+ * there is an allocator and cannot fail. Half a kilobyte per slot is the
+ * price of the register file being what it is.
+ */
+static struct fpu_state fpu_states[NR_PROCS] __aligned(FPU_ALIGN);
+
 /*===========================================================================*
  *				arch_proc_reset				     *
  *===========================================================================*/
@@ -32,6 +42,19 @@ void
 arch_proc_reset(struct proc *pr)
 {
 	assert(pr->p_nr < NR_PROCS);
+
+	/*
+	 * The FP state, cleared: a process that has not used FP yet gets
+	 * zeroed registers and a zero FPCR, which is round-to-nearest with
+	 * no exception trapping - the state the architecture calls default.
+	 * Tasks have negative process numbers and no slot; they are kernel
+	 * code and do not touch FP.
+	 */
+	if (pr->p_nr >= 0) {
+		pr->p_seg.fpu_state = (char *)&fpu_states[pr->p_nr];
+		memset(pr->p_seg.fpu_state, 0, FPU_STATE_SIZE);
+	} else
+		pr->p_seg.fpu_state = NULL;
 
 	/*
 	 * Every register starts at zero, which for this frame means a
@@ -59,12 +82,32 @@ arch_proc_init(struct proc *pr, const vir_bytes ip, const vir_bytes sp,
 	pr->p_reg.sp = sp;
 
 	/*
-	 * The first argument of a fresh process is the address of its
-	 * ps_strings block, and the procedure call standard puts a first
-	 * argument in x0 - which is retreg, the same register a system call
-	 * returns in. The two 32-bit ports do the same with r0 and eax.
+	 * Where a fresh process finds the address of its ps_strings block:
+	 * the third argument register, not the first.
+	 *
+	 * lib/csu/arch/aarch64/crt0.S branches straight into
+	 *
+	 *	___start(void (*cleanup)(void), const Obj_Entry *obj,
+	 *		 struct ps_strings *ps_strings)
+	 *
+	 * on the registers it was entered with, so ps_strings has to arrive
+	 * in x2. NetBSD's arm crt0 shuffles r0 into r2 on the way, because
+	 * NetBSD/arm hands it over in the first register; the aarch64 file
+	 * does no shuffling, because NetBSD/aarch64 does not need it to.
+	 *
+	 * The kernel is what decides this, and there is no reason for MINIX
+	 * to disagree with the platform it is running on. Passing it in x2
+	 * leaves that file exactly as NetBSD wrote it - this tree resyncs
+	 * with NetBSD, and an unmodified file stays unmodified - which is
+	 * worth more than symmetry with r0 on earm and eax on i386.
+	 *
+	 * Getting it wrong is silent. ___start reads x2, finds the zero
+	 * arch_proc_reset() left there, and _FATAL("ps_strings missing")
+	 * writes to file descriptor 2 - which this early in the boot means a
+	 * VFS that is not running yet - and then _exit()s. The process dies
+	 * before main() with nothing said about why.
 	 */
-	pr->p_reg.retreg = ps_str;
+	pr->p_reg.x2 = ps_str;
 }
 
 /*===========================================================================*

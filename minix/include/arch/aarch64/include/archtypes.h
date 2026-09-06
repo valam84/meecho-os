@@ -4,6 +4,7 @@
 
 #include <minix/sys_config.h>
 #include <machine/stackframe.h>
+#include <machine/fpu.h>
 #include <sys/cdefs.h>
 
 typedef struct segframe {

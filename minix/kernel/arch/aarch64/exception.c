@@ -63,8 +63,18 @@ proc_stacktrace(struct proc *whichproc)
 	reg_t next_fp, ret_addr;
 	int i;
 
-	printf("%-8.8s %6d 0x%lx ", whichproc->p_name,
-	    whichproc->p_endpoint, (unsigned long)whichproc->p_reg.pc);
+	/*
+	 * The link register alongside the program counter, which the 32-bit
+	 * ports have no equivalent of and this architecture cannot do
+	 * without. A leaf function leaves no frame, and code built with
+	 * -fomit-frame-pointer - which every server in this system is -
+	 * leaves no chain to walk at all, so the caller's return address is
+	 * in x30 and nowhere else. It is the difference between "the process
+	 * jumped to zero" and knowing what jumped it there.
+	 */
+	printf("%-8.8s %6d pc 0x%lx lr 0x%lx ", whichproc->p_name,
+	    whichproc->p_endpoint, (unsigned long)whichproc->p_reg.pc,
+	    (unsigned long)whichproc->p_reg.lr);
 
 	/*
 	 * Walk the frame pointer chain. ARM prints the program counter and

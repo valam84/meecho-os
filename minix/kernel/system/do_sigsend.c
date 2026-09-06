@@ -13,6 +13,25 @@
 
 #if USE_SIGSEND
 
+#if defined(__aarch64__)
+/*
+ * The register file goes into the signal context as one block, and comes back
+ * the same way in do_sigreturn(). struct sigcontext was laid out at stage 1
+ * with x0..x30, sp, pc and the status register in exactly the order struct
+ * stackframe_s has them, for this reason: thirty-four assignments in each
+ * direction is thirty-four chances to write one of them wrong, and no way to
+ * notice until a signal handler returns to the wrong place.
+ *
+ * The layout is the whole of what makes that safe, so it is checked here
+ * rather than trusted.
+ */
+typedef int _sigcontext_matches_frame[
+	(offsetof(struct sigcontext, sc_spsr) + sizeof(u64_t) -
+	 offsetof(struct sigcontext, sc_x) == sizeof(struct stackframe_s) &&
+	 sizeof(((struct sigcontext *)0)->sc_x) ==
+	 offsetof(struct stackframe_s, sp)) ? 1 : -1];
+#endif
+
 /*===========================================================================*
  *			      do_sigsend				     *
  *===========================================================================*/
@@ -109,6 +128,11 @@ int do_sigsend(struct proc * caller, message * m_ptr)
   fr.sf_sc.sc_pc = rp->p_reg.pc;	/* R15 */
 #endif
 
+#if defined(__aarch64__)
+  /* Every register at once; see the check at the top of this file. */
+  memcpy(&fr.sf_sc.sc_x[0], &rp->p_reg, sizeof(rp->p_reg));
+#endif
+
   /* Finish the sigcontext initialization. */
   fr.sf_sc.sc_mask = smsg.sm_mask;
   fr.sf_sc.sc_flags = rp->p_misc_flags & MF_FPU_INITIALIZED;
@@ -147,6 +171,23 @@ int do_sigsend(struct proc * caller, message * m_ptr)
   rp->p_reg.retreg = (reg_t) smsg.sm_signo;
   rp->p_reg.r1 = 0;	/* sf_code */
   rp->p_reg.r2 = (reg_t) fr.sf_scp;
+  rp->p_misc_flags |= MF_CONTEXT_SET;
+#elif defined(__aarch64__)
+  /*
+   * Where the handler returns to. There is no return address on the stack on
+   * this architecture - a call leaves it in x30 - so the kernel has to put
+   * the trampoline there itself. Without it a handler returns to whatever
+   * x30 happened to hold, which for a process that has not made a call since
+   * it started is zero: the process branches to address zero and dies with a
+   * fault that says nothing about signals.
+   */
+  rp->p_reg.lr = (reg_t) smsg.sm_sigreturn;
+
+  /* The handler's three arguments, in the registers the PCS gives them. */
+  rp->p_reg.retreg = (reg_t) smsg.sm_signo;	/* x0: signal number */
+  rp->p_reg.x1 = 0;				/* x1: code */
+  rp->p_reg.x2 = (reg_t) fr.sf_scp;		/* x2: context */
+
   rp->p_misc_flags |= MF_CONTEXT_SET;
 #endif
 

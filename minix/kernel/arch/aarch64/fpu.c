@@ -1,61 +1,55 @@
 /*
- * FP/SIMD - not implemented yet, and deliberately failing loudly rather than
- * quietly.
+ * FP/SIMD: whose registers these are, and when they change hands.
  *
- * The generic kernel switches the FPU lazily: the owner of the registers is
- * tracked per CPU, a process that is not the owner runs with FP trapping, and
- * the trap handler saves the old owner's state and restores the new one's.
- * Everything above the four calls in this file already works that way.
+ * The generic kernel switches them lazily. One process per CPU owns the
+ * register file; everybody else runs with FP trapping on, and the first FP
+ * instruction such a process executes traps into
+ * copr_not_available_handler(), which saves the owner's registers, restores
+ * the newcomer's and makes it the owner. A process that never touches FP -
+ * which is most of MINIX's servers - never pays for any of this.
  *
- * What is missing is the state itself: 32 128-bit V registers plus FPSR and
- * FPCR, 528 bytes per process, and the pool to keep them in. That is stage 4
- * group 5 and it is written from scratch - the bring-up kernel never enabled
- * FP, and ARM has nothing to copy because MINIX/ARM is built soft-float.
+ * That scheme rests on one thing being true, and on this architecture it took
+ * arranging: the kernel must not touch an FP register itself. Nothing saves
+ * them on the way into an exception, so a kernel that used q0 would silently
+ * change the arithmetic of whichever process happened to own it.
  *
+ * The kernel's own C is built with -mgeneral-regs-only and always has been.
+ * What did touch them was the code it borrows: printf() and the other
+ * variadic entry points in libminc save q0..q7 into their argument save area,
+ * which is harmless, but GCC also copies structures with q29..q31 in libminc,
+ * libsys and libexec - libexec_pm_newexec() zeroed one with "movi v31.4s, #0".
+ * Those four libraries are built with -mgeneral-regs-only for this
+ * architecture too, which is where that rule is written down; the kernel now
+ * contains no FP instruction outside fpu_asm.S. Check it with
  *
- * Why these stubs refuse instead of pretending
- * --------------------------------------------
- * ARM's versions of these are empty and restore_fpu() there returns OK. That
- * is harmless on a soft-float port: nothing ever touches a V register, so
- * claiming the state was restored costs nothing.
+ *	aarch64-elf64-minix-objdump -d kernel | grep -E '[[:space:]][qv][0-9]+'
  *
- * It would not be harmless here. The AArch64 procedure call standard passes
- * floating-point arguments in v0..v7, and the libc this port builds uses SIMD
- * registers in memcpy and friends - so on this architecture user code touches
- * FP state immediately and constantly. Stubs that answered OK would let two
- * processes share one set of registers and corrupt each other silently, which
- * is the worst way for an unimplemented feature to behave.
- *
- * So restore_fpu() reports failure, the generic code turns that into SIGFPE
- * for the process that asked, and FP trapping is left on. Until group 5 lands
- * this kernel boots and runs anything that does not touch FP, and anything
- * that does gets a signal naming the problem instead of wrong arithmetic
- * somewhere else later.
- *
- * The trap itself - EC 0x07, "access to SVE, Advanced SIMD or FP" - has to
- * reach copr_not_available_handler() from the exception path, which arrives
- * with group 4.
+ * and expect the two routines there and nothing else.
  */
 
 #include "kernel/kernel.h"
 #include "kernel/proc.h"
 
 #include <assert.h>
+#include <string.h>
+
+#include <machine/fpu.h>
 
 #include "archconst.h"
 #include "arch_proto.h"
+
+/* fpu_asm.S: the register file to and from a struct fpu_state. */
+void fpu_save_regs(struct fpu_state *);
+void fpu_restore_regs(const struct fpu_state *);
 
 /*
  * CPACR_EL1.FPEN, bits [21:20]: 0b00 traps at EL0 and EL1 alike, 0b01 traps
  * at EL0 only, 0b11 does not trap at all.
  *
- * The kernel needs FP for itself, which was not obvious until it ran. Its own
- * C is built with -mgeneral-regs-only, but it links against libminc, and the
- * AArch64 procedure call standard makes every variadic function save q0..q7
- * on entry - so the first printf() the kernel reaches executes "ldr q31" and
- * traps. Nothing else in the kernel touches FP, and nothing saves those
- * registers across an exception, which is safe only for as long as EL0 cannot
- * use them at all. That is exactly the state these stubs enforce.
+ * EL1 is never trapped. The kernel does use FP - in fpu_asm.S, to save and
+ * restore what it is switching - and trapping itself would mean taking an
+ * exception inside the handler for one. What EL0 may do is the whole of the
+ * question here.
  */
 #define CPACR_FPEN_SHIFT	20
 #define CPACR_FPEN_MASK		(3UL << CPACR_FPEN_SHIFT)
@@ -86,12 +80,11 @@ void
 fpu_init(void)
 {
 	/*
-	 * Every Cortex-A72 has FP and SIMD - they are not optional in ARMv8-A
-	 * the way VFP was in ARMv7 - so this says "no FPU" about the kernel's
-	 * support for it, not about the hardware. is_fpu() answers from this
-	 * flag, and the generic kernel is written to work when it is false.
+	 * Every ARMv8-A implementation has FP and SIMD - unlike VFP on
+	 * ARMv7, they are not optional - so there is no feature to probe.
+	 * What this flag says is that the kernel supports them, and it does.
 	 */
-	get_cpulocal_var(fpu_presence) = 0;
+	get_cpulocal_var(fpu_presence) = 1;
 
 	set_fpen(CPACR_FPEN_TRAP_EL0);
 }
@@ -102,12 +95,22 @@ fpu_init(void)
 void
 save_local_fpu(struct proc *pr, int retain)
 {
+	struct fpu_state *state = (struct fpu_state *)pr->p_seg.fpu_state;
+
+	if (!is_fpu())
+		return;
+
+	assert(state);
+
+	fpu_save_regs(state);
+
 	/*
-	 * Only ever called for the current owner of the registers, and there
-	 * is never an owner: restore_fpu() below refuses, so the generic code
-	 * never records one.
+	 * retain says the caller wants the registers left as they are rather
+	 * than treated as scratch. There is nothing to do for it: storing
+	 * these registers does not disturb them. x87 needs the distinction
+	 * because fnsave clears the unit and i386 has to reload after it.
 	 */
-	assert(get_cpulocal_var(fpu_owner) == NULL);
+	(void)retain;
 }
 
 /*===========================================================================*
@@ -116,7 +119,27 @@ save_local_fpu(struct proc *pr, int retain)
 void
 save_fpu(struct proc *pr)
 {
-	assert(get_cpulocal_var(fpu_owner) == NULL);
+#ifdef CONFIG_SMP
+	if (cpuid != pr->p_cpu) {
+		int stopped;
+
+		/* Remember whether the process was already stopped. */
+		stopped = RTS_ISSET(pr, RTS_PROC_STOP);
+
+		/* Stop it where it runs and make it save its context. */
+		smp_schedule_stop_proc_save_ctx(pr);
+
+		if (!stopped)
+			RTS_UNSET(pr, RTS_PROC_STOP);
+
+		return;
+	}
+#endif
+
+	if (get_cpulocal_var(fpu_owner) == pr) {
+		disable_fpu_exception();
+		save_local_fpu(pr, TRUE /*retain*/);
+	}
 }
 
 /*===========================================================================*
@@ -125,13 +148,33 @@ save_fpu(struct proc *pr)
 int
 restore_fpu(struct proc *pr)
 {
+	struct fpu_state *state = (struct fpu_state *)pr->p_seg.fpu_state;
+
+	assert(state);
+
+	if (!proc_used_fpu(pr)) {
+		/*
+		 * The first FP instruction this process has executed. It gets
+		 * the architecture's default state - zeroed registers and an
+		 * FPCR of zero, which is round-to-nearest with every
+		 * exception untrapped. Clearing the buffer and loading it is
+		 * the same thing as i386's fninit(), spelled the way this
+		 * architecture allows.
+		 */
+		memset(state, 0, FPU_STATE_SIZE);
+		pr->p_misc_flags |= MF_FPU_INITIALIZED;
+	}
+
+	fpu_restore_regs(state);
+
 	/*
-	 * There is no saved state to put back and nowhere to have kept it.
-	 * Failing here is what turns a process's first FP instruction into a
-	 * SIGFPE for that process - a diagnosable event naming the process
-	 * that did it - rather than into shared registers.
+	 * Nothing here can fail. On i386 it can - a saved state can carry a
+	 * reserved bit pattern that faults on the way back in, and the
+	 * generic code turns that into SIGFPE for the process that owns it -
+	 * but ldp of a q register interprets nothing, and FPCR is written
+	 * from a word only this file ever produces.
 	 */
-	return EINVAL;
+	return OK;
 }
 
 /*===========================================================================*
@@ -149,17 +192,7 @@ enable_fpu_exception(void)
 void
 disable_fpu_exception(void)
 {
-	/*
-	 * Called on the way into copr_not_available_handler() so that the
-	 * handler itself could touch FP state. This one does not - it is
-	 * about to refuse - and leaving the trap on is what keeps a process
-	 * from running FP instructions with nobody saving them. The window
-	 * the generic code would otherwise open closes on the next entry to
-	 * user mode, which re-enables the trap; this closes it now.
-	 *
-	 * Becomes set_fpen(CPACR_FPEN_TRAP_NONE) when group 5 has state to
-	 * restore.
-	 */
+	set_fpen(CPACR_FPEN_TRAP_NONE);
 }
 
 /*===========================================================================*
@@ -172,12 +205,21 @@ fpu_sigcontext(struct proc *pr, struct sigframe_sigcontext *fr,
 	/*
 	 * Where the FP state would be copied into the signal frame, so that a
 	 * handler sees the arithmetic state the signal interrupted and
-	 * sigreturn puts it back. There is no state to copy yet.
+	 * sigreturn puts it back.
 	 *
-	 * struct sigcontext here was written at stage 1 to mirror
-	 * stackframe_s so the kernel can copy it as a block; the FP half of
-	 * it is what group 5 adds, and the layout has to be settled with
-	 * libc, not just with the kernel. ARM leaves this empty for the same
-	 * reason it leaves the rest empty.
+	 * Still empty, and this is the one loose end left in FP support. The
+	 * kernel's half of it is three lines; the other half is a layout
+	 * agreed with libc, because struct sigcontext is what a handler and
+	 * sigreturn both read, and it was written at stage 1 to mirror
+	 * stackframe_s exactly so that the kernel could copy it as a block.
+	 * Widening it changes that agreement.
+	 *
+	 * What it costs meanwhile: a signal handler that uses FP runs with
+	 * whatever the interrupted code left in the registers, and the
+	 * interrupted code resumes with whatever the handler left. ARM leaves
+	 * this empty too, where it is harmless because that port is
+	 * soft-float. Here it is not harmless, only rare - MINIX's servers do
+	 * not do arithmetic in signal handlers - so it is written down rather
+	 * than fixed in passing.
 	 */
 }

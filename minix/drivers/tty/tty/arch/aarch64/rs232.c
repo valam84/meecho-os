@@ -1,37 +1,59 @@
 /*
- * PL011 serial line for tty.
+ * The serial line tty drives, and how it finds it.
  *
  * This is the console: there is no video console on this port, so everything
  * a user types and sees goes through here. The structure - the circular input
  * and output buffers, the ostate bits, the entry points tty installs - is the
  * one arch/earm/rs232.c uses, because that is the contract tty.c expects and
- * it has been debugged. What differs is the device underneath: a PL011 rather
- * than an OMAP UART, and no modem control lines at all.
+ * it has been debugged.
  *
  *
- * Which UART, and on which board
- * ------------------------------
- * The address and interrupt come from a table indexed by the board, the way
- * ARM does it, because a driver in user space cannot read the device tree -
- * the kernel does that, and what it learns does not reach here.
+ * Which UART, and how it is found
+ * -------------------------------
+ * There is no table of boards here. The two machines this port runs on have
+ * different parts on their consoles - a PL011 on QEMU's virt, a DesignWare
+ * 8250 on the RK3566 of the BIGTREETECH CB2 - and the register layouts differ
+ * enough to be separate files (pl011.c, ns8250.c) behind the small table in
+ * uart.h. Which of them a machine wants, and at which address, comes from the
+ * device tree, the way every other driver on this port asks: RS grants the
+ * registers and the interrupt of nodes named in system.conf, and the driver
+ * walks the same tree to find them (PORTING-LOG.md, stage 7.2).
  *
- * Only QEMU's virt machine is in the table so far. A second entry is where a
- * real board goes, and it will not necessarily be a PL011: the part is common
- * on ARM SoCs, but plenty of them - Rockchip and Allwinner among them - use a
- * DesignWare 8250 instead, which is a different register layout and would be
- * a second file rather than a second row. The split above is drawn so that
- * this file stays PL011 and the table decides who uses it.
+ * The node it looks for is the one /chosen/stdout-path names, resolved
+ * through /aliases - the same three passes the kernel's console does in
+ * minix/kernel/arch/aarch64/serial.c, and for the same reason: a board has
+ * several UARTs and only one of them is wired to a connector. The CB2 has
+ * ten, and the first in the tree is not the console. Taking the first UART
+ * found would print into a header nobody has a cable on.
+ *
+ * That makes tty00 the console and leaves tty01..tty03 without devices. A
+ * board's other ports are reachable the same way once something wants them -
+ * a second entry in /aliases, or a boot argument naming a node - but nothing
+ * does yet, and a line with no device is a line tty reports as ENXIO rather
+ * than one that silently reads a port that is not there.
+ *
+ *
+ * What is not programmed
+ * ----------------------
+ * The baud rate. The loader configured this port, the kernel has been
+ * printing on it since boot, and the divisor depends on the UART reference
+ * clock - a board fact this driver has no way to learn. Changing the rate
+ * underneath the kernel would garble everything already in flight. So the
+ * rate stdout-path names is what termios reports and what the line keeps;
+ * see the kernel's dw8250.c for the same decision on the other side.
  */
 
 #include <minix/drivers.h>
-#include <minix/board.h>
 #include <minix/ds.h>
+#include <minix/fdt.h>
 #include <minix/vm.h>
 #include <sys/mman.h>
 #include <sys/termios.h>
 #include <assert.h>
+#include <stdlib.h>
 
 #include "tty.h"
+#include "uart.h"
 
 /* Input buffer high and low water marks, as on ARM. */
 #define RS_IBUFSIZE	1024
@@ -40,53 +62,18 @@
 #define RS_ILOWWATER	(1 * RS_IBUFSIZE / 4)
 #define RS_OLOWWATER	(1 * RS_OBUFSIZE / 4)
 
-/*
- * The rate the firmware left the port at. It is not programmed - see
- * rs_config() - so this only tells termios what to report.
- */
+/* The rate to report when the device tree names none. */
 #define DFLT_BAUD	B115200
 
-/* buflen() and bufend() come from tty.h. */
-
 /*
- * PL011 registers, by byte offset. The same set the kernel's own console
- * driver uses; see minix/kernel/arch/aarch64/bsp/qemu-virt/virt_registers.h,
- * which is where these came from.
+ * How many times round the interrupt handler before giving up on a line that
+ * will not go quiet. A UART asserting a cause this driver does not clear
+ * would otherwise hang the whole tty server, and a hung tty on this port is a
+ * machine with no console at all.
  */
-#define PL011_DR	0x000	/* data */
-#define PL011_FR	0x018	/* flag */
-#define PL011_IBRD	0x024	/* integer baud rate divisor */
-#define PL011_FBRD	0x028	/* fractional baud rate divisor */
-#define PL011_LCRH	0x02c	/* line control */
-#define PL011_CR	0x030	/* control */
-#define PL011_IFLS	0x034	/* interrupt FIFO level select */
-#define PL011_IMSC	0x038	/* interrupt mask set/clear */
-#define PL011_RIS	0x03c	/* raw interrupt status */
-#define PL011_MIS	0x040	/* masked interrupt status */
-#define PL011_ICR	0x044	/* interrupt clear */
+#define INTR_ROUNDS	32
 
-#define FR_BUSY		(1 << 3)
-#define FR_RXFE		(1 << 4)	/* receive FIFO empty */
-#define FR_TXFF		(1 << 5)	/* transmit FIFO full */
-
-#define LCRH_BRK	(1 << 0)	/* send break */
-#define LCRH_FEN	(1 << 4)	/* enable FIFOs */
-#define LCRH_WLEN_8	(3 << 5)
-
-#define CR_UARTEN	(1 << 0)
-#define CR_TXE		(1 << 8)
-#define CR_RXE		(1 << 9)
-
-#define INT_RX		(1 << 4)	/* receive */
-#define INT_TX		(1 << 5)	/* transmit */
-#define INT_RT		(1 << 6)	/* receive timeout */
-#define INT_ALL		0x7ff
-
-/* One quarter full either way: an interrupt while there is still room. */
-#define IFLS_RX_QUARTER	(0 << 3)
-#define IFLS_TX_QUARTER	(0 << 0)
-
-#define UART_MAP_SIZE	0x1000
+/* buflen() and bufend() come from tty.h. */
 
 typedef struct rs232 {
 	tty_t *tty;			/* associated TTY structure */
@@ -110,10 +97,8 @@ typedef struct rs232 {
 	char *ohead;
 	char *otail;
 
-	vir_bytes base;			/* mapped register base */
-	unsigned int imsc;		/* copy of the interrupt mask */
+	struct uart uart;		/* the part, and where it is */
 
-	int irq;
 	int irq_hook_id;
 	int irq_hook_kernel_id;
 
@@ -122,23 +107,6 @@ typedef struct rs232 {
 } rs232_t;
 
 static rs232_t rs_lines[NR_RS_LINES];
-
-typedef struct uart_port {
-	phys_bytes base_addr;
-	int irq;
-} uart_port_t;
-
-/*
- * QEMU virt: PL011 at 0x09000000, GIC INTID 33 - the device tree calls it
- * GIC_SPI 1, and an SPI's INTID is its number plus 32. The remaining lines
- * are absent; the machine has one UART.
- */
-static uart_port_t qemu_virt_ports[] = {
-	{ 0x09000000, 33 },
-	{ 0, 0 },
-	{ 0, 0 },
-	{ 0, 0 }
-};
 
 static int rs_write(tty_t *tp, int try);
 static void rs_echo(tty_t *tp, int c);
@@ -156,25 +124,10 @@ static void rs232_handler(rs232_t *rs);
 static void write_chars(rs232_t *rs);
 static void read_chars(rs232_t *rs);
 
-static inline unsigned int
-serial_in(rs232_t *rs, int offset)
-{
-	return *(volatile unsigned int *)(rs->base + offset);
-}
-
-static inline void
-serial_out(rs232_t *rs, int offset, unsigned int val)
-{
-	*(volatile unsigned int *)(rs->base + offset) = val;
-}
-
-/* Room in the transmit FIFO? */
-#define txready(rs)	(!(serial_in(rs, PL011_FR) & FR_TXFF))
-
 /*
- * There are no modem control lines on this port - QEMU's PL011 has none
- * connected - so the device is always ready to send and never hangs up. ARM
- * tracks CTS and DCD here; there is nothing to track.
+ * There are no modem control lines on these ports - neither QEMU's PL011 nor
+ * the CB2's header has any connected - so the device is always ready to send
+ * and never hangs up. ARM tracks CTS and DCD here; there is nothing to track.
  */
 static void
 istart(rs232_t *rs)
@@ -189,6 +142,199 @@ istop(rs232_t *rs)
 }
 
 /*===========================================================================*
+ *			finding the console in the tree			     *
+ *===========================================================================*/
+/* Long enough for the paths that occur: "/serial@fe660000" and the like. */
+#define CONSOLE_PATH_MAX	96
+
+struct ser_scan {
+	/* Passes one and two: what /chosen says, resolved through /aliases. */
+	char path[CONSOLE_PATH_MAX];
+
+	/* The speed after the ':' of stdout-path, or zero. */
+	unsigned speed;
+
+	/* Pass three: the node to match, and what was found on it. */
+	const char *want;
+	const struct uart_ops *ops;
+	struct uart *u;
+	int irq;
+	int found;
+};
+
+/*
+ * Copy src into dst, stopping at NUL or at stop. Truncation is not an error
+ * worth reporting: a path this long is a tree we would not understand anyway,
+ * and the match in pass three simply fails.
+ */
+static void
+copy_token(char *dst, size_t size, const char *src, char stop)
+{
+	size_t i;
+
+	for (i = 0; i + 1 < size && src[i] != '\0' && src[i] != stop; i++)
+		dst[i] = src[i];
+	dst[i] = '\0';
+}
+
+/* The part of a device tree path after the final slash: its node name. */
+static const char *
+last_component(const char *path)
+{
+	const char *p, *last = path;
+
+	for (p = path; *p != '\0'; p++)
+		if (*p == '/')
+			last = p + 1;
+
+	return last;
+}
+
+/*
+ * Pass one: /chosen/stdout-path names the console, optionally followed by
+ * ':' and the line settings - "serial2:1500000n8" on the CB2. The settings
+ * are not applied, only reported: see the file comment.
+ */
+static int
+scan_chosen(void *cookie, int depth, const char *name,
+	const struct fdt_node *node)
+{
+	struct ser_scan *s = cookie;
+	const char *p;
+	unsigned len;
+
+	if (depth != 1 || strcmp(name, "chosen") != 0)
+		return 0;
+
+	if ((p = fdt_getprop(node, "stdout-path", &len)) == NULL)
+		p = fdt_getprop(node, "linux,stdout-path", &len);
+	if (p == NULL || len == 0)
+		return 1;
+
+	copy_token(s->path, sizeof(s->path), p, ':');
+
+	/* The digits after the colon, if there are any, are the speed. */
+	while (*p != '\0' && *p != ':')
+		p++;
+	if (*p == ':')
+		for (p++; *p >= '0' && *p <= '9'; p++)
+			s->speed = s->speed * 10 + (unsigned)(*p - '0');
+
+	return 1;
+}
+
+/*
+ * Pass two: turn an alias into a path. QEMU writes stdout-path as a path
+ * already ("/pl011@9000000") and skips this; the CB2 writes "serial2", which
+ * /aliases resolves to "/serial@fe660000".
+ */
+static int
+scan_alias(void *cookie, int depth, const char *name,
+	const struct fdt_node *node)
+{
+	struct ser_scan *s = cookie;
+	const char *p;
+	unsigned len;
+
+	if (depth != 1 || strcmp(name, "aliases") != 0)
+		return 0;
+
+	if ((p = fdt_getprop(node, s->path, &len)) != NULL && len > 0)
+		copy_token(s->path, sizeof(s->path), p, '\0');
+
+	return 1;
+}
+
+/* Is this node a UART one of the files beside this one drives? */
+static const struct uart_ops *
+uart_ops_for(const struct fdt_node *node)
+{
+	if (fdt_node_is_compatible(node, "arm,pl011"))
+		return &pl011_ops;
+	if (fdt_node_is_compatible(node, "snps,dw-apb-uart") ||
+	    fdt_node_is_compatible(node, "ns16550a") ||
+	    fdt_node_is_compatible(node, "ns16550"))
+		return &ns8250_ops;
+	return NULL;
+}
+
+/*
+ * Pass three: take the node /chosen named, and no other. Without a name - a
+ * tree with no /chosen, which QEMU's virt does have but a hand-built blob
+ * might not - any UART is better than none.
+ */
+static int
+scan_uart(void *cookie, int depth, const char *name,
+	const struct fdt_node *node)
+{
+	struct ser_scan *s = cookie;
+	const struct uart_ops *ops;
+
+	if (depth == 0)
+		return 0;
+
+	if (s->want != NULL && strcmp(name, s->want) != 0)
+		return 0;
+
+	if ((ops = uart_ops_for(node)) != NULL &&
+	    ops->probe(node, s->u) == OK) {
+		s->ops = ops;
+		s->irq = fdt_node_gic_irq(node, 0);
+		s->found = 1;
+	}
+
+	/*
+	 * With a name, stop either way: the tree named this node as the
+	 * console, so if it is not a UART this code knows, there is nothing
+	 * better further down.
+	 */
+	return s->want != NULL || s->found;
+}
+
+/*
+ * Fill in rs->uart from the device tree. Returns FALSE when this machine has
+ * no console UART this driver knows, which is a machine tty runs on without a
+ * serial line rather than one it refuses to start on.
+ */
+static int
+find_console(rs232_t *rs, unsigned *speed)
+{
+	struct ser_scan s;
+	void *dtb;
+
+	memset(&s, 0, sizeof(s));
+	s.u = &rs->uart;
+
+	if ((dtb = fdt_fetch()) == NULL)
+		return FALSE;
+
+	(void)fdt_walk(dtb, scan_chosen, &s);
+
+	/*
+	 * A path starting with '/' is the node itself; anything else is an
+	 * alias, and /aliases turns it into a path.
+	 */
+	if (s.path[0] != '\0' && s.path[0] != '/')
+		(void)fdt_walk(dtb, scan_alias, &s);
+
+	if (s.path[0] == '/')
+		s.want = last_component(s.path);
+
+	(void)fdt_walk(dtb, scan_uart, &s);
+
+	free(dtb);
+
+	if (!s.found)
+		return FALSE;
+
+	rs->uart.ops = s.ops;
+	rs->uart.irq = s.irq;
+	*speed = s.speed;
+
+	return TRUE;
+}
+
+/*===========================================================================*
  *				rs_config				     *
  *===========================================================================*/
 static void
@@ -196,30 +342,9 @@ rs_config(rs232_t *rs)
 {
 /* Set line parameters from the tty's termios. */
 	tty_t *tp = rs->tty;
-	unsigned int cr;
 
-	/* Quiesce the port before touching its configuration. */
-	cr = serial_in(rs, PL011_CR);
-	serial_out(rs, PL011_CR, 0);
-	while (serial_in(rs, PL011_FR) & FR_BUSY)
-		;
-
-	/*
-	 * The baud rate divisors are deliberately left alone. QEMU ignores
-	 * them entirely, and on a real board they depend on the UART
-	 * reference clock, which this driver has no way to learn - the kernel
-	 * reads the device tree, and what it finds does not reach user space.
-	 * Until it does, the rate the firmware set is the rate we keep.
-	 */
-	serial_out(rs, PL011_LCRH, LCRH_WLEN_8 | LCRH_FEN);
-	serial_out(rs, PL011_IFLS, IFLS_RX_QUARTER | IFLS_TX_QUARTER);
-
-	if (tp->tty_termios.c_ospeed == B0) {
-		/* Speed zero means hang up, and here that means stay down. */
-		return;
-	}
-
-	serial_out(rs, PL011_CR, cr | CR_UARTEN | CR_TXE | CR_RXE);
+	/* Speed zero means hang up, and here that means stay down. */
+	rs->uart.ops->config(&rs->uart, tp->tty_termios.c_ospeed != B0);
 }
 
 /*===========================================================================*
@@ -231,10 +356,10 @@ rs_init(tty_t *tp)
 /* Initialize one line. */
 	rs232_t *rs;
 	int line;
-	uart_port_t port;
 	char l[10];
+	unsigned speed = 0;
 	struct minix_mem_range mr;
-	struct machine machine;
+	void *v;
 
 	line = tp - &tty_table[NR_CONS];
 
@@ -250,14 +375,11 @@ rs_init(tty_t *tp)
 		return;
 	}
 
-	sys_getmachine(&machine);
-
-	if (BOARD_IS_QEMU_VIRT(machine.board_id))
-		port = qemu_virt_ports[line];
-	else
-		return;
-
-	if (port.base_addr == 0)
+	/*
+	 * Only the console has a device: see the file comment. The other
+	 * lines stay inactive, and tty reports them as ENXIO.
+	 */
+	if (line != 0)
 		return;
 
 	rs = tp->tty_priv = &rs_lines[line];
@@ -266,26 +388,33 @@ rs_init(tty_t *tp)
 	rs->ohead = rs->otail = rs->obuf;
 	rs->icount = rs->ocount = 0;
 
-	/* Ask for access to the registers, then map them. */
-	mr.mr_base = port.base_addr;
-	mr.mr_limit = port.base_addr + UART_MAP_SIZE;
+	if (!find_console(rs, &speed)) {
+		printf("TTY: no serial console in the device tree\n");
+		tp->tty_priv = NULL;
+		return;
+	}
+
+	/*
+	 * Ask for access to the registers, then map them: this driver found
+	 * its own device, so it is the one that knows which range to ask for.
+	 */
+	mr.mr_base = rs->uart.phys;
+	mr.mr_limit = rs->uart.phys + rs->uart.size;
 	if (sys_privctl(SELF, SYS_PRIV_ADD_MEM, &mr) != OK)
 		panic("TTY: no permission for the UART registers");
 
-	rs->base = (vir_bytes)vm_map_phys(SELF, (void *)port.base_addr,
-	    UART_MAP_SIZE);
-	if (rs->base == (vir_bytes)MAP_FAILED)
+	v = vm_map_phys(SELF, (void *)rs->uart.phys, rs->uart.size);
+	if (v == MAP_FAILED)
 		panic("TTY: unable to map the UART registers");
+	rs->uart.regs = (vir_bytes)v;
 
 	/*
-	 * Keep the rate the firmware chose, for the same reason rs_config()
-	 * does not program the divisors: the kernel has been printing on this
-	 * port since boot, and changing the rate underneath it would garble
-	 * everything already in flight.
+	 * The rate the loader chose is the rate we keep, and the rate termios
+	 * reports. See the file comment.
 	 */
-	tp->tty_termios.c_ospeed = DFLT_BAUD;
+	tp->tty_termios.c_ospeed = tp->tty_termios.c_ispeed =
+	    (speed != 0) ? speed : DFLT_BAUD;
 
-	rs->irq = port.irq;
 	/*
 	 * Hook id line + 1, because a hook id of zero is indistinguishable
 	 * from "no hook" in the notification bitmap. ARM does the same and
@@ -293,23 +422,26 @@ rs_init(tty_t *tp)
 	 */
 	rs->irq_hook_kernel_id = rs->irq_hook_id = line + 1;
 
-	if (sys_irqsetpolicy(rs->irq, 0, &rs->irq_hook_kernel_id) != OK) {
-		printf("RS232: couldn't obtain hook for irq %d\n", rs->irq);
+	if (rs->uart.irq < 0) {
+		/*
+		 * A console with no usable interrupt still prints; it just
+		 * cannot be typed on. Saying so beats a silent half-console.
+		 */
+		printf("RS232: no interrupt in the device tree; input off\n");
+	} else if (sys_irqsetpolicy(rs->uart.irq, 0,
+	    &rs->irq_hook_kernel_id) != OK) {
+		printf("RS232: couldn't obtain hook for irq %d\n",
+		    rs->uart.irq);
 	} else {
 		if (sys_irqenable(&rs->irq_hook_kernel_id) != OK)
-			printf("RS232: couldn't enable irq %d\n", rs->irq);
+			printf("RS232: couldn't enable irq %d\n",
+			    rs->uart.irq);
+		rs_irq_set |= (1 << rs->irq_hook_id);
 	}
-
-	rs_irq_set |= (1 << rs->irq_hook_id);
-
-	/* Clear anything stale, then take receive and receive-timeout. */
-	serial_out(rs, PL011_ICR, INT_ALL);
-	rs->imsc = INT_RX | INT_RT;
-	serial_out(rs, PL011_IMSC, rs->imsc);
 
 	rs->ostate = ODEVREADY | OSWREADY;
 
-	rs_config(rs);
+	rs->uart.ops->init(&rs->uart);
 
 	tp->tty_devread = rs_read;
 	tp->tty_devwrite = rs_write;
@@ -513,7 +645,7 @@ rs_ostart(rs232_t *rs)
 {
 /* Something is waiting in the output buffer. */
 	rs->ostate |= OQUEUED;
-	if (txready(rs))
+	if (rs->uart.ops->txready(&rs->uart))
 		write_chars(rs);
 }
 
@@ -525,7 +657,7 @@ rs_break_on(tty_t *tp, int UNUSED(dummy))
 {
 	rs232_t *rs = tp->tty_priv;
 
-	serial_out(rs, PL011_LCRH, serial_in(rs, PL011_LCRH) | LCRH_BRK);
+	rs->uart.ops->brk(&rs->uart, TRUE);
 
 	return 0;	/* dummy */
 }
@@ -538,7 +670,7 @@ rs_break_off(tty_t *tp, int UNUSED(dummy))
 {
 	rs232_t *rs = tp->tty_priv;
 
-	serial_out(rs, PL011_LCRH, serial_in(rs, PL011_LCRH) & ~LCRH_BRK);
+	rs->uart.ops->brk(&rs->uart, FALSE);
 
 	return 0;	/* dummy */
 }
@@ -577,6 +709,8 @@ rs_interrupt(message *m)
 
 	irq_set = m->m_notify.interrupts;
 	for (line = 0, rs = rs_lines; line < NR_RS_LINES; line++, rs++) {
+		if (rs->uart.ops == NULL)
+			continue;
 		if (irq_set & (1 << rs->irq_hook_id)) {
 			rs232_handler(rs);
 			if (sys_irqenable(&rs->irq_hook_kernel_id) != OK)
@@ -591,25 +725,25 @@ rs_interrupt(message *m)
 static void
 rs232_handler(rs232_t *rs)
 {
-	unsigned int mis;
-
-	mis = serial_in(rs, PL011_MIS);
-	if (mis == 0)
-		return;
+	unsigned ev;
+	int round;
 
 	/*
-	 * Acknowledge before servicing. The PL011 latches its interrupts, and
-	 * a character arriving between the read and the clear would otherwise
-	 * have its interrupt cleared without ever being read - the classic
-	 * way to lose exactly one keystroke, occasionally.
+	 * An 8250 reports one cause at a time and asserts the line again for
+	 * the next, so this is a loop where a PL011 would need a single pass;
+	 * the bound is there because a cause this driver fails to clear would
+	 * otherwise be an infinite one.
 	 */
-	serial_out(rs, PL011_ICR, mis);
+	for (round = 0; round < INTR_ROUNDS; round++) {
+		if ((ev = rs->uart.ops->intr(&rs->uart)) == 0)
+			return;
 
-	if (mis & (INT_RX | INT_RT))
-		read_chars(rs);
+		if (ev & UART_EV_RX)
+			read_chars(rs);
 
-	if (mis & INT_TX)
-		write_chars(rs);
+		if (ev & UART_EV_TX)
+			write_chars(rs);
+	}
 }
 
 /*===========================================================================*
@@ -620,8 +754,8 @@ read_chars(rs232_t *rs)
 {
 	unsigned char c;
 
-	while (!(serial_in(rs, PL011_FR) & FR_RXFE)) {
-		c = (unsigned char)serial_in(rs, PL011_DR);
+	while (rs->uart.ops->rxready(&rs->uart)) {
+		c = (unsigned char)rs->uart.ops->rxchar(&rs->uart);
 
 		if (!(rs->ostate & ORAW)) {
 			if (c == rs->oxoff) {
@@ -657,14 +791,14 @@ write_chars(rs232_t *rs)
 /*
  * Push as much as the transmit FIFO will take, and tell tty when the buffer
  * runs dry. The transmit interrupt is only unmasked while there is something
- * left to send: a PL011 asserts it whenever the FIFO is below its level, so
+ * left to send: both parts assert it whenever the FIFO is below its level, so
  * leaving it on with nothing to write is an interrupt storm.
  */
 	if (rs->ostate < (ODEVREADY | OQUEUED | OSWREADY))
 		return;
 
-	while (rs->ocount > 0 && txready(rs)) {
-		serial_out(rs, PL011_DR, (unsigned char)*rs->otail);
+	while (rs->ocount > 0 && rs->uart.ops->txready(&rs->uart)) {
+		rs->uart.ops->txchar(&rs->uart, (unsigned char)*rs->otail);
 		if (++rs->otail == bufend(rs->obuf))
 			rs->otail = rs->obuf;
 
@@ -672,10 +806,7 @@ write_chars(rs232_t *rs)
 			/* Output done: turn ODONE on and OQUEUED off. */
 			rs->ostate ^= (ODONE | OQUEUED);
 			rs->tty->tty_events = 1;
-			if (rs->imsc & INT_TX) {
-				rs->imsc &= ~INT_TX;
-				serial_out(rs, PL011_IMSC, rs->imsc);
-			}
+			rs->uart.ops->txintr(&rs->uart, FALSE);
 			return;
 		}
 
@@ -684,8 +815,6 @@ write_chars(rs232_t *rs)
 	}
 
 	/* Still something to send: ask to be told when there is room. */
-	if (rs->ocount > 0 && !(rs->imsc & INT_TX)) {
-		rs->imsc |= INT_TX;
-		serial_out(rs, PL011_IMSC, rs->imsc);
-	}
+	if (rs->ocount > 0)
+		rs->uart.ops->txintr(&rs->uart, TRUE);
 }

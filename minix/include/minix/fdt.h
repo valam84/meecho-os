@@ -67,6 +67,17 @@ int fdt_valid(const void *dtb);
 /* Total size of the blob, so its memory can be kept out of the free list. */
 size_t fdt_size(const void *dtb);
 
+/*
+ * The index'th entry of the blob's memory reservation block - memory the
+ * firmware keeps and the system must not hand out. 0 on success, -1 once the
+ * list ends, so a caller counts up until it stops.
+ *
+ * The block predates /reserved-memory and says the same kind of thing; a
+ * machine may use either spelling or both, so both want reading. It lives in
+ * the header rather than in the tree, which is why a walk cannot reach it.
+ */
+int fdt_memreserve(const void *dtb, unsigned index, u64_t *addr, u64_t *size);
+
 int fdt_walk(const void *dtb, fdt_node_cb cb, void *cookie);
 
 /*

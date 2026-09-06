@@ -28,6 +28,7 @@
 #define FDT_OFF_TOTALSIZE	4
 #define FDT_OFF_DT_STRUCT	8
 #define FDT_OFF_DT_STRINGS	12
+#define FDT_OFF_MEM_RSVMAP	16
 #define FDT_OFF_VERSION		20
 #define FDT_OFF_LAST_COMP_VER	24
 #define FDT_OFF_SIZE_DT_STRUCT	36
@@ -101,6 +102,42 @@ size_t
 fdt_size(const void *dtb)
 {
 	return (size_t)fdt_be32((const char *)dtb + FDT_OFF_TOTALSIZE);
+}
+
+/*===========================================================================*
+ *				fdt_memreserve				     *
+ *===========================================================================*/
+/*
+ * The blob's memory reservation block: pairs of 64-bit big-endian numbers,
+ * address then size, ending with a pair of zeroes. It sits outside the tree
+ * proper, which is why it needs a call of its own rather than a walk.
+ *
+ * This is where firmware puts the memory an operating system must not use and
+ * cannot see any other way - on the CB2 the BL31 that TF-A left running below
+ * the kernel. /reserved-memory in the tree says the same kind of thing in the
+ * newer spelling, and a machine may use either or both.
+ */
+int
+fdt_memreserve(const void *dtb, unsigned index, u64_t *addr, u64_t *size)
+{
+	const char *base = dtb;
+	const char *p;
+	u64_t a, s;
+
+	p = base + fdt_be32(base + FDT_OFF_MEM_RSVMAP) + (size_t)index * 16;
+
+	/* Reading a 64-bit field as two 32-bit halves, for the alignment
+	 * reason the file comment gives. */
+	a = ((u64_t)fdt_be32(p) << 32) | fdt_be32(p + 4);
+	s = ((u64_t)fdt_be32(p + 8) << 32) | fdt_be32(p + 12);
+
+	if (a == 0 && s == 0)
+		return -1;
+
+	*addr = a;
+	*size = s;
+
+	return 0;
 }
 
 /*===========================================================================*

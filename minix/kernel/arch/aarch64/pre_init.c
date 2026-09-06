@@ -421,6 +421,91 @@ load_boot_archive(kinfo_t *cbi, phys_bytes start, phys_bytes end)
 }
 
 /*===========================================================================*
+ *				scan_reserved				     *
+ *===========================================================================*/
+/*
+ * The children of /reserved-memory: memory that exists, that the linear map
+ * therefore has to cover, and that nobody may be handed.
+ *
+ * QEMU's virt machine reserves nothing, which is why this went unwritten for
+ * so long. A real board is not like that: the CB2 keeps a quarter of a
+ * gigabyte for the display CMA and several ranges at the top of RAM for
+ * OP-TEE and its friends - /proc/iomem on the vendor system shows them from
+ * 0x6b600000 up. Handing one of those pages to a process does not fail
+ * where the mistake was made; it faults later, in the process, at an address
+ * that says nothing about why.
+ *
+ * Only the free list is trimmed. The linear map still covers these ranges,
+ * because it covers all of RAM by construction; a range marked "no-map"
+ * strictly wants leaving unmapped as well, which would mean holes in the
+ * linear map, and that is a larger change than this one - worth doing if a
+ * speculative read into a firewalled range ever turns into an SError.
+ */
+struct rsv_scan {
+	kinfo_t *cbi;
+	int in_reserved;
+};
+
+static int
+scan_reserved(void *cookie, int depth, const char *name,
+	const struct fdt_node *node)
+{
+	struct rsv_scan *s = cookie;
+	u64_t addr, size;
+	unsigned i;
+
+	if (depth == 1) {
+		s->in_reserved = !strcmp(name, "reserved-memory");
+		return 0;
+	}
+
+	if (depth != 2 || !s->in_reserved)
+		return 0;
+
+	/*
+	 * A child with no reg is a dynamic reservation - a size and an
+	 * alignment for the system to place itself. Nothing here places
+	 * anything, so there is nothing to cut.
+	 */
+	for (i = 0; fdt_node_reg(node, i, &addr, &size) == 0; i++)
+		if (size != 0)
+			cut_memmap(s->cbi, (phys_bytes)addr,
+			    (phys_bytes)(addr + size));
+
+	return 0;
+}
+
+/*===========================================================================*
+ *				cut_reserved				     *
+ *===========================================================================*/
+/*
+ * Both spellings of "firmware keeps this": the blob's memory reservation
+ * block, which is where TF-A puts the BL31 still running underneath us, and
+ * the /reserved-memory node. A machine may use either or both.
+ *
+ * A walk of its own, after the one that found memory: the two nodes may come
+ * in any order in the blob, and cutting a range out of a free list it has not
+ * been added to yet would do nothing at all.
+ */
+static void
+cut_reserved(kinfo_t *cbi, phys_bytes dtb)
+{
+	struct rsv_scan scan;
+	u64_t addr, size;
+	unsigned i;
+
+	for (i = 0; fdt_memreserve((const void *)dtb, i, &addr, &size) == 0;
+	    i++)
+		if (size != 0)
+			cut_memmap(cbi, (phys_bytes)addr,
+			    (phys_bytes)(addr + size));
+
+	memset(&scan, 0, sizeof(scan));
+	scan.cbi = cbi;
+	(void)fdt_walk((const void *)dtb, scan_reserved, &scan);
+}
+
+/*===========================================================================*
  *				get_parameters				     *
  *===========================================================================*/
 static void
@@ -503,6 +588,8 @@ get_parameters(kinfo_t *cbi, phys_bytes dtb)
 	cut_memmap(cbi, dtb, dtb + fdt_size((const void *)dtb));
 	if (initrd_end > initrd_start)
 		cut_memmap(cbi, initrd_start, initrd_end);
+
+	cut_reserved(cbi, dtb);
 
 	printf(OS_NAME "/aarch64: %u core%s, memory ", scan.ncpu,
 	    scan.ncpu == 1 ? "" : "s");

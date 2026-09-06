@@ -18,6 +18,13 @@ d--755 0 0
 		ls ---755 0 0 ls
 		readclock ---755 0 0 readclock
 		date ---755 0 0 date
+		mkdir ---755 0 0 mkdir
+		rm ---755 0 0 rm
+		rmdir ---755 0 0 rmdir
+		ln ---755 0 0 ln
+		mv ---755 0 0 mv
+		cp ---755 0 0 cp
+		sync ---755 0 0 sync
 #endif
 	$
 	sbin d--755 0 0

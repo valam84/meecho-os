@@ -121,7 +121,19 @@ echo "Root device name is $rootdevname"
 if ! sysenv cdproberoot >/dev/null && ! sysenv bootramdisk >/dev/null
 then
 	if [ -e $FSCK ]
-	then	$FSCK -p $rootdevname
+	then
+		# Exit code 16 means fsck does not know this file system's
+		# format, which is not the same as finding it broken: a V4
+		# root has no fsck yet (stage 7.5).  It is mounted with a
+		# warning; every other failure stops the boot, as before.
+		$FSCK -p $rootdevname && fsck_rc=0 || fsck_rc=$?
+		if [ $fsck_rc != 0 ]
+		then
+			if [ $fsck_rc = 16 ]
+			then	echo "WARNING: $rootdevname was not checked"
+			else	exit 1
+			fi
+		fi
 	fi
 fi
 

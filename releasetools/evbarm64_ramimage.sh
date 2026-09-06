@@ -285,7 +285,11 @@ END_RC
 	rm -f "${DISK}"
 	dd if=/dev/zero of="${DISK}" bs=1M count=0 seek=${DISK_MB} 2>/dev/null
 	# The proto names its files relative to the ramdisk's object directory.
-	(cd "${RAMDISK_OBJ}" && ${MKFSMFS} -B 4096 \
+	# The disk is V4: 64-bit sizes and times, variable-length directory
+	# entries.  The ramdisk stays V3 - it is the boot image, and its
+	# format is not what this is about.  MKFS_VERSION=-3 makes a V3
+	# disk instead, which is how the two are compared.
+	(cd "${RAMDISK_OBJ}" && ${MKFSMFS} ${MKFS_VERSION:--4} -B 4096 \
 		-b $((${DISK_MB} * 1024 * 1024 / 4096)) \
 		"${DISK}" "${WORK_DIR}/proto.disk")
 	fi

@@ -137,6 +137,22 @@ dir.date:=	bin/date
 # how the two are exercised on a machine that has nothing else asking yet.
 PROGRAMS+=		diskctl
 dir.diskctl:=	minix/usr.sbin/diskctl
+# Enough of a tool set to make and unmake a directory tree, which is what
+# a file system is for and what its directory code needs to be tried with.
+PROGRAMS+=		mkdir
+dir.mkdir:=	bin/mkdir
+PROGRAMS+=		rm
+dir.rm:=	bin/rm
+PROGRAMS+=		rmdir
+dir.rmdir:=	bin/rmdir
+PROGRAMS+=		ln
+dir.ln:=	bin/ln
+PROGRAMS+=		mv
+dir.mv:=	bin/mv
+PROGRAMS+=		cp
+dir.cp:=	bin/cp
+PROGRAMS+=		sync
+dir.sync:=	bin/sync
 # A filesystem that is only ever read can be sized to its contents exactly,
 # and that is what mkfs.mfs does by default.  This one is written to - utmpx,
 # wtmpx, lastlogx, /tmp - so it needs free inodes and free blocks, or the

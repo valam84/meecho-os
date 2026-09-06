@@ -26,6 +26,15 @@ Interface to the reincarnation server
 #define RSS_NR_IO		16
 #define RSS_IRQ_ALL		(RSS_NR_IRQ+1)
 #define RSS_IO_ALL		(RSS_NR_IO+1)
+/*
+ * Device-tree bindings: "devicetree" in system.conf names the compatible
+ * strings of the nodes a service drives, and RS grants it the registers and
+ * interrupts of every node that matches. The counterpart of "pci device" on
+ * a machine that describes itself with a tree rather than a bus that can be
+ * enumerated. Longest string in use is Rockchip's "rockchip,rk3568-uart".
+ */
+#define RSS_NR_DEVICETREE	4
+#define RSS_DEVICETREE_LEN	40
 #define RSS_IPC_ALL		"IPC_ALL"
 #define RSS_IPC_ALL_SYS		"IPC_ALL_SYS"
 
@@ -141,6 +150,8 @@ struct rs_start
 	size_t rss_prognamelen;
 	int rss_nr_domain;
 	int rss_domain[NR_DOMAIN];
+	int rss_nr_devicetree;
+	char rss_devicetree[RSS_NR_DEVICETREE][RSS_DEVICETREE_LEN];
 	/*
 	 * SMP specific data
 	 *

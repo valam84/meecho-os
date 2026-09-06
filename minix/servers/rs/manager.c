@@ -13,6 +13,8 @@
 
 #include "kernel/proc.h"
 
+#include <minix/fdt.h>
+
 static int run_script(struct rproc *rp);
 
 /*===========================================================================*
@@ -1455,6 +1457,176 @@ struct rproc *rp;
 }
 
 /*===========================================================================*
+ *			    device-tree grants				     *
+ *===========================================================================*/
+/*
+ * "devicetree" in system.conf names the compatible strings of the nodes a
+ * service drives. This is the tree's counterpart of "pci device": where the
+ * PCI server enumerates a bus and grants a driver the BARs and interrupt
+ * line of the devices that match its IDs, here RS walks the tree the kernel
+ * booted with and grants the "reg" ranges and "interrupts" lines of every
+ * node that matches. The driver then finds its device by the same tree and
+ * can touch only what it was granted.
+ *
+ * A machine without a tree - each 32-bit port - has no nodes to match, so
+ * the lines grant nothing there and the PCI lines beside them do the work.
+ * One entry can name both buses and mean it on both kinds of machine.
+ *
+ * Two limits of this reader, both deliberate for now:
+ *
+ *   - "reg" is taken as CPU-physical: every bus between the node and the
+ *     root is assumed to have an identity "ranges". That is true of QEMU's
+ *     virt and of the Rockchip trees this port targets, where peripherals
+ *     sit directly under the root. A bus that translates would need the
+ *     translation added here, once, not in the drivers.
+ *   - "interrupts" is read with the GIC's three-cell binding, which every
+ *     AArch64 machine this system targets uses; see fdt_gic_intid().
+ */
+struct dt_grant {
+  struct rproc *rp;
+  const char *compat;
+  int matched;
+  int r;				/* first error, or OK */
+};
+
+static int dt_add_mem(struct rproc *rp, phys_bytes base, phys_bytes size)
+{
+  struct priv *sp = &rp->r_priv;
+  phys_bytes limit;
+  int i;
+
+  if (size == 0) return OK;
+  limit = base + size - 1;
+  if (limit < base) return EINVAL;
+
+  /*
+   * Merge with a range this one touches or overlaps. QEMU's virt has
+   * thirty-two virtio-mmio transports back to back, and a table of twenty
+   * would not hold them one by one; merged, they are one range.
+   */
+  for (i = 0; i < sp->s_nr_mem_range; i++) {
+      struct minix_mem_range *mr = &sp->s_mem_tab[i];
+
+      if (base <= mr->mr_limit + 1 && limit + 1 >= mr->mr_base) {
+          if (base < mr->mr_base) mr->mr_base = base;
+          if (limit > mr->mr_limit) mr->mr_limit = limit;
+          return OK;
+      }
+  }
+
+  if (sp->s_nr_mem_range >= NR_MEM_RANGE) return E2BIG;
+  sp->s_mem_tab[sp->s_nr_mem_range].mr_base = base;
+  sp->s_mem_tab[sp->s_nr_mem_range].mr_limit = limit;
+  sp->s_nr_mem_range++;
+  return OK;
+}
+
+static int dt_add_irq(struct rproc *rp, int irq)
+{
+  struct priv *sp = &rp->r_priv;
+  int i;
+
+  for (i = 0; i < sp->s_nr_irq; i++)
+      if (sp->s_irq_tab[i] == irq) return OK;
+
+  if (sp->s_nr_irq >= NR_IRQ) return E2BIG;
+  rp->r_irq_tab[sp->s_nr_irq] = sp->s_irq_tab[sp->s_nr_irq] = irq;
+  sp->s_nr_irq++;
+  rp->r_nr_irq = sp->s_nr_irq;
+  return OK;
+}
+
+static int dt_grant_node(void *cookie, int depth, const char *name,
+  const struct fdt_node *node)
+{
+  struct dt_grant *g = cookie;
+  u64_t base, size;
+  unsigned i, len;
+  int r, irq;
+
+  /* The root describes the machine, not a device. */
+  if (depth == 0 || !fdt_node_is_compatible(node, g->compat))
+      return 0;
+
+  g->matched++;
+
+  for (i = 0; fdt_node_reg(node, i, &base, &size) == 0; i++) {
+      if ((r = dt_add_mem(g->rp, (phys_bytes) base, (phys_bytes) size))
+          != OK) {
+          g->r = r;
+          return 1;
+      }
+      if (rs_verbose)
+          printf("RS: edit_slot: %s: memory [%lx..%lx]\n", name,
+              (unsigned long) base, (unsigned long) (base + size - 1));
+  }
+
+  /* Every triplet; one whose type this system does not route is skipped. */
+  if (fdt_getprop(node, "interrupts", &len) != NULL) {
+      for (i = 0; (i + 1) * 12 <= len; i++) {
+          if ((irq = fdt_node_gic_irq(node, i)) < 0) continue;
+          if ((r = dt_add_irq(g->rp, irq)) != OK) {
+              g->r = r;
+              return 1;
+          }
+          if (rs_verbose)
+              printf("RS: edit_slot: %s: IRQ %d\n", name, irq);
+      }
+  }
+
+  return 0;
+}
+
+static int dt_grants(struct rproc *rp, struct rs_start *rs_start)
+{
+  /*
+   * Fetched once and kept: the tree does not change while the machine is
+   * up, and RS is asked at every service start.
+   */
+  static void *dtb = NULL;
+  static int dtb_tried = 0;
+  struct dt_grant g;
+  int i;
+
+  if (rs_start->rss_nr_devicetree <= 0) return OK;
+  if (rs_start->rss_nr_devicetree > RSS_NR_DEVICETREE) {
+      printf("RS: edit_slot: too many devicetree strings\n");
+      return EINVAL;
+  }
+
+  if (!dtb_tried) {
+      dtb_tried = 1;
+      dtb = fdt_fetch();
+  }
+  if (dtb == NULL) {
+      if (rs_verbose)
+          printf("RS: edit_slot: no device tree on this machine; "
+              "devicetree lines grant nothing\n");
+      return OK;
+  }
+
+  for (i = 0; i < rs_start->rss_nr_devicetree; i++) {
+      memset(&g, 0, sizeof(g));
+      g.rp = rp;
+      rs_start->rss_devicetree[i][RSS_DEVICETREE_LEN - 1] = '\0';
+      g.compat = rs_start->rss_devicetree[i];
+
+      (void) fdt_walk(dtb, dt_grant_node, &g);
+
+      if (g.r != OK) {
+          printf("RS: edit_slot: device-tree grant for \"%s\" failed: %d\n",
+              g.compat, g.r);
+          return g.r;
+      }
+      if (rs_verbose)
+          printf("RS: edit_slot: devicetree \"%s\": %d node(s)\n",
+              g.compat, g.matched);
+  }
+
+  return OK;
+}
+
+/*===========================================================================*
  *				 edit_slot				     *
  *===========================================================================*/
 int edit_slot(rp, rs_start, source)
@@ -1522,6 +1694,18 @@ endpoint_t source;
               rp->r_priv.s_io_tab[i].ior_base,
               rp->r_priv.s_io_tab[i].ior_limit);
   }
+
+  /*
+   * Update memory ranges and any further IRQs from the device tree. The
+   * table is rebuilt from the configuration like the two above; what the
+   * PCI server adds at run time goes to the kernel directly and is not
+   * kept here. CHECK_MEM is what makes the kernel take the table from
+   * this structure at all - without it the ranges stay here, and VM
+   * refuses the mapping with the same message as for no grant.
+   */
+  rp->r_priv.s_nr_mem_range = 0;
+  rp->r_priv.s_flags |= CHECK_MEM;
+  if ((s = dt_grants(rp, rs_start)) != OK) return s;
 
   /* Update kernel call mask. Inherit basic kernel calls when asked to. */
   memcpy(rp->r_priv.s_k_call_mask, rs_start->rss_system,

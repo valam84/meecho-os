@@ -10,6 +10,7 @@
 #define KW_IO		"io"
 #define KW_PCI		"pci"
 #define KW_DEVICE	"device"
+#define KW_DEVICETREE	"devicetree"	/* compatible strings of the nodes */
 #define KW_CLASS	"class"
 #define KW_SYSTEM	"system"
 #define KW_IPC		"ipc"

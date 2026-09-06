@@ -655,6 +655,38 @@ static void do_pci(config_t *cpe, struct rs_start *rs_start)
 		cpe->word, cpe->file, cpe->line);
 }
 
+static void do_devicetree(config_t *cpe, struct rs_start *rs_start)
+{
+	/*
+	 * A list of the compatible strings of the device-tree nodes the
+	 * service drives; RS grants it the registers and interrupts of every
+	 * node that matches. The strings carry commas ("virtio,mmio"), which
+	 * the config reader does not accept in a bare word, so they are
+	 * written quoted.
+	 */
+	for (; cpe; cpe= cpe->next)
+	{
+		if (cpe->flags & CFG_SUBLIST)
+		{
+			fatal("do_devicetree: unexpected sublist at %s:%d",
+				cpe->file, cpe->line);
+		}
+		if (rs_start->rss_nr_devicetree >= RSS_NR_DEVICETREE)
+		{
+			fatal("do_devicetree: too many compatible strings "
+				"(max %d)", RSS_NR_DEVICETREE);
+		}
+		if (strlen(cpe->word) >= RSS_DEVICETREE_LEN)
+		{
+			fatal("do_devicetree: compatible string '%s' too long "
+				"at %s:%d", cpe->word, cpe->file, cpe->line);
+		}
+		strlcpy(rs_start->rss_devicetree[rs_start->rss_nr_devicetree],
+			cpe->word, RSS_DEVICETREE_LEN);
+		rs_start->rss_nr_devicetree++;
+	}
+}
+
 static void do_ipc(config_t *cpe, struct rs_start *rs_start)
 {
 	char *list;
@@ -1118,6 +1150,11 @@ static void do_service(config_t *cpe, config_t *config, struct rs_config *rs_con
 		if (strcmp(cpe->word, KW_PCI) == 0)
 		{
 			do_pci(cpe->next, rs_start);
+			continue;
+		}
+		if (strcmp(cpe->word, KW_DEVICETREE) == 0)
+		{
+			do_devicetree(cpe->next, rs_start);
 			continue;
 		}
 		if (strcmp(cpe->word, KW_SYSTEM) == 0)

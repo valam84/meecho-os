@@ -61,8 +61,15 @@
 /* Max. number of device memory ranges that can be assigned to a process */
 #define NR_MEM_RANGE	20
 
-/* Max. number of IRQs that can be assigned to a process */
-#define NR_IRQ	16
+/* Max. number of IRQs that can be assigned to a process.
+ *
+ * Sixteen was enough while every IRQ a driver got was listed by hand. A
+ * device-tree grant lists every node that matches a compatible string, and
+ * QEMU's virt machine has thirty-two virtio-mmio transports, each with a
+ * line of its own; a driver that may attach to any of them holds all
+ * thirty-two.
+ */
+#define NR_IRQ	64
 
 /* Max. number of domains (protocol families) per socket driver */
 #define NR_DOMAIN	8

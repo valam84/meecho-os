@@ -110,5 +110,12 @@ int main(int argc, char **argv)
 		}
 		printf("\n");
 	}
+	if(config.rs_start.rss_nr_devicetree > 0) {
+		printstack();
+		printf("%s ", KW_DEVICETREE);
+		for(id = 0; id < config.rs_start.rss_nr_devicetree; id++)
+			printf("\"%s\" ", config.rs_start.rss_devicetree[id]);
+		printf("\n");
+	}
 }
 

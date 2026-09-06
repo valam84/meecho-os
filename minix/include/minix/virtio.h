@@ -15,24 +15,19 @@
 
 #define VIRTIO_VENDOR_ID			0x1AF4
 
-#define VIRTIO_HOST_F_OFF			0x0000
-#define VIRTIO_GUEST_F_OFF			0x0004
-#define VIRTIO_QADDR_OFF			0x0008
-
-#define VIRTIO_QSIZE_OFF			0x000C
-#define VIRTIO_QSEL_OFF				0x000E
-#define VIRTIO_QNOTFIY_OFF			0x0010
-
-#define VIRTIO_DEV_STATUS_OFF			0x0012
-#define VIRTIO_ISR_STATUS_OFF			0x0013
-#define VIRTIO_DEV_SPECIFIC_OFF			0x0014
-/* if msi is enabled, device specific headers shift by 4 */
-#define VIRTIO_MSI_ADD_OFF			0x0004
 #define VIRTIO_STATUS_ACK			0x01
 #define VIRTIO_STATUS_DRV			0x02
 #define VIRTIO_STATUS_DRV_OK			0x04
 #define VIRTIO_STATUS_FAIL			0x80
 
+/*
+ * Where the registers are and how they are reached is the transport's
+ * business - PCI I/O ports on a PC, a "virtio,mmio" node of the device
+ * tree on AArch64 - and the transport is chosen when the library is built.
+ * A driver sees neither: it names the kind of device it drives and gets an
+ * opaque handle; the only registers it reads through that handle are the
+ * device-specific configuration space, by virtio_sread*() below.
+ */
 
 /* Feature description */
 struct virtio_feature {
@@ -48,8 +43,9 @@ struct virtio_feature {
  */
 struct virtio_device;
 
-/* Find a virtio device with subdevice id subdevid. Returns a pointer
- * to an opaque virtio_device instance.
+/* Find the skip'th virtio device of this kind - 1 net, 2 block, and so on
+ * as the specification numbers them; on PCI that number is the subsystem
+ * device ID. Returns a pointer to an opaque virtio_device instance.
  */
 struct virtio_device *virtio_setup_device(u16_t subdevid,
 		const char *name,
@@ -114,21 +110,9 @@ void virtio_irq_disable(struct virtio_device *dev);
  */
 int virtio_had_irq(struct virtio_device *dev);
 
-
-u32_t virtio_read32(struct virtio_device *dev, i32_t offset);
-u16_t virtio_read16(struct virtio_device *dev, i32_t offset);
-u8_t virtio_read8(struct virtio_device *dev, i32_t offset);
-void virtio_write32(struct virtio_device *dev, i32_t offset, u32_t val);
-void virtio_write16(struct virtio_device *dev, i32_t offset, u16_t val);
-void virtio_write8(struct virtio_device *dev, i32_t offset, u8_t val);
-
-
 /*
- * Device specific reads take MSI offset into account and all reads
- * are at offset 20.
- *
- * Something like:
- * read(off) --> readX(20 + (msi ? 4 : 0) + off)
+ * The device-specific configuration space, at byte offsets from its start:
+ * for a block device the capacity is at 0, for a net device the MAC.
  */
 u32_t virtio_sread32(struct virtio_device *dev, i32_t offset);
 u16_t virtio_sread16(struct virtio_device *dev, i32_t offset);

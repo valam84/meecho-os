@@ -34,6 +34,11 @@ SUBDIR+=	libacpi
 SUBDIR+=	libhgfs
 SUBDIR+=	libvassert
 SUBDIR+=	libvboxfs
+.endif
+
+# virtio is a PC's PCI device and an AArch64 machine's device-tree node; the
+# library picks the transport by architecture.
+.if (${MACHINE_ARCH} == "i386") || (${MACHINE_ARCH} == "aarch64")
 SUBDIR+=	libvirtio
 .endif
 

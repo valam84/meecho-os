@@ -15,14 +15,21 @@
 #include <string.h>				/* memset() */
 #include <stdlib.h>				/* malloc() */
 
-#include <machine/pci.h>			/* PCI_ILR, PCI_BAR... */
 #include <machine/vmparam.h>			/* PAGE_SIZE */
 
 #include <minix/syslib.h>			/* umap, vumap, alloc_..*/
 #include <minix/sysutil.h>			/* panic(), at least */
 #include <minix/virtio.h>			/* virtio system include */
 
-#include "virtio_ring.h"			/* virtio types / helper */
+#include "virtio_impl.h"			/* the device, the transport */
+
+/*
+ * This file is the bus-independent half of the library: rings, features,
+ * status, interrupts. It never touches a register itself; how the registers
+ * are reached is the transport's business, and the transport is one of
+ * virtio_pci.c and virtio_mmio.c, chosen when the library is built. See
+ * virtio_impl.h.
+ */
 
 /*
  * About indirect descriptors:
@@ -44,55 +51,6 @@
  * descriptor table.
  */
 
-struct indirect_desc_table {
-	int in_use;
-	struct vring_desc *descs;
-	phys_bytes paddr;
-	size_t len;
-};
-
-struct virtio_queue {
-
-	void *vaddr;				/* virtual addr of ring */
-	phys_bytes paddr;			/* physical addr of ring */
-	u32_t page;				/* physical guest page */
-
-	u16_t num;				/* number of descriptors */
-	u32_t ring_size;			/* size of ring in bytes */
-	struct vring vring;
-
-	u16_t free_num;				/* free descriptors */
-	u16_t free_head;			/* next free descriptor */
-	u16_t free_tail;			/* last free descriptor */
-	u16_t last_used;			/* we checked in used */
-
-	void **data;				/* points to pointers */
-};
-
-struct virtio_device {
-
-	const char *name;			/* for debugging */
-
-	u16_t  port;				/* io port */
-
-	struct virtio_feature *features;	/* host / guest features */
-	u8_t num_features;			/* max 32 */
-
-	struct virtio_queue *queues;		/* our queues */
-	u16_t num_queues;
-
-	int irq;				/* interrupt line */
-	int irq_hook;				/* hook id */
-	int msi;				/* is MSI enabled? */
-
-	int threads;				/* max number of threads */
-
-	struct indirect_desc_table *indirect;	/* indirect descriptor tables */
-	int num_indirect;
-};
-
-static int is_matching_device(u16_t expected_sdid, u16_t vid, u16_t sdid);
-static int init_device(int devind, struct virtio_device *dev);
 static int init_phys_queues(struct virtio_device *dev);
 static int exchange_features(struct virtio_device *dev);
 static int alloc_phys_queue(struct virtio_queue *q);
@@ -104,40 +62,18 @@ static void virtio_irq_register(struct virtio_device *dev);
 static void virtio_irq_unregister(struct virtio_device *dev);
 static int wants_kick(struct virtio_queue *q);
 static void kick_queue(struct virtio_device *dev, int qidx);
+static void set_status(struct virtio_device *dev, u8_t bit);
 
 struct virtio_device *
 virtio_setup_device(u16_t subdevid, const char *name,
 		struct virtio_feature *features, int num_features,
 		int threads, int skip)
 {
-	int r, devind;
-	u16_t vid, did, sdid;
 	struct virtio_device *ret;
+	int r;
 
 	/* bogus values? */
 	if (skip < 0 || name == NULL || num_features < 0 || threads <= 0)
-		return NULL;
-
-	pci_init();
-
-	r = pci_first_dev(&devind, &vid, &did);
-
-	while (r > 0) {
-		sdid = pci_attr_r16(devind, PCI_SUBDID);
-		if (is_matching_device(subdevid, vid, sdid)) {
-
-			/* this is the device we are looking for */
-			if (skip == 0)
-				break;
-
-			skip--;
-		}
-
-		r = pci_next_dev(&devind, &vid, &did);
-	}
-
-	/* pci_[first|next_dev()] return 0 if no device was found */
-	if (r == 0 || skip > 0)
 		return NULL;
 
 	/* allocate and set known info about the device */
@@ -155,13 +91,22 @@ virtio_setup_device(u16_t subdevid, const char *name,
 	/* see comment in the beginning of this file */
 	ret->num_indirect = threads;
 
-	if (init_device(devind, ret) != OK) {
-		printf("%s: Could not initialize device\n", ret->name);
-		goto err;
+	/*
+	 * The transport finds the device, makes its registers reachable and
+	 * resets it. What "subdevid" is on PCI - the subsystem device ID,
+	 * which the PCI transport says equals the virtio device ID - is the
+	 * device ID register on MMIO; either way the driver names the kind of
+	 * device it drives, 1 for net and 2 for block.
+	 */
+	if ((r = virtio_transport_find(ret, subdevid, skip)) != OK) {
+		if (r != ENXIO)
+			printf("%s: Could not initialize device\n", ret->name);
+		free(ret);
+		return NULL;
 	}
 
 	/* Ack the device */
-	virtio_write8(ret, VIRTIO_DEV_STATUS_OFF, VIRTIO_STATUS_ACK);
+	set_status(ret, VIRTIO_STATUS_ACK);
 
 	if (exchange_features(ret) != OK) {
 		printf("%s: Could not exchange features\n", ret->name);
@@ -174,49 +119,27 @@ virtio_setup_device(u16_t subdevid, const char *name,
 	}
 
 	/* We know how to drive the device... */
-	virtio_write8(ret, VIRTIO_DEV_STATUS_OFF, VIRTIO_STATUS_DRV);
+	set_status(ret, VIRTIO_STATUS_DRV);
 
 	return ret;
 
 /* Error path */
 err:
+	virtio_transport_free(ret);
 	free(ret);
 	return NULL;
 }
 
-static int
-init_device(int devind, struct virtio_device *dev)
+/*
+ * The status byte accumulates: the specification has the driver set ACK,
+ * then DRIVER, then DRIVER_OK, each in addition to the ones before. The
+ * device is told the whole byte every time.
+ */
+static void
+set_status(struct virtio_device *dev, u8_t bit)
 {
-	u32_t base, size;
-	int iof, r;
-
-	pci_reserve(devind);
-
-	if ((r = pci_get_bar(devind, PCI_BAR, &base, &size, &iof)) != OK) {
-		printf("%s: Could not get BAR (%d)", dev->name, r);
-		return r;
-	}
-
-	if (!iof) {
-		printf("%s: PCI not IO space?", dev->name);
-		return EINVAL;
-	}
-
-	if (base & 0xFFFF0000) {
-		printf("%s: IO port weird (%08x)", dev->name, base);
-		return EINVAL;
-	}
-
-	/* store the I/O port */
-	dev->port = base;
-
-	/* Reset the device */
-	virtio_write8(dev, VIRTIO_DEV_STATUS_OFF, 0);
-
-	/* Read IRQ line */
-	dev->irq = pci_attr_r8(devind, PCI_ILR);
-
-	return OK;
+	dev->status |= bit;
+	virtio_transport_set_status(dev, dev->status);
 }
 
 static int
@@ -225,7 +148,7 @@ exchange_features(struct virtio_device *dev)
 	u32_t guest_features = 0, host_features = 0;
 	struct virtio_feature *f;
 
-	host_features = virtio_read32(dev, VIRTIO_HOST_F_OFF);
+	host_features = virtio_transport_host_features(dev);
 
 	for (int i = 0; i < dev->num_features; i++) {
 		f = &dev->features[i];
@@ -238,7 +161,7 @@ exchange_features(struct virtio_device *dev)
 	}
 
 	/* let the device know about our features */
-	virtio_write32(dev, VIRTIO_GUEST_F_OFF, guest_features);
+	virtio_transport_guest_features(dev, guest_features);
 
 	return OK;
 }
@@ -282,10 +205,10 @@ init_phys_queues(struct virtio_device *dev)
 	for (i = 0; i < dev->num_queues; i++) {
 		q = &dev->queues[i];
 		/* select the queue */
-		virtio_write16(dev, VIRTIO_QSEL_OFF, i);
-		q->num = virtio_read16(dev, VIRTIO_QSIZE_OFF);
+		virtio_transport_queue_select(dev, i);
+		q->num = virtio_transport_queue_size(dev);
 
-		if (q->num & (q->num - 1)) {
+		if (q->num == 0 || (q->num & (q->num - 1))) {
 			printf("%s: Queue %d num=%d not ^2", dev->name, i,
 							     q->num);
 			r = EINVAL;
@@ -298,7 +221,7 @@ init_phys_queues(struct virtio_device *dev)
 		init_phys_queue(q);
 
 		/* Let the host know about the guest physical page */
-		virtio_write32(dev, VIRTIO_QADDR_OFF, q->page);
+		virtio_transport_queue_set(dev, q->num, q->page);
 	}
 
 	return OK;
@@ -345,7 +268,7 @@ virtio_device_ready(struct virtio_device *dev)
 	virtio_irq_register(dev);
 
 	/* Driver is ready to go! */
-	virtio_write8(dev, VIRTIO_DEV_STATUS_OFF, VIRTIO_STATUS_DRV_OK);
+	set_status(dev, VIRTIO_STATUS_DRV_OK);
 }
 
 void
@@ -372,9 +295,15 @@ free_phys_queue(struct virtio_queue *q)
 	free_contig(q->vaddr, q->ring_size);
 	q->vaddr = NULL;
 	q->paddr = 0;
-	q->num = 0;
-	free_contig(q->data, sizeof(q->data[0]));
+	/*
+	 * The data array was allocated for num entries and is freed for as
+	 * many; freeing one entry's worth of a larger contiguous mapping is
+	 * a partial unmap, which VM declines ("low-shrinking not
+	 * implemented") and which used to be what happened here.
+	 */
+	free_contig(q->data, sizeof(q->data[0]) * q->num);
 	q->data = NULL;
+	q->num = 0;
 }
 
 static void
@@ -423,6 +352,8 @@ virtio_free_device(struct virtio_device *dev)
 	assert(dev->indirect != NULL);
 	free(dev->indirect);
 	dev->indirect = NULL;
+
+	virtio_transport_free(dev);
 
 	free(dev);
 }
@@ -632,13 +563,13 @@ virtio_to_queue(struct virtio_device *dev, int qidx, struct vumap_phys *bufs,
 	q->data[free_first] = data;
 
 	/* Make sure the host sees the new descriptors */
-	__insn_barrier();
+	virtio_mb();
 
 	/* advance last idx */
 	vring->avail->idx += 1;
 
 	/* Make sure the host sees the avail->idx */
-	__insn_barrier();
+	virtio_mb();
 
 	/* kick it! */
 	kick_queue(dev, qidx);
@@ -663,7 +594,7 @@ virtio_from_queue(struct virtio_device *dev, int qidx, void **data,
 	vring = &q->vring;
 
 	/* Make sure we see changes done by the host */
-	__insn_barrier();
+	virtio_mb();
 
 	/* The index from the host */
 	used_idx = vring->used->idx % q->num;
@@ -735,14 +666,15 @@ virtio_from_queue(struct virtio_device *dev, int qidx, void **data,
 int
 virtio_had_irq(struct virtio_device *dev)
 {
-	return virtio_read8(dev, VIRTIO_ISR_STATUS_OFF) & 1;
+	return virtio_transport_isr(dev) & 1;
 }
 
 void
 virtio_reset_device(struct virtio_device *dev)
 {
 	virtio_irq_unregister(dev);
-	virtio_write8(dev, VIRTIO_DEV_STATUS_OFF, 0);
+	dev->status = 0;
+	virtio_transport_set_status(dev, 0);
 }
 
 
@@ -775,15 +707,9 @@ kick_queue(struct virtio_device *dev, int qidx)
 	assert(0 <= qidx && qidx < dev->num_queues);
 
 	if (wants_kick(&dev->queues[qidx]))
-		virtio_write16(dev, VIRTIO_QNOTFIY_OFF, qidx);
+		virtio_transport_queue_notify(dev, qidx);
 
 	return;
-}
-
-static int
-is_matching_device(u16_t expected_sdid, u16_t vid, u16_t sdid)
-{
-	return vid == VIRTIO_VENDOR_ID && sdid == expected_sdid;
 }
 
 static void
@@ -828,86 +754,28 @@ virtio_guest_supports(struct virtio_device *dev, int bit)
 }
 
 
-/* Just some wrappers around sys_read */
-#define VIRTIO_READ_XX(xx, suff)					\
-u##xx##_t								\
-virtio_read##xx(struct virtio_device *dev, i32_t off)			\
-{									\
-	int r;								\
-	u32_t ret;							\
-	if ((r = sys_in##suff(dev->port + off, &ret)) != OK)		\
-		panic("%s: Read failed %d %d r=%d", dev->name,		\
-						    dev->port,		\
-						    off,		\
-						    r);			\
-									\
-	return ret;							\
-}
-
-VIRTIO_READ_XX(32, l)
-VIRTIO_READ_XX(16, w)
-VIRTIO_READ_XX(8, b)
-
-/* Just some wrappers around sys_write */
-#define VIRTIO_WRITE_XX(xx, suff)					\
-void									\
-virtio_write##xx(struct virtio_device *dev, i32_t off, u##xx##_t val)	\
-{									\
-	int r;								\
-	if ((r = sys_out##suff(dev->port + off, val)) != OK)		\
-		panic("%s: Write failed %d %d r=%d", dev->name,		\
-						     dev->port,		\
-						     off,		\
-						     r);		\
-}
-
-VIRTIO_WRITE_XX(32, l)
-VIRTIO_WRITE_XX(16, w)
-VIRTIO_WRITE_XX(8, b)
-
-/* Just some wrappers around sys_read */
-#define VIRTIO_SREAD_XX(xx, suff)					\
+/*
+ * The device-specific configuration space, by way of the transport. These
+ * are the only register accessors a driver sees.
+ */
+#define VIRTIO_SREAD_XX(xx)						\
 u##xx##_t								\
 virtio_sread##xx(struct virtio_device *dev, i32_t off)			\
 {									\
-	int r;								\
-	u32_t ret;							\
-	off += VIRTIO_DEV_SPECIFIC_OFF; 				\
-									\
-	if (dev->msi)							\
-		off += VIRTIO_MSI_ADD_OFF;				\
-									\
-	if ((r = sys_in##suff(dev->port + off, &ret)) != OK)		\
-		panic("%s: Read failed %d %d r=%d", dev->name,		\
-						    dev->port,		\
-						    off,		\
-						    r);			\
-									\
-	return ret;							\
+	return virtio_transport_config_read##xx(dev, off);		\
 }
 
-VIRTIO_SREAD_XX(32, l)
-VIRTIO_SREAD_XX(16, w)
-VIRTIO_SREAD_XX(8, b)
+VIRTIO_SREAD_XX(32)
+VIRTIO_SREAD_XX(16)
+VIRTIO_SREAD_XX(8)
 
-/* Just some wrappers around sys_write */
-#define VIRTIO_SWRITE_XX(xx, suff)					\
+#define VIRTIO_SWRITE_XX(xx)						\
 void									\
 virtio_swrite##xx(struct virtio_device *dev, i32_t off, u##xx##_t val)	\
 {									\
-	int r;								\
-	off += VIRTIO_DEV_SPECIFIC_OFF; 				\
-									\
-	if (dev->msi)							\
-		off += VIRTIO_MSI_ADD_OFF;				\
-									\
-	if ((r = sys_out##suff(dev->port + off, val)) != OK)		\
-		panic("%s: Write failed %d %d r=%d", dev->name,		\
-						     dev->port,		\
-						     off,		\
-						     r);		\
+	virtio_transport_config_write##xx(dev, off, val);		\
 }
 
-VIRTIO_SWRITE_XX(32, l)
-VIRTIO_SWRITE_XX(16, w)
-VIRTIO_SWRITE_XX(8, b)
+VIRTIO_SWRITE_XX(32)
+VIRTIO_SWRITE_XX(16)
+VIRTIO_SWRITE_XX(8)

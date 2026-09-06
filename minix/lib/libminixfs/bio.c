@@ -263,8 +263,12 @@ void
 lmfs_bflush(dev_t dev)
 {
 
-	/* First flush any dirty blocks on this device to disk. */
+	/* First flush any dirty blocks on this device to disk, and the disk's
+	 * own cache to the medium: the device is being closed, and what was
+	 * written to it raw is expected to be there when it is next opened.
+	 */
 	lmfs_flushdev(dev);
+	(void) bdev_flush(dev);
 
 	/* Then purge any blocks associated with the device. */
 	lmfs_invalidate(dev);

@@ -41,6 +41,16 @@ static struct virtio_device *blk_dev;
 
 static struct virtio_blk_config blk_config;
 
+/*
+ * The features the driver uses are acknowledged, the rest only noted. This
+ * matters for "flush" more than the protocol's manners: QEMU takes a driver
+ * that does not acknowledge VIRTIO_BLK_F_FLUSH for one that cannot flush,
+ * and runs the disk write-through for it. So before this was acknowledged
+ * the device never held anything back, the flush never had anything to do,
+ * and a test that the disk survives poweroff would have proved nothing.
+ * Acknowledging it turns the write cache on and makes the flush the thing
+ * the file system's sync stands on - which is how the medium behaves.
+ */
 struct virtio_feature blkf[] = {
 	{ "barrier",	VIRTIO_BLK_F_BARRIER,	0,	0	},
 	{ "sizemax",	VIRTIO_BLK_F_SIZE_MAX,	0,	0	},
@@ -49,8 +59,9 @@ struct virtio_feature blkf[] = {
 	{ "read-only",	VIRTIO_BLK_F_RO,	0,	0	},
 	{ "blocksize",	VIRTIO_BLK_F_BLK_SIZE,	0,	0	},
 	{ "scsi",	VIRTIO_BLK_F_SCSI,	0,	0	},
-	{ "flush",	VIRTIO_BLK_F_FLUSH,	0,	0	},
+	{ "flush",	VIRTIO_BLK_F_FLUSH,	0,	1	},
 	{ "topology",	VIRTIO_BLK_F_TOPOLOGY,	0,	0	},
+	{ "discard",	VIRTIO_BLK_F_DISCARD,	0,	1	},
 	{ "idbytes",	VIRTIO_BLK_ID_BYTES,	0,	0	}
 };
 
@@ -76,6 +87,10 @@ static phys_bytes hdrs_phys;
 static u16_t *status_vir;
 static phys_bytes status_phys;
 
+/* Discard ranges, one per thread, read by the device. */
+static struct virtio_blk_discard_write_zeroes *dsc_vir;
+static phys_bytes dsc_phys;
+
 /* Prototypes */
 static int virtio_blk_open(devminor_t minor, int access);
 static int virtio_blk_close(devminor_t minor);
@@ -90,6 +105,8 @@ static void virtio_blk_device_intr(void);
 static void virtio_blk_spurious_intr(void);
 static void virtio_blk_intr(unsigned int irqs);
 static int virtio_blk_device(devminor_t minor, device_id_t *id);
+static int virtio_blk_flush_minor(devminor_t minor);
+static int virtio_blk_discard(devminor_t minor, u64_t pos, u64_t len);
 
 static int virtio_blk_flush(void);
 static void virtio_blk_terminate(void);
@@ -111,7 +128,9 @@ static struct blockdriver virtio_blk_dtab  = {
 	.bdr_part	= virtio_blk_part,
 	.bdr_geometry	= virtio_blk_geometry,
 	.bdr_intr	= virtio_blk_intr,
-	.bdr_device	= virtio_blk_device
+	.bdr_device	= virtio_blk_device,
+	.bdr_flush	= virtio_blk_flush_minor,
+	.bdr_discard	= virtio_blk_discard
 };
 
 static int
@@ -395,9 +414,7 @@ virtio_blk_ioctl(devminor_t minor, unsigned long req, endpoint_t endpt,
 		return sys_safecopyto(endpt, grant, 0,
 			(vir_bytes) &open_count, sizeof(open_count));
 
-	case DIOCFLUSH:
-		return virtio_blk_flush();
-
+	/* DIOCFLUSH reaches bdr_flush in libblockdriver, not this. */
 	}
 
 	return ENOTTY;
@@ -491,6 +508,91 @@ virtio_blk_device(devminor_t minor, device_id_t *id)
 }
 
 static int
+virtio_blk_flush_minor(devminor_t minor)
+{
+	/* The cache is the device's, so any of its partitions flushes it. */
+	if (!virtio_blk_part(minor))
+		return ENXIO;
+
+	return virtio_blk_flush();
+}
+
+static int
+virtio_blk_discard(devminor_t minor, u64_t pos, u64_t len)
+{
+	struct vumap_phys phys[3];
+	size_t phys_cnt = sizeof(phys) / sizeof(phys[0]);
+	struct device *dv;
+	u64_t sector, nsectors;
+	u32_t chunk, max;
+
+	/* Which thread is doing this request? */
+	thread_id_t tid = blockdriver_mt_get_tid();
+
+	if (!(dv = virtio_blk_part(minor)))
+		return ENXIO;
+
+	if (!virtio_guest_supports(blk_dev, VIRTIO_BLK_F_DISCARD))
+		return ENOTSUP;
+
+	if ((pos | len) % VIRTIO_BLK_BLOCK_SIZE)
+		return EINVAL;
+
+	/* Clip to the partition; a range beyond it is nothing to do. */
+	if (pos >= dv->dv_size)
+		return OK;
+	if (len > dv->dv_size - pos)
+		len = dv->dv_size - pos;
+
+	sector = (dv->dv_base + pos) / VIRTIO_BLK_BLOCK_SIZE;
+	nsectors = len / VIRTIO_BLK_BLOCK_SIZE;
+
+	/*
+	 * The device bounds one segment; a range longer than that is sent
+	 * as several requests of one segment each, which keeps the per-
+	 * thread range buffer at one entry. A device that names no bound
+	 * is taken at the widest the field allows.
+	 */
+	max = blk_config.max_discard_sectors;
+	if (max == 0)
+		max = 0xffffffff;
+
+	while (nsectors > 0) {
+		chunk = (nsectors > max) ? max : (u32_t)nsectors;
+
+		memset(&hdrs_vir[tid], 0, sizeof(hdrs_vir[0]));
+		hdrs_vir[tid].type = VIRTIO_BLK_T_DISCARD;
+
+		dsc_vir[tid].sector = sector;
+		dsc_vir[tid].num_sectors = chunk;
+		dsc_vir[tid].flags = 0;
+
+		/* Header and range are read by the device, status written */
+		phys[0].vp_addr = hdrs_phys + tid * sizeof(hdrs_vir[0]);
+		phys[0].vp_size = sizeof(hdrs_vir[0]);
+		phys[1].vp_addr = dsc_phys + tid * sizeof(dsc_vir[0]);
+		phys[1].vp_size = sizeof(dsc_vir[0]);
+		phys[2].vp_addr = (status_phys + tid * sizeof(status_vir[0])) | 1;
+		phys[2].vp_size = 1;
+
+		virtio_to_queue(blk_dev, 0, phys, phys_cnt, &tid);
+
+		blockdriver_mt_sleep();
+
+		if (mystatus(tid) != VIRTIO_BLK_S_OK) {
+			dprintf(("ERROR status=%02x op=discard sector=%llu "
+			    "n=%u t=%d", mystatus(tid), sector, chunk, tid));
+			return virtio_blk_status2error(mystatus(tid));
+		}
+
+		sector += chunk;
+		nsectors -= chunk;
+	}
+
+	return OK;
+}
+
+static int
 virtio_blk_flush(void)
 {
 	struct vumap_phys phys[2];
@@ -499,9 +601,9 @@ virtio_blk_flush(void)
 	/* Which thread is doing this request? */
 	thread_id_t tid = blockdriver_mt_get_tid();
 
-	/* Host may not support flushing */
-	if (!virtio_host_supports(blk_dev, VIRTIO_BLK_F_FLUSH))
-		return EOPNOTSUPP;
+	/* A device without a write cache has nothing to flush: done. */
+	if (!virtio_guest_supports(blk_dev, VIRTIO_BLK_F_FLUSH))
+		return OK;
 
 	/* Prepare the header */
 	memset(&hdrs_vir[tid], 0, sizeof(hdrs_vir[0]));
@@ -591,6 +693,15 @@ virtio_blk_alloc_requests(void)
 		return ENOMEM;
 	}
 
+	dsc_vir = alloc_contig(VIRTIO_BLK_NUM_THREADS * sizeof(dsc_vir[0]),
+				AC_ALIGN4K, &dsc_phys);
+
+	if (!dsc_vir) {
+		free_contig(status_vir, VIRTIO_BLK_NUM_THREADS * sizeof(status_vir[0]));
+		free_contig(hdrs_vir, VIRTIO_BLK_NUM_THREADS * sizeof(hdrs_vir[0]));
+		return ENOMEM;
+	}
+
 	return OK;
 }
 
@@ -599,6 +710,7 @@ virtio_blk_free_requests(void)
 {
 	free_contig(hdrs_vir, VIRTIO_BLK_NUM_THREADS * sizeof(hdrs_vir[0]));
 	free_contig(status_vir, VIRTIO_BLK_NUM_THREADS * sizeof(status_vir[0]));
+	free_contig(dsc_vir, VIRTIO_BLK_NUM_THREADS * sizeof(dsc_vir[0]));
 }
 
 static int
@@ -630,6 +742,19 @@ virtio_blk_feature_setup(void)
 
 	if (virtio_host_supports(blk_dev, VIRTIO_BLK_F_FLUSH))
 		dprintf(("Supports flushing"));
+
+	if (virtio_host_supports(blk_dev, VIRTIO_BLK_F_DISCARD)) {
+		blk_config.max_discard_sectors = virtio_sread32(blk_dev,
+		    VIRTIO_BLK_CFG_MAX_DISCARD_SECTORS);
+		blk_config.max_discard_seg = virtio_sread32(blk_dev,
+		    VIRTIO_BLK_CFG_MAX_DISCARD_SEG);
+		blk_config.discard_sector_alignment = virtio_sread32(blk_dev,
+		    VIRTIO_BLK_CFG_DISCARD_SECTOR_ALIGN);
+		dprintf(("Supports discard: max %u sectors, %u segments, "
+		    "alignment %u", blk_config.max_discard_sectors,
+		    blk_config.max_discard_seg,
+		    blk_config.discard_sector_alignment));
+	}
 
 	if (virtio_host_supports(blk_dev, VIRTIO_BLK_F_BLK_SIZE)) {
 		blk_config.blk_size = virtio_sread32(blk_dev, 20);

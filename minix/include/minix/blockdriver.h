@@ -28,6 +28,17 @@ struct blockdriver {
   void (*bdr_alarm)(clock_t stamp);
   void (*bdr_other)(message *m_ptr, int ipc_status);
   int (*bdr_device)(devminor_t minor, device_id_t *id);
+  /*
+   * Durability and reclamation, both optional. bdr_flush makes everything
+   * the device has accepted so far reach the medium before it returns: a
+   * driver whose device has no volatile write cache returns OK at once. A
+   * driver that leaves it NULL is answered ENOSYS by the library, which
+   * is the honest answer - "cannot say" - and not OK. bdr_discard tells
+   * the device that nobody will read the range again; a flash device may
+   * reclaim it. Advisory, and the range may still read as before.
+   */
+  int (*bdr_flush)(devminor_t minor);
+  int (*bdr_discard)(devminor_t minor, u64_t pos, u64_t len);
 };
 
 /* Functions defined by libblockdriver. These can be used for both

@@ -99,7 +99,7 @@ int bdev_close(dev_t dev)
  */
   int r;
 
-  bdev_flush_asyn(dev);
+  bdev_drain_asyn(dev);
 
   r = bdev_opcl(BDEV_CLOSE, dev, 0);
 
@@ -371,10 +371,62 @@ int bdev_ioctl(dev_t dev, unsigned long request, void *buf,
   return r;
 }
 
-void bdev_flush_asyn(dev_t dev)
+int bdev_flush(dev_t dev)
 {
-/* Flush all ongoing asynchronous requests to the given minor device. This
- * involves blocking until all I/O for it has completed.
+/* Make everything written to the minor device so far durable: whatever the
+ * device holds in a volatile write cache reaches the medium before the reply.
+ * A device without such a cache answers at once. A driver that does not
+ * implement the request answers ENOSYS, which says "cannot tell" and is
+ * deliberately not turned into OK here.
+ * File system usage note: called from sync, and by a journal at commit.
+ */
+  message m;
+  int r, driver_tries = 0;
+
+  do {
+	memset(&m, 0, sizeof(m));
+	m.m_type = BDEV_FLUSH;
+	m.m_lbdev_lblockdriver_msg.minor = minor(dev);
+
+	r = bdev_sendrec(dev, &m);
+  } while (bdev_retry(&driver_tries, NULL, &r));
+
+  return r;
+}
+
+int bdev_discard(dev_t dev, u64_t pos, u64_t len)
+{
+/* Tell the driver that the given byte range of the minor device holds
+ * nothing anyone will read again, so that a flash device may reclaim it.
+ * Advisory: the range may or may not read as before afterwards, and a
+ * driver may answer ENOSYS or ENOTSUP.
+ * File system usage note: for freed blocks, and for a device being formatted.
+ */
+  message m;
+  int r, driver_tries = 0;
+
+  if ((off_t) pos < 0 || (off_t) len < 0)
+	return EINVAL;
+
+  do {
+	memset(&m, 0, sizeof(m));
+	m.m_type = BDEV_DISCARD;
+	m.m_lbdev_lblockdriver_msg.minor = minor(dev);
+	m.m_lbdev_lblockdriver_msg.pos = pos;
+	m.m_lbdev_lblockdriver_msg.len = len;
+
+	r = bdev_sendrec(dev, &m);
+  } while (bdev_retry(&driver_tries, NULL, &r));
+
+  return r;
+}
+
+void bdev_drain_asyn(dev_t dev)
+{
+/* Wait for all ongoing asynchronous requests to the given minor device. This
+ * involves blocking until all I/O for it has completed. It was called
+ * bdev_flush_asyn until the protocol got a flush of its own, which is a
+ * different thing: this drains the queue, that empties the device's cache.
  * File system usage note: typically called from flush.
  */
   bdev_call_t *call;

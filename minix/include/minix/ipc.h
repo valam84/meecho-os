@@ -402,8 +402,9 @@ typedef struct {
 
 	endpoint_t user;
 	unsigned long request;
+	off_t len;			/* BDEV_DISCARD: bytes from pos */
 
-	uint8_t padding[72];
+	uint8_t padding[64];
 } mess_lbdev_lblockdriver_msg;
 _ASSERT_MSG_SIZE(mess_lbdev_lblockdriver_msg);
 

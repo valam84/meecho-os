@@ -41,6 +41,8 @@
 #define VIRTIO_BLK_F_SCSI	7	/* Supports scsi command passthru */
 #define VIRTIO_BLK_F_FLUSH	9	/* Cache flush command support */
 #define VIRTIO_BLK_F_TOPOLOGY	10	/* Topology information is available */
+#define VIRTIO_BLK_F_DISCARD	13	/* DISCARD command support */
+#define VIRTIO_BLK_F_WRITE_ZEROES 14	/* WRITE ZEROES command support */
 
 #define VIRTIO_BLK_ID_BYTES	20	/* ID string length */
 
@@ -71,7 +73,24 @@ struct virtio_blk_config {
 	/* optimal sustained I/O size in logical blocks. */
 	u32_t opt_io_size;
 
+	/* writeback mode (if VIRTIO_BLK_F_CONFIG_WCE) */
+	u8_t writeback;
+	u8_t unused0[3];
+
+	/* the next 3 entries are guarded by VIRTIO_BLK_F_DISCARD */
+	/* the maximum discard sectors for one segment */
+	u32_t max_discard_sectors;
+	/* the maximum number of discard segments in a discard command */
+	u32_t max_discard_seg;
+	/* discard commands must be aligned to this number of sectors */
+	u32_t discard_sector_alignment;
+
 } __attribute__((packed));
+
+/* Offsets of the discard fields in the configuration space. */
+#define VIRTIO_BLK_CFG_MAX_DISCARD_SECTORS	36
+#define VIRTIO_BLK_CFG_MAX_DISCARD_SEG		40
+#define VIRTIO_BLK_CFG_DISCARD_SECTOR_ALIGN	44
 
 /*
  * Command types
@@ -97,6 +116,12 @@ struct virtio_blk_config {
 /* Get device ID command */
 #define VIRTIO_BLK_T_GET_ID    8
 
+/* Discard command */
+#define VIRTIO_BLK_T_DISCARD	11
+
+/* Write zeroes command */
+#define VIRTIO_BLK_T_WRITE_ZEROES	13
+
 /* Barrier before this op. */
 #define VIRTIO_BLK_T_BARRIER	0x80000000
 
@@ -108,6 +133,16 @@ struct virtio_blk_outhdr {
 	u32_t ioprio;
 	/* Sector (ie. 512 byte offset) */
 	u64_t sector;
+};
+
+/* Discard/write zeroes range for each request. */
+struct virtio_blk_discard_write_zeroes {
+	/* discard/write zeroes start sector */
+	u64_t sector;
+	/* number of discard/write zeroes sectors */
+	u32_t num_sectors;
+	/* flags for this range */
+	u32_t flags;
 };
 
 struct virtio_scsi_inhdr {

@@ -19,7 +19,12 @@
  * | BDEV_SCATTER | minor  | elements | grant | flags |  id  |         | pos. |
  * |--------------+--------+----------+-------+-------+------+---------+------|
  * | BDEV_IOCTL   | minor  |          | grant | user  |  id  | request |      |
+ * |--------------+--------+----------+-------+-------+------+---------+------|
+ * | BDEV_FLUSH   | minor  |          |       |       |  id  |         |      |
+ * |--------------+--------+----------+-------+-------+------+---------+------|
+ * | BDEV_DISCARD | minor  |          |       |       |  id  |         | pos. |
  * ----------------------------------------------------------------------------
+ * BDEV_DISCARD also carries the length of the range, in bytes, in LEN.
  *
  * The following reply message is used for all requests.
  *
@@ -266,6 +271,41 @@ static int do_vrdwt(struct blockdriver *bdp, message *mp, thread_id_t id)
 }
 
 /*===========================================================================*
+ *				do_flush				     *
+ *===========================================================================*/
+static int do_flush(struct blockdriver *bdp, message *mp)
+{
+/* Make what the device has accepted durable. Without a driver function there
+ * is no way to know whether the device holds anything back, so the answer is
+ * ENOSYS rather than a reassuring OK.
+ */
+  if (bdp->bdr_flush == NULL)
+	return ENOSYS;
+
+  return (*bdp->bdr_flush)(mp->m_lbdev_lblockdriver_msg.minor);
+}
+
+/*===========================================================================*
+ *				do_discard				     *
+ *===========================================================================*/
+static int do_discard(struct blockdriver *bdp, message *mp)
+{
+/* Tell the device that a range holds nothing anyone will read again. */
+  off_t pos, len;
+
+  if (bdp->bdr_discard == NULL)
+	return ENOSYS;
+
+  pos = mp->m_lbdev_lblockdriver_msg.pos;
+  len = mp->m_lbdev_lblockdriver_msg.len;
+  if (pos < 0 || len < 0)
+	return EINVAL;
+
+  return (*bdp->bdr_discard)(mp->m_lbdev_lblockdriver_msg.minor, (u64_t) pos,
+	(u64_t) len);
+}
+
+/*===========================================================================*
  *				do_dioctl				     *
  *===========================================================================*/
 static int do_dioctl(struct blockdriver *bdp, devminor_t minor,
@@ -318,11 +358,25 @@ static int do_dioctl(struct blockdriver *bdp, devminor_t minor,
 /*===========================================================================*
  *				do_ioctl				     *
  *===========================================================================*/
+static int driver_ioctl(struct blockdriver *bdp, devminor_t minor,
+  unsigned long request, endpoint_t endpt, cp_grant_id_t grant,
+  endpoint_t user_endpt)
+{
+/* Hand an I/O control request to the driver, if it takes any. */
+
+  if (bdp->bdr_ioctl == NULL)
+	return ENOTTY;
+
+  return (*bdp->bdr_ioctl)(minor, request, endpt, grant, user_endpt);
+}
+
 static int do_ioctl(struct blockdriver *bdp, message *mp)
 {
 /* Carry out an I/O control request. We forward block trace control requests
- * to the tracing module, and handle setting/getting partitions when the driver
- * has specified that it is a disk driver.
+ * to the tracing module, handle setting/getting partitions when the driver
+ * has specified that it is a disk driver, and answer DIOCFLUSH with the
+ * driver's flush function when it has one, so that a driver implements a
+ * flush once and diskctl(8) reaches the same code as the file systems do.
  */
   devminor_t minor;
   unsigned long request;
@@ -354,13 +408,55 @@ static int do_ioctl(struct blockdriver *bdp, message *mp)
 		break;
 	}
 
-	/* fall-through */
+	r = driver_ioctl(bdp, minor, request, mp->m_source, grant,
+		user_endpt);
+
+	break;
+
+  case DIOCDISCARD:
+	/* The protocol's discard, reachable from user land through the
+	 * device node, as DIOCFLUSH is; diskctl(8) issues it.
+	 */
+	if (bdp->bdr_discard != NULL) {
+		struct disk_discard dd;
+
+		r = sys_safecopyfrom(mp->m_source, grant, 0, (vir_bytes) &dd,
+			sizeof(dd));
+		if (r != OK)
+			break;
+
+		if ((off_t) dd.dd_pos < 0 || (off_t) dd.dd_len < 0) {
+			r = EINVAL;
+
+			break;
+		}
+
+		r = (*bdp->bdr_discard)(minor, dd.dd_pos, dd.dd_len);
+
+		break;
+	}
+
+	r = driver_ioctl(bdp, minor, request, mp->m_source, grant,
+		user_endpt);
+
+	break;
+
+  case DIOCFLUSH:
+	if (bdp->bdr_flush != NULL) {
+		r = (*bdp->bdr_flush)(minor);
+
+		break;
+	}
+
+	/* A driver from before bdr_flush answers it in its own ioctl. */
+	r = driver_ioctl(bdp, minor, request, mp->m_source, grant,
+		user_endpt);
+
+	break;
+
   default:
-	if (bdp->bdr_ioctl)
-		r = (*bdp->bdr_ioctl)(minor, request, mp->m_source, grant,
-			user_endpt);
-	else
-		r = ENOTTY;
+	r = driver_ioctl(bdp, minor, request, mp->m_source, grant,
+		user_endpt);
   }
 
   return r;
@@ -453,6 +549,8 @@ void blockdriver_process_on_thread(struct blockdriver *bdp, message *m_ptr,
   case BDEV_GATHER:
   case BDEV_SCATTER:	r = do_vrdwt(bdp, m_ptr, id);	break;
   case BDEV_IOCTL:	r = do_ioctl(bdp, m_ptr);	break;
+  case BDEV_FLUSH:	r = do_flush(bdp, m_ptr);	break;
+  case BDEV_DISCARD:	r = do_discard(bdp, m_ptr);	break;
   default:
 	if (bdp->bdr_other != NULL)
 		(*bdp->bdr_other)(m_ptr, ipc_status);

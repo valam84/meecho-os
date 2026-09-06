@@ -59,6 +59,8 @@ static int m_block_open(devminor_t minor, int access);
 static int m_block_close(devminor_t minor);
 static int m_block_ioctl(devminor_t minor, unsigned long request, endpoint_t
 	endpt, cp_grant_id_t grant, endpoint_t user_endpt);
+static int m_block_flush(devminor_t minor);
+static int m_block_discard(devminor_t minor, u64_t pos, u64_t len);
 
 /* Entry points to the CHARACTER part of this driver. */
 static struct chardriver m_cdtab = {
@@ -75,7 +77,9 @@ static struct blockdriver m_bdtab = {
   .bdr_close	= m_block_close,	/* nothing on a close */
   .bdr_transfer	= m_block_transfer,	/* do the I/O */
   .bdr_ioctl	= m_block_ioctl,	/* ram disk I/O control */
-  .bdr_part	= m_block_part		/* return partition information */
+  .bdr_part	= m_block_part,		/* return partition information */
+  .bdr_flush	= m_block_flush,	/* nothing is cached on the way */
+  .bdr_discard	= m_block_discard	/* nothing to reclaim */
 };
 
 /* SEF functions and variables. */
@@ -509,6 +513,31 @@ static int m_block_close(devminor_t minor)
   openct[minor]--;
 
   return(OK);
+}
+
+/*===========================================================================*
+ *				m_block_flush				     *
+ *===========================================================================*/
+static int m_block_flush(devminor_t UNUSED(minor))
+{
+/* Memory is the medium: a write is durable - as durable as memory is - the
+ * moment it returns. This is the empty implementation the protocol asks a
+ * driver without a write cache to give, as opposed to none, which would be
+ * answered ENOSYS and read as "cannot tell".
+ */
+  return OK;
+}
+
+/*===========================================================================*
+ *				m_block_discard				     *
+ *===========================================================================*/
+static int m_block_discard(devminor_t UNUSED(minor), u64_t UNUSED(pos),
+	u64_t UNUSED(len))
+{
+/* There is nothing to reclaim in memory, and discard permits the range to
+ * read as before, so the honest implementation does nothing.
+ */
+  return OK;
 }
 
 /*===========================================================================*

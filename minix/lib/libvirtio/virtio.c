@@ -153,11 +153,18 @@ exchange_features(struct virtio_device *dev)
 	for (int i = 0; i < dev->num_features; i++) {
 		f = &dev->features[i];
 
-		/* prepare the features the driver supports */
-		guest_features |= (f->guest_support << f->bit);
+		f->host_support = ((host_features >> f->bit) & 1);
 
-		/* just load the host feature int the struct */
-		f->host_support =  ((host_features >> f->bit) & 1);
+		/*
+		 * The driver's table says what it can use, the device says
+		 * what there is, and what gets acknowledged is the meet of
+		 * the two: acknowledging a feature the device did not offer
+		 * is a protocol violation a strict device may refuse. After
+		 * this, guest_support means "negotiated", which is what
+		 * virtio_guest_supports() is asked for.
+		 */
+		f->guest_support = f->guest_support && f->host_support;
+		guest_features |= ((u32_t)f->guest_support << f->bit);
 	}
 
 	/* let the device know about our features */

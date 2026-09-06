@@ -1296,8 +1296,19 @@ void lmfs_flushall(void)
 {
 	struct buf *bp;
 	for(bp = &buf[0]; bp < &buf[nr_bufs]; bp++)
-		if(bp->lmfs_dev != NO_DEV && !lmfs_isclean(bp)) 
+		if(bp->lmfs_dev != NO_DEV && !lmfs_isclean(bp)) {
 			lmfs_flushdev(bp->lmfs_dev);
+			/*
+			 * Written is not yet durable: a device with a write
+			 * cache keeps it until told otherwise. A sync is the
+			 * promise that it has reached the medium, so this is
+			 * where the device is told; a journal's commit will
+			 * stand on the same call. A driver that does not
+			 * know the request says so, and there is nothing
+			 * more to be done about that here.
+			 */
+			(void) bdev_flush(bp->lmfs_dev);
+		}
 
 	/* This is the moment where it is least likely (although certainly not
 	 * impossible!) that there are buffers in use, since buffers should not

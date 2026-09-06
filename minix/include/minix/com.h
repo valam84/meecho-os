@@ -978,6 +978,8 @@
 #define BDEV_GATHER	(BDEV_RQ_BASE + 4)	/* read into a vector */
 #define BDEV_SCATTER	(BDEV_RQ_BASE + 5)	/* write from a vector */
 #define BDEV_IOCTL	(BDEV_RQ_BASE + 6)	/* I/O control operation */
+#define BDEV_FLUSH	(BDEV_RQ_BASE + 7)	/* make written data durable */
+#define BDEV_DISCARD	(BDEV_RQ_BASE + 8)	/* a range nobody will read */
 
 /* Message types for block device responses. */
 #define BDEV_REPLY	(BDEV_RS_BASE + 0)	/* general reply code */

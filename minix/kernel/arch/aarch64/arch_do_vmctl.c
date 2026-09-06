@@ -114,15 +114,32 @@ arch_do_vmctl(register message *m_ptr, struct proc *p)
 
 	case VMCTL_FLUSHTLB:
 		/*
-		 * VM has changed this process's mappings. With tagged address
-		 * spaces that is one ASID's worth of entries rather than the
-		 * whole TLB - and inner-shareable, so it reaches the cores
-		 * this process has run on and not only the one asking.
+		 * VM has changed some process's mappings - and does not say
+		 * whose. Every caller in servers/vm asks as
+		 * sys_vmctl(SELF, VMCTL_FLUSHTLB, 0), so SVMCTL_WHO resolves
+		 * to VM itself no matter which address space was rewritten.
+		 *
+		 * So the whole TLB goes, inner-shareable, rather than one
+		 * ASID's worth. Retiring by tag here looks like the tagged
+		 * scheme paying off and is simply wrong: it drops VM's own
+		 * entries and keeps the ones belonging to the process whose
+		 * page table just changed.
+		 *
+		 * That mistake cost the first boot on the CB2. ds took a page
+		 * fault, VM mapped the page and flushed - its own tag - and
+		 * the fault came straight back, forever; the console showed
+		 * nothing but VMINHIBIT_SET, VMINHIBIT_CLEAR and FLUSHTLB
+		 * repeating for one endpoint. It cannot happen under QEMU,
+		 * whose TCG TLB is not tagged at all - which is precisely the
+		 * warning already recorded for this scheme: an emulator can
+		 * show that tagging is correct and cannot show what it is for.
+		 *
+		 * The tags still earn their keep where they were meant to:
+		 * __switch_address_space() retires nothing on a context
+		 * switch. This path runs when a mapping changes, which is
+		 * rarer, and where correctness is not negotiable.
 		 */
-		if (pg_asids_usable())
-			refresh_tlb_asid(AARCH64_PROC_ASID(p));
-		else
-			refresh_tlb();
+		refresh_tlb_all_is();
 		return OK;
 	}
 

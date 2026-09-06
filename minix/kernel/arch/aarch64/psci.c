@@ -66,8 +66,25 @@ find_psci(void *cookie, int depth, const char *name,
 	 * Matched on compatible rather than on the node's name. The name is
 	 * "psci" on every tree seen so far, but it is the compatible string
 	 * that the binding actually specifies.
+	 *
+	 * Both spellings, because a 1.0 tree need not carry the older one. The
+	 * binding says a newer implementation should list the older strings as
+	 * well, and QEMU does - "arm,psci-0.2", "arm,psci" - which is why
+	 * testing 0.2 alone worked for as long as QEMU was the only machine.
+	 * The CB2 says "arm,psci-1.0" and nothing else: the node went unfound,
+	 * psci_available() answered no, and CPU_ON returned NOT_SUPPORTED
+	 * without the firmware ever being asked. The same silence would have
+	 * swallowed poweroff and reboot on that board.
+	 *
+	 * 1.0 is a superset of 0.2 in the three calls used here, so either
+	 * string is enough. "arm,psci" alone is PSCI 0.1, whose function
+	 * numbers come from properties instead of from the specification -
+	 * a different ABI, deliberately not matched.
 	 */
-	if (depth != 1 || !compatible_with(node, "arm,psci-0.2"))
+	if (depth != 1)
+		return 0;
+	if (!compatible_with(node, "arm,psci-0.2") &&
+	    !compatible_with(node, "arm,psci-1.0"))
 		return 0;
 
 	if ((method = fdt_getprop(node, "method", &len)) == NULL ||

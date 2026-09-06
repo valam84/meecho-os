@@ -61,6 +61,23 @@ static inline void refresh_tlb(void)
 }
 
 /*
+ * Every entry, on every core of the inner-shareable domain.
+ *
+ * refresh_tlb() above retires this core's entries only, which is all a core
+ * needs for its own housekeeping. This one is for a mapping that changed
+ * under a process which may have run anywhere - VMCTL_FLUSHTLB, where the
+ * kernel is not even told whose mapping it was, so neither the core nor the
+ * ASID can be narrowed down.
+ */
+static inline void refresh_tlb_all_is(void)
+{
+	dsb();
+	__asm__ volatile("tlbi vmalle1is" ::: "memory");
+	dsb();
+	isb();
+}
+
+/*
  * Invalidate every entry belonging to one address space, on every core.
  *
  * aside1is is "all entries for this ASID, inner shareable", and the shareable

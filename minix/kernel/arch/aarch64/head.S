@@ -94,7 +94,27 @@ _start:
 	 */
 	.quad	0x200000		/* text_offset */
 	.quad	__image_size		/* image_size, computed in kernel.lds */
-	.quad	0			/* flags: 4 KiB pages, LE, any base */
+	/*
+	 * flags: 4 KiB pages, little-endian, and - bit 3 - the 2 MiB-aligned
+	 * base of this image may be anywhere in physical memory.
+	 *
+	 * Bit 3 is not decoration, and zero here is not "any base": it is the
+	 * opposite. U-Boot's booti_setup() reads that bit and, without it,
+	 * relocates the image to the base of RAM plus text_offset, because a
+	 * Linux kernel cannot address memory below its own load address
+	 * through the linear map. On the CB2 that means moving the image to
+	 * 0x00400000 - RAM there starts at 0x00200000, the first two megabytes
+	 * being TF-A's - while this kernel is linked for _kern_phys_base,
+	 * 0x40200000, and does not survive being moved: the link script fixed
+	 * _kern_vir_base from that number.
+	 *
+	 * With the bit set, U-Boot computes the destination from where the
+	 * image already is and leaves it alone. QEMU never consulted the flags
+	 * at all - it places a flat image at the base of RAM plus text_offset,
+	 * which on virt is exactly 0x40200000, and that is why the mismatch
+	 * stayed invisible until a real loader was involved.
+	 */
+	.quad	(1 << 3)		/* flags */
 	.quad	0			/* res2 */
 	.quad	0			/* res3 */
 	.quad	0			/* res4 */

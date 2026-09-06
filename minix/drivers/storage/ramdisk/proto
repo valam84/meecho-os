@@ -13,6 +13,10 @@ d--755 0 0
 		umount ---755 0 0 umount
 		grep ---755 0 0 grep
 		sh ---755 0 0 sh
+#ifdef __aarch64__
+		cat ---755 0 0 cat
+		ls ---755 0 0 ls
+#endif
 	$
 	sbin d--755 0 0
 		minix-service ---755 0 0 minix-service
@@ -55,6 +59,23 @@ d--755 0 0
 	$
 	proc d--755 0 0
 	$
+#ifdef __aarch64__
+/* The image is the root here, so it needs the places a running system
+ * writes to: a home for root, /var/run for utmpx, /var/log for wtmpx and
+ * lastlogx, and a /tmp. Without the directories libc cannot create the
+ * files, and init and login complain once per boot and once per login.
+ */
+	root d--700 0 0
+	$
+	tmp d--777 0 0
+	$
+	var d--755 0 0
+		run d--755 0 0
+		$
+		log d--755 0 0
+		$
+	$
+#endif
 	dev d--755 0 0
 #include "proto.dev"
 	$

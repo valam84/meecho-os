@@ -107,6 +107,16 @@ PROGRAMS+=		getty
 dir.getty:=	libexec/getty
 PROGRAMS+=		login
 dir.login:=	usr.bin/login
+# The shell that login leads to has nothing to look at without these two.
+PROGRAMS+=		cat
+dir.cat:=	bin/cat
+PROGRAMS+=		ls
+dir.ls:=	bin/ls
+# A filesystem that is only ever read can be sized to its contents exactly,
+# and that is what mkfs.mfs does by default.  This one is written to - utmpx,
+# wtmpx, lastlogx, /tmp - so it needs free inodes and free blocks, or the
+# first login says "Out of i-nodes" three times.
+MKFSMFS_FLAGS=		-x 25
 .endif # ${MACHINE_ARCH} == "aarch64"
 
 .if ${LDSTATIC} == "-dynamic"
@@ -193,7 +203,7 @@ ${prog}: ${PROGROOT}/${dir.${prog}}/${prog}
 realall image:	proto.gen ${ETC:C/^/etc\//} ${EXTRA} \
 		etc/master.passwd etc/pwd.db etc/spwd.db etc/passwd etc/group
 	${_MKMSG_CREATE} "Generating ramdisk image"
-	${TOOL_MKFSMFS} image proto.gen || { rm -f image; false; }
+	${TOOL_MKFSMFS} ${MKFSMFS_FLAGS} image proto.gen || { rm -f image; false; }
 
 etc/pwd.db etc/spwd.db etc/passwd: etc/master.passwd
 

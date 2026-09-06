@@ -60,7 +60,7 @@
  * Set to 1, rebuild the kernel, and set it back afterwards, the same way
  * DEBUG_DUMPIPC is used.
  */
-#define DEBUG_BOOT_TRACE		1
+#define DEBUG_BOOT_TRACE		0
 
 #if DEBUG_BOOT_TRACE
 #define BOOT_TRACE(x)			printf x

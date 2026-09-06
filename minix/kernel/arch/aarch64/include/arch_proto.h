@@ -201,6 +201,18 @@ extern void *k_stacks;
 #define get_k_stack_top(cpu)	((void *)(((char *)(k_stacks)) \
 					+ 2 * ((cpu) + 1) * K_STACK_SIZE))
 
+/*
+ * Translate an address the way the hardware would, handing back the leaf
+ * descriptor along with the physical address.
+ *
+ * vm_lookup() cannot: its ptent parameter is a u32_t, and a descriptor here
+ * is 64 bits wide. The permission bits live in that descriptor, and on this
+ * architecture the kernel consults them itself rather than waiting to be
+ * refused - see resolve() in memory.c.
+ */
+int vm_lookup_desc(const struct proc *proc, vir_bytes virtual,
+	phys_bytes *physical, u64_t *desc);
+
 /* functions defined in architecture-independent kernel source. */
 #include "kernel/proto.h"
 

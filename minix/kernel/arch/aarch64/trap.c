@@ -21,6 +21,7 @@
 
 #include "archconst.h"
 #include "arch_proto.h"
+#include "kernel/debug.h"
 #include "trap.h"
 
 #include "bsp_intr.h"
@@ -132,6 +133,39 @@ pagefault(struct proc *pr, struct stackframe_s *frame, int is_nested,
 		proc_stacktrace(pr);
 		panic("pagefault in VM");
 	}
+
+#if DEBUG_BOOT_TRACE
+	/*
+	 * The first faults each process takes, and every hundredth after.
+	 *
+	 * A fault VM has not resolved yet looks exactly like one it cannot,
+	 * and the difference is whether the same address keeps coming back.
+	 */
+	{
+		static unsigned faults;
+
+		if (faults < 8 || (faults % 100) == 0) {
+			phys_bytes pa = 0;
+			u64_t desc = 0;
+
+			/*
+			 * The descriptor as the tables hold it, alongside the
+			 * syndrome. A fault that repeats on one address is
+			 * either a mapping VM never changed or a change the
+			 * core cannot see, and only the descriptor tells
+			 * which.
+			 */
+			(void)vm_lookup_desc(pr, (vir_bytes)far, &pa, &desc);
+
+			printf("fault %s ep=%d addr 0x%lx pc 0x%lx esr 0x%lx "
+			    "pte 0x%lx pa 0x%lx (#%u)\n", pr->p_name,
+			    pr->p_endpoint, (unsigned long)far,
+			    (unsigned long)frame->pc, (unsigned long)esr,
+			    (unsigned long)desc, (unsigned long)pa, faults);
+		}
+		faults++;
+	}
+#endif
 
 	/* Do not schedule this process until the fault has been handled. */
 	RTS_SET(pr, RTS_PAGEFAULT);

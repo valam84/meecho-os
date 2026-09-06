@@ -69,6 +69,87 @@ arch_proc_reset(struct proc *pr)
 }
 
 /*===========================================================================*
+ *				sync_icache				     *
+ *===========================================================================*/
+/*
+ * Make instructions the kernel has just written fetchable.
+ *
+ * An exec puts a program in memory with ordinary stores: VFS reads the file
+ * into the process through the kernel, which reaches its pages by the linear
+ * map. Those stores land in the data cache. Instruction fetch does not look
+ * there - the caches are separate, and on this architecture nothing keeps
+ * them in step - so without this the core can execute whatever the physical
+ * page held the last time it was somebody's text, which is a crash with a
+ * plausible program counter in a program that never had that code.
+ *
+ * This is new work, not a bug fixed: while user pages were Device memory
+ * (see <machine/vm.h>) their instructions were never cached in the first
+ * place. Making them cacheable is what made the instruction cache able to be
+ * wrong.
+ *
+ * Two halves, and the first is often unnecessary. CTR_EL0.IDC says the data
+ * cache is already coherent with fetch, which is true of many ARMv8.2 cores
+ * and of nothing older; when it is not, the data has to be cleaned out to
+ * the point instruction fetch reads from, and the only way to do that
+ * without knowing the addresses is by set and way, level by level, up to
+ * CLIDR_EL1.LoUIS. That is a few thousand instructions once per exec, which
+ * is the price of not knowing the range - the kernel is told an entry point,
+ * not an image.
+ *
+ * QEMU reports IDC clear, so the long path is the one the development cycle
+ * exercises; the board may well take the short one.
+ */
+static void
+sync_icache(void)
+{
+	unsigned long ctr, clidr, ccsidr;
+	unsigned level, louis, log2line, ways, sets, waybits, w, set;
+
+	__asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
+
+	if (!(ctr & CTR_EL0_IDC)) {
+		__asm__ volatile("mrs %0, clidr_el1" : "=r"(clidr));
+		louis = (unsigned)((clidr >> CLIDR_LOUIS_SHIFT) & 7);
+
+		for (level = 0; level < louis; level++) {
+			__asm__ volatile("msr csselr_el1, %0"
+			    :: "r"((unsigned long)level << 1));
+			isb();
+			__asm__ volatile("mrs %0, ccsidr_el1" : "=r"(ccsidr));
+
+			/* Line size is log2 of the size in words, plus two. */
+			log2line = (unsigned)(ccsidr & 7) + 4;
+			ways = (unsigned)((ccsidr >> 3) & 0x3ff) + 1;
+			sets = (unsigned)((ccsidr >> 13) & 0x7fff) + 1;
+
+			/*
+			 * The way number sits at the top of the operand, in
+			 * as many bits as the associativity needs.
+			 */
+			for (waybits = 0; (1U << waybits) < ways; waybits++)
+				;
+
+			for (w = 0; w < ways; w++) {
+				for (set = 0; set < sets; set++) {
+					unsigned long op =
+					    ((unsigned long)w << (32 - waybits)) |
+					    ((unsigned long)set << log2line) |
+					    ((unsigned long)level << 1);
+
+					__asm__ volatile("dc csw, %0"
+					    :: "r"(op) : "memory");
+				}
+			}
+		}
+	}
+
+	dsb();
+	__asm__ volatile("ic ialluis" ::: "memory");
+	dsb();
+	isb();
+}
+
+/*===========================================================================*
  *				arch_proc_init				     *
  *===========================================================================*/
 void
@@ -77,6 +158,9 @@ arch_proc_init(struct proc *pr, const vir_bytes ip, const vir_bytes sp,
 {
 	arch_proc_reset(pr);
 	strlcpy(pr->p_name, name, sizeof(pr->p_name));
+
+	/* The image is in memory by now; make it fetchable. */
+	sync_icache();
 
 	pr->p_reg.pc = ip;
 	pr->p_reg.sp = sp;

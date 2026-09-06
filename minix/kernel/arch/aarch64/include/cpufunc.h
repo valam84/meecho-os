@@ -136,6 +136,15 @@ static inline unsigned long read_ttbr1(void)
 	return v;
 }
 
+/*
+ * Cache identification, for the code that has to keep the two caches in step
+ * by hand. CTR_EL0.IDC says a data cache clean is not needed to make stores
+ * visible to instruction fetch; CLIDR_EL1.LoUIS names the last cache level
+ * that has to be cleaned when it is. See sync_icache() in arch_system.c.
+ */
+#define CTR_EL0_IDC		(1UL << 28)
+#define CLIDR_LOUIS_SHIFT	21
+
 /* The fault address and syndrome of the exception being handled. */
 static inline unsigned long read_far(void)
 {

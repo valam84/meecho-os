@@ -58,6 +58,7 @@
 #include <dirent.h>
 
 #include "exitvalues.h"
+#include "fsck4.h"
 
 /*
  * A file system this program cannot check, as opposed to one it checked
@@ -1578,6 +1579,31 @@ char *f, **clist, **ilist, **zlist;
   initvars();
 
   devopen();
+
+  /*
+   * A V4 file system is checked by its own code, in fsck4.c: it shares no
+   * inode, no directory entry and no block map with the format the rest of
+   * this file knows.  It is the same program because what runs fsck_mfs -
+   * rc, mount(8), fsck(8) - should not have to know which version of the
+   * format a volume is written in.
+   */
+  if (fsck4_is_v4(dev)) {
+	int r, flags = 0;
+
+	if (repair) flags |= FSCK4_REPAIR;
+	if (automatic) flags |= FSCK4_AUTO;
+	if (preen) flags |= FSCK4_PREEN;
+	if (listing || listsuper) flags |= FSCK4_LISTING;
+
+	r = fsck4_check(dev, f, flags);
+
+	devclose();
+
+	if (r != FSCK_EXIT_OK)
+		exit(r);
+
+	return;
+  }
 
   rw_super(SUPER_GET);
 

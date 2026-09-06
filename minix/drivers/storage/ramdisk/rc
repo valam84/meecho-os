@@ -48,6 +48,22 @@ then	echo Starting the mmc driver
 	minix-service -c up /service/mmc -dev /dev/c0d0
 fi
 
+if [ X`sysenv arch` = Xaarch64 ]
+then
+	# The disk is a virtio device the driver finds in the device tree.
+	# It is only started when the root is going to be on it: with
+	# bootramdisk=1 this image is the root, and a machine without a disk
+	# would make the driver fail loudly for nothing.  -c keeps a copy of
+	# the binary in RS, because this image is unmounted from under it
+	# once the disk is the root.
+	if ! sysenv bootramdisk >/dev/null
+	then
+		echo Starting the virtio block driver
+		minix-service -c up /service/virtio_blk -dev /dev/c0d0 \
+			-label virtio_blk_0 -args instance=0
+	fi
+fi
+
 # Load ProcFS from the ramdisk to minimize the chance of a desync with the boot
 # image services from which it obtains data structures directly.  As we move to
 # the MIB service, this will eventually become obsolete.

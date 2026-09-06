@@ -49,6 +49,9 @@ d--755 0 0
 #ifdef __arm__
 		mmc ---755 0 0 mmc
 #endif
+#ifdef __aarch64__
+		virtio_blk ---755 0 0 virtio_blk
+#endif
 		mfs ---755 0 0 mfs
 		procfs ---755 0 0 procfs
 		input ---755 0 0 input

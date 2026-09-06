@@ -120,6 +120,10 @@ PROGRAMS+=		reboot
 dir.reboot:=	sbin/reboot
 PROGRAMS+=		shutdown
 dir.shutdown:=	sbin/shutdown
+# The disk driver, for a root that is not this image: on QEMU's virt the
+# disk is a virtio device, a "virtio,mmio" node of the device tree.
+PROGRAMS+=		virtio_blk
+dir.virtio_blk:= minix/drivers/storage/virtio_blk
 # A filesystem that is only ever read can be sized to its contents exactly,
 # and that is what mkfs.mfs does by default.  This one is written to - utmpx,
 # wtmpx, lastlogx, /tmp - so it needs free inodes and free blocks, or the

@@ -60,7 +60,12 @@ fi
 : ${TOOLCHAIN_TRIPLET=aarch64-elf64-minix-}
 : ${BUILDSH=build.sh}
 
-: ${BOOTARGS="bootramdisk=1 console=tty00"}
+# Chosen once the options are read, unless given: the root is the ramdisk
+# ("bootramdisk=1"), or with -d the disk ("rootdevname=c0d0").
+: ${BOOTARGS=}
+# The disk image -d makes, and its size.  The contents are the ramdisk's,
+# so a few megabytes would do; the rest is room to write in.
+: ${DISK_MB=64}
 
 : ${QEMU=qemu-system-aarch64}
 : ${QEMU_CPU=cortex-a72}
@@ -75,8 +80,10 @@ fi
 usage()
 {
 	cat >&2 <<EOF
-usage: $0 [-b] [-r] [-2]
+usage: $0 [-b] [-d] [-r] [-2] [-3]
 	-b  build the ramdisk image and the memory driver first
+	-d  make a disk image from the ramdisk's contents and boot with the
+	    root on it, over virtio-blk, instead of on the ramdisk (implies -r)
 	-r  run QEMU on the result
 	-2  enter at EL2, where U-Boot leaves a kernel on a real board
 	    (implies -r)
@@ -93,12 +100,14 @@ EOF
 
 do_build=0
 do_run=0
+disk=0
 el2=0
 gicv3=0
-while getopts "br23h" c
+while getopts "bdr23h" c
 do
 	case "$c" in
 	b)	do_build=1 ;;
+	d)	do_run=1; disk=1 ;;
 	r)	do_run=1 ;;
 	2)	do_run=1; el2=1 ;;
 	3)	do_run=1; gicv3=1 ;;
@@ -225,6 +234,66 @@ done
 echo "Writing the boot archive..."
 ${MKBOOTARCHIVE} -o "${ARCHIVE}" ${mods}
 
+#
+# The disk.  Its contents are the ramdisk's, read from the proto the ramdisk
+# build generated, with one substitution: /etc/rc.  The ramdisk's rc is the
+# script that starts the disk driver and mounts the disk over /, and it
+# ends by handing over to the /etc/rc it finds there - which on an
+# installed system is the NetBSD rc infrastructure, and here, until that
+# userland is in the image, is the few lines below.
+#
+# Whole-disk, no partition table: the file system starts at byte 0 and the
+# root device is c0d0 itself.
+#
+DISK=${WORK_DIR}/disk.img
+if [ ${disk} -eq 1 ]
+then
+	RAMDISK_OBJ=${OBJ}/minix/drivers/storage/ramdisk
+	: ${MKFSMFS=${CROSS_TOOLS}/nbmkfs.mfs}
+
+	if [ ! -f "${RAMDISK_OBJ}/proto.gen" ]
+	then
+		echo "$0: no ${RAMDISK_OBJ}/proto.gen; build the ramdisk" \
+			"first (-b)" >&2
+		exit 1
+	fi
+
+	# An existing image is kept, so that what a run wrote is there for
+	# the next one - that is what a disk is for - unless the ramdisk it
+	# was made from has been rebuilt since, or DISK_FRESH is set.
+	if [ -f "${DISK}" ] && [ -z "${DISK_FRESH:-}" ] &&
+	   [ ! "${RAMDISK_OBJ}/image" -nt "${DISK}" ]
+	then
+		echo "Keeping the disk image ${DISK} (DISK_FRESH=1 remakes it)"
+	else
+	echo "Writing the disk image (${DISK_MB} MB)..."
+	cat > "${WORK_DIR}/rc.disk" <<'END_RC'
+#!/bin/sh
+# /etc/rc of the disk root.  The ramdisk's rc has started the disk driver,
+# mounted this file system over / and mounted procfs; init runs this, and
+# when it returns, starts the sessions listed in /etc/ttys.  There is
+# nothing to start yet: this is the ramdisk's contents on a disk that
+# keeps what is written to it, no more.
+echo "Root is on `sysenv rootdevname`."
+exit 0
+END_RC
+	sed "s|^\([ 	]*rc ---755 0 0 \).*|\1${WORK_DIR}/rc.disk|" \
+		"${RAMDISK_OBJ}/proto.gen" > "${WORK_DIR}/proto.disk"
+	# mkfs.mfs sizes a file system to the device it is given, so the
+	# device has to exist at its full size first; seeking past the end
+	# makes it sparse, so the image costs what is written to it.
+	rm -f "${DISK}"
+	dd if=/dev/zero of="${DISK}" bs=1M count=0 seek=${DISK_MB} 2>/dev/null
+	# The proto names its files relative to the ramdisk's object directory.
+	(cd "${RAMDISK_OBJ}" && ${MKFSMFS} -B 4096 \
+		-b $((${DISK_MB} * 1024 * 1024 / 4096)) \
+		"${DISK}" "${WORK_DIR}/proto.disk")
+	fi
+	BOOTARGS=${BOOTARGS:-"rootdevname=c0d0 console=tty00"}
+else
+	BOOTARGS=${BOOTARGS:-"bootramdisk=1 console=tty00"}
+fi
+
 virt=virt
 if [ ${el2} -eq 1 ]
 then
@@ -238,6 +307,14 @@ fi
 cmd="${QEMU} -M ${virt} -cpu ${QEMU_CPU} -m ${QEMU_MEM} -smp ${QEMU_SMP}"
 cmd="${cmd} -display none -serial stdio -net none"
 cmd="${cmd} -kernel ${KERNEL_BIN} -initrd ${ARCHIVE}"
+if [ ${disk} -eq 1 ]
+then
+	# A virtio-blk device on the machine's virtio-mmio transport, which is
+	# what the device tree describes; the PCI variant would need a PCI
+	# server this system does not have.
+	cmd="${cmd} -drive if=none,id=hd0,file=${DISK},format=raw"
+	cmd="${cmd} -device virtio-blk-device,drive=hd0"
+fi
 cmd="${cmd} -append \"${BOOTARGS}\""
 if [ -n "${QEMU_TIMEOUT}" ]
 then
@@ -247,6 +324,10 @@ fi
 echo ""
 echo "RAM image in ${WORK_DIR}:"
 ls -l "${KERNEL_BIN}" "${ARCHIVE}"
+if [ ${disk} -eq 1 ]
+then
+	ls -l "${DISK}"
+fi
 echo ""
 echo "To boot it:"
 echo "${cmd}"

@@ -142,7 +142,7 @@ struct mfs4_super {
 #define MFS4_RO_COMPAT_SUPP		0
 
 #define MFS4_INCOMPAT_RECOVER		0x00000001
-#define MFS4_INCOMPAT_SUPP		0	/* no journal replay yet */
+#define MFS4_INCOMPAT_SUPP		(MFS4_INCOMPAT_RECOVER)
 
 /* Blocks are addressed by a 32-bit number: 16 TB at a 4 KB block. */
 #define MFS4_NR_DZONES		12	/* direct block numbers in an inode */

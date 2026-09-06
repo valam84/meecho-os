@@ -71,7 +71,10 @@ static int map_subtree(struct inode *rip, zone_t *rootp, int level,
   }
 
   bp = get_block(rip->i_dev, (block_t) z, created ? NO_READ : NORMAL);
-  if (created) zero_block(bp);
+  if (created) {
+	zero_block(bp);
+	MARKDIRTY(bp);		/* an indirect block is metadata */
+  }
 
   span = map_span(rip, level);
   i = (int) (index / span);
@@ -270,9 +273,13 @@ off_t position;			/* file pointer */
 void zero_block(bp)
 register struct buf *bp;	/* pointer to buffer to zero */
 {
-/* Zero a block. */
+/* Zero a block.  Whether it is data or metadata is the caller's business:
+ * a new indirect block is metadata and says so right after this, a new
+ * directory block is marked by whoever puts an entry in it, and a new data
+ * block is data.
+ */
   ASSERT(bp->data);
   memset(b_data(bp), 0, lmfs_fs_block_size());
-  MARKDIRTY(bp);
+  MARKDIRTY_DATA(bp);
 }
 

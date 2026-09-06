@@ -201,7 +201,7 @@ int *completed;			/* number of bytes copied */
   } else if (call == FSC_WRITE) {
 	/* Copy a chunk from user space to the block buffer. */
 	r = fsdriver_copyin(data, buf_off, b_data(bp)+off, chunk);
-	MARKDIRTY(bp);
+	MARKDIRTY_DATA(bp);
   }
   
   put_block(bp);

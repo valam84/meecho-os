@@ -25,7 +25,7 @@
 #include "kernel/smp.h"
 
 #include "arch_proto.h"
-#include "fdt.h"
+#include <minix/fdt.h>
 #include "gic.h"
 #include "psci.h"
 

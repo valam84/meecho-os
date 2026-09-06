@@ -26,7 +26,7 @@
 #include "kernel/glo.h"
 
 #include "arch_proto.h"
-#include "fdt.h"
+#include <minix/fdt.h>
 #include "gic.h"
 
 #include "bsp_intr.h"
@@ -113,21 +113,7 @@ struct timer_scan {
 	int found;
 };
 
-static int
-compatible_with(const struct fdt_node *node, const char *want)
-{
-	const char *list;
-	unsigned len, off;
-
-	if ((list = fdt_getprop(node, "compatible", &len)) == NULL)
-		return 0;
-
-	for (off = 0; off < len; off += strlen(list + off) + 1)
-		if (strcmp(list + off, want) == 0)
-			return 1;
-
-	return 0;
-}
+#define compatible_with(node, want)	fdt_node_is_compatible(node, want)
 
 #define IRQ_CELLS	3		/* <type number flags> */
 #define IRQ_TYPE_PPI	1

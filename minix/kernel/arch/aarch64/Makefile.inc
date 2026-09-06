@@ -35,7 +35,7 @@ CFLAGS+=	-mcmodel=small
 # machine on its own presents either version depending on gic-version=, so a
 # build-time choice would be wrong for a single board, never mind two.
 SRCS+=	head.S arch_system.c memory.c direct_tty_utils.c \
-	fdt.c pg_utils.c pre_init.c protect.c arch_do_vmctl.c \
+	pg_utils.c pre_init.c protect.c arch_do_vmctl.c \
 	arch_reset.c arch_clock.c psci.c fpu.c \
 	gic.c gicv2.c gicv3.c \
 	usercopy.S exception.c vectors.S trap.c hw_intr.c fpu_asm.S

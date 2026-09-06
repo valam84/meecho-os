@@ -190,6 +190,7 @@ int sys_diagctl(int ctl, char *arg1, int arg2);
 #define sys_getidletsc(dst)	sys_getinfo(GET_IDLETSC, dst, 0,0,0)
 #define sys_getregs(dst,nr)	sys_getinfo(GET_REGS, dst, 0,0, nr)
 #define sys_getcputicks(dst,nr)	sys_getinfo(GET_CPUTICKS, dst, 0,0, nr)
+#define sys_getdtb(dst,len)	sys_getinfo(GET_DTB, dst, len, 0,0)
 int sys_getinfo(int request, void *val_ptr, int val_len, void *val_ptr2,
 	int val_len2);
 int sys_whoami(endpoint_t *ep, char *name, int namelen, int

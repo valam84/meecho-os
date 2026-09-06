@@ -41,7 +41,7 @@
 #include "trap.h"
 #include "bsp_serial.h"
 #include "bsp_intr.h"
-#include "fdt.h"
+#include <minix/fdt.h>
 
 /* Section boundaries from kernel.lds; physical here, the MMU being off. */
 extern char __kernel_start[], __kernel_end[];

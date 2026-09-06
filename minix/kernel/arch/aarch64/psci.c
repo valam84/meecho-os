@@ -13,7 +13,7 @@
 #include <machine/vm.h>
 
 #include "arch_proto.h"
-#include "fdt.h"
+#include <minix/fdt.h>
 #include "psci.h"
 
 /* Which instruction reaches the implementation. */

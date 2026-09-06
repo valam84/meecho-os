@@ -20,6 +20,10 @@
 
 #include "kernel/system.h"
 
+#if defined(__aarch64__)
+#include <minix/fdt.h>
+#include "arch_proto.h"		/* boot_dtb, phys2vir() */
+#endif
 
 #if USE_GETINFO
 
@@ -200,6 +204,33 @@ int do_getinfo(struct proc * caller, message * m_ptr)
 	src_vir = (vir_bytes)ticks;
 	break;
     }
+#if defined(__aarch64__)
+    case GET_DTB: {
+	/*
+	 * The device tree the boot loader handed over, whole. It is how a
+	 * service learns what the machine has: RS grants a driver the
+	 * registers and interrupt of the node system.conf names, and the
+	 * driver finds the device by the same tree. The kernel keeps the
+	 * loader's copy where it was left and never writes to it, so the
+	 * copy the caller gets is the loader's, byte for byte.
+	 *
+	 * val_len is not optional here: the length is the blob's, not a
+	 * structure's, and a caller that did not say how much room it has
+	 * would be overrun. Only this architecture boots from a tree; the
+	 * others fall through to EINVAL, which fdt_fetch() reads as "there
+	 * is none".
+	 */
+	if (m_ptr->m_lsys_krn_sys_getinfo.val_len <= 0)
+		return EINVAL;
+	if (boot_dtb == 0)
+		return ENOENT;
+	src_vir = phys2vir(boot_dtb);
+	if (!fdt_valid((const void *)src_vir))
+		return ENOENT;
+	length = fdt_size((const void *)src_vir);
+	break;
+    }
+#endif
     default:
 	printf("do_getinfo: invalid request %d\n",
 		m_ptr->m_lsys_krn_sys_getinfo.request);

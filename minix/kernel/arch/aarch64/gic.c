@@ -23,7 +23,7 @@
 
 #include "arch_proto.h"
 #include "hw_intr.h"
-#include "fdt.h"
+#include <minix/fdt.h>
 #include "gic.h"
 
 #include "bsp_intr.h"
@@ -32,28 +32,7 @@ struct gic gic;
 
 static kern_phys_map gicd_phys_map, gicr_phys_map;
 
-/*===========================================================================*
- *				compatible_with				     *
- *===========================================================================*/
-/*
- * A node's compatible property is a list of strings, most specific first. A
- * match on any of them is a match.
- */
-static int
-compatible_with(const struct fdt_node *node, const char *want)
-{
-	const char *list;
-	unsigned len, off;
-
-	if ((list = fdt_getprop(node, "compatible", &len)) == NULL)
-		return 0;
-
-	for (off = 0; off < len; off += strlen(list + off) + 1)
-		if (strcmp(list + off, want) == 0)
-			return 1;
-
-	return 0;
-}
+#define compatible_with(node, want)	fdt_node_is_compatible(node, want)
 
 /*===========================================================================*
  *				find_gic				     *

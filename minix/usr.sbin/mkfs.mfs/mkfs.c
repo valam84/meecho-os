@@ -39,6 +39,8 @@
  * is built for the system or as a host tool.
  */
 #include "../../fs/mfs/ondisk.h"
+/* The journal format, for the same reason and by the same kind of path. */
+#include "../../include/minix/journal.h"
 
 #define INODE_MAP	START_BLOCK
 
@@ -91,6 +93,13 @@ int fs_version = 3;
 size_t inode_size;
 unsigned nr_dzones, nr_tzones, nr_levels;
 
+/* The journal: how many blocks of it, and which inode owns them.  Only V4
+ * has one; -J says how big, -J 0 says none.
+ */
+long journal_blocks = -1;	/* -1: not asked for, so use a default */
+ino_t journal_inum = 0;
+uint8_t fs_uuid[16];
+
 /* An inode as this program handles it: as wide as the wider format, so
  * that the code that fills one in does not have to know which is being
  * written.  ino_get() and ino_put() convert.
@@ -130,6 +139,7 @@ static void map_insert(uint32_t *zone, uint64_t index, zone_t z);
 static zone_t map_get(const uint32_t *zone, uint64_t index);
 static void enter_dir_v4(ino_t parent, char const *name, ino_t child,
 	unsigned type);
+static void make_journal(ino_t inum, unsigned int nblocks);
 static unsigned dt_of_mode(uint16_t mode);
 void detect_fs_size(struct fs_size * fssize);
 void sizeup_dir(struct fs_size * fssize);
@@ -188,13 +198,17 @@ main(int argc, char *argv[])
 #endif
   zone_shift = 0;
   extra_space_percent = 0;
-  while ((ch = getopt(argc, argv, "34B:b:di:ltvx:z:I:T:")) != EOF)
+  while ((ch = getopt(argc, argv, "34B:J:b:di:ltvx:z:I:T:")) != EOF)
 	switch (ch) {
 	    case '3':
 		fs_version = 3;
 		break;
 	    case '4':
 		fs_version = 4;
+		break;
+	    case 'J':
+		journal_blocks = strtol(optarg, (char **) NULL, 0);
+		if (journal_blocks < 0) usage();
 		break;
 #ifndef MFS_STATIC_BLOCK_SIZE
 	    case 'B':
@@ -390,6 +404,21 @@ main(int argc, char *argv[])
 		inodes = fssize.inocount;
 		blocks += blocks*extra_space_percent/100;
 		inodes += inodes*extra_space_percent/100;
+		/* The journal is a file of the file system, so a file
+		 * system sized to its contents has to make room for it.
+		 */
+		if (fs_version == 4) {
+			long jb = journal_blocks;
+
+			if (jb < 0) {
+				jb = blocks / 64;
+				if (jb < 64) jb = 64;
+				if (jb > 4096) jb = 4096;
+				journal_blocks = jb;
+			}
+			blocks += jb + 8;	/* and its indirect blocks */
+			inodes++;
+		}
 /* XXX is it OK to write on stdout? Use warn() instead? Also consider using verbose */
 		fprintf(stderr, "dynamically sized filesystem: %u blocks, %u inodes\n",
 		    (unsigned int) blocks, (unsigned int) inodes);
@@ -425,6 +454,22 @@ main(int argc, char *argv[])
 	inodes += inodes_per_block - 1;
 	inodes = inodes / inodes_per_block * inodes_per_block;
   }
+
+  /*
+   * The journal is a hundredth or so of the file system, within reason:
+   * big enough that a transaction is never cramped, small enough that it
+   * is not a tax on a small disk.  V3 has no journal at all.
+   */
+  if (fs_version != 4) {
+	journal_blocks = 0;
+  } else if (journal_blocks < 0) {
+	journal_blocks = blocks / 64;
+	if (journal_blocks < 64) journal_blocks = 64;
+	if (journal_blocks > 4096) journal_blocks = 4096;
+  }
+  if (journal_blocks > 0 && journal_blocks < JOURNAL_MIN_BLOCKS)
+	errx(1, "a journal of %ld blocks is too small (%d is the least)",
+	    journal_blocks, JOURNAL_MIN_BLOCKS);
 
   if (blocks < 5) errx(1, "Block count too small");
   if (inodes < 1) errx(1, "Inode count too small");
@@ -482,6 +527,15 @@ main(int argc, char *argv[])
   super(nrblocks >> zone_shift, inodes);
 
   root_inum = alloc_inode(mode, usrid, grpid);
+
+  /* The journal comes next, so that it is inode 2 and its blocks are one
+   * unbroken run near the start of the disk.
+   */
+  if (journal_blocks > 0) {
+	journal_inum = alloc_inode(S_IFREG | 0600, 0, 0);
+	make_journal(journal_inum, (unsigned int) journal_blocks);
+  }
+
   rootdir(root_inum);
   if (simple == 0) eat_dir(root_inum);
 
@@ -964,6 +1018,15 @@ super_v4(zone_t blocks, ino_t inodes)
 
   sup->s_mkfs_time = current_time;
 
+  /* The journal is inode 2 and its blocks are laid out right after the
+   * root inode is allocated; the superblock only has to name it.
+   */
+  if (journal_blocks > 0) {
+	sup->s_feature_compat |= MFS4_COMPAT_HAS_JOURNAL;
+	sup->s_journal_inum = 2;
+	sup->s_journal_blocks = (uint32_t) journal_blocks;
+  }
+
   /* An identifier for the volume, made from what made it rather than from
    * a random source: two runs of mkfs with -d or -T produce the same image
    * byte for byte, and a uuid out of rand() would be the one thing that
@@ -974,6 +1037,11 @@ super_v4(zone_t blocks, ino_t inodes)
 	    (blocks * (k + 1)) ^ (inodes << (k % 5)));
   sup->s_uuid[6] = (sup->s_uuid[6] & 0x0f) | 0x40;	/* version 4 */
   sup->s_uuid[8] = (sup->s_uuid[8] & 0x3f) | 0x80;	/* variant */
+
+  /* The journal carries it too, so that one cannot be replayed onto the
+   * wrong volume.
+   */
+  memcpy(fs_uuid, sup->s_uuid, sizeof(fs_uuid));
 
   if (verbose > 1)
 	fprintf(stderr, "Super block values (V4):\n"
@@ -1127,6 +1195,63 @@ super(zone_t zones, ino_t inodes)
   free(buf);
 }
 
+
+/*================================================================
+ *          make_journal  -  the file the journal lives in
+ *===============================================================*/
+static void
+make_journal(ino_t inum, unsigned int nblocks)
+{
+/* Give the journal inode a run of blocks and put a journal superblock at
+ * the front of it.
+ *
+ * The run has to be unbroken: the file system server hands the block cache
+ * a first block and a count, because the journal is meant to serve file
+ * systems whose block maps it does not know how to read.  So the blocks are
+ * taken first, all of them, and only then put into the inode - an indirect
+ * block allocated along the way would otherwise land in the middle of the
+ * run.
+ *
+ * Nothing links to this inode.  It is reserved, as ext3's journal inode is:
+ * the superblock names it, and that is what it is found by.
+ */
+  struct gen_inode gi;
+  struct journal_super *js;
+  zone_t first, z;
+  unsigned int i;
+  void *buf;
+
+  first = next_zone;
+  for (i = 0; i < nblocks; i++) {
+	z = alloc_zone();
+	if (z != first + i)
+		pexit("the journal did not come out as one run of blocks");
+  }
+
+  ino_get(inum, &gi);
+  for (i = 0; i < nblocks; i++)
+	map_insert(gi.zone, i, first + i);
+  gi.size = (uint64_t) nblocks * block_size;
+  gi.nlinks = 1;
+  gi.mtime = gi.atime = gi.ctime = gi.btime = current_time;
+  ino_put(inum, &gi);
+
+  buf = alloc_block();
+  js = buf;
+  js->js_magic = JOURNAL_MAGIC;
+  js->js_version = JOURNAL_VERSION;
+  js->js_block_size = (uint32_t) block_size;
+  js->js_nblocks = nblocks;
+  js->js_start = 0;		/* nothing to replay on a new file system */
+  js->js_sequence = 1;
+  memcpy(js->js_uuid, fs_uuid, sizeof(js->js_uuid));
+  put_block((block_t) first, buf);
+  free(buf);
+
+  if (verbose)
+	fprintf(stderr, "journal: inode %u, %u blocks at %u\n",
+	    (unsigned int) inum, nblocks, (unsigned int) first);
+}
 
 /*================================================================
  *              rootdir  -  install the root directory
@@ -1896,7 +2021,8 @@ usage(void)
 {
   fprintf(stderr, "Usage: %s [-34dltv] [-b blocks] [-i inodes]\n"
 	"\t[-z zone_shift] [-I offset] [-x extra] [-B blocksize] special [proto]\n"
-	"\t-4 writes the V4 format, -3 the V3 one, which is the default\n",
+	"\t-4 writes the V4 format, -3 the V3 one, which is the default\n"
+	"\t-J blocks: size of the V4 journal; 0 for none\n",
       progname);
   exit(4);
 }

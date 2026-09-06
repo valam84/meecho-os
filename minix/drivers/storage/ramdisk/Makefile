@@ -102,6 +102,7 @@ dir.mmc:=	minix/drivers/storage/mmc
 # (bootramdisk=1).  So it has to be able to offer a login, which the other
 # architectures get from the real root they switch to.
 ETC+=			gettytab
+ETC+=			motd
 EXTRA+=			ttys
 PROGRAMS+=		getty
 dir.getty:=	libexec/getty

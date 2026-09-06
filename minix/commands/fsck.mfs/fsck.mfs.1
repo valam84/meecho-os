@@ -49,6 +49,19 @@ fsck \- perform file system consistency check
 on the specified devices.
 When either the \fB\-a\fR or \fB\-r\fR flags are given, the file system
 will be repaired if errors are found.
+.PP
+Both MFS versions are checked by this program, which decides from the
+superblock which of the two a device holds.  On a V4 file system it checks
+the inodes and the blocks each of them claims, then the tree from the root,
+then link counts, then inodes no directory mentions, and last the bitmaps;
+where a repair uncovers another problem it starts over, until a pass finds
+nothing left to do.  A V4 file system whose journal still holds a
+transaction is replayed before it is checked, since until then what is on
+the disk is not yet what the last operation left; that requires the right
+to write, so \fB\-a\fR or \fB\-r\fR is needed for such a device.
+.PP
+The \fB\-c\fR, \fB\-i\fR and \fB\-z\fR options, which name particular
+inodes and zones, apply to V3 file systems only.
 Before running \fIfsck\fR on a mounted file system, it must first be unmounted.
 Trying to repair a mounted file system is dangerous and should not be 
 attempted.

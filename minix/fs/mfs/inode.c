@@ -17,6 +17,7 @@
  */
 
 #include "fs.h"
+#include <time.h>
 #include "buf.h"
 #include "inode.h"
 #include "super.h"
@@ -26,6 +27,8 @@
 static void addhash_inode(struct inode *node);
 
 static void free_inode(dev_t dev, ino_t numb);
+static void v4_icopy(struct inode *rip, struct mfs4_inode *dip,
+	int direction);
 static void new_icopy(struct inode *rip, d2_inode *dip, int direction,
 	int norm);
 static void unhash_inode(struct inode *node);
@@ -289,6 +292,9 @@ struct inode *alloc_inode(dev_t dev, mode_t bits, uid_t uid, gid_t gid)
 	rip->i_dev = dev;		/* mark which device it is on */
 	rip->i_ndzones = sp->s_ndzones;	/* number of direct zones */
 	rip->i_nindirs = sp->s_nindirs;	/* number of indirect zones per blk*/
+	rip->i_nlevels = sp->s_nlevels;	/* levels of indirection */
+	rip->i_flags = 0;
+	rip->i_btime = clock_time(NULL);	/* V4 records a creation time */
 	rip->i_sp = sp;			/* pointer to super block */
 
 	/* Fields not cleared already are cleared in wipe_inode().  They have
@@ -319,7 +325,7 @@ register struct inode *rip;	/* the inode to be erased */
   rip->i_size = 0;
   rip->i_update = ATIME | CTIME | MTIME;	/* update all times later */
   IN_MARKDIRTY(rip);
-  for (i = 0; i < V2_NR_TZONES; i++) rip->i_zone[i] = NO_ZONE;
+  for (i = 0; i < NR_TZONES; i++) rip->i_zone[i] = NO_ZONE;
 }
 
 /*===========================================================================*
@@ -352,20 +358,36 @@ register struct inode *rip;	/* pointer to inode to be read/written */
 /* Various system calls are required by the standard to update atime, ctime,
  * or mtime.  Since updating a time requires sending a message to the clock
  * task--an expensive business--the times are marked for update by setting
- * bits in i_update.  When a stat, fstat, or sync is done, or an inode is 
+ * bits in i_update.  When a stat, fstat, or sync is done, or an inode is
  * released, update_times() may be called to actually fill in the times.
  */
 
-  time_t cur_time;
+  struct timespec now;
   struct super_block *sp;
 
   sp = rip->i_sp;		/* get pointer to super block. */
   if (sp->s_rd_only) return;	/* no updates for read-only file systems */
 
-  cur_time = clock_time(NULL);
-  if (rip->i_update & ATIME) rip->i_atime = cur_time;
-  if (rip->i_update & CTIME) rip->i_ctime = cur_time;
-  if (rip->i_update & MTIME) rip->i_mtime = cur_time;
+  (void) clock_time(&now);
+
+  /*
+   * V4 keeps a nanosecond part beside each of the three times.  V3 has no
+   * room for one; the field is set all the same, and dropped on the way to
+   * disk, so that the in-core inode does not have to be read with the
+   * version in mind.
+   */
+  if (rip->i_update & ATIME) {
+	rip->i_atime = now.tv_sec;
+	rip->i_atime_nsec = now.tv_nsec;
+  }
+  if (rip->i_update & CTIME) {
+	rip->i_ctime = now.tv_sec;
+	rip->i_ctime_nsec = now.tv_nsec;
+  }
+  if (rip->i_update & MTIME) {
+	rip->i_mtime = now.tv_sec;
+	rip->i_mtime_nsec = now.tv_nsec;
+  }
   rip->i_update = 0;		/* they are all up-to-date now */
 }
 
@@ -380,7 +402,7 @@ int rw_flag;			/* READING or WRITING */
 
   register struct buf *bp;
   register struct super_block *sp;
-  d2_inode *dip2;
+  char *dip;
   block_t b, offset;
 
   /* Get the block where the inode resides. */
@@ -389,8 +411,13 @@ int rw_flag;			/* READING or WRITING */
   offset = START_BLOCK + sp->s_imap_blocks + sp->s_zmap_blocks;
   b = (block_t) (rip->i_num - 1)/sp->s_inodes_per_block + offset;
   bp = get_block(rip->i_dev, b, NORMAL);
-  dip2 = b_v2_ino(bp) + (rip->i_num - 1) %
-  	 V2_INODES_PER_BLOCK(sp->s_block_size);
+
+  /* The stride is the superblock's inode size, not the size of the
+   * structure: a volume written by a later mkfs may have wider inodes with
+   * fields this code does not read.
+   */
+  dip = (char *) b_data(bp) +
+	((rip->i_num - 1) % sp->s_inodes_per_block) * sp->s_inode_size;
 
   /* Do the read or write. */
   if (rw_flag == WRITING) {
@@ -398,12 +425,11 @@ int rw_flag;			/* READING or WRITING */
 	if (sp->s_rd_only == FALSE) MARKDIRTY(bp);
   }
 
-  /* Copy the inode from the disk block to the in-core table or vice versa.
-   * If the fourth parameter below is FALSE, the bytes are swapped.
-   */
-  assert(sp->s_version == V3);
-  new_icopy(rip, dip2, rw_flag, sp->s_native);
-  
+  if (sp->s_version == V4)
+	v4_icopy(rip, (struct mfs4_inode *) dip, rw_flag);
+  else
+	new_icopy(rip, (d2_inode *) dip, rw_flag, sp->s_native);
+
   put_block(bp);
   IN_MARKCLEAN(rip);
 }
@@ -420,8 +446,9 @@ int norm;			/* TRUE = do not swap bytes; FALSE = swap */
   int i;
 
   if (direction == READING) {
-	/* Copy V2.x inode to the in-core table, swapping bytes if need be. */
+	/* Copy V3 inode to the in-core table, swapping bytes if need be. */
 	rip->i_mode    = (mode_t) conv2(norm,dip->d2_mode);
+	rip->i_flags   = 0;
 	rip->i_uid     = (uid_t) conv2(norm,dip->d2_uid);
 	rip->i_nlinks  = (nlink_t) conv2(norm,dip->d2_nlinks);
 	rip->i_gid     = (gid_t) conv2(norm,dip->d2_gid);
@@ -429,12 +456,17 @@ int norm;			/* TRUE = do not swap bytes; FALSE = swap */
 	rip->i_atime   = (time_t) conv4(norm,dip->d2_atime);
 	rip->i_ctime   = (time_t) conv4(norm,dip->d2_ctime);
 	rip->i_mtime   = (time_t) conv4(norm,dip->d2_mtime);
-	rip->i_ndzones = V2_NR_DZONES;
+	rip->i_btime   = 0;
+	rip->i_atime_nsec = rip->i_ctime_nsec = rip->i_mtime_nsec = 0;
+	rip->i_ndzones = MFS3_NR_DZONES;
 	rip->i_nindirs = V2_INDIRECTS(rip->i_sp->s_block_size);
-	for (i = 0; i < V2_NR_TZONES; i++)
+	rip->i_nlevels = MFS3_NR_LEVELS;
+	for (i = 0; i < MFS3_NR_TZONES; i++)
 		rip->i_zone[i] = (zone_t) conv4(norm, (long) dip->d2_zone[i]);
+	for (; i < NR_TZONES; i++)
+		rip->i_zone[i] = NO_ZONE;
   } else {
-	/* Copying V2.x inode to disk from the in-core table. */
+	/* Copying V3 inode to disk from the in-core table. */
 	dip->d2_mode   = (u16_t) conv2(norm,rip->i_mode);
 	dip->d2_uid    = (i16_t) conv2(norm,rip->i_uid);
 	dip->d2_nlinks = (u16_t) conv2(norm,rip->i_nlinks);
@@ -443,11 +475,61 @@ int norm;			/* TRUE = do not swap bytes; FALSE = swap */
 	dip->d2_atime  = (i32_t) conv4(norm,rip->i_atime);
 	dip->d2_ctime  = (i32_t) conv4(norm,rip->i_ctime);
 	dip->d2_mtime  = (i32_t) conv4(norm,rip->i_mtime);
-	for (i = 0; i < V2_NR_TZONES; i++)
+	for (i = 0; i < MFS3_NR_TZONES; i++)
 		dip->d2_zone[i] = (zone_t) conv4(norm, (long) rip->i_zone[i]);
   }
 }
 
+/*===========================================================================*
+ *				v4_icopy				     *
+ *===========================================================================*/
+static void v4_icopy(rip, dip, direction)
+register struct inode *rip;	/* pointer to the in-core inode struct */
+register struct mfs4_inode *dip;	/* the inode as it lies on the disk */
+int direction;			/* READING (from disk) or WRITING (to disk) */
+{
+/* The V4 inode is read and written as it lies: the format is little-endian
+ * by definition, and every field of it has a field of its own in core.
+ */
+  int i;
+
+  if (direction == READING) {
+	rip->i_mode    = dip->i_mode;
+	rip->i_flags   = dip->i_flags;
+	rip->i_nlinks  = dip->i_nlinks;
+	rip->i_uid     = (uid_t) dip->i_uid;
+	rip->i_gid     = (gid_t) dip->i_gid;
+	rip->i_size    = (off_t) dip->i_size;
+	rip->i_atime   = (time_t) dip->i_atime;
+	rip->i_mtime   = (time_t) dip->i_mtime;
+	rip->i_ctime   = (time_t) dip->i_ctime;
+	rip->i_btime   = (time_t) dip->i_btime;
+	rip->i_atime_nsec = dip->i_atime_nsec;
+	rip->i_mtime_nsec = dip->i_mtime_nsec;
+	rip->i_ctime_nsec = dip->i_ctime_nsec;
+	rip->i_ndzones = MFS4_NR_DZONES;
+	rip->i_nindirs = rip->i_sp->s_block_size / sizeof(zone_t);
+	rip->i_nlevels = MFS4_NR_LEVELS;
+	for (i = 0; i < MFS4_NR_TZONES; i++)
+		rip->i_zone[i] = dip->i_zone[i];
+  } else {
+	dip->i_mode    = rip->i_mode;
+	dip->i_flags   = rip->i_flags;
+	dip->i_nlinks  = rip->i_nlinks;
+	dip->i_uid     = (uint32_t) rip->i_uid;
+	dip->i_gid     = (uint32_t) rip->i_gid;
+	dip->i_size    = (uint64_t) rip->i_size;
+	dip->i_atime   = (int64_t) rip->i_atime;
+	dip->i_mtime   = (int64_t) rip->i_mtime;
+	dip->i_ctime   = (int64_t) rip->i_ctime;
+	dip->i_btime   = (int64_t) rip->i_btime;
+	dip->i_atime_nsec = rip->i_atime_nsec;
+	dip->i_mtime_nsec = rip->i_mtime_nsec;
+	dip->i_ctime_nsec = rip->i_ctime_nsec;
+	for (i = 0; i < MFS4_NR_TZONES; i++)
+		dip->i_zone[i] = rip->i_zone[i];
+  }
+}
 
 /*===========================================================================*
  *				dup_inode				     *

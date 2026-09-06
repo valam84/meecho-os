@@ -1,4 +1,5 @@
 #include "fs.h"
+#include <sys/dirent.h>
 #include <sys/stat.h>
 #include <string.h>
 #include <minix/com.h>
@@ -81,7 +82,7 @@ int fs_link(ino_t dir_nr, char *name, ino_t ino_nr)
   
   /* Try to link. */
   if(r == OK)
-	  r = search_dir(ip, name, &rip->i_num, ENTER);
+	  r = search_dir(ip, name, &rip->i_num, ENTER, IFTODT(rip->i_mode));
 
   /* If success, register the linking. */
   if(r == OK) {
@@ -161,9 +162,18 @@ ssize_t fs_rdlink(ino_t ino_nr, struct fsdriver_data *data, size_t bytes)
 
   if(!S_ISLNK(rip->i_mode))
 	  r = EACCES;
-  else {
-	if(!(bp = get_block_map(rip, 0)))
+  else if (IS_FAST_SYMLINK(rip)) {
+	/* A short target lives in the block-number array of the inode. */
+	if (bytes > (size_t) rip->i_size)
+		bytes = rip->i_size;
+	r = fsdriver_copyout(data, 0, (char *) rip->i_zone, bytes);
+	if (r == OK)
+		r = bytes;
+  } else {
+	if(!(bp = get_block_map(rip, 0))) {
+		put_inode(rip);
 		return EIO;
+	}
 	/* Passed all checks */
 	if (bytes > rip->i_size)
 		bytes = rip->i_size;
@@ -196,7 +206,7 @@ char dir_name[MFS_NAME_MAX];		/* name of directory to be removed */
   int r;
 
   /* search_dir checks that rip is a directory too. */
-  if ((r = search_dir(rip, "", NULL, IS_EMPTY)) != OK)
+  if ((r = search_dir(rip, "", NULL, IS_EMPTY, 0)) != OK)
   	return(r);
 
   if (rip->i_num == ROOT_INODE) return(EBUSY); /* can't remove 'root' */
@@ -229,14 +239,14 @@ const char *file_name;		/* name of file to be removed */
   /* If rip is not NULL, it is used to get faster access to the inode. */
   if (rip == NULL) {
   	/* Search for file in directory and try to get its inode. */
-	err_code = search_dir(dirp, file_name, &numb, LOOK_UP);
+	err_code = search_dir(dirp, file_name, &numb, LOOK_UP, 0);
 	if (err_code == OK) rip = get_inode(dirp->i_dev, (int) numb);
 	if (err_code != OK || rip == NULL) return(err_code);
   } else {
 	dup_inode(rip);		/* inode will be returned with put_inode */
   }
 
-  r = search_dir(dirp, file_name, NULL, DELETE);
+  r = search_dir(dirp, file_name, NULL, DELETE, 0);
 
   if (r == OK) {
 	rip->i_nlinks--;	/* entry deleted from parent's dir */
@@ -389,14 +399,16 @@ int fs_rename(ino_t old_dir_nr, char *old_name, ino_t new_dir_nr,
 	numb = old_ip->i_num;		/* inode number of old file */
 	  
 	if(same_pdir) {
-		r = search_dir(old_dirp, old_name, NULL, DELETE);
+		r = search_dir(old_dirp, old_name, NULL, DELETE, 0);
 						/* shouldn't go wrong. */
 		if(r == OK)
-			(void) search_dir(old_dirp, new_name, &numb, ENTER);
+			(void) search_dir(old_dirp, new_name, &numb, ENTER,
+			    IFTODT(old_ip->i_mode));
 	} else {
-		r = search_dir(new_dirp, new_name, &numb, ENTER);
+		r = search_dir(new_dirp, new_name, &numb, ENTER,
+		    IFTODT(old_ip->i_mode));
 		if(r == OK)
-			(void) search_dir(old_dirp, old_name, NULL, DELETE);
+			(void) search_dir(old_dirp, old_name, NULL, DELETE, 0);
 	}
   }
   /* If r is OK, the ctime and mtime of old_dirp and new_dirp have been marked
@@ -406,7 +418,7 @@ int fs_rename(ino_t old_dir_nr, char *old_name, ino_t new_dir_nr,
 	/* Update the .. entry in the directory (still points to old_dirp).*/
 	numb = new_dirp->i_num;
 	(void) unlink_file(old_ip, NULL, "..");
-	if(search_dir(old_ip, "..", &numb, ENTER) == OK) {
+	if(search_dir(old_ip, "..", &numb, ENTER, DT_DIR) == OK) {
 		/* New link created. */
 		new_dirp->i_nlinks++;
 		IN_MARKDIRTY(new_dirp);
@@ -467,6 +479,20 @@ off_t newsize;			/* inode must become this size */
   file_type = rip->i_mode & I_TYPE;	/* check to see if file is special */
   if (file_type == I_CHAR_SPECIAL || file_type == I_BLOCK_SPECIAL)
 	return(EINVAL);
+
+  /* A fast symbolic link owns no blocks: its target is in the bytes that
+   * would otherwise be block numbers, and freeing those as blocks would
+   * hand the file system pieces of itself.
+   */
+  if (IS_FAST_SYMLINK(rip)) {
+	if (newsize == 0) {
+		memset(rip->i_zone, 0, sizeof(rip->i_zone));
+		rip->i_size = 0;
+		rip->i_update |= CTIME | MTIME;
+		IN_MARKDIRTY(rip);
+	}
+	return(OK);
+  }
   if (newsize > rip->i_sp->s_max_size)	/* don't let inode grow too big */
 	return(EFBIG);
 

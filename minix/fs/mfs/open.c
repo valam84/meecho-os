@@ -1,4 +1,5 @@
 #include "fs.h"
+#include <sys/dirent.h>
 #include <sys/stat.h>
 #include <string.h>
 #include "buf.h"
@@ -98,8 +99,8 @@ int fs_mkdir(ino_t dir_nr, char *name, mode_t mode, uid_t uid, gid_t gid)
   dot = rip->i_num;		/* inode number of the new dir itself */
 
   /* Now make dir entries for . and .. unless the disk is completely full. */
-  r1 = search_dir(rip, ".", &dot, ENTER);	/* enter . in the new dir */
-  r2 = search_dir(rip, "..", &dotdot, ENTER);	/* enter .. in the new dir */
+  r1 = search_dir(rip, ".", &dot, ENTER, DT_DIR);   /* enter . in the new dir */
+  r2 = search_dir(rip, "..", &dotdot, ENTER, DT_DIR); /* and .. as well */
 
   /* If both . and .. were successfully entered, increment the link counts. */
   if (r1 == OK && r2 == OK) {
@@ -110,7 +111,7 @@ int fs_mkdir(ino_t dir_nr, char *name, mode_t mode, uid_t uid, gid_t gid)
   } else {
 	  /* It was not possible to enter . or .. probably disk was full -
 	   * links counts haven't been touched. */
-	  if(search_dir(ldirp, name, NULL, DELETE) != OK)
+	  if(search_dir(ldirp, name, NULL, DELETE, 0) != OK)
 		  panic("Dir disappeared: %llu", rip->i_num);
 	  rip->i_nlinks--;	/* undo the increment done in new_node() */
   }
@@ -139,6 +140,40 @@ int fs_slink(ino_t dir_nr, char *name, uid_t uid, gid_t gid,
 
   /* Create the inode for the symlink. */
   sip = new_node(ldirp, name, (I_SYMBOLIC_LINK | RWX_MODES), uid, gid, 0);
+
+  /* A target short enough to fit in the inode's block-number array is put
+   * there rather than in a block of its own: it saves a block and a read
+   * per link, and almost every link is short.  Only V4 has room for it.
+   */
+  if ((r = err_code) == OK && sip != NULL &&
+      sip->i_sp->s_version == V4 && bytes <= MFS4_FAST_SYMLINK_MAX) {
+	char target[MFS4_FAST_SYMLINK_MAX];
+
+	memset(target, 0, sizeof(target));
+	r = fsdriver_copyin(data, 0, target, bytes);
+
+	if (r == OK && memchr(target, '\0', bytes) != NULL) {
+		/* A NUL inside the target would make the link unusable
+		 * later; the block path says ENAMETOOLONG for this, and
+		 * so does this one.
+		 */
+		r = ENAMETOOLONG;
+	}
+
+	if (r == OK) {
+		memcpy(sip->i_zone, target, sizeof(target));
+		sip->i_size = (off_t) bytes;
+		IN_MARKDIRTY(sip);
+	} else {
+		sip->i_nlinks = NO_LINK;
+		if (search_dir(ldirp, name, NULL, DELETE, 0) != OK)
+			panic("Symbolic link vanished");
+	}
+
+	put_inode(sip);
+	put_inode(ldirp);
+	return(r);
+  }
 
   /* Allocate a disk block for the contents of the symlink.
    * Copy contents of symlink (the name pointed to) into first disk block. */
@@ -174,7 +209,7 @@ int fs_slink(ino_t dir_nr, char *name, uid_t uid, gid_t gid,
   
 	if(r != OK) {
 		sip->i_nlinks = NO_LINK;
-		if(search_dir(ldirp, name, NULL, DELETE) != OK)
+		if(search_dir(ldirp, name, NULL, DELETE, 0) != OK)
 			  panic("Symbolic link vanished");
 	} 
   }
@@ -235,7 +270,8 @@ static struct inode *new_node(struct inode *ldirp,
 	rw_inode(rip, WRITING);		/* force inode to disk now */
 
 	/* New inode acquired.  Try to make directory entry. */
-	if((r=search_dir(ldirp, string, &rip->i_num, ENTER)) != OK) {
+	if((r=search_dir(ldirp, string, &rip->i_num, ENTER,
+	    IFTODT(bits))) != OK) {
 		rip->i_nlinks--;	/* pity, have to free disk inode */
 		IN_MARKDIRTY(rip);	/* dirty inodes are written out */
 		put_inode(rip);	/* this call frees the inode */

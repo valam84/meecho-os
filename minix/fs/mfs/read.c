@@ -12,9 +12,15 @@
 
 static struct buf *rahead(struct inode *rip, block_t baseblock, u64_t
 	position, unsigned bytes_ahead);
+static ssize_t fs_getdents_v4(struct inode *rip,
+	struct fsdriver_data *data, size_t bytes, off_t *posp, char *buf,
+	size_t bufsize);
 static int rw_chunk(struct inode *rip, u64_t position, unsigned off,
 	size_t chunk, unsigned left, int call, struct fsdriver_data *data,
 	unsigned buf_off, unsigned int block_size, int *completed);
+int map_slot(struct inode *rip, u64_t file_block, int *level,
+	int *slot, u64_t *index);
+u64_t map_span(struct inode *rip, int level);
 
 
 /*===========================================================================*
@@ -205,6 +211,67 @@ int *completed;			/* number of bytes copied */
 
 
 /*===========================================================================*
+ *				map_slot				     *
+ *===========================================================================*/
+int map_slot(struct inode *rip, u64_t file_block, int *level,
+	int *slot, u64_t *index)
+{
+/* Where in an inode's block map does file block number 'file_block' live?
+ *
+ * The answer is a slot of i_zone[] and, when that slot is an indirect block,
+ * how many levels deep the tree under it is and which position in it to walk
+ * to.  Written once and for any number of levels, because the difference
+ * between the two formats is exactly that number: V3 has a single and a
+ * double indirect block, V4 has a triple as well, and a third special case
+ * beside the other two would be a third place to get wrong.
+ *
+ * Returns 0 on success, -1 if the position is beyond what this inode's
+ * format can address at all.
+ */
+  u64_t nd = rip->i_ndzones, ni = rip->i_nindirs, span;
+  unsigned int lv;
+
+  if (file_block < nd) {
+	*level = 0;
+	*slot = (int) file_block;
+	*index = 0;
+	return 0;
+  }
+  file_block -= nd;
+
+  span = 1;
+  for (lv = 1; lv <= rip->i_nlevels; lv++) {
+	span *= ni;			/* blocks under a tree this deep */
+	if (file_block < span) {
+		*level = (int) lv;
+		*slot = (int) (nd + lv - 1);
+		*index = file_block;
+		return 0;
+	}
+	file_block -= span;
+  }
+
+  return -1;
+}
+
+/*===========================================================================*
+ *				map_span				     *
+ *===========================================================================*/
+u64_t map_span(struct inode *rip, int level)
+{
+/* How many file blocks one entry of an indirect block at this level covers:
+ * i_nindirs raised to (level - 1).
+ */
+  u64_t span = 1;
+  int i;
+
+  for (i = 1; i < level; i++)
+	span *= rip->i_nindirs;
+
+  return span;
+}
+
+/*===========================================================================*
  *				read_map				     *
  *===========================================================================*/
 block_t read_map(rip, position, opportunistic)
@@ -213,69 +280,44 @@ off_t position;			/* position in file whose blk wanted */
 int opportunistic;		/* if nonzero, only use cache for metadata */
 {
 /* Given an inode and a position within the corresponding file, locate the
- * block (not zone) number in which that position is to be found and return it.
+ * block number in which that position is to be found and return it.
  */
 
   struct buf *bp;
   zone_t z;
-  int scale, boff, index, zind;
-  unsigned int dzones, nr_indirects;
-  block_t b;
-  unsigned long excess, zone, block_pos;
-  int iomode;
+  int level, slot, iomode;
+  u64_t index, span;
 
   iomode = opportunistic ? PEEK : NORMAL;
 
-  scale = rip->i_sp->s_log_zone_size;	/* for block-zone conversion */
-  block_pos = position/rip->i_sp->s_block_size;	/* relative blk # in file */
-  zone = block_pos >> scale;	/* position's zone */
-  boff = (int) (block_pos - (zone << scale) ); /* relative blk # within zone */
-  dzones = rip->i_ndzones;
-  nr_indirects = rip->i_nindirs;
+  /* A zone is a block: V3 requires it, V4 has no other notion. */
+  assert(rip->i_sp->s_log_zone_size == 0);
 
-  /* Is 'position' to be found in the inode itself? */
-  if (zone < dzones) {
-	zind = (int) zone;	/* index should be an int */
-	z = rip->i_zone[zind];
+  if (map_slot(rip, (u64_t) position / rip->i_sp->s_block_size, &level, &slot,
+      &index) != 0)
+	return(NO_BLOCK);
+
+  z = rip->i_zone[slot];
+
+  /* Walk down the tree of indirect blocks, if there is one. */
+  while (level > 0) {
 	if (z == NO_ZONE) return(NO_BLOCK);
-	b = (block_t) ((z << scale) + boff);
-	return(b);
-  }
 
-  /* It is not in the inode, so it must be single or double indirect. */
-  excess = zone - dzones;	/* first Vx_NR_DZONES don't count */
-
-  if (excess < nr_indirects) {
-	/* 'position' can be located via the single indirect block. */
-	z = rip->i_zone[dzones];
-  } else {
-	/* 'position' can be located via the double indirect block. */
-	if ( (z = rip->i_zone[dzones+1]) == NO_ZONE) return(NO_BLOCK);
-	excess -= nr_indirects;			/* single indir doesn't count*/
-	b = (block_t) z << scale;
-	ASSERT(rip->i_dev != NO_DEV);
-	index = (int) (excess/nr_indirects);
-	if ((unsigned int) index > rip->i_nindirs)
-		return(NO_BLOCK);	/* Can't go beyond double indirects */
-	bp = get_block(rip->i_dev, b, iomode); /* get double indirect block */
+	bp = get_block(rip->i_dev, (block_t) z, iomode);
 	if (bp == NULL)
 		return NO_BLOCK;		/* peeking failed */
-	z = rd_indir(bp, index);		/* z= zone for single*/
-	put_block(bp);				/* release double ind block */
-	excess = excess % nr_indirects;		/* index into single ind blk */
+
+	span = map_span(rip, level);
+	z = rd_indir(bp, (int) (index / span));
+	put_block(bp);
+
+	index %= span;
+	level--;
   }
 
-  /* 'z' is zone num for single indirect block; 'excess' is index into it. */
   if (z == NO_ZONE) return(NO_BLOCK);
-  b = (block_t) z << scale;			/* b is blk # for single ind */
-  bp = get_block(rip->i_dev, b, iomode);	/* get single indirect block */
-  if (bp == NULL)
-	return NO_BLOCK;			/* peeking failed */
-  z = rd_indir(bp, (int) excess);		/* get block pointed to */
-  put_block(bp);				/* release single indir blk */
-  if (z == NO_ZONE) return(NO_BLOCK);
-  b = (block_t) ((z << scale) + boff);
-  return(b);
+
+  return (block_t) z;
 }
 
 struct buf *get_block_map(register struct inode *rip, u64_t position)
@@ -310,8 +352,10 @@ int index;			/* index into *bp */
 
   sp = &superblock;
 
-  /* read a zone from an indirect block */
-  assert(sp->s_version == V3);
+  /* Read a block number from an indirect block.  Both formats write the
+   * same 32-bit numbers here; what differs is how many levels of these
+   * blocks an inode has, which is the caller's business.
+   */
   zone = (zone_t) conv4(sp->s_native, (long) b_v2_ind(bp)[index]);
 
   if (zone != NO_ZONE &&
@@ -449,6 +493,79 @@ unsigned bytes_ahead;		/* bytes beyond position for immediate use */
 
 
 /*===========================================================================*
+ *				fs_getdents_v4				     *
+ *===========================================================================*/
+static ssize_t fs_getdents_v4(struct inode *rip, struct fsdriver_data *data,
+	size_t bytes, off_t *posp, char *buf, size_t bufsize)
+{
+/* Read a V4 directory: records of their own lengths, each carrying the type
+ * of what it names, so that unlike V3 this does not read an inode per entry.
+ */
+  struct fsdriver_dentry fsdentry;
+  struct mfs4_dirent *dp;
+  struct buf *bp;
+  unsigned int block_size, off;
+  off_t pos, block_pos, new_pos, ent_pos;
+  int r, done;
+
+  pos = *posp;
+  block_size = rip->i_sp->s_block_size;
+  done = FALSE;
+
+  fsdriver_dentry_init(&fsdentry, data, bytes, buf, bufsize);
+
+  /* The default position for the next request is EOF. */
+  new_pos = rip->i_size;
+  r = 0;
+
+  for (block_pos = pos - pos % block_size; block_pos < rip->i_size;
+       block_pos += block_size) {
+	/* Since directories don't have holes, 'bp' cannot be NULL. */
+	bp = get_block_map(rip, block_pos);
+	assert(bp != NULL);
+
+	for (off = 0; off + MFS4_DIRENT_HDR <= block_size;
+	     off += dp->d_rec_len) {
+		dp = (struct mfs4_dirent *) (b_data(bp) + off);
+
+		if (!mfs4_dirent_ok(dp, off, block_size)) {
+			printf("MFS: corrupt directory entry in inode %llu "
+			    "at %llu+%u\n", rip->i_num, block_pos, off);
+			put_block(bp);
+			return(EIO);
+		}
+
+		ent_pos = block_pos + off;
+		if (ent_pos < pos)
+			continue;	/* before where the caller left off */
+		if (dp->d_ino == 0)
+			continue;	/* a free record */
+
+		r = fsdriver_dentry_add(&fsdentry, (ino_t) dp->d_ino,
+			dp->d_name, dp->d_name_len, dp->d_type);
+
+		/* If the user buffer is full, or an error occurred, stop.
+		 * This entry is where the next request starts.
+		 */
+		if (r <= 0) {
+			done = TRUE;
+			new_pos = ent_pos;
+			break;
+		}
+	}
+
+	put_block(bp);
+	if (done)
+		break;
+  }
+
+  if (r >= 0 && (r = fsdriver_dentry_finish(&fsdentry)) >= 0)
+	*posp = new_pos;
+
+  return(r);
+}
+
+/*===========================================================================*
  *				fs_getdents				     *
  *===========================================================================*/
 ssize_t fs_getdents(ino_t ino_nr, struct fsdriver_data *data, size_t bytes,
@@ -463,16 +580,31 @@ ssize_t fs_getdents(ino_t ino_nr, struct fsdriver_data *data, size_t bytes,
   unsigned int block_size, len, type;
   off_t pos, off, block_pos, new_pos, ent_pos;
   struct buf *bp;
-  struct direct *dp;
+  struct mfs3_dirent *dp;
   char *cp;
+
+  if( (rip = get_inode(fs_dev, ino_nr)) == NULL)
+	  return(EINVAL);
+
+  if (rip->i_sp->s_version == V4) {
+	r = fs_getdents_v4(rip, data, bytes, posp, getdents_buf,
+		sizeof(getdents_buf));
+
+	if (r >= 0 && !rip->i_sp->s_rd_only) {
+		rip->i_update |= ATIME;
+		IN_MARKDIRTY(rip);
+	}
+
+	put_inode(rip);
+	return(r);
+  }
 
   /* Check whether the position is properly aligned */
   pos = *posp;
-  if( (unsigned int) pos % DIR_ENTRY_SIZE)
+  if( (unsigned int) pos % DIR_ENTRY_SIZE) {
+	  put_inode(rip);
 	  return(ENOENT);
-  
-  if( (rip = get_inode(fs_dev, ino_nr)) == NULL)
-	  return(EINVAL);
+  }
 
   block_size = rip->i_sp->s_block_size;
   off = (pos % block_size);		/* Offset in block */
@@ -518,9 +650,9 @@ ssize_t fs_getdents(ino_t ino_nr, struct fsdriver_data *data, size_t bytes,
 		type = IFTODT(entrip->i_mode);
 		put_inode(entrip);
 
-		/* MFS does not store file types in its directory entries, and
-		 * fetching the mode from the inode is seriously expensive.
-		 * Userland should always be prepared to receive DT_UNKNOWN.
+		/* MFS V3 does not store file types in its directory entries,
+		 * and fetching the mode from the inode is seriously expensive
+		 * - which is why V4 stores one.
 		 */
 		r = fsdriver_dentry_add(&fsdentry, (ino_t) dp->mfs_d_ino,
 			dp->mfs_d_name, len, type);

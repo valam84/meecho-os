@@ -90,6 +90,7 @@ int fs_mount(dev_t dev, unsigned int flags, struct fsdriver_node *root_node,
   /* Mark it dirty */
   if(!superblock.s_rd_only) {
 	  superblock.s_flags &= ~MFSFLAG_CLEAN;
+	  superblock.s_mount_time = clock_time(NULL);
 	  if(write_super(&superblock) != OK)
 		panic("mounting: couldn't write dirty superblock");
   }

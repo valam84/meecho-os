@@ -24,6 +24,7 @@
 #include <minix/fsdriver.h>
 
 #include "mfsdir.h"
+#include "ondisk.h"
 #include "const.h"
 #include "type.h"
 #include "proto.h"

@@ -53,10 +53,21 @@
 #include "mfs/mfsdir.h"
 #include <minix/fslib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <dirent.h>
 
 #include "exitvalues.h"
+
+/*
+ * A file system this program cannot check, as opposed to one it checked
+ * and found wanting.  The two have to be told apart by whoever runs fsck:
+ * a boot script may reasonably mount an unchecked file system with a
+ * warning, and may not mount a broken one.  The value is beyond the ones
+ * <exitvalues.h> defines, which are NetBSD's and mean the same in every
+ * fsck.
+ */
+#define FSCK_EXIT_UNKNOWN_FS	16
 
 #undef N_DATA
 
@@ -89,7 +100,20 @@ unsigned int fs_version = 2, block_size = 0;
 #define INODE_CT	 95	/* default inodes (when making file system) */
 
 #include "mfs/super.h"
-static struct super_block sb;
+/*
+ * The superblock as it lies on a V3 disk.  This used to be the server's
+ * in-core structure, which was the same thing for as long as there was one
+ * format; the two parted when V4 arrived.  Reading and writing it is now
+ * exactly the 32 bytes the disk holds - it used to write the whole in-core
+ * structure, trailing fields and all, into the block behind the superblock.
+ *
+ * A V4 file system is not checked here: its inodes and its directory
+ * entries have nothing in common with these, so fsck for V4 is a program of
+ * its own.  What this one owes a V4 volume is to recognise it and say so,
+ * rather than to report a corrupt V3 one.
+ */
+static struct mfs3_super sb;
+static zone_nr first_data_zone;	/* computed, not a field of the V3 super */
 
 #define STICKY_BIT	01000	/* not defined anywhere else */
 
@@ -99,7 +123,7 @@ static struct super_block sb;
 #define ztob(z)		((block_nr) (z) << sb.s_log_zone_size)
 #define btoa64(b)	((u64_t)(b) * block_size)
 #define SCALE		((int) ztob(1))	/* # blocks in a zone */
-#define FIRST		((zone_nr) sb.s_firstdatazone)	/* as the name says */
+#define FIRST		(first_data_zone)	/* as the name says */
 
 /* # blocks of each type */
 #define N_IMAP		(sb.s_imap_blocks)
@@ -552,7 +576,7 @@ void lsuper()
 		return;
 	}
 	printf("flags         = ");
-	if(sb.s_flags & MFSFLAG_CLEAN) printf("CLEAN "); else printf("DIRTY ");
+	if(sb.s_flags & MFS3_FLAG_CLEAN) printf("CLEAN "); else printf("DIRTY ");
 	printf("\n");
   } while (yes("Do you want to try again"));
   if (repair) exit(FSCK_EXIT_OK);
@@ -575,6 +599,11 @@ void rw_super(int put)
   	fatal("couldn't read super block.");
   }
   if (listsuper) lsuper();
+  if (*(uint32_t *) &sb == MFS4_SUPER_MAGIC) {
+	printf("%s: this is a V4 file system, which this fsck cannot check\n",
+	    fsck_device);
+	exit(FSCK_EXIT_UNKNOWN_FS);
+  }
   if (sb.s_magic == SUPER_MAGIC) fatal("Cannot handle V1 file systems");
   if (sb.s_magic == SUPER_V2) {
   	fs_version = 2;
@@ -589,7 +618,7 @@ void rw_super(int put)
   if (sb.s_zones <= 0) fatal("no zones");
   if (sb.s_imap_blocks <= 0) fatal("no imap");
   if (sb.s_zmap_blocks <= 0) fatal("no zmap");
-  if (sb.s_firstdatazone != 0 && sb.s_firstdatazone <= 4)
+  if (sb.s_firstdatazone_old != 0 && sb.s_firstdatazone_old <= 4)
 	fatal("first data zone too small");
   if (sb.s_log_zone_size < 0) fatal("zone size < block size");
   if (sb.s_max_size <= 0) {
@@ -632,17 +661,17 @@ void chksuper()
 	fatal("log_zone_size too large");
   if (sb.s_log_zone_size > 8) printf("warning: large log_zone_size (%d)\n",
 	       sb.s_log_zone_size);
-  sb.s_firstdatazone = (BLK_ILIST + N_ILIST + SCALE - 1) >> sb.s_log_zone_size;
+  first_data_zone = (BLK_ILIST + N_ILIST + SCALE - 1) >> sb.s_log_zone_size;
   if (sb.s_firstdatazone_old != 0) {
 	if (sb.s_firstdatazone_old >= sb.s_zones)
 		fatal("first data zone too large");
-	if (sb.s_firstdatazone_old < sb.s_firstdatazone)
+	if (sb.s_firstdatazone_old < first_data_zone)
 		fatal("first data zone too small");
-	if (sb.s_firstdatazone_old != sb.s_firstdatazone) {
+	if (sb.s_firstdatazone_old != first_data_zone) {
 		printf("warning: expected first data zone to be %u ",
-			sb.s_firstdatazone);
+			first_data_zone);
 		printf("instead of %u\n", sb.s_firstdatazone_old);
-		sb.s_firstdatazone = sb.s_firstdatazone_old;
+		first_data_zone = sb.s_firstdatazone_old;
 	}
   }
   maxsize = MAX_FILE_POS;
@@ -655,7 +684,7 @@ void chksuper()
 	printf("instead of %d\n", sb.s_max_size);
   }
 
-  if(sb.s_flags & MFSFLAG_MANDATORY_MASK) {
+  if(sb.s_flags & MFS3_FLAG_MANDATORY_MASK) {
   	fatal("unsupported feature bits - newer fsck needed");
   }
 }
@@ -1562,8 +1591,8 @@ char *f, **clist, **ilist, **zlist;
   chksuper();
 
   if(markdirty) {
-  	if(sb.s_flags & MFSFLAG_CLEAN) {
-	  	sb.s_flags &= ~MFSFLAG_CLEAN;
+  	if(sb.s_flags & MFS3_FLAG_CLEAN) {
+	  	sb.s_flags &= ~MFS3_FLAG_CLEAN;
   		rw_super(SUPER_PUT);
   		printf("\n----- FILE SYSTEM MARKED DIRTY -----\n\n");
 	} else {
@@ -1573,7 +1602,7 @@ char *f, **clist, **ilist, **zlist;
 
   /* If preening, skip fsck if clean flag is on. */
   if(preen) {
-  	if(sb.s_flags & MFSFLAG_CLEAN) {
+  	if(sb.s_flags & MFS3_FLAG_CLEAN) {
 	  	printf("%s: clean\n", f);
 		return;
 	} 
@@ -1605,12 +1634,12 @@ char *f, **clist, **ilist, **zlist;
    * doing it, and the FS wasn't marked clean, we can mark the FS as clean.
    * If we were stopped from repairing, tell user about it.
    */
-  if(repair && !(sb.s_flags & MFSFLAG_CLEAN)) {
+  if(repair && !(sb.s_flags & MFS3_FLAG_CLEAN)) {
   	if(notrepaired) {
   		printf("\n----- FILE SYSTEM STILL DIRTY -----\n\n");
 	} else {
 		sync();	/* update FS on disk before clean flag */
-	  	sb.s_flags |= MFSFLAG_CLEAN;
+	  	sb.s_flags |= MFS3_FLAG_CLEAN;
   		rw_super(SUPER_PUT);
   		printf("\n----- FILE SYSTEM MARKED CLEAN -----\n\n");
 	}

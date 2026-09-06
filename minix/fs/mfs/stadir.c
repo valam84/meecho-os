@@ -15,25 +15,36 @@ static blkcnt_t estimate_blocks(struct inode *rip)
  * indirect blocks is too costly for a stat call, so we disregard holes and
  * return a conservative estimation.
  */
-  blkcnt_t zones, sindirs, dindirs, nr_indirs, sq_indirs;
-  unsigned int zone_size;
+  blkcnt_t zones, indirs, nr_indirs, total;
+  unsigned int zone_size, level;
+
+  /* A fast symbolic link has no blocks at all. */
+  if (IS_FAST_SYMLINK(rip))
+	return 0;
 
   /* Compute the number of zones used by the file. */
   zone_size = rip->i_sp->s_block_size << rip->i_sp->s_log_zone_size;
 
   zones = (blkcnt_t) ((rip->i_size + zone_size - 1) / zone_size);
 
-  /* Compute the number of indirect blocks needed for that zone count. */
+  /* Compute the number of indirect blocks needed for that zone count, one
+   * level at a time: each level holds the blocks of the level below it,
+   * divided by the entries an indirect block has.  Written as a loop
+   * because the two formats have a different number of levels.
+   */
   nr_indirs = (blkcnt_t) rip->i_nindirs;
-  sq_indirs = nr_indirs * nr_indirs;
+  total = zones;
+  indirs = zones - (blkcnt_t) rip->i_ndzones;
 
-  sindirs = (zones - (blkcnt_t) rip->i_ndzones + nr_indirs - 1) / nr_indirs;
-  dindirs = (sindirs - 1 + sq_indirs - 1) / sq_indirs;
+  for (level = 1; level <= rip->i_nlevels && indirs > 0; level++) {
+	indirs = (indirs + nr_indirs - 1) / nr_indirs;
+	total += indirs;
+  }
 
   /* Return the number of 512-byte blocks corresponding to the number of data
    * zones and indirect blocks.
    */
-  return (zones + sindirs + dindirs) * (blkcnt_t) (zone_size / 512);
+  return total * (blkcnt_t) (zone_size / 512);
 }
 
 
@@ -65,8 +76,12 @@ int fs_stat(ino_t ino_nr, struct stat *statbuf)
   statbuf->st_rdev = (s ? (dev_t)rip->i_zone[0] : NO_DEV);
   statbuf->st_size = rip->i_size;
   statbuf->st_atime = rip->i_atime;
+  statbuf->st_atimensec = rip->i_atime_nsec;
   statbuf->st_mtime = rip->i_mtime;
+  statbuf->st_mtimensec = rip->i_mtime_nsec;
   statbuf->st_ctime = rip->i_ctime;
+  statbuf->st_ctimensec = rip->i_ctime_nsec;
+  statbuf->st_birthtime = rip->i_btime;
   statbuf->st_blksize = lmfs_fs_block_size();
   statbuf->st_blocks = estimate_blocks(rip);
 
@@ -98,7 +113,7 @@ int fs_statvfs(struct statvfs *st)
   st->f_files = sp->s_ninodes;
   st->f_ffree = count_free_bits(sp, IMAP);
   st->f_favail = st->f_ffree;
-  st->f_namemax = MFS_DIRSIZ;
+  st->f_namemax = sp->s_name_max;
 
   return(OK);
 }

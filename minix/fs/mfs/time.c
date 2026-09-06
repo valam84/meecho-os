@@ -24,8 +24,12 @@ int fs_utime(ino_t ino_nr, struct timespec *atime, struct timespec *mtime)
   case UTIME_OMIT: /* do not touch */
 	break;
   default:
-	/* MFS does not support subsecond resolution, so we round down. */
+	/* V3 has no subsecond resolution, and rounds down; V4 has, and
+	 * keeps what it is given.  Setting the field either way costs
+	 * nothing: it is dropped on the way to a V3 disk.
+	 */
 	rip->i_atime = atime->tv_sec;
+	rip->i_atime_nsec = atime->tv_nsec;
 	break;
   }
 
@@ -36,8 +40,8 @@ int fs_utime(ino_t ino_nr, struct timespec *atime, struct timespec *mtime)
   case UTIME_OMIT: /* do not touch */
 	break;
   default:
-	/* MFS does not support subsecond resolution, so we round down. */
 	rip->i_mtime = mtime->tv_sec;
+	rip->i_mtime_nsec = mtime->tv_nsec;
 	break;
   }
 

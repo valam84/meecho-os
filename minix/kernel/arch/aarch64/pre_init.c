@@ -180,6 +180,7 @@ struct dtb_scan {
 	unsigned size_cells;	/* ...and a length */
 	const char *parent;	/* name of the depth-1 node being walked */
 	unsigned ncpu;
+	u32_t board_id;		/* which machine the root's compatible names */
 };
 
 /* A string property, compared against a literal. */
@@ -270,6 +271,27 @@ scan_node(void *cookie, int depth, const char *name,
 		if ((p = fdt_getprop(node, "#size-cells", &len)) != NULL &&
 		    len == 4)
 			s->size_cells = (unsigned)fdt_read_cells(p, 1);
+
+		/*
+		 * Which machine this is, from the root's compatible list, so
+		 * that user space can be told the truth about it.
+		 *
+		 * Everything the kernel itself needs it reads from the tree
+		 * directly - the console, the GIC, PSCI - and none of it cares
+		 * what the board is called. A driver in user space has no such
+		 * luxury yet: tty picks its UART from a table indexed by this
+		 * answer. Answering "QEMU virt" on hardware that is not QEMU
+		 * cost the first boot on the CB2; answering "generic" leaves
+		 * such a driver to decline, which is the correct behaviour
+		 * until it learns to read the tree the way readclock does.
+		 */
+		s->board_id = BOARD_ID_ARM64_GENERIC;
+		if (fdt_node_is_compatible(node, "linux,dummy-virt"))
+			s->board_id = BOARD_ID_QEMU_VIRT;
+		else if (fdt_node_is_compatible(node, "bigtreetech,cb2") ||
+		    fdt_node_is_compatible(node, "rockchip,rk3566"))
+			s->board_id = BOARD_ID_CB2;
+
 		return 0;
 	}
 
@@ -557,15 +579,6 @@ get_parameters(kinfo_t *cbi, phys_bytes dtb)
 	cbi->bootstrap_len = 0;
 	cbi->kernel_allocated_bytes = kern_end - kern_start;
 
-	/*
-	 * One board is built in, the way ARM builds in bsp/ti. When there is a
-	 * second, the board comes out of the device tree's root compatible
-	 * property - which is the reason the tree is parsed here at all.
-	 */
-	set_param(cbi, BOARDVARNAME, (char *)get_board_name(BOARD_ID_QEMU_VIRT));
-	set_param(cbi, ARCHVARNAME,
-	    (char *)get_board_arch_name(BOARD_ID_QEMU_VIRT));
-
 	if (!fdt_valid((const void *)dtb))
 		panic("no device tree at %lx: nothing says where memory is",
 		    dtb);
@@ -577,6 +590,17 @@ get_parameters(kinfo_t *cbi, phys_bytes dtb)
 
 	if (cbi->mmap_size == 0)
 		panic("device tree describes no memory");
+
+	/*
+	 * Which machine this is, as the root's compatible property named it -
+	 * set after the walk rather than before, because that is when the
+	 * answer exists. The board this port targets is not the machine it is
+	 * developed on, and a driver that asks has to be able to tell them
+	 * apart.
+	 */
+	set_param(cbi, BOARDVARNAME, (char *)get_board_name(scan.board_id));
+	set_param(cbi, ARCHVARNAME,
+	    (char *)get_board_arch_name(scan.board_id));
 
 	/*
 	 * Everything that is in RAM and is not free: the kernel image, the

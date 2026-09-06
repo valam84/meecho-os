@@ -72,6 +72,7 @@
 #define MINIX_BOARD_VENDOR_INTEL MINIX_MK_BOARD_VENDOR(1<<0)
 #define MINIX_BOARD_VENDOR_TI MINIX_MK_BOARD_VENDOR(1<<1)
 #define MINIX_BOARD_VENDOR_QEMU MINIX_MK_BOARD_VENDOR(1<<2)
+#define MINIX_BOARD_VENDOR_ROCKCHIP MINIX_MK_BOARD_VENDOR(1<<3)
 
 #define MINIX_BOARD_GENERIC MINIX_MK_BOARD(1<<0)
 /* BeagleBoard XM */
@@ -80,6 +81,8 @@
 #define MINIX_BOARD_BB MINIX_MK_BOARD(1<<2)
 /* QEMU's virt machine - the development target while there is no hardware */
 #define MINIX_BOARD_VIRT MINIX_MK_BOARD(1<<3)
+/* BIGTREETECH CB2, an RK3566 - the port's target board */
+#define MINIX_BOARD_CB2 MINIX_MK_BOARD(1<<4)
 
 /* Only  one  of a kind */
 #define MINIX_BOARD_VARIANT_GENERIC MINIX_MK_BOARD_VARIANT(1<<0)
@@ -125,6 +128,32 @@
 	| MINIX_BOARD_ARCH_VARIANT_ARM_ARMV8 \
 	| MINIX_BOARD_VENDOR_QEMU \
 	| MINIX_BOARD_VIRT \
+	| MINIX_BOARD_VARIANT_GENERIC\
+	)
+
+/* The BIGTREETECH CB2: an RK3566, and what this port is aimed at. */
+#define BOARD_ID_CB2 \
+	( MINIX_BOARD_ARCH_ARM64 \
+	| MINIX_BOARD_ARCH_VARIANT_ARM_ARMV8 \
+	| MINIX_BOARD_VENDOR_ROCKCHIP \
+	| MINIX_BOARD_CB2 \
+	| MINIX_BOARD_VARIANT_GENERIC\
+	)
+
+/*
+ * An AArch64 machine the kernel booted on and does not recognise.
+ *
+ * It exists so that "I do not know" is sayable. Until it was, the kernel
+ * announced QEMU's virt machine whatever it had booted on, and tty believed
+ * it: on the CB2 it mapped 0x09000000 - a PL011 there, ordinary RAM here -
+ * and span forever on a BUSY bit read out of memory, holding the only CPU
+ * while every other process queued behind it. A driver is entitled to ask
+ * what machine this is; it is not entitled to be told something false.
+ */
+#define BOARD_ID_ARM64_GENERIC \
+	( MINIX_BOARD_ARCH_ARM64 \
+	| MINIX_BOARD_ARCH_VARIANT_ARM_ARMV8 \
+	| MINIX_BOARD_GENERIC \
 	| MINIX_BOARD_VARIANT_GENERIC\
 	)
 
@@ -186,6 +215,8 @@ static struct board_id2name board_id2name[] = {
 	{.id = BOARD_ID_BBW,.name = "ARM-ARMV7-TI-BB-WHITE"},
 	{.id = BOARD_ID_BBB,.name = "ARM-ARMV7-TI-BB-BLACK"},
 	{.id = BOARD_ID_QEMU_VIRT,.name = "ARM64-ARMV8-QEMU-VIRT-GENERIC"},
+	{.id = BOARD_ID_CB2,.name = "ARM64-ARMV8-ROCKCHIP-CB2-GENERIC"},
+	{.id = BOARD_ID_ARM64_GENERIC,.name = "ARM64-ARMV8-GENERIC-GENERIC-GENERIC"},
 };
 
 struct board_arch2arch

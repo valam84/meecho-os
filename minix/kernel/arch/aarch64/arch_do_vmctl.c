@@ -28,7 +28,28 @@
 static void
 set_ttbr(struct proc *p, phys_bytes ttbr, u64_t *v)
 {
-	p->p_seg.p_ttbr = ttbr;
+	unsigned asid = 0;
+
+	if (pg_asids_usable()) {
+		/*
+		 * The tag is the process slot plus one. It needs no allocator
+		 * and nothing to release: a slot holds one address space at a
+		 * time, so the tags of live spaces are distinct by
+		 * construction, and zero is left to the table the kernel
+		 * booted on.
+		 *
+		 * A slot does outlive the address space in it, though - the
+		 * next process to land here gets the same tag over a
+		 * different set of tables - so whatever the TLB still holds
+		 * under this tag has to go before the new root is installed.
+		 * On every core, not just this one: the previous occupant may
+		 * have run anywhere.
+		 */
+		asid = AARCH64_PROC_ASID(p);
+		refresh_tlb_asid(asid);
+	}
+
+	p->p_seg.p_ttbr = ttbr | AARCH64_TTBR_ASID(asid);
 	assert(p->p_seg.p_ttbr);
 
 	/*
@@ -92,7 +113,16 @@ arch_do_vmctl(register message *m_ptr, struct proc *p)
 		return OK;
 
 	case VMCTL_FLUSHTLB:
-		refresh_tlb();
+		/*
+		 * VM has changed this process's mappings. With tagged address
+		 * spaces that is one ASID's worth of entries rather than the
+		 * whole TLB - and inner-shareable, so it reaches the cores
+		 * this process has run on and not only the one asking.
+		 */
+		if (pg_asids_usable())
+			refresh_tlb_asid(AARCH64_PROC_ASID(p));
+		else
+			refresh_tlb();
 		return OK;
 	}
 

@@ -20,6 +20,15 @@ d--755 0 0
 	$
 	sbin d--755 0 0
 		minix-service ---755 0 0 minix-service
+#ifdef __aarch64__
+		reboot ---755 0 0 reboot
+		shutdown ---755 0 0 shutdown
+/* reboot decides what to do from the name it was called by, the way the
+ * installed system links it three ways.
+ */
+		halt s--755 0 0 /sbin/reboot
+		poweroff s--755 0 0 /sbin/reboot
+#endif
 	$
 	service d--755 0 0
 #ifdef __i386__

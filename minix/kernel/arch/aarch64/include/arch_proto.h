@@ -125,6 +125,16 @@ void pg_ap_drop_identity(void);
  */
 void pg_enable_user_walks(void);
 
+/*
+ * Whether address spaces can be tagged with an ASID rather than flushed out
+ * of the TLB on every switch. False only where the hardware's ASID field is
+ * too narrow for one tag per process slot; see pg_utils.c.
+ */
+int pg_asids_usable(void);
+
+/* The tag this process's address space carries. Zero is the boot table's. */
+#define AARCH64_PROC_ASID(p)	((unsigned)((p)->p_nr + 1))
+
 void pg_clear(void);
 phys_bytes pg_load(void);
 void pg_map(phys_bytes phys, vir_bytes vaddr, vir_bytes vaddr_end,

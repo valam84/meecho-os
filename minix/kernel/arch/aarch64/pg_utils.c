@@ -136,6 +136,7 @@ extern char boot_stack_top[];
 #define TCR_SH1_INNER		(3UL << 28)
 #define TCR_TG1_4K		(2UL << 30)	/* not the TG0 encoding */
 #define TCR_IPS(x)		((u64_t)(x) << 32)
+#define TCR_AS			(1UL << 36)	/* 16-bit ASIDs, not 8 */
 
 /* SCTLR_EL1 fields this file touches. */
 #define SCTLR_M			(1UL << 0)	/* MMU */
@@ -856,6 +857,57 @@ supported_ips(void)
 }
 
 /*===========================================================================*
+ *				supported_asid_bits			     *
+ *===========================================================================*/
+/*
+ * How wide an ASID this machine implements: eight bits, or sixteen.
+ *
+ * ID_AA64MMFR0_EL1.ASIDBits [7:4] says which, and it is the only choice the
+ * architecture offers. Sixteen is what every core this port targets has -
+ * Cortex-A55 and Cortex-A72 both - but eight is allowed, and a kernel that
+ * assumed otherwise would hand out ASIDs that alias.
+ */
+static unsigned
+supported_asid_bits(void)
+{
+	u64_t mmfr0;
+
+	__asm__ volatile("mrs %0, id_aa64mmfr0_el1" : "=r"(mmfr0));
+
+	return ((mmfr0 >> 4) & 0xf) == 2 ? 16 : 8;
+}
+
+/*
+ * Whether address spaces can be tagged rather than flushed. Decided in
+ * paging_on(), beside the TCR bit that has to agree with it, and read on
+ * every address space switch - which is why it is a variable rather than
+ * another read of the feature register.
+ */
+static int asids_usable;
+
+/*===========================================================================*
+ *				pg_asids_usable				     *
+ *===========================================================================*/
+/*
+ * The tag this port hands out is the process slot plus one, so every live
+ * address space has a distinct one for free: no allocator to get wrong, no
+ * rollover, nothing to release. The price is that the widest tag needed is
+ * NR_PROCS, and where that does not fit the hardware's ASID field the scheme
+ * cannot be used at all - two address spaces sharing a tag is not a slow
+ * kernel, it is a wrong one.
+ *
+ * On a machine with eight-bit ASIDs and 256 process slots it does not fit,
+ * and this is false; __switch_address_space() then throws the whole TLB away
+ * on every switch, which is what this port did before ASIDs existed and is
+ * known to work.
+ */
+int
+pg_asids_usable(void)
+{
+	return asids_usable;
+}
+
+/*===========================================================================*
  *				paging_on				     *
  *===========================================================================*/
 /*
@@ -870,6 +922,7 @@ static void
 paging_on(phys_bytes low_root)
 {
 	u64_t tcr, sctlr;
+	unsigned asid_bits;
 
 	assert(low_root != 0);
 	assert(kernel_root != 0);
@@ -885,6 +938,22 @@ paging_on(phys_bytes low_root)
 	    TCR_T1SZ(TnSZ) | TCR_IRGN1_WBWA | TCR_ORGN1_WBWA |
 	    TCR_SH1_INNER | TCR_TG1_4K |
 	    TCR_IPS(supported_ips());
+
+	/*
+	 * Sixteen-bit ASIDs where the hardware has them. TCR.AS is what
+	 * decides how much of TTBR0's tag field the hardware actually looks
+	 * at: left at zero it uses eight bits, and the tags this kernel hands
+	 * out - one per process slot - would alias in pairs above 255.
+	 *
+	 * Whether the tags are usable at all is settled here too, so that the
+	 * answer and the register that has to match it are decided in one
+	 * place. Every core computes the same values from the same registers.
+	 */
+	asid_bits = supported_asid_bits();
+	asids_usable = NR_PROCS < (1 << asid_bits);
+
+	if (asid_bits == 16)
+		tcr |= TCR_AS;
 
 	__asm__ volatile(
 		"msr	mair_el1, %0\n\t"

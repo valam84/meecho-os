@@ -43,6 +43,9 @@ u64_t cpu_mpidr[CONFIG_MAX_CPUS];
  */
 static volatile int ap_cpu_ready;
 
+/* And the same on the way down, written by the core that is stopping. */
+static volatile int cpu_down;
+
 /* How long to wait for a core to come up, in ticks of the spin below. */
 #define AP_BOOT_SPINS	10000000
 
@@ -392,8 +395,16 @@ void
 arch_smp_halt_cpu(void)
 {
 	/*
-	 * Let go of the kernel before stopping, or the cores still running
-	 * would wait on this one forever.
+	 * Say so before letting go, so that the core asking has something to
+	 * wait for. After the unlock this core owns nothing and may be
+	 * observed at any moment.
+	 */
+	cpu_down = (int)cpuid;
+	barrier();
+
+	/*
+	 * And let go of the kernel: a halted core still holding it would stop
+	 * the machine rather than itself.
 	 */
 	BKL_UNLOCK();
 
@@ -408,6 +419,7 @@ void
 smp_shutdown_aps(void)
 {
 	unsigned cpu;
+	int spins;
 
 	if (ncpus == 1)
 		goto done;
@@ -418,15 +430,31 @@ smp_shutdown_aps(void)
 	for (cpu = 0; cpu < ncpus; cpu++) {
 		if (cpu == cpuid || !cpu_test_flag(cpu, CPU_IS_READY))
 			continue;
+
+		cpu_down = -1;
+		barrier();
+
 		gic_send_ipi(cpu, GIC_IPI_HALT);
+
+		/*
+		 * Waited for, but not forever. Knowing that a core stopped is
+		 * worth having - it is the only evidence this path works at
+		 * all - and a core that has already wedged must not turn a
+		 * shutdown into a hang, which is what an unbounded wait would
+		 * make it. i386 waits without a bound; it can afford to,
+		 * having an interrupt controller that can say whether the
+		 * core is still there.
+		 */
+		for (spins = AP_BOOT_SPINS; spins > 0; spins--) {
+			if (cpu_down == (int)cpu)
+				break;
+			arch_pause();
+		}
+
+		if (cpu_down != (int)cpu)
+			printf("SMP: CPU %d did not stop\n", cpu);
 	}
 
-	/*
-	 * Not waiting for them to acknowledge. i386 waits, and can, because
-	 * its halt path writes back before stopping; here the caller is on
-	 * its way to a reset that takes the whole machine with it, and a core
-	 * that has already wedged would turn a shutdown into a hang.
-	 */
 	BKL_LOCK();
 
 done:

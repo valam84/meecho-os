@@ -60,6 +60,28 @@ static inline void refresh_tlb(void)
 	isb();
 }
 
+/*
+ * Invalidate every entry belonging to one address space, on every core.
+ *
+ * aside1is is "all entries for this ASID, inner shareable", and the shareable
+ * form is the point: an ASID names the same address space on every core, so
+ * the core that decides those entries are stale is not necessarily the core
+ * holding them. The local form would leave the others translating through a
+ * table that no longer means what it did.
+ *
+ * The ASID goes in the top sixteen bits of the operand, the same place TTBR0
+ * carries it.
+ */
+static inline void refresh_tlb_asid(unsigned asid)
+{
+	unsigned long arg = (unsigned long)asid << AARCH64_TTBR_ASID_SHIFT;
+
+	dsb();
+	__asm__ volatile("tlbi aside1is, %0" :: "r"(arg) : "memory");
+	dsb();
+	isb();
+}
+
 /* Invalidate one page, by virtual address, for the current translation. */
 static inline void refresh_tlb_page(vir_bytes va)
 {

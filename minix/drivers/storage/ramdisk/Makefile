@@ -112,6 +112,13 @@ PROGRAMS+=		cat
 dir.cat:=	bin/cat
 PROGRAMS+=		ls
 dir.ls:=	bin/ls
+# And no way to stop the machine without these. Not a convenience: the
+# kernel's shutdown path - stopping the secondary cores among it - is only
+# reachable through them, so without them it is code that cannot be run.
+PROGRAMS+=		reboot
+dir.reboot:=	sbin/reboot
+PROGRAMS+=		shutdown
+dir.shutdown:=	sbin/shutdown
 # A filesystem that is only ever read can be sized to its contents exactly,
 # and that is what mkfs.mfs does by default.  This one is written to - utmpx,
 # wtmpx, lastlogx, /tmp - so it needs free inodes and free blocks, or the

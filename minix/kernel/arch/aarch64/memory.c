@@ -676,19 +676,20 @@ __switch_address_space(struct proc *p, struct proc **__ptproc)
 	write_ttbr0(new_ttbr);
 
 	/*
-	 * And the whole TLB goes, because every address space is currently
-	 * ASID 0. User mappings are made non-global precisely so that this
-	 * would not be necessary - a tagged entry survives a switch and is
-	 * still valid when its process runs again - but nothing allocates
-	 * ASIDs yet, and two address spaces sharing a tag is not a slow
-	 * kernel, it is a wrong one.
+	 * And nothing else, on any machine this runs on. The value written
+	 * above carries the address space's ASID in its top bits, user
+	 * mappings are non-global, so the entries of the space being left
+	 * stay in the TLB, tagged, and are still valid when it runs again.
+	 * That is the whole reason the mappings were made non-global.
 	 *
-	 * What replaces this is an ASID allocator and "tlbi aside1is" for the
-	 * outgoing tag only; it belongs with the scheduler, which is the
-	 * thing that can say how often this path runs. Recorded in
-	 * PORTING-LOG.md, stage 4 group 2.
+	 * The flush is still here for a machine whose ASID field is too
+	 * narrow to give every process slot a distinct tag - see
+	 * pg_asids_usable(). There the tags would alias, which is not a slow
+	 * kernel but a wrong one, so that machine pays what this port paid
+	 * before ASIDs: the whole TLB, on every switch.
 	 */
-	refresh_tlb();
+	if (!pg_asids_usable())
+		refresh_tlb();
 
 	*__ptproc = p;
 }

@@ -539,8 +539,14 @@ pre_init(phys_bytes dtb)
 	 * The console first: everything below can fail, and a failure without
 	 * a console is a machine that stops without a word. head.S has
 	 * already zeroed the BSS, so bsp_ser_init() may keep state.
+	 *
+	 * It is handed the tree, because which UART this machine has and where
+	 * it sits is what the tree says: a PL011 on QEMU's virt machine, a
+	 * DesignWare 8250 on the CB2. So the console does its own small walk of
+	 * the blob, ahead of the general one below - and a tree too broken to
+	 * walk leaves it silent, which serial.c argues is the honest answer.
 	 */
-	bsp_ser_init();
+	bsp_ser_init(dtb);
 
 	/*
 	 * kputc() decides whether to echo to the serial line by looking at

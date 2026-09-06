@@ -31,7 +31,6 @@
 
 #include "bsp_intr.h"
 #include "bsp_timer.h"
-#include "virt_registers.h"
 
 /* CNTP_CTL_EL0 bits. */
 #define CNTP_CTL_ENABLE		(1UL << 0)

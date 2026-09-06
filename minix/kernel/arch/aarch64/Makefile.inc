@@ -34,10 +34,18 @@ CFLAGS+=	-mcmodel=small
 # read from the device tree, exactly as psci.c reads its conduit. QEMU's virt
 # machine on its own presents either version depending on gic-version=, so a
 # build-time choice would be wrong for a single board, never mind two.
+#
+# The console followed it there, and for a stronger reason: the two machines
+# do not even have the same part. QEMU's virt machine has a PL011, the RK3566
+# of the CB2 has a DesignWare 8250, and one kernel has to print on both -
+# development happens in QEMU and the target is the board. serial.c reads
+# /chosen/stdout-path and hands the two calls of <bsp_serial.h> to pl011.c or
+# dw8250.c.
 SRCS+=	head.S arch_system.c memory.c direct_tty_utils.c \
 	pg_utils.c pre_init.c protect.c arch_do_vmctl.c \
 	arch_reset.c arch_clock.c psci.c fpu.c \
 	gic.c gicv2.c gicv3.c \
+	serial.c pl011.c dw8250.c \
 	usercopy.S exception.c vectors.S trap.c hw_intr.c fpu_asm.S
 
 # CONFIG_SMP and CONFIG_MAX_CPUS are set for the whole tree in

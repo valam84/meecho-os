@@ -2,7 +2,7 @@
 #
 # System-wide .profile file for sh(1).
 
-# MINIX specifics
+# MEECHO specifics
 # Set library path
 export LD_LIBRARY_PATH="/lib:/usr/lib:/usr/X11R7/lib:/usr/pkg/lib:/usr/local/lib"
 

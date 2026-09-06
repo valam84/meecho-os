@@ -300,9 +300,9 @@ rc_postprocess_metadata()
 		# $args contains a date/time.
 		rc_log_message "[$0 starting at $args]"
 		if ! $rc_silent; then
-			# MINIX 3: the clock has not been set yet!
+			# MEECHO: the clock has not been set yet!
 			#printf "%s\n" "$args"
-			# MINIX 3: end
+			# MEECHO: end
 		fi
 		;;
 	cmd-name)

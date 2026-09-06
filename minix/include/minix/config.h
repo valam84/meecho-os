@@ -1,10 +1,17 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
 
-/* Minix release and version numbers. */
-#define OS_NAME "Minix"
-#define OS_RELEASE "3.4.0"	/* 3.m.p */
-#define OS_REV 304000000	/* see NetBSD sys/param.h: 3mm00pp00 */
+/* MEECHO release and version numbers.  This is the brand name only: the
+ * platform identifier stays "minix" (__minix, the aarch64-elf64-minix
+ * toolchain triplet, config.sub's *-minix), because third-party software
+ * recognises the system by it.
+ */
+#define OS_NAME "MEECHO"
+#define OS_RELEASE "0.1.0"	/* M.m.p */
+/* Nmm00pp00, as in NetBSD sys/param.h.  Written without leading zeros: a
+ * leading zero would make this an octal constant.
+ */
+#define OS_REV 1000000
 #define OS_CONFIG "GENERIC"
 #define OS_VERSION OS_NAME " " OS_RELEASE " (" OS_CONFIG ")"
 

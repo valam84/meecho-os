@@ -504,7 +504,7 @@ get_parameters(kinfo_t *cbi, phys_bytes dtb)
 	if (initrd_end > initrd_start)
 		cut_memmap(cbi, initrd_start, initrd_end);
 
-	printf("MINIX/aarch64: %u core%s, memory ", scan.ncpu,
+	printf(OS_NAME "/aarch64: %u core%s, memory ", scan.ncpu,
 	    scan.ncpu == 1 ? "" : "s");
 	print_memmap(cbi);
 

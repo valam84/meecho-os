@@ -142,7 +142,7 @@ void kmain(kinfo_t *local_cbi)
   arch_ser_init();
 #endif
   /* We can talk now */
-  DEBUGBASIC(("MINIX booting\n"));
+  DEBUGBASIC((OS_NAME " booting\n"));
 
   /* Kernel may use bits of main memory before VM is started */
   kernel_may_alloc = 1;
@@ -338,17 +338,23 @@ void kmain(kinfo_t *local_cbi)
  *===========================================================================*/
 static void announce(void)
 {
-  /* Display the MINIX startup banner. */
-  printf("\nMINIX %s. "
-#ifdef PAE
-"(PAE) "
-#endif
+  /* Display the MEECHO startup banner.  Built by string concatenation, with
+   * no printf arguments: the format and the data cannot drift apart.  The
+   * architecture is a literal because MACHINE_ARCH is a make variable here,
+   * not a C macro -- revisit when a second architecture appears.
+   */
+  printf("\n"
+      "  |\\/|\n"
+      "==<-->==   " OS_NAME " " OS_RELEASE " (aarch64)\n"
+      "           microkernel. messages.\n"
+      "\n"
+      "Copyright (c) 2026 MEECHO Project.  BSD-3-Clause.\n"
+      "Derived from MINIX 3, Copyright 2016 "
+          "Vrije Universiteit Amsterdam.\n"
 #ifdef _VCS_REVISION
-	"(" _VCS_REVISION ")\n"
+      "Build " _VCS_REVISION "\n"
 #endif
-      "Copyright 2016, Vrije Universiteit, Amsterdam, The Netherlands\n",
-      OS_RELEASE);
-  printf("MINIX is open source software, see http://www.minix3.org\n");
+      );
 }
 
 /*===========================================================================*
@@ -363,7 +369,7 @@ void prepare_shutdown(const int how)
    * do shutdown work.  Set a watchog timer to call shutdown(). The timer 
    * argument passes the shutdown status. 
    */
-  printf("MINIX will now be shut down ...\n");
+  printf(OS_NAME " will now be shut down ...\n");
   set_kernel_timer(&shutdown_timer, get_monotonic() + system_hz,
       minix_shutdown, how);
 }
@@ -394,12 +400,12 @@ void minix_shutdown(int how)
   /* Show shutdown message */
   direct_cls();
   if((how & RB_POWERDOWN) == RB_POWERDOWN)
-	direct_print("MINIX has halted and will now power off.\n");
+	direct_print(OS_NAME " has halted and will now power off.\n");
   else if(how & RB_HALT)
-	direct_print("MINIX has halted. "
+	direct_print(OS_NAME " has halted. "
 		     "It is safe to turn off your computer.\n");
   else
-	direct_print("MINIX will now reset.\n");
+	direct_print(OS_NAME " will now reset.\n");
   arch_shutdown(how);
 }
 

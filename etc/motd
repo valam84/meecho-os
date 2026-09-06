@@ -1,9 +1,14 @@
-For post-installation usage tips such as installing binary
-packages, please see:
-https://wiki.minix3.org/doku.php?id=usersguide:postinstallation
+  |\/|       __  __ ___ ___ ___ _  _  ___
+==<-->==    |  \/  | __| __/ __| || |/ _ \
+            | |\/| | _|| _| (__| __ | (_) |
+            |_|  |_|___|___\___|_||_|\___/
 
-For more information on how to use MINIX 3, see the wiki:
-https://wiki.minix3.org
+MEECHO 0.1.0 (aarch64) -- microkernel. messages.
 
-We'd like your feedback: https://minix3.org/community/
+A fork of MINIX 3, ported to AArch64.  This is an early
+development release; expect sharp edges.
+
+The source tree carries its own documentation: PLAN.md for
+the roadmap, port/PORTING-LOG.md for why things are the way
+they are.
 

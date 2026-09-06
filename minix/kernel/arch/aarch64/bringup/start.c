@@ -317,7 +317,7 @@ kernel_early_main(uint64_t dtb)
 	trap_init();
 
 	kputs("\n");
-	kputs("MINIX/aarch64 early boot\n");
+	kputs("MEECHO/aarch64 early boot\n");
 	kputs("------------------------\n");
 
 	/*

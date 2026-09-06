@@ -221,8 +221,19 @@ prepare_vir_vec(endpoint_t endpt, struct vumap_vir *vir, iovec_s_t *iv,
 			return EINVAL;
 		}
 
+		/*
+		 * libblockdriver hands over an iovec_t either way: for a
+		 * transfer on the driver's own behalf - reading the partition
+		 * table - iov_addr is a pointer, for anyone else's it holds
+		 * a grant. The two vectors have the same layout only while a
+		 * pointer is 32 bits wide. On LP64 a grant is still the low
+		 * 32 bits of iov_addr, so the iovec_s_t view is right for it;
+		 * a pointer is not, and reading it through iov_grant kept
+		 * only its low half, sign-extended - an address that no
+		 * process has, and an EFAULT on every partition table read.
+		 */
 		if (endpt == SELF)
-			vir[i].vv_addr = (vir_bytes)iv[i].iov_grant;
+			vir[i].vv_addr = ((const iovec_t *)iv)[i].iov_addr;
 		else
 			vir[i].vv_grant = iv[i].iov_grant;
 

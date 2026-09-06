@@ -96,6 +96,19 @@ PROGRAMS+=		mmc
 dir.mmc:=	minix/drivers/storage/mmc
 .endif # ${MACHINE_ARCH} == "earm"
 
+.if ${MACHINE_ARCH} == "aarch64"
+# On aarch64 this image is not a stepping stone to a disk: it is the root
+# filesystem the system runs on, mounted by VFS from the memory driver
+# (bootramdisk=1).  So it has to be able to offer a login, which the other
+# architectures get from the real root they switch to.
+ETC+=			gettytab
+EXTRA+=			ttys
+PROGRAMS+=		getty
+dir.getty:=	libexec/getty
+PROGRAMS+=		login
+dir.login:=	usr.bin/login
+.endif # ${MACHINE_ARCH} == "aarch64"
+
 .if ${LDSTATIC} == "-dynamic"
 RAMDISK_DYNAMIC=	 1
 PROGRAMS+=		ld.elf_so

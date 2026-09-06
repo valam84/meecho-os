@@ -233,6 +233,25 @@ update_db(int quietlog, int rootlogin, int fflag)
 #endif
 }
 
+/*
+ * utmp, utmpx and lastlog fields are fixed-width and NUL-padded, not C
+ * strings: a value that exactly fills the field is stored without a
+ * terminator, deliberately.  strncpy() does exactly that, which is why it
+ * was used here, but it is also what the mistaken use of strncpy() looks
+ * like, so the compiler cannot tell the two apart.  Say it in two steps
+ * instead.
+ */
+static void
+setfield(char *field, size_t size, const char *s)
+{
+	size_t len = strlen(s);
+
+	if (len > size)
+		len = size;
+	(void)memset(field, 0, size);
+	(void)memcpy(field, s, len);
+}
+
 #ifdef SUPPORT_UTMPX
 static void
 doutmpx(void)
@@ -242,20 +261,19 @@ doutmpx(void)
 
 	memset((void *)&utmpx, 0, sizeof(utmpx));
 	utmpx.ut_tv = now;
-	(void)strncpy(utmpx.ut_name, username, sizeof(utmpx.ut_name));
+	setfield(utmpx.ut_name, sizeof(utmpx.ut_name), username);
 	if (hostname) {
-		(void)strncpy(utmpx.ut_host, hostname, sizeof(utmpx.ut_host));
+		setfield(utmpx.ut_host, sizeof(utmpx.ut_host), hostname);
 		utmpx.ut_ss = ss;
 	}
-	(void)strncpy(utmpx.ut_line, tty, sizeof(utmpx.ut_line));
+	setfield(utmpx.ut_line, sizeof(utmpx.ut_line), tty);
 	utmpx.ut_type = USER_PROCESS;
 	utmpx.ut_pid = getpid();
 	t = tty + strlen(tty);
 	if ((size_t)(t - tty) >= sizeof(utmpx.ut_id)) {
-	    (void)strncpy(utmpx.ut_id, t - sizeof(utmpx.ut_id),
-		sizeof(utmpx.ut_id));
+	    setfield(utmpx.ut_id, sizeof(utmpx.ut_id), t - sizeof(utmpx.ut_id));
 	} else {
-	    (void)strncpy(utmpx.ut_id, tty, sizeof(utmpx.ut_id));
+	    setfield(utmpx.ut_id, sizeof(utmpx.ut_id), tty);
 	}
 	if (pututxline(&utmpx) == NULL)
 		syslog(LOG_NOTICE, "Cannot update utmpx: %m");
@@ -280,9 +298,9 @@ dolastlogx(int quiet)
 		    ll.ll_line);
 	}
 	ll.ll_tv = now;
-	(void)strncpy(ll.ll_line, tty, sizeof(ll.ll_line));
+	setfield(ll.ll_line, sizeof(ll.ll_line), tty);
 	if (hostname)
-		(void)strncpy(ll.ll_host, hostname, sizeof(ll.ll_host));
+		setfield(ll.ll_host, sizeof(ll.ll_host), hostname);
 	else
 		(void)memset(ll.ll_host, '\0', sizeof(ll.ll_host));
 	if (have_ss)
@@ -302,10 +320,10 @@ doutmp(void)
 
 	(void)memset((void *)&utmp, 0, sizeof(utmp));
 	utmp.ut_time = now.tv_sec;
-	(void)strncpy(utmp.ut_name, username, sizeof(utmp.ut_name));
+	setfield(utmp.ut_name, sizeof(utmp.ut_name), username);
 	if (hostname)
-		(void)strncpy(utmp.ut_host, hostname, sizeof(utmp.ut_host));
-	(void)strncpy(utmp.ut_line, tty, sizeof(utmp.ut_line));
+		setfield(utmp.ut_host, sizeof(utmp.ut_host), hostname);
+	setfield(utmp.ut_line, sizeof(utmp.ut_line), tty);
 	login(&utmp);
 }
 
@@ -334,9 +352,9 @@ dolastlog(int quiet)
 		}
 		memset((void *)&ll, 0, sizeof(ll));
 		ll.ll_time = now.tv_sec;
-		(void)strncpy(ll.ll_line, tty, sizeof(ll.ll_line));
+		setfield(ll.ll_line, sizeof(ll.ll_line), tty);
 		if (hostname)
-			(void)strncpy(ll.ll_host, hostname, sizeof(ll.ll_host));
+			setfield(ll.ll_host, sizeof(ll.ll_host), hostname);
 		(void)write(fd, (char *)&ll, sizeof(ll));
 		(void)close(fd);
 	}

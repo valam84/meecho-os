@@ -1,0 +1,12 @@
+#
+# Terminal lines of the boot ramdisk.
+#
+# Not /etc/ttys of an installed system: this image has one line, the one the
+# kernel and the tty driver were both told to use.  /dev/console follows the
+# "console=" boot argument through line2tty(), so the entry does not have to
+# name the hardware.  The virtual consoles the installed file lists do not
+# exist on a machine without a video console, and init would spend its life
+# restarting gettys on them.
+#
+# name		getty				type	status		comments
+console		"/usr/libexec/getty default"	vt100	on secure

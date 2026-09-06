@@ -28,7 +28,16 @@
 #include "region.h"
 #include "sanitycheck.h"
 
-#define STATELEN 70
+/*
+ * The continuation state a queued request carries.  The largest one any
+ * caller hands over is a whole message - do_mmap() passes its own request
+ * message to mmap_file_cont() - and the others are small structs, so the
+ * message is the bound.  Written as the constant 70 it cleared sizeof(message)
+ * only while a message was 64 bytes wide, and stopped clearing it when this
+ * fork widened the message to 128; the assert() below then fired on the first
+ * file mapping, which is to say on the first program that mmap()s a file.
+ */
+#define STATELEN ((int)sizeof(message))
 
 static struct vfs_request_node {
 	message			reqmsg;

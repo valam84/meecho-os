@@ -26,7 +26,16 @@
 #include "util.h"
 #include "sanitycheck.h"
 
-#define SLABSIZES 200
+/*
+ * One slab class per byte of object size, starting at MINSIZE, so this is
+ * also the ceiling: the largest object slaballoc() will serve is
+ * SLABSIZES - 1 + MINSIZE bytes.  It has to clear the largest struct any
+ * caller hands to SLABALLOC, which is vm/vfs.c's queued VFS request - a
+ * message, plus continuation state the size of another message.  At 200 the
+ * ceiling was 207 bytes, which cleared that struct only while a message was
+ * 64 bytes wide and pointers were four bytes.  A class costs one pointer.
+ */
+#define SLABSIZES 512
 
 #define ITEMSPERPAGE(bytes) (int)(DATABYTES / (bytes))
 

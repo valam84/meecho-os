@@ -43,7 +43,15 @@ d--755 0 0
 	usr d--755 0 0
 		bin d--755 0 0
 			loadramdisk ---755 0 0 loadramdisk
+#ifdef __aarch64__
+			login ---755 0 0 login
+#endif
 		$
+#ifdef __aarch64__
+		libexec d--755 0 0
+			getty ---755 0 0 getty
+		$
+#endif
 	$
 	proc d--755 0 0
 	$

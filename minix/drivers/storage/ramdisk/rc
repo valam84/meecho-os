@@ -89,7 +89,12 @@ fi
 
 echo "Root device name is $rootdevname"
 
-if ! sysenv cdproberoot >/dev/null
+# With bootramdisk the root is the image the kernel was handed, VFS has
+# mounted it already, and the mount below is skipped for the same reason.
+# There is nothing to check and no unmounted device to check it on -
+# $rootdevname is the bare name "imgrd", not a path fsck could open - so the
+# check goes the way of the mount.
+if ! sysenv cdproberoot >/dev/null && ! sysenv bootramdisk >/dev/null
 then
 	if [ -e $FSCK ]
 	then	$FSCK -p $rootdevname

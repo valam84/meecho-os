@@ -568,13 +568,13 @@
 					 */
 #  define VFS_PM_FRAME		m7_p2	/* arguments and environment */
 #  define VFS_PM_FRAME_LEN	m7_i3	/* size of frame */
-#  define VFS_PM_PS_STR		m7_i5	/* ps_strings pointer */
+#  define VFS_PM_PS_STR		m7_p3	/* ps_strings pointer */
 
 /* Additional parameters for PM_EXEC_REPLY and PM_CORE_REPLY */
 #  define VFS_PM_STATUS		m7_i2	/* OK or failure */
 #  define VFS_PM_PC		m7_p1	/* program counter */
 #  define VFS_PM_NEWSP		m7_p2	/* possibly-changed stack ptr */
-#  define VFS_PM_NEWPS_STR	m7_i5	/* possibly-changed ps_strings ptr */
+#  define VFS_PM_NEWPS_STR	m7_p3	/* possibly-changed ps_strings ptr */
 
 /* Additional parameters for PM_FORK and PM_SRV_FORK */
 #  define VFS_PM_PENDPT		m7_i2	/* parent process endpoint */

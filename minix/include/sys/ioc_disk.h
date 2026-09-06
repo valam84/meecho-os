@@ -7,6 +7,13 @@
 #define _S_I_DISK_H
 
 #include <minix/ioctl.h>
+#include <stdint.h>
+
+/* DIOCDISCARD: a byte range of the device nobody will read again. */
+struct disk_discard {
+	uint64_t dd_pos;
+	uint64_t dd_len;
+};
 
 #define DIOCSETP	_IOW('d', 3, struct part_geom)
 #define DIOCGETP	_IOR('d', 4, struct part_geom)
@@ -16,5 +23,6 @@
 #define DIOCFLUSH	_IO ('d', 8)
 #define DIOCSETWC	_IOW('d', 9, int)
 #define DIOCGETWC	_IOR('d', 10, int)
+#define DIOCDISCARD	_IOW('d', 11, struct disk_discard)
 
 #endif /* _S_I_DISK_H */

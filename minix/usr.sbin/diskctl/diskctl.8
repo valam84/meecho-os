@@ -20,6 +20,15 @@ Disabling the write cache typically also triggers a cache flush.
 \fBflush\fR
 Tell the device to flush its write cache.
 The call will not return until the cache flush has completed.
+.TP 10
+\fBdiscard\fR \fIpos\fR \fIlen\fR
+Tell the device that the \fIlen\fR bytes starting at byte \fIpos\fR
+hold nothing that will be read again, so that a flash device may reclaim
+them.
+The range may or may not read as before afterwards.
+Both numbers are bytes and must be multiples of the sector size.
+A file system on the device knows nothing of this, so the range must be
+one it does not use.
 .SH EXAMPLES
 .TP 20
 .B diskctl /dev/c0d0 setwcache on
@@ -27,6 +36,9 @@ The call will not return until the cache flush has completed.
 .TP 20
 .B diskctl /dev/c1d2 flush
 # Trigger a cache flush on c1d2.
+.TP 20
+.B diskctl /dev/c0d1 discard 0 1073741824
+# Discard the first gigabyte of c0d1, before making a file system on it.
 .SH "SEE ALSO"
 .BR controller (4).
 .SH AUTHOR

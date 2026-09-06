@@ -312,7 +312,11 @@ then
 	# A virtio-blk device on the machine's virtio-mmio transport, which is
 	# what the device tree describes; the PCI variant would need a PCI
 	# server this system does not have.
-	cmd="${cmd} -drive if=none,id=hd0,file=${DISK},format=raw"
+	# discard=unmap: a discard from the guest punches a hole in the
+	# image, the way it frees a block on flash.  Without it QEMU answers
+	# the request with success and does nothing, and there would be no
+	# way to tell from the host whether the request went through.
+	cmd="${cmd} -drive if=none,id=hd0,file=${DISK},format=raw,discard=unmap"
 	cmd="${cmd} -device virtio-blk-device,drive=hd0"
 fi
 cmd="${cmd} -append \"${BOOTARGS}\""

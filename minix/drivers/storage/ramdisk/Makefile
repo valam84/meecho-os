@@ -133,6 +133,10 @@ PROGRAMS+=		readclock
 dir.readclock:=	minix/commands/readclock
 PROGRAMS+=		date
 dir.date:=	bin/date
+# The way to ask a disk for a flush or a discard from the shell, which is
+# how the two are exercised on a machine that has nothing else asking yet.
+PROGRAMS+=		diskctl
+dir.diskctl:=	minix/usr.sbin/diskctl
 # A filesystem that is only ever read can be sized to its contents exactly,
 # and that is what mkfs.mfs does by default.  This one is written to - utmpx,
 # wtmpx, lastlogx, /tmp - so it needs free inodes and free blocks, or the

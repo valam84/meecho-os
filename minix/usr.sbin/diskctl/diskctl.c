@@ -15,7 +15,8 @@ usage(void)
 	    "supported commands:\n"
 	    "  getwcache           return write cache status\n"
 	    "  setwcache [on|off]  set write cache status\n"
-	    "  flush               flush write cache\n",
+	    "  flush               flush write cache\n"
+	    "  discard <pos> <len> discard a byte range of the device\n",
 	    getprogname());
 
 	exit(EXIT_FAILURE);
@@ -97,6 +98,30 @@ main(int argc, char ** argv)
 		close(fd);
 
 		printf("write cache flushed\n");
+
+	} else if (!strcasecmp(argv[2], "discard")) {
+		struct disk_discard dd;
+		char *end;
+
+		if (argc != 5) usage();
+
+		dd.dd_pos = strtoull(argv[3], &end, 0);
+		if (*argv[3] == '\0' || *end != '\0') usage();
+		dd.dd_len = strtoull(argv[4], &end, 0);
+		if (*argv[4] == '\0' || *end != '\0') usage();
+
+		fd = open_dev(argv[1], O_WRONLY);
+
+		if (ioctl(fd, DIOCDISCARD, &dd) != 0) {
+			perror("ioctl");
+
+			return EXIT_FAILURE;
+		}
+
+		close(fd);
+
+		printf("discarded %llu bytes at %llu\n",
+		    (unsigned long long)dd.dd_len, (unsigned long long)dd.dd_pos);
 
 	} else
 		usage();

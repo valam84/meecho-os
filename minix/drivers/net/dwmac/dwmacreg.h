@@ -160,6 +160,159 @@
 #define RK_GPIO_VERSION_ID		0x0078
 #define RK_GPIO_VERSION_V2		0x01000c2b
 
+/* ------------------------------------------------- rings and channels */
+
+/*
+ * One transmit and one receive channel, which is what the board's device
+ * tree asks for and all this driver uses.
+ */
+#define DWMAC_DMA_CHAN			0
+#define DWMAC_DMA_CHAN_BASE(c)		(0x1100 + (c) * 0x80)
+
+#define DWMAC_DMA_CH_CONTROL(c)		(DWMAC_DMA_CHAN_BASE(c) + 0x00)
+#define DWMAC_DMA_CH_TX_CONTROL(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x04)
+#define DWMAC_DMA_CH_RX_CONTROL(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x08)
+#define DWMAC_DMA_CH_TXDESC_HI(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x10)
+#define DWMAC_DMA_CH_TXDESC_LO(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x14)
+#define DWMAC_DMA_CH_RXDESC_HI(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x18)
+#define DWMAC_DMA_CH_RXDESC_LO(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x1c)
+#define DWMAC_DMA_CH_TXTAIL(c)		(DWMAC_DMA_CHAN_BASE(c) + 0x20)
+#define DWMAC_DMA_CH_RXTAIL(c)		(DWMAC_DMA_CHAN_BASE(c) + 0x28)
+#define DWMAC_DMA_CH_TXLEN(c)		(DWMAC_DMA_CHAN_BASE(c) + 0x2c)
+#define DWMAC_DMA_CH_RXLEN(c)		(DWMAC_DMA_CHAN_BASE(c) + 0x30)
+#define DWMAC_DMA_CH_INTR_ENA(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x34)
+#define DWMAC_DMA_CH_CUR_TXDESC(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x44)
+#define DWMAC_DMA_CH_CUR_RXDESC(c)	(DWMAC_DMA_CHAN_BASE(c) + 0x4c)
+#define DWMAC_DMA_CH_STATUS(c)		(DWMAC_DMA_CHAN_BASE(c) + 0x60)
+
+/*
+ * The burst length: how many beats the DMA asks the bus for at a time.
+ * It has no useful reset value and every driver programs it - eight is what
+ * both Linux and NetBSD use when the device tree says nothing, and this
+ * board's tree says nothing.  PBLX8 multiplies it by eight, which is also
+ * what both of them do.
+ */
+#define DWMAC_DMA_CH_CONTROL_PBLX8	(1u << 16)
+#define DWMAC_DMA_CH_PBL_SHIFT		16
+#define DWMAC_DMA_CH_PBL_MASK		(0x3fu << 16)
+#define DWMAC_DMA_PBL_DEFAULT		8
+
+#define DWMAC_DMA_CH_TX_CONTROL_ST	(1u << 0)
+#define DWMAC_DMA_CH_TX_CONTROL_OSP	(1u << 4)
+#define DWMAC_DMA_CH_RX_CONTROL_SR	(1u << 0)
+#define DWMAC_DMA_CH_RX_CONTROL_RBSZ_SHIFT 1
+#define DWMAC_DMA_CH_RX_CONTROL_RBSZ_MASK  (0x3fffu << 1)
+
+#define DWMAC_DMA_CH_STATUS_TI		(1u << 0)
+#define DWMAC_DMA_CH_STATUS_TPS		(1u << 1)
+#define DWMAC_DMA_CH_STATUS_TBU		(1u << 2)
+#define DWMAC_DMA_CH_STATUS_RI		(1u << 6)
+#define DWMAC_DMA_CH_STATUS_RBU		(1u << 7)
+#define DWMAC_DMA_CH_STATUS_RPS		(1u << 8)
+#define DWMAC_DMA_CH_STATUS_FBE		(1u << 12)
+#define DWMAC_DMA_CH_STATUS_AIS		(1u << 14)
+#define DWMAC_DMA_CH_STATUS_NIS		(1u << 15)
+
+/*
+ * The interrupt enables moved between core 4.00 and core 4.10, and this is
+ * a 5.10: the normal and abnormal summary enables are bits 15 and 14 here,
+ * not 16 and 15.  Writing the older pair on this core enables the wrong two
+ * things quietly.
+ */
+#define DWMAC_DMA_CH_INTR_TIE		(1u << 0)
+#define DWMAC_DMA_CH_INTR_RIE		(1u << 6)
+#define DWMAC_DMA_CH_INTR_FBE		(1u << 12)
+#define DWMAC_DMA_CH_INTR_AIE		(1u << 14)
+#define DWMAC_DMA_CH_INTR_NIE		(1u << 15)
+
+#define DWMAC_DMA_SYS_BUS_MODE		0x1004
+#define DWMAC_DMA_SYS_BUS_MB		(1u << 14)
+#define DWMAC_DMA_SYS_BUS_AAL		(1u << 12)
+#define DWMAC_DMA_SYS_BUS_BLEN16	(1u << 3)
+#define DWMAC_DMA_SYS_BUS_BLEN8		(1u << 2)
+#define DWMAC_DMA_SYS_BUS_BLEN4		(1u << 1)
+
+/* The MTL queues that sit between the MAC and the DMA. */
+#define DWMAC_MTL_CHAN_BASE(q)		(0x0d00 + (q) * 0x40)
+#define DWMAC_MTL_TXQ_OP_MODE(q)	(DWMAC_MTL_CHAN_BASE(q) + 0x00)
+#define DWMAC_MTL_TXQ_QUANTUM(q)	(DWMAC_MTL_CHAN_BASE(q) + 0x18)
+#define DWMAC_MTL_RXQ_OP_MODE(q)	(DWMAC_MTL_CHAN_BASE(q) + 0x30)
+
+#define DWMAC_MTL_OP_MODE_TSF		(1u << 1)	/* store and forward */
+#define DWMAC_MTL_OP_MODE_TXQEN_SHIFT	2
+#define DWMAC_MTL_OP_MODE_TXQEN_ON	2
+#define DWMAC_MTL_OP_MODE_RSF		(1u << 5)
+#define DWMAC_MTL_OP_MODE_TQS_SHIFT	16
+#define DWMAC_MTL_OP_MODE_TQS_MASK	(0x1ffu << 16)
+#define DWMAC_MTL_OP_MODE_RQS_SHIFT	20
+#define DWMAC_MTL_OP_MODE_RQS_MASK	(0x3ffu << 20)
+
+#define DWMAC_MAC_RXQ_CTRL0		0x00a0
+#define DWMAC_MAC_RXQ_CTRL0_Q0_MASK	0x3
+#define DWMAC_MAC_RXQ_CTRL0_Q0_DCB	0x2
+
+#define DWMAC_MAC_PACKET_FILTER		0x0008
+#define DWMAC_MAC_PACKET_FILTER_PM	(1u << 4)	/* all multicast */
+#define DWMAC_MAC_PACKET_FILTER_PR	(1u << 0)	/* promiscuous */
+
+/*
+ * The FIFO sizes are reported, not assumed: the field is the log2 of the
+ * size in units of 128 bytes, and the queue-size fields want (size / 256) - 1.
+ */
+#define DWMAC_MAC_HW_FEATURE1		0x0120
+#define DWMAC_HW_FEATURE1_RXFIFO_SHIFT	0
+#define DWMAC_HW_FEATURE1_TXFIFO_SHIFT	6
+#define DWMAC_HW_FEATURE1_FIFO_MASK	0x1f
+
+/*
+ * A descriptor: four words, and which word means what depends on whether
+ * the CPU is writing it or reading back what the device wrote.
+ */
+struct dwmac_desc {
+	uint32_t des0;
+	uint32_t des1;
+	uint32_t des2;
+	uint32_t des3;
+};
+
+/* Transmit, as the CPU writes it. */
+#define TDES2_BUF1_LEN_MASK		0x3fff
+#define TDES2_IOC			(1u << 31)	/* interrupt when done */
+#define TDES3_PACKET_LEN_MASK		0x7fff
+#define TDES3_LAST			(1u << 28)
+#define TDES3_FIRST			(1u << 29)
+#define TDES3_OWN			(1u << 31)
+
+/* Transmit, as the device writes it back. */
+#define TDES3_WB_UNDERFLOW		(1u << 2)
+#define TDES3_WB_EXCESS_COLL		(1u << 8)
+#define TDES3_WB_LATE_COLL		(1u << 9)
+#define TDES3_WB_NO_CARRIER		(1u << 10)
+#define TDES3_WB_LOSS_CARRIER		(1u << 11)
+#define TDES3_WB_PACKET_FLUSHED		(1u << 13)
+#define TDES3_WB_ERROR_SUMMARY		(1u << 15)
+
+/* Receive: what the CPU writes, and what comes back. */
+#define RDES3_BUF1_VALID		(1u << 24)
+#define RDES3_IOC			(1u << 30)
+#define RDES3_OWN			(1u << 31)
+#define RDES3_PACKET_LEN_MASK		0x7fff
+#define RDES3_ERROR_SUMMARY		(1u << 15)
+#define RDES3_LAST			(1u << 28)
+#define RDES3_FIRST			(1u << 29)
+
+/*
+ * The MAC's own counters.  What the driver thinks it did is one thing and
+ * what the hardware says it did is another, and when the two disagree the
+ * hardware is right.  These are the two that answer "did a frame actually
+ * leave" and "did one actually arrive", which no amount of looking at
+ * descriptors can.
+ */
+#define DWMAC_MMC_BASE			0x0700
+#define DWMAC_MMC_TX_FRAMES_GB		(DWMAC_MMC_BASE + 0x18)
+#define DWMAC_MMC_TX_FRAMES_G		(DWMAC_MMC_BASE + 0x68)
+#define DWMAC_MMC_RX_FRAMES_GB		(DWMAC_MMC_BASE + 0x80)
+
 /* --------------------------------------------------------- the PHY */
 
 /* Clause 22, the registers every PHY has. */
@@ -167,6 +320,12 @@
 #define MII_BMCR_RESET			(1u << 15)
 #define MII_BMCR_ANEG_RESTART		(1u << 9)
 #define MII_BMCR_ANEG_ENABLE		(1u << 12)
+#define MII_BMCR_LOOPBACK		(1u << 14)
+#define MII_BMCR_SPEED_100		(1u << 13)
+#define MII_BMCR_FULL_DUPLEX		(1u << 8)
+
+/* The YT8531's own idea of the link: speed, duplex, and whether it is up. */
+#define YT_SPECIFIC_STATUS		0x11
 
 #define MII_BMSR			0x01
 #define MII_BMSR_LINK			(1u << 2)
@@ -195,5 +354,30 @@
  */
 #define YT8531_PHY_ID			0x4f51e91b
 #define YT8531_PHY_ID_MASK		0xffffffff
+
+/*
+ * The one thing in this driver that belongs to a particular PHY.
+ *
+ * The YT8531 has its own RGMII delay lines, and after a reset they are not
+ * all off: the receive clock delay is enabled by default.  On a board whose
+ * delays are done in the SoC - which is what "phy-mode = rgmii" without an
+ * -id suffix means, and what this board's GRF is programmed for - the PHY's
+ * delays are a second helping of the same thing, and the pair of them puts
+ * data and clock outside each other's sampling window.
+ *
+ * The registers are reached through a page window rather than directly:
+ * write the number of the extended register to 0x1e, then read or write its
+ * contents at 0x1f.
+ */
+#define YT_PAGE_SELECT			0x1e
+#define YT_PAGE_DATA			0x1f
+
+#define YT_EXT_CHIP_CONFIG		0xa001
+#define YT_CHIP_CONFIG_RXC_DLY_EN	(1u << 8)
+
+#define YT_EXT_RGMII_CONFIG1		0xa003
+#define YT_RGMII1_RX_DELAY_MASK		(0xfu << 10)
+#define YT_RGMII1_FE_TX_DELAY_MASK	(0xfu << 4)
+#define YT_RGMII1_GE_TX_DELAY_MASK	(0xfu << 0)
 
 #endif /* _DWMAC_REG_H */

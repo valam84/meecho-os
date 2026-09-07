@@ -1,6 +1,7 @@
 # Makefile for the DWMAC network driver
 PROG=	dwmac
-SRCS=	dwmac.c dwmac_find.c dwmac_rk.c dwmac_pins.c dwmac_mdio.c
+SRCS=	dwmac.c dwmac_find.c dwmac_rk.c dwmac_pins.c dwmac_mdio.c \
+	dwmac_ring.c
 
 FILES=${PROG}.conf
 FILESNAME=${PROG}

@@ -23,6 +23,16 @@
 
 #define DWMAC_MAX_RESETS	4
 
+/*
+ * The rings.  Sixty-four descriptors each way is eight cache lines' worth
+ * of them at the assumed line size, which is what the receive side refills
+ * in one go; the buffers are one per descriptor and big enough for any
+ * ethernet frame, so a packet never spans two.
+ */
+#define DWMAC_RX_DESCS		64
+#define DWMAC_TX_DESCS		64
+#define DWMAC_BUF_SIZE		2048
+
 /* Everything the device tree said about this controller. */
 struct dwmac_devinfo {
 	phys_bytes base;		/* the controller */
@@ -62,6 +72,23 @@ struct dwmac {
 	int irq_hook;
 	int irq_enabled;
 
+	/* The rings, in this address space and in the device's. */
+	vir_bytes rx_ring;
+	phys_bytes rx_ring_phys;
+	vir_bytes tx_ring;
+	phys_bytes tx_ring_phys;
+	vir_bytes rx_buf;
+	phys_bytes rx_buf_phys;
+	vir_bytes tx_buf;
+	phys_bytes tx_buf_phys;
+
+	int rx_next;			/* the descriptor to look at next */
+	int tx_head;			/* where the driver writes */
+	int tx_tail;			/* how far the device has got */
+	unsigned rx_errors;
+	unsigned irqs;			/* how many interrupts arrived */
+	int phy_loopback;		/* diagnostic: loop at the PHY */
+
 	unsigned speed;			/* 0 when the link is down */
 	int full_duplex;
 	uint32_t phy_id;
@@ -84,12 +111,23 @@ void dwmac_rk_rgmii(void);
 void dwmac_rk_set_speed(unsigned speed);
 void dwmac_rk_reset_phy(void);
 
+/* dwmac_ring.c */
+int dwmac_ring_alloc(void);
+void dwmac_ring_init(void);
+void dwmac_ring_free(void);
+ssize_t dwmac_ring_recv(struct netdriver_data *data, size_t max);
+int dwmac_ring_send(struct netdriver_data *data, size_t size);
+
 /* dwmac_mdio.c */
 int dwmac_mdio_read(int phyaddr, int reg, uint16_t *val);
 int dwmac_mdio_write(int phyaddr, int reg, uint16_t val);
 int dwmac_phy_find(void);
 int dwmac_phy_reset(void);
 int dwmac_phy_link(unsigned *speed, int *full_duplex);
+void dwmac_phy_dump(void);
+
+/* dwmac_ring.c, diagnostics */
+void dwmac_ring_dump(void);
 
 /* Register access, all four blocks reached the same way. */
 static inline uint32_t

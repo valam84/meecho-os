@@ -135,6 +135,63 @@ dwmac_phy_find(void)
 	return ENXIO;
 }
 
+/* One of the PHY's extended registers, through the page window. */
+static int
+yt_read_ext(int phyaddr, uint16_t reg, uint16_t *val)
+{
+	int r;
+
+	if ((r = dwmac_mdio_write(phyaddr, YT_PAGE_SELECT, reg)) != OK)
+		return r;
+	return dwmac_mdio_read(phyaddr, YT_PAGE_DATA, val);
+}
+
+static int
+yt_modify_ext(int phyaddr, uint16_t reg, uint16_t clear, uint16_t set)
+{
+	uint16_t v;
+	int r;
+
+	if ((r = yt_read_ext(phyaddr, reg, &v)) != OK)
+		return r;
+
+	v = (uint16_t)((v & ~clear) | set);
+
+	if ((r = dwmac_mdio_write(phyaddr, YT_PAGE_SELECT, reg)) != OK)
+		return r;
+	return dwmac_mdio_write(phyaddr, YT_PAGE_DATA, v);
+}
+
+/*
+ * Turn off the PHY's own RGMII delays.
+ *
+ * This board does its delays in the SoC - the GRF holds the numbers and the
+ * device tree says "rgmii" rather than "rgmii-id", which is exactly the
+ * statement that the delays are not the PHY's job.  But the YT8531 comes
+ * out of reset with its receive clock delay on, so leaving it alone means
+ * two delays where the design calls for one.
+ *
+ * It costs a run on the board to learn this.  The symptom was as
+ * misleading as it gets: receive worked perfectly, the MAC's own counter
+ * said seventeen frames transmitted and seventeen of them good - and not
+ * one of them ever reached the wire, because what left the MAC was sampled
+ * by the PHY at the wrong moment.  Counters on this side of the delay line
+ * cannot see that; only somebody else's tcpdump can.
+ */
+static int
+yt8531_config(int phyaddr)
+{
+	int r;
+
+	if ((r = yt_modify_ext(phyaddr, YT_EXT_CHIP_CONFIG,
+	    YT_CHIP_CONFIG_RXC_DLY_EN, 0)) != OK)
+		return r;
+
+	return yt_modify_ext(phyaddr, YT_EXT_RGMII_CONFIG1,
+	    YT_RGMII1_RX_DELAY_MASK | YT_RGMII1_FE_TX_DELAY_MASK |
+	    YT_RGMII1_GE_TX_DELAY_MASK, 0);
+}
+
 /*
  * Reset the PHY over MDIO and let it negotiate.  This is the soft reset,
  * which is separate from the line the board wired to its reset pin: that
@@ -165,8 +222,55 @@ dwmac_phy_reset(void)
 		return EIO;
 	}
 
+	/*
+	 * After the reset, because a reset puts the extended registers back
+	 * the way they were.
+	 */
+	if (dwmac.phy_id == YT8531_PHY_ID) {
+		if ((r = yt8531_config(dwmac.info.phy_addr)) != OK) {
+			log_warn(&dwmac_log, "cannot configure the YT8531: "
+			    "%d\n", r);
+			return r;
+		}
+		log_debug(&dwmac_log, "YT8531: internal rgmii delays off\n");
+	}
+
+	if (dwmac.phy_loopback) {
+		log_warn(&dwmac_log, "PHY LOOPBACK: 100 Mbit/s full duplex, "
+		    "nothing reaches the wire\n");
+		return dwmac_mdio_write(dwmac.info.phy_addr, MII_BMCR,
+		    MII_BMCR_LOOPBACK | MII_BMCR_SPEED_100 |
+		    MII_BMCR_FULL_DUPLEX);
+	}
+
 	return dwmac_mdio_write(dwmac.info.phy_addr, MII_BMCR,
 	    MII_BMCR_ANEG_ENABLE | MII_BMCR_ANEG_RESTART);
+}
+
+/*
+ * What the PHY says about itself, for the debug dump: the two standard
+ * registers, its own status word, and the two extended registers this
+ * driver writes.
+ */
+void
+dwmac_phy_dump(void)
+{
+	uint16_t bmcr = 0, bmsr = 0, ss = 0, cc = 0, rc = 0;
+	int a = dwmac.info.phy_addr;
+
+	if (a < 0)
+		return;
+
+	(void)dwmac_mdio_read(a, MII_BMCR, &bmcr);
+	(void)dwmac_mdio_read(a, MII_BMSR, &bmsr);
+	(void)dwmac_mdio_read(a, YT_SPECIFIC_STATUS, &ss);
+	if (dwmac.phy_id == YT8531_PHY_ID) {
+		(void)yt_read_ext(a, YT_EXT_CHIP_CONFIG, &cc);
+		(void)yt_read_ext(a, YT_EXT_RGMII_CONFIG1, &rc);
+	}
+
+	log_debug(&dwmac_log, "phy: bmcr %04x bmsr %04x status %04x  "
+	    "chip-config %04x rgmii-config1 %04x\n", bmcr, bmsr, ss, cc, rc);
 }
 
 /*

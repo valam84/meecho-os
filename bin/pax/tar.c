@@ -1194,11 +1194,11 @@ ustar_wr(ARCHD *arcn)
 		break;
 	}
 
-	strncpy(hd->magic, TMAGIC, TMAGLEN);
+	memcpy(hd->magic, TMAGIC, TMAGLEN);
 	if (is_gnutar)
 		hd->magic[TMAGLEN - 1] = hd->version[0] = ' ';
 	else
-		strncpy(hd->version, TVERSION, TVERSLEN);
+		memcpy(hd->version, TVERSION, TVERSLEN);
 
 	/*
 	 * set the remaining fields. Some versions want all 16 bits of mode

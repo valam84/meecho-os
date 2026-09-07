@@ -138,7 +138,10 @@ table	:	entry
 	;
 
 entry	:	ENCODING STRING
-		{ strncpy(new_locale.frl_encoding, $2, sizeof(new_locale.frl_encoding)); }
+		{ if (strlcpy(new_locale.frl_encoding, $2,
+		      sizeof(new_locale.frl_encoding)) >=
+		      sizeof(new_locale.frl_encoding))
+			errx(1, "encoding name too long: %s", $2); }
 	|	VARIABLE
 		{ rl_variable_len = strlen($1) + 1;
 		  rl_variable = strdup($1);

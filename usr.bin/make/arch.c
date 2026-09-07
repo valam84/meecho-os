@@ -634,7 +634,7 @@ ArchStatMember(char *archive, char *member, Boolean hash)
 	    arh.ar_size[sizeof(arh.ar_size)-1] = '\0';
 	    size = (int)strtol(arh.ar_size, NULL, 10);
 
-	    (void)strncpy(memName, arh.ar_name, sizeof(arh.ar_name));
+	    (void)memcpy(memName, arh.ar_name, sizeof(arh.ar_name));
 	    for (cp = &memName[AR_MAX_NAME_LEN]; *cp == ' '; cp--) {
 		continue;
 	    }
@@ -1001,7 +1001,13 @@ Arch_Touch(GNode *gn)
 	free(p1);
     if (p2)
 	free(p2);
-    snprintf(arh.ar_date, sizeof(arh.ar_date), "%-12ld", (long) now);
+    {
+	/* ar_date is 12 bytes with no terminator; snprintf wants a 13th. */
+	char date[sizeof(arh.ar_date) + 1];
+
+	snprintf(date, sizeof(date), "%-12ld", (long) now);
+	memcpy(arh.ar_date, date, sizeof(arh.ar_date));
+    }
 
     if (arch != NULL) {
 	(void)fwrite((char *)&arh, sizeof(struct ar_hdr), 1, arch);

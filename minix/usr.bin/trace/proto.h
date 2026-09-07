@@ -102,12 +102,12 @@ extern unsigned int verbose;
 extern unsigned int valuesonly;
 
 /* service */
-const struct calls pm_calls;
-const struct calls vfs_calls;
-const struct calls rs_calls;
-const struct calls mib_calls;
-const struct calls vm_calls;
-const struct calls ipc_calls;
+extern const struct calls pm_calls;
+extern const struct calls vfs_calls;
+extern const struct calls rs_calls;
+extern const struct calls mib_calls;
+extern const struct calls vm_calls;
+extern const struct calls ipc_calls;
 
 /* service/vfs.c */
 void put_fd(struct trace_proc *proc, const char *name, int fd);

@@ -657,8 +657,13 @@ fixhost(struct entry *ep)
 		p = hp->h_name;
 	}
 
-	if (x)
-		(void)snprintf(ep->host, sizeof(ep->host), "%s:%s", p, x);
+	if (x) {
+		/* deliberately truncated to what the utmp field holds. */
+		char hx[NI_MAXHOST + UT_HOSTSIZE + 2];
+
+		(void)snprintf(hx, sizeof(hx), "%s:%s", p, x);
+		strlcpy(ep->host, hx, sizeof(ep->host));
+	}
 	else
 
 		strlcpy(ep->host, p, sizeof(ep->host));

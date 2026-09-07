@@ -188,6 +188,7 @@ static Boolean		ignorePWD;	/* if we use -C, PWD is meaningless */
 static char objdir[MAXPATHLEN + 1];	/* where we chdir'ed to */
 char curdir[MAXPATHLEN + 1];		/* Startup directory */
 char *progname;				/* the program name */
+FILE *debug_file;			/* debug output, default stdout */
 char *makeDependfile;
 pid_t myPid;
 int makelevel;
@@ -686,17 +687,18 @@ Main_SetObjdir(const char *path)
 {
 	struct stat sb;
 	char *p = NULL;
-	char buf[MAXPATHLEN + 1];
+	/* holds "${curdir}/${path}": two full paths and a slash. */
+	char buf[2 * MAXPATHLEN + 2];
 	Boolean rc = FALSE;
 
 	/* expand variable substitutions */
 	if (strchr(path, '$') != 0) {
-		snprintf(buf, MAXPATHLEN, "%s", path);
+		snprintf(buf, sizeof(buf), "%s", path);
 		path = p = Var_Subst(NULL, buf, VAR_GLOBAL, 0);
 	}
 
 	if (path[0] != '/') {
-		snprintf(buf, MAXPATHLEN, "%s/%s", curdir, path);
+		snprintf(buf, sizeof(buf), "%s/%s", curdir, path);
 		path = buf;
 	}
 
@@ -706,7 +708,7 @@ Main_SetObjdir(const char *path)
 			(void)fprintf(stderr, "make warning: %s: %s.\n",
 				      path, strerror(errno));
 		} else {
-			strncpy(objdir, path, MAXPATHLEN);
+			strlcpy(objdir, path, sizeof(objdir));
 			Var_Set(".OBJDIR", objdir, VAR_GLOBAL, 0);
 			setenv("PWD", objdir, 1);
 			Dir_InitDot();
@@ -815,7 +817,8 @@ main(int argc, char **argv)
 	Boolean outOfDate = FALSE; 	/* FALSE if all targets up to date */
 	struct stat sb, sa;
 	char *p1, *path;
-	char mdpath[MAXPATHLEN];
+	/* holds a prefix followed by a full path. */
+	char mdpath[2 * MAXPATHLEN];
     	const char *machine = getenv("MACHINE");
 	const char *machine_arch = getenv("MACHINE_ARCH");
 	char *syspath = getenv("MAKESYSPATH");
@@ -1103,16 +1106,16 @@ main(int argc, char **argv)
 	(void)Main_SetObjdir(curdir);
 
 	if ((path = Var_Value("MAKEOBJDIRPREFIX", VAR_CMD, &p1)) != NULL) {
-		(void)snprintf(mdpath, MAXPATHLEN, "%s%s", path, curdir);
+		(void)snprintf(mdpath, sizeof(mdpath), "%s%s", path, curdir);
 		(void)Main_SetObjdir(mdpath);
 		free(p1);
 	} else if ((path = Var_Value("MAKEOBJDIR", VAR_CMD, &p1)) != NULL) {
 		(void)Main_SetObjdir(path);
 		free(p1);
 	} else {
-		(void)snprintf(mdpath, MAXPATHLEN, "%s.%s", _PATH_OBJDIR, machine);
+		(void)snprintf(mdpath, sizeof(mdpath), "%s.%s", _PATH_OBJDIR, machine);
 		if (!Main_SetObjdir(mdpath) && !Main_SetObjdir(_PATH_OBJDIR)) {
-			(void)snprintf(mdpath, MAXPATHLEN, "%s%s", 
+			(void)snprintf(mdpath, sizeof(mdpath), "%s%s", 
 					_PATH_OBJDIRPREFIX, curdir);
 			(void)Main_SetObjdir(mdpath);
 		}

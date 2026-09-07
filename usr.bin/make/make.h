@@ -208,7 +208,7 @@ typedef struct GNode {
     Lst             order_pred;	/* .ORDER nodes we need made */
     Lst             order_succ;	/* .ORDER nodes who need us */
 
-    char	    cohort_num[8]; /* #n for this cohort */
+    char	    cohort_num[13]; /* #n for this cohort */
     int		    unmade_cohorts;/* # of unmade instances on the
 				      cohorts list */
     struct GNode    *centurion;	/* Pointer to the first instance of a ::
@@ -440,7 +440,7 @@ extern pid_t	myPid;
  *	There is one bit per module.  It is up to the module what debug
  *	information to print.
  */
-FILE *debug_file;		/* Output written here - default stdout */
+extern FILE *debug_file;	/* Output written here - default stdout */
 extern int debug;
 #define	DEBUG_ARCH	0x00001
 #define	DEBUG_COND	0x00002

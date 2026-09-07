@@ -733,7 +733,7 @@ put_sigset(struct trace_proc * proc, const char * name, sigset_t set)
 
 	for (sig = 1; sig < NSIG; sig++) {
 		/* Note that sigismember() may not strictly return 0 or 1.. */
-		if (!sigismember(&set, sig) != invert)
+		if ((!sigismember(&set, sig)) != invert)
 			continue;
 
 		if ((signame = get_signal_name(sig)) != NULL) {
@@ -768,10 +768,10 @@ put_sa_handler(struct trace_proc * proc, const char * name, vir_bytes handler)
 	const char *text = NULL;
 
 	if (!valuesonly) {
-		switch ((int)handler) {
-		case (int)SIG_DFL: text = "SIG_DFL"; break;
-		case (int)SIG_IGN: text = "SIG_IGN"; break;
-		case (int)SIG_HOLD: text = "SIG_HOLD"; break;
+		switch (handler) {
+		case (vir_bytes)SIG_DFL: text = "SIG_DFL"; break;
+		case (vir_bytes)SIG_IGN: text = "SIG_IGN"; break;
+		case (vir_bytes)SIG_HOLD: text = "SIG_HOLD"; break;
 		}
 	}
 

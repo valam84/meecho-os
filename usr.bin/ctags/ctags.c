@@ -123,6 +123,7 @@ main(int argc, char **argv)
 			break;
 		case 'v':
 			vflag++;
+			/* FALLTHROUGH */
 		case 'x':
 			xflag++;
 			break;

@@ -207,6 +207,10 @@ int sep = '\n';
  * Do we have -C anywhere?
  */
 int havechd = 0;
+char *chdname = NULL;		/* the directory to change to, or NULL */
+#if !HAVE_NBTOOL_CONFIG_H
+int do_chroot = 0;
+#endif
 
 /*
  * options()

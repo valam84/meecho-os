@@ -2301,7 +2301,7 @@ VarQuote(char *str)
 static char *
 VarHash(char *str)
 {
-    static const char    hexdigits[16] = "0123456789abcdef";
+    static const char    hexdigits[] = "0123456789abcdef";
     Buffer         buf;
     size_t         len, len2;
     unsigned char  *ustr = (unsigned char *)str;
@@ -2322,8 +2322,10 @@ VarHash(char *str)
 	    break;
 	case 3:
 	    k |= (ustr[2] << 16);
+	    /* FALLTHROUGH */
 	case 2:
 	    k |= (ustr[1] << 8);
+	    /* FALLTHROUGH */
 	case 1:
 	    k |= ustr[0];
 	    len = 0;
@@ -2506,7 +2508,8 @@ ApplyModifiers(char *nstr, const char *tstr,
 
 	    if (DEBUG(VAR)) {
 		fprintf(debug_file, "Got '%s' from '%.*s'%.*s\n",
-		       rval, rlen, tstr, rlen, tstr + rlen);
+		       rval ? rval : "(null)", rlen, tstr,
+		       rlen, tstr + rlen);
 	    }
 
 	    tstr += rlen;

@@ -55,9 +55,9 @@ graph2_setup(struct graph2 *graph, uint32_t v, uint32_t e)
 	graph->v = v;
 	graph->e = e;
 
-	graph->verts = calloc(sizeof(struct vertex2), v);
-	graph->edges = calloc(sizeof(struct edge2), e);
-	graph->output_order = calloc(sizeof(uint32_t), e);
+	graph->verts = calloc(v, sizeof(struct vertex2));
+	graph->edges = calloc(e, sizeof(struct edge2));
+	graph->output_order = calloc(e, sizeof(uint32_t));
 
 	if (graph->verts == NULL || graph->edges == NULL ||
 	    graph->output_order == NULL)

@@ -2444,12 +2444,13 @@ kern_cp_id(HANDLER_ARGS)
 			       sizeof(u_int64_t),
 			       DISPLAY_VALUE);
 	else if (Aflag) {
-		for (i = 0; i < n; i++)
+		for (i = 0; i < n; i++) {
 			(void)snprintf(s, sizeof(s), "%s%s%d", sname, sep, i);
 			tname = s;
 			display_number(&node, tname, &cp_id[i],
 				       sizeof(u_int64_t),
 				       DISPLAY_VALUE);
+		}
 	}
 	else {
 		if (xflag || rflag)

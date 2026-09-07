@@ -129,6 +129,27 @@ int fdt_node_reg(const struct fdt_node *node, unsigned index, u64_t *addr,
 int fdt_node_gic_irq(const struct fdt_node *node, unsigned index);
 
 /*
+ * The "reg" of the node some other node points at.
+ *
+ * A device tree refers to a device from another device by phandle: the
+ * network controller names its GRF that way, its reset controller that way,
+ * and the GPIO that resets its PHY that way.  Following one means finding
+ * the node that carries a "phandle" property of that value, which is a
+ * second walk of the tree - and a walk is all this reader has, so that is
+ * what this does.
+ *
+ * The alternative, which the driver before this one used, is to look for
+ * the pointed-at node by its compatible string instead.  That works while
+ * there is one of its kind on the machine and stops working at the second:
+ * this SoC has five GPIO banks, and "the one with this phandle" is the only
+ * question with an answer.
+ *
+ * Returns 0 and fills in addr and size, or -1.
+ */
+int fdt_phandle_reg(const void *dtb, u32_t phandle, unsigned index,
+	u64_t *addr, u64_t *size);
+
+/*
  * A process's copy of the blob the kernel booted with, freshly allocated
  * with malloc(); the caller owns it. NULL, with errno set, when the kernel
  * has no device tree - which is how a machine without one, or an

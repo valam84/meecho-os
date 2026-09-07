@@ -373,6 +373,73 @@ fdt_node_reg(const struct fdt_node *node, unsigned index, u64_t *addr,
 	return 0;
 }
 
+
+/*===========================================================================*
+ *				fdt_phandle_reg				     *
+ *===========================================================================*/
+struct phandle_search {
+	u32_t want;
+	unsigned index;
+	u64_t addr;
+	u64_t size;
+	int found;
+};
+
+static int
+match_phandle(void *cookie, int depth, const char *name __unused,
+	const struct fdt_node *node)
+{
+	struct phandle_search *s = cookie;
+	const void *p;
+	unsigned len;
+
+	if (depth == 0)
+		return 0;
+
+	/*
+	 * Both spellings: "phandle" is what a tree compiled this decade
+	 * says, "linux,phandle" what an older one says, and a tree that
+	 * carries both carries the same value in both.
+	 */
+	if ((p = fdt_getprop(node, "phandle", &len)) == NULL || len < 4)
+		if ((p = fdt_getprop(node, "linux,phandle", &len)) == NULL ||
+		    len < 4)
+			return 0;
+
+	if ((u32_t)fdt_read_cells(p, 1) != s->want)
+		return 0;
+
+	if (fdt_node_reg(node, s->index, &s->addr, &s->size) != 0)
+		return 0;
+
+	s->found = 1;
+	return 1;			/* stops the walk */
+}
+
+int
+fdt_phandle_reg(const void *dtb, u32_t phandle, unsigned index, u64_t *addr,
+	u64_t *size)
+{
+	struct phandle_search s;
+
+	/* Zero is not a phandle; it is what an absent one reads as. */
+	if (phandle == 0)
+		return -1;
+
+	memset(&s, 0, sizeof(s));
+	s.want = phandle;
+	s.index = index;
+
+	(void)fdt_walk(dtb, match_phandle, &s);
+
+	if (!s.found)
+		return -1;
+
+	*addr = s.addr;
+	*size = s.size;
+	return 0;
+}
+
 /*===========================================================================*
  *				fdt_node_gic_irq			     *
  *===========================================================================*/

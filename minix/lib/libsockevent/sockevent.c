@@ -1286,6 +1286,15 @@ sockevent_connect(sockid_t id, const struct sockaddr * __restrict addr,
 	if (r == SUSPEND) {
 		if (call != NULL || sockevent_has_events()) {
 			if (call == NULL) {
+				/*
+				 * The fake call is only ever matched against
+				 * itself, by endpoint and request identifier
+				 * both, so its fields need to be defined but
+				 * not meaningful.  Zeroing the whole thing is
+				 * what makes that comparison well defined;
+				 * GCC 15 is what pointed at it.
+				 */
+				memset(&fakecall, 0, sizeof(fakecall));
 				fakecall.sc_endpt = NONE;
 
 				call = &fakecall;

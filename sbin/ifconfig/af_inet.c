@@ -228,7 +228,7 @@ in_addr_tentative(struct ifaddrs *ifa)
 	struct ifreq ifr;
 
 	memset(&ifr, 0, sizeof(ifr));
-	strncpy(ifr.ifr_name, ifa->ifa_name, sizeof(ifr.ifr_name));
+	strlcpy(ifr.ifr_name, ifa->ifa_name, sizeof(ifr.ifr_name));
 	ifr.ifr_addr = *ifa->ifa_addr;
 	if ((s = getsock(AF_INET)) == -1)
 		err(EXIT_FAILURE, "%s: getsock", __func__);

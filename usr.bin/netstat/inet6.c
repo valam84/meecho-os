@@ -148,7 +148,7 @@ struct	tcp6cb tcp6cb;
 #else
 struct	tcpcb tcpcb;
 #endif
-struct	socket sockb;
+static struct socket sockb;
 
 char	*inet6name(const struct in6_addr *);
 void	inet6print(const struct in6_addr *, int, const char *);
@@ -824,7 +824,7 @@ ip6_ifstats(const char *ifname)
 		return;
 	}
 
-	strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
 	printf("ip6 on %s:\n", ifname);
 
 	if (ioctl(s, SIOCGIFSTAT_IN6, (char *)&ifr) < 0) {
@@ -1221,7 +1221,7 @@ icmp6_ifstats(const char *ifname)
 		return;
 	}
 
-	strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
 	printf("icmp6 on %s:\n", ifname);
 
 	if (ioctl(s, SIOCGIFSTAT_ICMP6, (char *)&ifr) < 0) {

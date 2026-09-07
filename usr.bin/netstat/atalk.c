@@ -63,7 +63,7 @@ __RCSID("$NetBSD: atalk.c,v 1.16 2015/06/06 13:08:31 joerg Exp $");
 #include "netstat.h"
 
 struct ddpcb    ddpcb;
-struct socket   sockb;
+static struct socket sockb;
 
 static int first = 1;
 
@@ -154,7 +154,9 @@ const char *
 atalk_print(const struct sockaddr *sa, int what)
 {
 	const struct sockaddr_at *sat = (const struct sockaddr_at *) sa;
-	static char mybuf[50];
+	/* net, host and port each print into a buffer of 50; this holds
+	 * all three of them joined by separators. */
+	static char mybuf[160];
 	int numeric = (what & 0x08);
 
 	mybuf[0] = 0;

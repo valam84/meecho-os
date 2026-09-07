@@ -1549,8 +1549,8 @@ initconn(void)
 				result = COMPLETE + 1;
 				break;
 			}
-			/* FALLTHROUGH */
 #ifdef INET6
+			/* FALLTHROUGH */
 		case AF_INET6:
 			if (!epsv6 || epsv6bad) {
 				result = COMPLETE + 1;

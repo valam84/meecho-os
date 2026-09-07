@@ -35,7 +35,7 @@
 #endif
 
 /* We are using memchr() on this, so do not remove the '32' size here! */
-static const uint8_t tcpisn_hextab[32] = "0123456789abcdef0123456789ABCDEF";
+static const uint8_t tcpisn_hextab[32] __nonstring = "0123456789abcdef0123456789ABCDEF";
 
 static uint8_t tcpisn_input[SHA256_BLOCK_LENGTH] __aligned(4);
 

@@ -312,6 +312,35 @@ static kvm_t *prepare_kvmd(const char *, const char *, char *);
 
 static kvm_t *kvmd = NULL;
 gid_t egid;
+/* The flags and modes declared in netstat.h; see the note there. */
+int	Aflag;
+int	aflag;
+int	Bflag;
+int	bflag;
+int	dflag;
+int	gflag;
+int	hflag;
+int	iflag;
+int	Lflag;
+int	lflag;
+int	mflag;
+int	numeric_addr;
+int	numeric_port;
+int	nflag;
+int	Pflag;
+int	pflag;
+int	qflag;
+int	rflag;
+int	sflag;
+int	tagflag;
+int	tflag;
+int	Vflag;
+int	vflag;
+char	*interface;
+int	af;
+int	use_sysctl;
+int	force_sysctl;
+
 int interval;	/* repeat interval for i/f stats */
 static const char *nlistf = NULL, *memf = NULL;
 

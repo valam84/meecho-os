@@ -663,6 +663,7 @@ cmdscanner(void)
 					putc('\n', ttyout);
 				quit(0, NULL);
 				/* NOTREACHED */
+				__unreachable();
 			case -3:	/* too long; try again */
 				fputs("Sorry, input line is too long.\n",
 				    ttyout);

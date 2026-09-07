@@ -427,7 +427,7 @@ p_tag(const struct sockaddr *sa)
 }
 #endif
 
-static char line[MAXHOSTNAMELEN];
+static char line[NI_MAXHOST + sizeof("/128")];
 static char domain[MAXHOSTNAMELEN];
 
 char *

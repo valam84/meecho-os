@@ -63,12 +63,18 @@ union mpls_shim {
 	} shim;
 };
 
+/*
+ * Not __packed: the members already lie at their natural offsets, so the
+ * attribute changed no layout - it only made every pointer taken into the
+ * struct a potentially misaligned one, which is what the code that walks
+ * a label stack does, and what GCC 15 rejects.
+ */
 struct sockaddr_mpls {
 	uint8_t smpls_len;
 	uint8_t smpls_family;
 	uint8_t smpls_pad[2];
 	union mpls_shim smpls_addr;
-} __packed;
+};
 
 
 #endif /* !_NETMPLS_MPLS_H_ */

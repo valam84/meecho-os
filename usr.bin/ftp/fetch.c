@@ -1036,7 +1036,7 @@ fetch_url(const char *url, const char *proxyenv, char *proxyauth, char *wwwauth)
 				if (! (token = match_token(&cp, "chunked"))) {
 					warnx(
 				    "Unsupported transfer encoding `%s'",
-					    token);
+					    cp);
 					goto cleanup_fetch_url;
 				}
 				ischunked++;
@@ -1047,7 +1047,7 @@ fetch_url(const char *url, const char *proxyenv, char *proxyauth, char *wwwauth)
 				|| match_token(&cp, "WWW-Authenticate:")) {
 				if (! (token = match_token(&cp, "Basic"))) {
 					DPRINTF("%s: skipping unknown auth "
-					    "scheme `%s'\n", __func__, token);
+					    "scheme `%s'\n", __func__, cp);
 					continue;
 				}
 				FREEPTR(auth);

@@ -102,7 +102,7 @@ domacro(int argc, char *argv[])
 					}
 					break;
 				}
-				/* intentional drop through */
+				/* FALLTHROUGH */
 			default:
 				*cp2++ = *cp1;
 				break;

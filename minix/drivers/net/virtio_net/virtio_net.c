@@ -27,8 +27,13 @@
 	printf s;						\
 } while (0)
 #else
-#define dput(s)
-#define dprintf(s)
+/*
+ * The disabled forms have to be statements, not nothing: every use of them
+ * sits alone as the body of an if, and an empty body there is both what GCC
+ * warns about and a trap for whoever adds an else.
+ */
+#define dput(s)		do { } while (0)
+#define dprintf(s)	do { } while (0)
 #endif
 
 static struct virtio_device *net_dev;

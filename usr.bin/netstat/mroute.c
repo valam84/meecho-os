@@ -269,7 +269,7 @@ mroutepr(u_long mrpaddr, u_long mfchashtbladdr, u_long mfchashaddr,
 static void
 print_bw_meter(struct bw_meter *bw_meter, int *banner_printed)
 {
-	char s0[256], s1[256], s2[256], s3[256];
+	char s0[1024], s1[256], s2[256], s3[256];
 	struct timeval now, end, delta;
 
 	gettimeofday(&now, NULL);

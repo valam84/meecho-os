@@ -200,6 +200,44 @@ dwmac_rk_rgmii(void)
 }
 
 /*
+ * The transmit delay on its own, without disturbing the receive one.
+ *
+ * The delay line is a pad setting, not a clock setting: it can be moved
+ * while the controller runs, which is what lets the driver walk the range
+ * and let the far end say which value works.  There is no way to measure
+ * this from the board itself - the MAC counts a frame as sent whatever the
+ * PHY makes of it - so the only instrument is a reply coming back.
+ */
+/*
+ * The transmit clock selector, written raw.
+ *
+ * dwmac_rk_set_speed() picks this from the negotiated speed on the
+ * assumption that clk_gmac1 is 125 MHz - which is what it is when the PHY
+ * feeds the SoC 125 MHz, as "clock_in_out = input" is supposed to mean.  If
+ * the PHY actually feeds something else, every one of those choices is
+ * wrong by the same factor, and the way to find out is to try them: the MAC
+ * will clock frames out at whatever rate it is given and count them all as
+ * good, so nothing on this side of the interface can tell.
+ */
+void
+dwmac_rk_set_speed_sel(unsigned sel)
+{
+	dwmac_wr(dwmac.cru, RK3568_CRU_GMAC1_CLKSEL,
+	    RK_HIWORD(sel, RK3568_GMAC1_SPEED_MASK,
+	    RK3568_GMAC1_SPEED_SHIFT));
+}
+
+void
+dwmac_rk_set_txdelay(unsigned tx_delay)
+{
+	dwmac_wr(dwmac.grf, RK3568_GRF_GMAC1_CON0,
+	    RK_HIWORD(dwmac.info.rx_delay & RK3568_GMAC_CON0_DL_MASK,
+	    RK3568_GMAC_CON0_DL_MASK, RK3568_GMAC_CON0_RX_DL_SHIFT) |
+	    RK_HIWORD(tx_delay & RK3568_GMAC_CON0_DL_MASK,
+	    RK3568_GMAC_CON0_DL_MASK, RK3568_GMAC_CON0_TX_DL_SHIFT));
+}
+
+/*
  * Link speed.  On this SoC that is a clock rate and not a register bit of
  * the controller, and the rate is chosen by a two-bit field: the transmit
  * clock is divided by one, five or fifty from the 125 MHz the PHY provides.

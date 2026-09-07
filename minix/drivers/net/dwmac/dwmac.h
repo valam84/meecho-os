@@ -88,6 +88,10 @@ struct dwmac {
 	unsigned rx_errors;
 	unsigned irqs;			/* how many interrupts arrived */
 	int phy_loopback;		/* diagnostic: loop at the PHY */
+	int tx_sweep;			/* diagnostic: walk the transmit delay */
+	unsigned tx_sweep_idx;
+	int clk_sweep;			/* diagnostic: walk the transmit clock */
+	unsigned clk_sweep_idx;
 
 	unsigned speed;			/* 0 when the link is down */
 	int full_duplex;
@@ -109,6 +113,8 @@ void dwmac_rk_reset_controller(void);
 void dwmac_rk_pins(void);
 void dwmac_rk_rgmii(void);
 void dwmac_rk_set_speed(unsigned speed);
+void dwmac_rk_set_txdelay(unsigned tx_delay);
+void dwmac_rk_set_speed_sel(unsigned sel);
 void dwmac_rk_reset_phy(void);
 
 /* dwmac_ring.c */
@@ -125,6 +131,7 @@ int dwmac_phy_find(void);
 int dwmac_phy_reset(void);
 int dwmac_phy_link(unsigned *speed, int *full_duplex);
 void dwmac_phy_dump(void);
+void dwmac_phy_dump_ext(void);
 
 /* dwmac_ring.c, diagnostics */
 void dwmac_ring_dump(void);

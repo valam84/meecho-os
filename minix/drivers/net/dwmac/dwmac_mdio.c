@@ -162,34 +162,93 @@ yt_modify_ext(int phyaddr, uint16_t reg, uint16_t clear, uint16_t set)
 	return dwmac_mdio_write(phyaddr, YT_PAGE_DATA, v);
 }
 
+static int
+yt_write_ext(int phyaddr, uint16_t reg, uint16_t val)
+{
+	int r;
+
+	if ((r = dwmac_mdio_write(phyaddr, YT_PAGE_SELECT, reg)) != OK)
+		return r;
+	return dwmac_mdio_write(phyaddr, YT_PAGE_DATA, val);
+}
+
 /*
- * Turn off the PHY's own RGMII delays.
+ * Set the PHY up the way the system that works on this board sets it up.
  *
- * This board does its delays in the SoC - the GRF holds the numbers and the
- * device tree says "rgmii" rather than "rgmii-id", which is exactly the
- * statement that the delays are not the PHY's job.  But the YT8531 comes
- * out of reset with its receive clock delay on, so leaving it alone means
- * two delays where the design calls for one.
+ * This is the vendor kernel's yt8531_config_init, register for register,
+ * and it is deliberately not the mainline driver's idea of "rgmii": that
+ * one turns the PHY's own delay lines off, on the reasoning that a board
+ * whose device tree says "rgmii" rather than "rgmii-id" does its delays in
+ * the SoC.  The reasoning is sound and the board does not care - it runs a
+ * 6.1 vendor kernel whose driver leaves the delays at their reset values
+ * (receive clock delay on, 0xa003 = 0x00f1), and that is the configuration
+ * under which this PHY is known to put frames on the wire.  An earlier
+ * version of this function followed mainline, and the transmit side never
+ * worked: frames left the MAC and counted as good, and nothing reached the
+ * switch, through a full sweep of the SoC's transmit delay and all four
+ * transmit clock choices.
  *
- * It costs a run on the board to learn this.  The symptom was as
- * misleading as it gets: receive worked perfectly, the MAC's own counter
- * said seventeen frames transmitted and seventeen of them good - and not
- * one of them ever reached the wire, because what left the MAC was sampled
- * by the PHY at the wrong moment.  Counters on this side of the delay line
- * cannot see that; only somebody else's tcpdump can.
+ * What the vendor driver adds, and this function repeats: the 125 MHz clock
+ * output (0xa012), which on this board is the SoC's transmit clock; the
+ * receive clock duty cycle block; the drive strength of the PHY's outputs
+ * toward the SoC (0xa010); and the bandgap reference for the 100M
+ * transmitter (0x57), which is the one register here on the wire side of
+ * the PHY.  None of it comes with an explanation, and none is guessed at:
+ * the values are the vendor's, read back from the working system.
  */
 static int
 yt8531_config(int phyaddr)
 {
+	uint16_t reg;
 	int r;
 
-	if ((r = yt_modify_ext(phyaddr, YT_EXT_CHIP_CONFIG,
-	    YT_CHIP_CONFIG_RXC_DLY_EN, 0)) != OK)
+	if ((r = yt_write_ext(phyaddr, YT_EXT_CLK_OUT, YT_CLK_OUT_125M)) != OK)
 		return r;
 
-	return yt_modify_ext(phyaddr, YT_EXT_RGMII_CONFIG1,
-	    YT_RGMII1_RX_DELAY_MASK | YT_RGMII1_FE_TX_DELAY_MASK |
-	    YT_RGMII1_GE_TX_DELAY_MASK, 0);
+	if ((r = yt_write_ext(phyaddr, YT_EXT_RXC_DUTY_CTRL1,
+	    YT_RXC_DUTY_CTRL1_VENDOR)) != OK)
+		return r;
+	if ((r = yt_write_ext(phyaddr, YT_EXT_RXC_DUTY_CTRL2,
+	    YT_RXC_DUTY_CTRL2_VENDOR)) != OK)
+		return r;
+	if ((r = yt_write_ext(phyaddr, YT_EXT_RXC_DUTY_CTRL0,
+	    YT_RXC_DUTY_CTRL0_VENDOR)) != OK)
+		return r;
+	for (reg = YT_EXT_RXC_DUTY_FIRST; reg <= YT_EXT_RXC_DUTY_LAST; reg++)
+		if ((r = yt_write_ext(phyaddr, reg, YT_RXC_DUTY_NODELAY)) != OK)
+			return r;
+
+	if ((r = yt_write_ext(phyaddr, YT_EXT_DRIVE_STRENGTH,
+	    YT_DRIVE_STRENGTH_VENDOR)) != OK)
+		return r;
+
+	return yt_modify_ext(phyaddr, YT_EXT_BGS_100M, YT_BGS_100M_MASK,
+	    YT_BGS_100M_VENDOR);
+}
+
+/*
+ * The extended registers next to the reference snapshot, one line each,
+ * marked where they differ.  This is the whole point of having taken the
+ * snapshot: a run on the board answers "is the PHY set up like the system
+ * that works" without anybody having to remember what that system had.
+ */
+void
+dwmac_phy_dump_ext(void)
+{
+	static const struct { uint16_t reg, ref; } refs[] = { YT_REF_REGS };
+	unsigned i;
+
+	if (dwmac.info.phy_addr < 0 || dwmac.phy_id != YT8531_PHY_ID)
+		return;
+
+	for (i = 0; i < sizeof(refs) / sizeof(refs[0]); i++) {
+		uint16_t v = 0xffff;
+
+		(void)yt_read_ext(dwmac.info.phy_addr, refs[i].reg, &v);
+		log_info(&dwmac_log, "phy ext %04x = %04x  (reference %04x)%s\n",
+		    refs[i].reg, v, refs[i].ref,
+		    v == refs[i].ref ? "" : "  DIFFERS");
+	}
 }
 
 /*
@@ -232,7 +291,9 @@ dwmac_phy_reset(void)
 			    "%d\n", r);
 			return r;
 		}
-		log_debug(&dwmac_log, "YT8531: internal rgmii delays off\n");
+		log_debug(&dwmac_log, "YT8531: set up as the vendor kernel "
+		    "sets it up\n");
+		dwmac_phy_dump_ext();
 	}
 
 	if (dwmac.phy_loopback) {

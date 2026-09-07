@@ -358,26 +358,65 @@ struct dwmac_desc {
 /*
  * The one thing in this driver that belongs to a particular PHY.
  *
- * The YT8531 has its own RGMII delay lines, and after a reset they are not
- * all off: the receive clock delay is enabled by default.  On a board whose
- * delays are done in the SoC - which is what "phy-mode = rgmii" without an
- * -id suffix means, and what this board's GRF is programmed for - the PHY's
- * delays are a second helping of the same thing, and the pair of them puts
- * data and clock outside each other's sampling window.
+ * The YT8531's extended registers are reached through a page window rather
+ * than directly: write the number of the register to 0x1e, then read or
+ * write its contents at 0x1f.
  *
- * The registers are reached through a page window rather than directly:
- * write the number of the extended register to 0x1e, then read or write its
- * contents at 0x1f.
+ * What goes into them is not taken from a datasheet - Motorcomm does not
+ * publish one - but from the system that works on this board: the vendor
+ * kernel (6.1, bigtreetech/linux-rockchip) with its motorcomm.c, and the
+ * registers read back from the PHY while that kernel had the link up.  The
+ * values below are that snapshot.  Where a name is known it is given; where
+ * only the number is known, the number is what there is.
  */
 #define YT_PAGE_SELECT			0x1e
 #define YT_PAGE_DATA			0x1f
 
+/* Chip configuration.  Bit 8 enables the PHY's receive clock delay. */
 #define YT_EXT_CHIP_CONFIG		0xa001
 #define YT_CHIP_CONFIG_RXC_DLY_EN	(1u << 8)
 
+/* RGMII delay selectors: receive [13:10], 100M transmit [7:4], 1G [3:0]. */
 #define YT_EXT_RGMII_CONFIG1		0xa003
-#define YT_RGMII1_RX_DELAY_MASK		(0xfu << 10)
-#define YT_RGMII1_FE_TX_DELAY_MASK	(0xfu << 4)
-#define YT_RGMII1_GE_TX_DELAY_MASK	(0xfu << 0)
+
+/*
+ * The analogue side.  0x57 holds the bandgap reference voltage for the 100M
+ * transmitter in bits [11:8]; the vendor driver moves it from the reset
+ * value 9 to 7 ("Change 100M default BGS voltage from 0x294c to 0x274c")
+ * and does not say why.  0xa010 is the drive strength of RXC, PHY_CLK_OUT
+ * and RXD; 0xa012 turns the 125 MHz clock output on - on this board that
+ * clock is what the SoC runs its transmit side from.
+ */
+#define YT_EXT_BGS_100M			0x57
+#define YT_BGS_100M_MASK		(0xfu << 8)
+#define YT_BGS_100M_VENDOR		(7u << 8)
+#define YT_EXT_DRIVE_STRENGTH		0xa010
+#define YT_DRIVE_STRENGTH_VENDOR	0xdbcf
+#define YT_EXT_CLK_OUT			0xa012
+#define YT_CLK_OUT_125M			0x00d0
+
+/* Receive clock duty cycle; the vendor driver writes these six as a block. */
+#define YT_EXT_RXC_DUTY_FIRST		0xa03a
+#define YT_EXT_RXC_DUTY_LAST		0xa03f
+#define YT_RXC_DUTY_NODELAY		0x9696
+#define YT_EXT_RXC_DUTY_CTRL0		0xa039
+#define YT_RXC_DUTY_CTRL0_VENDOR	0xbf00
+#define YT_EXT_RXC_DUTY_CTRL1		0xa040
+#define YT_RXC_DUTY_CTRL1_VENDOR	0xffff
+#define YT_EXT_RXC_DUTY_CTRL2		0xa041
+#define YT_RXC_DUTY_CTRL2_VENDOR	0x00ff
+
+/*
+ * The extended registers the reference snapshot covers, and their values
+ * with the vendor kernel driving the PHY at 100 Mbit/s full duplex.  The
+ * driver prints the same list so that a run on the board can be laid next
+ * to this table line by line.
+ */
+#define YT_REF_REGS \
+	{ 0x000c, 0x8000 }, { 0x0027, 0xe810 }, { 0x0057, 0x274c },	\
+	{ 0xa000, 0x0000 }, { 0xa001, 0x8100 }, { 0xa003, 0x00f1 },	\
+	{ 0xa010, 0xdbcf }, { 0xa012, 0x00d0 }, { 0xa039, 0xbf00 },	\
+	{ 0xa03a, 0x9696 }, { 0xa03f, 0x9696 }, { 0xa040, 0xffff },	\
+	{ 0xa041, 0x00ff }
 
 #endif /* _DWMAC_REG_H */

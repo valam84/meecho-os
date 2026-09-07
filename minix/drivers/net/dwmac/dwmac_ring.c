@@ -336,9 +336,24 @@ dwmac_ring_recv(struct netdriver_data *data, size_t max)
 
 	group = dwmac.rx_next / DWMAC_DESCS_PER_GROUP;
 
-	if (dwmac.rx_next % DWMAC_DESCS_PER_GROUP == 0)
-		desc_group_sync(dwmac.rx_ring,
-		    group * DWMAC_DESCS_PER_GROUP, CACHE_INVALIDATE);
+	/*
+	 * Before every look, not just the first look at a group.  The device
+	 * owns the whole group until the last descriptor in it has been
+	 * consumed, and in that time the driver only reads it - so there is
+	 * nothing of the driver's in the line to lose, and the invalidation
+	 * is cheap.  What it is not is optional: the first version did it
+	 * once on entering the group, and a descriptor found still owned by
+	 * the device then stayed owned by the device for good, because the
+	 * "still owned" read had brought the line into the cache and every
+	 * later read was answered from there while the device wrote the real
+	 * one behind its back.  On the board that was a ring that stopped at
+	 * descriptor 49 - the first one after a group boundary at which the
+	 * traffic happened to pause - with the device's frame counter going
+	 * up and the interrupt counter standing still, because a device that
+	 * has run out of descriptors says so once and is quiet afterwards.
+	 */
+	desc_group_sync(dwmac.rx_ring, group * DWMAC_DESCS_PER_GROUP,
+	    CACHE_INVALIDATE);
 
 	d = desc_at(dwmac.rx_ring, dwmac.rx_next);
 	if (d->des3 & RDES3_OWN)

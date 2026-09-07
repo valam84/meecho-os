@@ -76,7 +76,8 @@ dwmac_link_check(void)
 	 * clock, and that is a CRU register on this SoC rather than anything
 	 * in the controller - see dwmac_rk_set_speed().
 	 */
-	dwmac_rk_set_speed(speed);
+	if (!dwmac.clk_sweep)
+		dwmac_rk_set_speed(speed);
 
 	/*
 	 * And the controller itself, which needs to know two things: whether
@@ -343,6 +344,7 @@ dwmac_init(unsigned int instance, netdriver_addr_t *addr, uint32_t *caps,
 		memset(&dwmac, 0, sizeof(dwmac));
 		dwmac.phy_loopback = loop;
 	}
+
 	dwmac.info.phy_addr = -1;
 	dwmac.info.reset_pin = -1;
 
@@ -351,6 +353,25 @@ dwmac_init(unsigned int instance, netdriver_addr_t *addr, uint32_t *caps,
 
 	if ((r = dwmac_rk_map()) != OK)
 		return r;
+
+	/*
+	 * Two diagnostics that override what the tree said: a transmit delay
+	 * of one's own, and walking the range of them.
+	 */
+	{
+		long v;
+
+		if (env_parse("txdelay", "d", 0, &v, 0, 0x7f) == EP_SET) {
+			log_info(&dwmac_log, "tx_delay 0x%02x from the boot "
+			    "arguments, not 0x%02x from the tree\n",
+			    (unsigned)v, dwmac.info.tx_delay);
+			dwmac.info.tx_delay = (unsigned)v;
+		}
+		if (env_parse("txsweep", "d", 0, &v, 0, 1) == EP_SET)
+			dwmac.tx_sweep = (int)v;
+		if (env_parse("clksweep", "d", 0, &v, 0, 1) == EP_SET)
+			dwmac.clk_sweep = (int)v;
+	}
 
 	/*
 	 * The glue, in the order the vendor driver does it: clocks first
@@ -396,6 +417,58 @@ dwmac_init(unsigned int instance, netdriver_addr_t *addr, uint32_t *caps,
 		return r;
 
 	dwmac_read_hwaddr(&dwmac.hwaddr);
+
+	/*
+	 * A station address from the boot arguments, twelve hex digits with
+	 * or without colons.  Diagnostic: on a managed network the switch may
+	 * hold an IP-to-MAC binding from DHCP and drop at ingress every frame
+	 * that contradicts it - which, from this side of the port, is exactly
+	 * indistinguishable from a PHY that does not transmit.  Sending with
+	 * the address the network already knows for this board tells the two
+	 * apart.
+	 */
+	{
+		char s[40];
+
+		if (env_get_param("hwaddr", s, sizeof(s)) == OK) {
+			uint8_t mac[6];
+			unsigned n = 0, val = 0, digits = 0;
+			const char *p;
+
+			for (p = s; *p != '\0' && n < 6; p++) {
+				int d;
+
+				if (*p == ':')
+					continue;
+				if (*p >= '0' && *p <= '9')
+					d = *p - '0';
+				else if (*p >= 'a' && *p <= 'f')
+					d = *p - 'a' + 10;
+				else if (*p >= 'A' && *p <= 'F')
+					d = *p - 'A' + 10;
+				else
+					break;
+				val = (val << 4) | (unsigned)d;
+				if (++digits == 2) {
+					mac[n++] = (uint8_t)val;
+					val = 0;
+					digits = 0;
+				}
+			}
+
+			if (n == 6) {
+				memcpy(dwmac.hwaddr.na_addr, mac, 6);
+				log_info(&dwmac_log, "station address from the "
+				    "boot arguments: "
+				    "%02x:%02x:%02x:%02x:%02x:%02x\n",
+				    mac[0], mac[1], mac[2], mac[3], mac[4],
+				    mac[5]);
+			} else
+				log_warn(&dwmac_log, "hwaddr=%s: not six bytes, "
+				    "ignored\n", s);
+		}
+	}
+
 	*addr = dwmac.hwaddr;
 	dwmac_write_hwaddr(&dwmac.hwaddr);
 
@@ -464,10 +537,68 @@ dwmac_stop(void)
 	dwmac_ring_free();
 }
 
+/*
+ * The transmit delay, walked one step per tick.
+ *
+ * The RGMII transmit clock has to reach the PHY offset from the data by
+ * about two nanoseconds, and on this board that offset is made in the SoC:
+ * the device tree names one number and the vendor driver writes it, so a
+ * driver that writes the same number should work.  This one does, register
+ * for register, and its frames still do not reach the wire - so either the
+ * number is not the whole story or the delay is not the problem at all.
+ *
+ * Those two answers look identical from here, and the difference matters:
+ * if some value works, the delay is the story; if none does, the transmit
+ * clock itself is, and no amount of tuning would ever have helped.  So the
+ * driver walks the range while something pings, and the far end answers.
+ */
+static const uint8_t tx_sweep_vals[] = {
+	0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38,
+	0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78, 0x7f
+};
+
 static void
 dwmac_tick(void)
 {
 	dwmac_link_check();
+
+	/*
+	 * The transmit clock, one choice per two ticks.  Four of them, and
+	 * the sweep of the delay having found nothing says the answer is
+	 * more likely here: a clock at the wrong rate looks exactly like a
+	 * clock at the right rate to everything the driver can read.
+	 */
+	if (dwmac.clk_sweep) {
+		static const char *const what[] = {
+			"clk_gmac1 undivided", "clk_gmac1 undivided",
+			"divided by 50", "divided by 5"
+		};
+		unsigned sel = dwmac.clk_sweep_idx / 2;
+
+		if ((dwmac.clk_sweep_idx & 1) == 0) {
+			dwmac_rk_set_speed_sel(sel);
+			log_info(&dwmac_log, "CLKSWEEP: tx clock sel %u, %s "
+			    "(%u out, %u in)\n", sel, what[sel],
+			    dwmac_rd(dwmac.mac, DWMAC_MMC_TX_FRAMES_G),
+			    dwmac_rd(dwmac.mac, DWMAC_MMC_RX_FRAMES_GB));
+		}
+
+		dwmac.clk_sweep_idx = (dwmac.clk_sweep_idx + 1) % 8;
+	}
+
+	if (dwmac.tx_sweep) {
+		unsigned d = tx_sweep_vals[dwmac.tx_sweep_idx];
+
+		dwmac_rk_set_txdelay(d);
+		log_info(&dwmac_log, "TXSWEEP: tx_delay 0x%02x (%u out, "
+		    "%u in)\n", d,
+		    dwmac_rd(dwmac.mac, DWMAC_MMC_TX_FRAMES_G),
+		    dwmac_rd(dwmac.mac, DWMAC_MMC_RX_FRAMES_GB));
+
+		dwmac.tx_sweep_idx = (dwmac.tx_sweep_idx + 1) %
+		    (sizeof(tx_sweep_vals) / sizeof(tx_sweep_vals[0]));
+	}
+
 	dwmac_dump();
 }
 

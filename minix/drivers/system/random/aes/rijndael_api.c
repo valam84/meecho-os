@@ -7,6 +7,7 @@
  * Read this code top to bottom, not all comments are repeated.
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -25,8 +26,8 @@
  * at word boundaries if not odd-sized.  Most compilers are this nice.)
  */
 
-#define aligned(a)		(((unsigned) (a) & 3) == 0)
-#define aligned2(a1, a2)	aligned((unsigned) (a1) | (unsigned) (a2))
+#define aligned(a)		(((uintptr_t) (a) & 3) == 0)
+#define aligned2(a1, a2)	aligned((uintptr_t) (a1) | (uintptr_t) (a2))
 
 static void blockcpy(void *dst, const void *src)
 {

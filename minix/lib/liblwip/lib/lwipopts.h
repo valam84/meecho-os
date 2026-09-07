@@ -49,13 +49,15 @@
 #define MEMPOOL_BUFSIZE                 512
 
 /*
- * The following value should be sizeof(void *), but lwIP's own #if-based
- * sanity checks make that impossible.  It is crucial that the value is set to
- * exactly the value of sizeof(void *) though: a value that is too small will
- * cause problems on alignment-enforcing platforms, and a value that is too
- * large will cause lwIP to fail on an assertion.  TODO: 64-bit support.
+ * This has to be exactly sizeof(void *): too small breaks alignment-
+ * enforcing platforms, too large trips an assertion inside lwIP.  It cannot
+ * be written as sizeof, because lwIP tests the value with #if.  The
+ * compiler knows the number without sizeof, and says so in a macro that
+ * the preprocessor can compare - which is what the "TODO: 64-bit support"
+ * that stood here needed.  On LP64 this is 8, and a hardcoded 4 made the
+ * service die in mempool_init() on its first run.
  */
-#define MEM_ALIGNMENT                   4
+#define MEM_ALIGNMENT                   __SIZEOF_POINTER__
 
 /*
  * The reason that we use lwIP's pools for its own objects, is that we actually

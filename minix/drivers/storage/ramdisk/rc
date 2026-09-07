@@ -58,17 +58,36 @@ then
 	minix-service -c up /service/readclock.drv
 	readclock -q || date 201301010000
 
-	# The disk is a virtio device the driver finds in the device tree.
-	# It is only started when the root is going to be on it: with
-	# bootramdisk=1 this image is the root, and a machine without a disk
-	# would make the driver fail loudly for nothing.  -c keeps a copy of
-	# the binary in RS, because this image is unmounted from under it
+	# The disk driver, which finds its own device in the device tree but
+	# cannot be guessed at from here: QEMU's virt has a virtio disk and
+	# the CB2 has an eMMC behind an SD host controller, and the driver
+	# that does not find its node fails loudly.  So the boot script says
+	# which one this machine has, the same way it says which console;
+	# without a word, it is virtio, which is what the emulator has.
+	#
+	# Started only when the root is going to be on it: with bootramdisk=1
+	# this image is the root and no disk is needed.  -c keeps a copy of
+	# the binary inside RS, because this image is unmounted from under it
 	# once the disk is the root.
 	if ! sysenv bootramdisk >/dev/null
 	then
-		echo Starting the virtio block driver
-		minix-service -c up /service/virtio_blk -dev /dev/c0d0 \
-			-label virtio_blk_0 -args instance=0
+		if sysenv blkdrv >/dev/null
+		then	blkdrv="`sysenv blkdrv`"
+		else	blkdrv=virtio_blk
+		fi
+
+		case "$blkdrv" in
+		sdmmc)
+			echo Starting the SD/MMC block driver
+			minix-service -c up /service/sdmmc -dev /dev/c0d0 \
+				-label sdmmc_0 -args instance=0
+			;;
+		*)
+			echo Starting the virtio block driver
+			minix-service -c up /service/virtio_blk -dev /dev/c0d0 \
+				-label virtio_blk_0 -args instance=0
+			;;
+		esac
 	fi
 fi
 

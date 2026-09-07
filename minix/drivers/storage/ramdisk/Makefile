@@ -120,10 +120,15 @@ PROGRAMS+=		reboot
 dir.reboot:=	sbin/reboot
 PROGRAMS+=		shutdown
 dir.shutdown:=	sbin/shutdown
-# The disk driver, for a root that is not this image: on QEMU's virt the
-# disk is a virtio device, a "virtio,mmio" node of the device tree.
+# The disk drivers, for a root that is not this image.  Two machines and two
+# parts: on QEMU's virt the disk is a virtio device, a "virtio,mmio" node of
+# the device tree; on the CB2 it is the eMMC behind an SD host controller.
+# Each driver looks for its own node and fails when there is none, so rc can
+# simply try both and let the tree decide.
 PROGRAMS+=		virtio_blk
 dir.virtio_blk:= minix/drivers/storage/virtio_blk
+PROGRAMS+=		sdmmc
+dir.sdmmc:=	minix/drivers/storage/mmc
 # The real-time clock: the driver that finds it in the device tree, the
 # command that copies it into the system time, and date for the machine
 # that has no clock, so that the time never stays at the epoch.

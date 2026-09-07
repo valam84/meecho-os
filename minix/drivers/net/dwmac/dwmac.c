@@ -50,6 +50,14 @@ dwmac_link_check(void)
 	dwmac.speed = speed;
 	dwmac.full_duplex = full_duplex;
 
+	/*
+	 * Tell libnetdriver, which tells the stack.  Without this the driver
+	 * knows the link is up and nobody else does: through the first run on
+	 * the board ifconfig went on saying "no carrier" while the console
+	 * said "link up: 100 Mbit/s" two lines above it.
+	 */
+	netdriver_link();
+
 	if (speed == 0) {
 		log_info(&dwmac_log, "link down\n");
 		return;

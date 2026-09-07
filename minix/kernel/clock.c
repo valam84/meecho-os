@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/reboot.h>
 
 #include "clock.h"
 
@@ -109,6 +110,18 @@ int timer_int_handler(void)
 	 * time as well.  Thus the unbillable process' user time is the billable
 	 * user's system time.
 	 */
+
+	/*
+	 * The boot watchdog.  Deliberately here, in the timer tick: the
+	 * tick keeps arriving even when one process has taken the CPU
+	 * and every other one is starving, which is exactly the failure
+	 * this exists to get the machine back from.
+	 */
+	if (bootwd_ticks != 0 && kclockinfo.uptime >= bootwd_ticks) {
+		bootwd_ticks = 0;		/* say it once */
+		printf("boot watchdog expired, resetting\n");
+		arch_shutdown(RB_AUTOBOOT);
+	}
 
 	p = get_cpulocal_var(proc_ptr);
 	billp = get_cpulocal_var(bill_ptr);

@@ -160,6 +160,15 @@
 #define VERBOSEBOOT_MAX   3
 #define VERBOSEBOOTVARNAME "verbose"
 
+/*
+ * Reset the machine this many seconds after boot, whatever it is doing.
+ * A development aid for a board that is not on the same desk: a boot
+ * that does not reach a login prompt otherwise leaves the machine
+ * unreachable until somebody power-cycles it.  Zero, the default, means
+ * never.
+ */
+#define BOOTWDVARNAME "bootwd"
+
 /* magic value to put in struct proc entries for sanity checks. */
 #define PMAGIC 0xC0FFEE1
 

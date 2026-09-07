@@ -444,6 +444,13 @@ void cstart(void)
   /* Initialize clock variables. */
   init_clock();
 
+  /* The boot watchdog, in seconds; see BOOTWDVARNAME. After
+   * init_clock(), because system_hz is what turns seconds into
+   * ticks and it is zero until then.
+   */
+  if ((value = env_get(BOOTWDVARNAME)))
+	  bootwd_ticks = (clock_t)atoi(value) * system_hz;
+
   /* Get memory parameters. */
   value = env_get("ac_layout");
   if(value && atoi(value)) {

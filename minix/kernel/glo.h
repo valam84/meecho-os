@@ -51,6 +51,7 @@ EXTERN int irq_use;				/* map of all in-use irq's */
 
 /* Miscellaneous. */
 EXTERN int verboseboot;			/* verbose boot, init'ed in cstart */
+EXTERN clock_t bootwd_ticks;		/* reset after this many ticks; 0 off */
 
 #if DEBUG_TRACE
 EXTERN int verboseflags;

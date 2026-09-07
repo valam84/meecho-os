@@ -288,9 +288,20 @@ minix-service up /service/random -dev /dev/random ||
 # Networking (8.4).  The driver first: LWIP watches DS for "drv.net.*" and
 # would pick up a driver started later just as well, but starting it first
 # means the interface is there by the time this script configures it.
-if [ -x /service/virtio_net ]
+#
+# Which driver, the same way the disk says which one it has: the machine is
+# named in the boot arguments rather than guessed at.  QEMU has a virtio
+# transport, the CB2 has a Synopsys controller behind Rockchip glue, and a
+# driver that does not find its node in the device tree fails loudly rather
+# than quietly doing nothing.
+if sysenv netdrv >/dev/null
+then	netdrv="`sysenv netdrv`"
+else	netdrv=virtio_net
+fi
+
+if [ -x "/service/$netdrv" ]
 then
-	minix-service up /service/virtio_net -label virtio_net_0 -args instance=0 || echo "WARNING: no network driver"
+	minix-service up "/service/$netdrv" -label "${netdrv}_0" -args instance=0 || echo "WARNING: no network driver"
 	minix-service up /service/lwip -dev /dev/bpf || echo "WARNING: no network stack"
 
 	# The interface is looked for in the list rather than named: the

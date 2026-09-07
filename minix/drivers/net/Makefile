@@ -22,6 +22,10 @@ SUBDIR+=	lan8710a
 
 .if ${MACHINE_ARCH} == "aarch64"
 SUBDIR+=	virtio_net
+# The network controller of the RK3566/RK3568, which is what the target
+# board has.  It stands beside virtio_net the way sdmmc stands beside
+# virtio_blk: one part for the emulator, one for the board.
+SUBDIR+=	dwmac
 .endif # ${MACHINE_ARCH} == "aarch64"
 
 .include <bsd.subdir.mk>

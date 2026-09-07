@@ -91,6 +91,7 @@
 #define LCR_DLAB	0x80	/* divisor latch access */
 
 #define LSR_DR		0x01	/* data ready */
+#define LSR_BI		0x10	/* break interrupt */
 #define LSR_THRE	0x20	/* transmit holding register empty */
 #define LSR_TEMT	0x40	/* transmitter completely idle */
 
@@ -225,12 +226,54 @@ ns8250_intr(struct uart *u)
 	u32_t iir;
 
 	iir = reg_read(u, NS8250_IIR);
-	if (iir & IIR_NO_INT)
+
+	if (iir & IIR_NO_INT) {
+		/*
+		 * The line is asserted and the part says nothing is pending.
+		 * On a DesignWare part that is busy detect once more: it is
+		 * cleared by reading USR and by nothing else, and reading
+		 * IIR - which is what a driver does first - leaves it
+		 * standing. The handler is then called again the moment it
+		 * returns, forever.
+		 *
+		 * Measured on the CB2 before this read was here: of twenty
+		 * thousand calls, nineteen thousand nine hundred and
+		 * ninety-eight arrived with nothing pending. The machine
+		 * still booted from the ramdisk and no longer did once the
+		 * root was on eMMC and there was real work to do besides.
+		 */
+		if (u->flags & UART_F_DW)
+			(void)reg_read(u, DW_USR);
 		return 0;
+	}
 
 	switch (iir & IIR_ID_MASK) {
 	case IIR_ID_RDI:
+		return UART_EV_RX;
+
 	case IIR_ID_RTO:
+		/*
+		 * The character timeout is cleared by reading RBR, not by
+		 * reading IIR - and a DesignWare part will assert it with an
+		 * empty receive FIFO. Then LSR says there is no data, the
+		 * loop that drains the FIFO reads nothing, the cause stays
+		 * asserted, and the next interrupt arrives before this one
+		 * has returned.
+		 *
+		 * That is not a slow console: it is a machine with one
+		 * runnable process. tty stays ready forever, every other
+		 * process keeps its quantum untouched, and the only thing
+		 * that still works is echo - which happens inside the
+		 * handler. It cost three boots to see, because a system
+		 * starved this way looks exactly like a system that hung.
+		 *
+		 * So read the byte that is not there. Linux carries the same
+		 * workaround in dw8250_handle_irq() for the same part.
+		 */
+		if ((reg_read(u, NS8250_LSR) & (LSR_DR | LSR_BI)) == 0) {
+			(void)reg_read(u, NS8250_RBR);
+			return UART_EV_AGAIN;
+		}
 		return UART_EV_RX;
 
 	case IIR_ID_THRI:

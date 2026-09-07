@@ -178,6 +178,7 @@ seq(FILE *fp, u_char **line)
 	u_char *end, *pos;
 	int c;
 	u_char *new_buf;
+	size_t posoff;
 
 	if (!buf) {
 		/* one-time initialization */
@@ -198,6 +199,12 @@ seq(FILE *fp, u_char **line)
 		if (pos == end) {
 			/* Long line - double size of buffer */
 			/* XXX: Check here for stupidly long lines */
+			/*
+			 * Remember pos as an offset: once realloc has
+			 * moved the block, the value of a pointer into
+			 * the old one may not be read.
+			 */
+			posoff = (size_t)(pos - buf);
 			buf_size *= 2;
 			new_buf = realloc(buf, buf_size);
 			if (!new_buf)
@@ -205,7 +212,7 @@ seq(FILE *fp, u_char **line)
 					buf_size);
 		
 			end = new_buf + buf_size;
-			pos = new_buf + (pos - buf);
+			pos = new_buf + posoff;
 			buf = new_buf;
 		}
 	}

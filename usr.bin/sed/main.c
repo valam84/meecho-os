@@ -269,6 +269,7 @@ again:
 			state = ST_STRING;
 			goto again;
 		}
+		/* FALLTHROUGH */
 	case ST_FILE:
 		if ((p = fgets(buf, n, f)) != NULL) {
 			linenum++;

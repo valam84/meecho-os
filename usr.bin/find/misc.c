@@ -76,11 +76,18 @@ brace_subst(char *orig, char **store, char *path, int *len)
 				nlen *= 2;
 
 			if (nlen > *len) {
-				ostore = *store;
-				if ((*store = realloc(ostore, nlen)) == NULL)
+				/*
+				 * Remember p as an offset: once realloc has
+				 * moved the block, the value of a pointer
+				 * into the old one may not be read.
+				 */
+				size_t poff = (size_t)(p - *store);
+
+				if ((ostore = realloc(*store, nlen)) == NULL)
 					err(1, "realloc");
+				*store = ostore;
 				*len = nlen;
-				p += *store - ostore;	/* Relocate. */
+				p = *store + poff;	/* Relocate. */
 			}
 			memmove(p, path, plen);
 			p += plen;

@@ -235,7 +235,7 @@ main(int argc, char *argv[])
 		break;
 
 	default:
-		if ((lock & LOCK_NB) == LOCK_UN)
+		if ((lock & ~LOCK_NB) == LOCK_UN)
 			usage("Unlock is only valid for descriptors");
 		if (strcmp(argv[1], "-c") == 0 ||
 		    strcmp(argv[1], "--command") == 0) {

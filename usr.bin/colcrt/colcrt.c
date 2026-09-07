@@ -158,6 +158,7 @@ main(int argc, char *argv[])
 					outcol &= ~7;
 					outcol--;
 					c = ' ';
+					/* FALLTHROUGH */
 				default:
 					if (outcol >= 132) {
 						outcol++;

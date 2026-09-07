@@ -221,6 +221,7 @@ filter(FILE *f)
 			obuf[col].c_mode |= UNDERL | mode;
 		else
 			obuf[col].c_char = '_';
+		/* FALLTHROUGH */
 	case ' ':
 		col++;
 		if (col > maxcol)

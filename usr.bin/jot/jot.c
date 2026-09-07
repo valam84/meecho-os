@@ -190,6 +190,7 @@ getargs(int argc, char *argv[])
 				    argv[3]);
 			have |= STEP;
 		}
+		/* FALLTHROUGH */
 	case 3:
 		if (!is_default(argv[2])) {
 			if (!sscanf(argv[2], "%lf", &ender))
@@ -198,6 +199,7 @@ getargs(int argc, char *argv[])
 			if (prec < 0)
 				n = getprec(argv[2]);
 		}
+		/* FALLTHROUGH */
 	case 2:
 		if (!is_default(argv[1])) {
 			if (!sscanf(argv[1], "%lf", &begin))
@@ -208,6 +210,7 @@ getargs(int argc, char *argv[])
 			if (n > prec)		/* maximum precision */
 				prec = n;
 		}
+		/* FALLTHROUGH */
 	case 1:
 		if (!is_default(argv[0])) {
 			reps = strtoul(argv[0], &ep, 0);

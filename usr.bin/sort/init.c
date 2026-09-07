@@ -288,7 +288,8 @@ void
 fixit(int *argc, char **argv, const char *opts)
 {
 	int i, j, sawplus;
-	char *vpos, *tpos, spec[20];
+	/* "%d.%d%s": two ints and the flags that followed them. */
+	char *vpos, *tpos, spec[64];
 	int col, indent;
 
 	sawplus = 0;

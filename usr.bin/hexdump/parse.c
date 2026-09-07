@@ -374,7 +374,7 @@ isint:
 						 * See comments above for
 						 * the way we use PRId64.
 						 */
-						strncpy(cs, PRId64,
+						memcpy(cs, PRId64,
 							sizeof(PRId64) - 2);
 						cs[sizeof(PRId64) - 2] = p1[2];
 						cs[sizeof(PRId64) - 1] = '\0';

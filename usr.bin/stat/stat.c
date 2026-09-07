@@ -575,7 +575,8 @@ format1(const struct stat *st,
 	u_int64_t data;
 	char *stmp, lfmt[24], tmp[20];
 	const char *sdata;
-	char smode[12], sid[12], path[PATH_MAX + 4], visbuf[PATH_MAX * 4 + 4];
+	/* sid holds "(%ld)" of a uid_t widened to long. */
+	char smode[12], sid[24], path[PATH_MAX + 4], visbuf[PATH_MAX * 4 + 4];
 	struct passwd *pw;
 	struct group *gr;
 	struct tm *tm;
@@ -732,8 +733,8 @@ format1(const struct stat *st,
 			nsecs = st->st_ctimensec;
 #endif
 		}
-		/* FALLTHROUGH */
 #if HAVE_STRUCT_STAT_ST_BIRTHTIME
+		/* FALLTHROUGH */
 	case SHOW_st_btime:
 		if (!gottime) {
 			gottime = 1;
@@ -1001,8 +1002,8 @@ format1(const struct stat *st,
 	 * First prefixlen chars are not encoded.
 	 */
 	if ((flags & FLAG_POUND) != 0 && ofmt == FMTF_STRING) {
-		flags &= !FLAG_POUND;
-		strncpy(visbuf, sdata, prefixlen);
+		flags &= ~FLAG_POUND;
+		memcpy(visbuf, sdata, prefixlen);
 		strnvis(visbuf + prefixlen, sizeof(visbuf) - prefixlen,
 		    sdata + prefixlen, VIS_WHITE | VIS_OCTAL | VIS_CSTYLE);
 		sdata = visbuf;

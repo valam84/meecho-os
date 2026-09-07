@@ -422,6 +422,20 @@ size_t vm_lookup_range(const struct proc *proc, vir_bytes vir_addr,
 }
 
 /*===========================================================================*
+ *				arch_cache_range			     *
+ *===========================================================================*/
+int arch_cache_range(struct proc *caller, vir_bytes addr, vir_bytes len,
+	int op)
+{
+	/* Nothing to do, and that is an answer rather than a stub: DMA on
+	 * this architecture is cache-coherent.  The bus keeps the caches in
+	 * step with device accesses, so a driver's buffer means the same
+	 * thing to both sides without anyone asking.
+	 */
+	return OK;
+}
+
+/*===========================================================================*
  *				vm_check_range				     *
  *===========================================================================*/
 int vm_check_range(struct proc *caller, struct proc *target,

@@ -68,6 +68,7 @@ SRCS+=  \
 	sys_kill.c \
 	sys_mcontext.c \
 	sys_memset.c \
+	sys_cachectl.c \
 	sys_padconf.c \
 	sys_physcopy.c \
 	sys_privctl.c \

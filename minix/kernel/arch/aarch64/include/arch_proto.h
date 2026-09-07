@@ -213,6 +213,12 @@ extern void *k_stacks;
 int vm_lookup_desc(const struct proc *proc, vir_bytes virtual,
 	phys_bytes *physical, u64_t *desc);
 
+/* cache.c: one data cache maintenance operation over one contiguous range
+ * of memory the kernel can address.  arch_cache_range() in memory.c is what
+ * turns a caller's range into those.
+ */
+void dcache_range(int op, unsigned long addr, unsigned long len);
+
 /* functions defined in architecture-independent kernel source. */
 #include "kernel/proto.h"
 

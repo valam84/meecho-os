@@ -51,6 +51,7 @@
 
 #include <minix/type.h>
 #include <minix/syslib.h>
+#include <minix/cachectl.h>
 #include <string.h>
 #include <assert.h>
 
@@ -443,6 +444,51 @@ resolve(const struct proc *pr, vir_bytes addr, vir_bytes *bytes, int write,
 	 */
 	*bytes = MIN(*bytes,
 	    AARCH64_PAGE_SIZE - (addr % AARCH64_PAGE_SIZE));
+
+	return OK;
+}
+
+/*===========================================================================*
+ *				arch_cache_range			     *
+ *===========================================================================*/
+/*
+ * One data cache maintenance operation over a range of the caller's memory.
+ *
+ * The work itself is dcache_range() in cache.c; what happens here is the
+ * translation, and the translation is also the permission check.  resolve()
+ * walks the caller's own page table, refuses an address it has not got, and
+ * refuses to hand back a writable pointer to a page the process may only
+ * read - which is exactly the question to ask of an operation that discards
+ * cache lines.  Cleaning discards nothing, so it is allowed on a read-only
+ * mapping.
+ *
+ * resolve() answers one page at a time for a user process, so a range
+ * crossing a page boundary comes in pieces, and each piece is treated as a
+ * range of its own with two partial ends.  With a cache line no larger than
+ * a page - which is every implementation there is - a page holds a whole
+ * number of lines, no line straddles a seam, and the pieces come out exactly
+ * as the whole range would have.  Were a line ever larger, the lines at the
+ * seams would be written back before being discarded rather than after,
+ * which is slower and still correct.
+ */
+int
+arch_cache_range(struct proc *caller, vir_bytes addr, vir_bytes len, int op)
+{
+	int write = (op != CACHE_CLEAN);
+
+	while (len > 0) {
+		vir_bytes chunk = len;
+		void *kaddr;
+		int r;
+
+		if ((r = resolve(caller, addr, &chunk, write, &kaddr)) != OK)
+			return r;
+
+		dcache_range(op, (unsigned long)kaddr, chunk);
+
+		addr += chunk;
+		len -= chunk;
+	}
 
 	return OK;
 }

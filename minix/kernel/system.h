@@ -206,5 +206,10 @@ int do_padconf(struct proc * caller, message *m_ptr);
 #define do_padconf NULL
 #endif
 
+int do_cachectl(struct proc * caller, message *m_ptr);
+#if ! USE_CACHECTL
+#define do_cachectl NULL
+#endif
+
 #endif	/* SYSTEM_H */
 

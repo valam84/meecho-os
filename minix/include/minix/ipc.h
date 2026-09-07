@@ -1196,6 +1196,15 @@ typedef struct {
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_copy);
 
 typedef struct {
+	vir_bytes addr;		/* start of the range, in the caller's space */
+	size_t len;
+	int op;			/* CACHE_* from <minix/cachectl.h> */
+
+	uint8_t padding[100];
+} mess_lsys_krn_sys_cachectl;
+_ASSERT_MSG_SIZE(mess_lsys_krn_sys_cachectl);
+
+typedef struct {
 	int request;
 	int port;
 	uint32_t value;
@@ -2618,6 +2627,7 @@ typedef struct noxfer_message {
 		mess_lsys_krn_schedule	m_lsys_krn_schedule;
 		mess_lsys_krn_sys_abort m_lsys_krn_sys_abort;
 		mess_lsys_krn_sys_clear m_lsys_krn_sys_clear;
+		mess_lsys_krn_sys_cachectl m_lsys_krn_sys_cachectl;
 		mess_lsys_krn_sys_copy	m_lsys_krn_sys_copy;
 		mess_lsys_krn_sys_devio m_lsys_krn_sys_devio;
 		mess_lsys_krn_sys_diagctl m_lsys_krn_sys_diagctl;

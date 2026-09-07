@@ -400,6 +400,20 @@ size_t vm_lookup_range(const struct proc *proc, vir_bytes vir_addr,
 }
 
 /*===========================================================================*
+ *				arch_cache_range			     *
+ *===========================================================================*/
+int arch_cache_range(struct proc *caller, vir_bytes addr, vir_bytes len,
+	int op)
+{
+	/* ARMv7 has these operations - they are CP15 c7 register writes - and
+	 * this port's drivers do not ask for them.  Writing them here without
+	 * a caller to try them would be untested code that looks like working
+	 * code, which is worse than an honest refusal.
+	 */
+	return ENOSYS;
+}
+
+/*===========================================================================*
  *				vm_check_range				     *
  *===========================================================================*/
 int vm_check_range(struct proc *caller, struct proc *target,

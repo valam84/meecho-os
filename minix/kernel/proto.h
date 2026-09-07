@@ -243,6 +243,8 @@ int arch_phys_map(int index, phys_bytes *addr, phys_bytes *len, int
 int arch_phys_map_reply(int index, vir_bytes addr);
 reg_t arch_get_sp(struct proc *p);
 int arch_enable_paging(struct proc * caller);
+int arch_cache_range(struct proc *caller, vir_bytes addr, vir_bytes len,
+	int op);
 int vm_check_range(struct proc *caller,
        struct proc *target, vir_bytes vir_addr, size_t bytes, int writable);
 

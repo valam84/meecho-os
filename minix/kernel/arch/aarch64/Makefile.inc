@@ -41,7 +41,7 @@ CFLAGS+=	-mcmodel=small
 # development happens in QEMU and the target is the board. serial.c reads
 # /chosen/stdout-path and hands the two calls of <bsp_serial.h> to pl011.c or
 # dw8250.c.
-SRCS+=	head.S arch_system.c memory.c direct_tty_utils.c \
+SRCS+=	head.S arch_system.c memory.c cache.c direct_tty_utils.c \
 	pg_utils.c pre_init.c protect.c arch_do_vmctl.c \
 	arch_reset.c arch_clock.c psci.c fpu.c \
 	gic.c gicv2.c gicv3.c \

@@ -266,8 +266,10 @@
 
 #  define SYS_PADCONF (KERNEL_CALL + 57)	/* sys_padconf() */
 
+#  define SYS_CACHECTL (KERNEL_CALL + 58)	/* sys_cachectl() */
+
 /* Total */
-#define NR_SYS_CALLS	58	/* number of kernel calls */
+#define NR_SYS_CALLS	59	/* number of kernel calls */
 
 #define SYS_CALL_MASK_SIZE BITMAP_CHUNKS(NR_SYS_CALLS)
 
@@ -411,6 +413,13 @@
 #define VMCTL_VMINHIBIT_CLEAR	31
 #define VMCTL_CLEARMAPCACHE	32
 #define VMCTL_BOOTINHIBIT_CLEAR	33
+
+/* Field names for SYS_CACHECTL.  The operations themselves, and which one
+ * a driver wants when, are in <minix/cachectl.h>.
+ */
+#define SCACHE_OP	m_lsys_krn_sys_cachectl.op
+#define SCACHE_ADDR	m_lsys_krn_sys_cachectl.addr
+#define SCACHE_LEN	m_lsys_krn_sys_cachectl.len
 
 /* Codes and field names for SYS_DIAGCTL. */
 #define DIAGCTL_CODE_DIAG	1	/* Print diagnostics. */

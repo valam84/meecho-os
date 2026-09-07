@@ -145,7 +145,7 @@ static int des_n = 0;		/* index for put_des_char/get_des_char */
 static void des_error(const char *);
 static int hex_to_binary(int, int);
 static void expand_des_key(char *, char *);
-static void set_des_key(char *);
+static void set_des_key(Desbuf);
 static int cbc_decode(char *, FILE *);
 static int cbc_encode(char *, int, FILE *);
 #endif

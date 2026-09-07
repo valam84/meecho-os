@@ -1048,5 +1048,10 @@ sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	host->command = sdhci_command;
 	host->max_bus_width = info->bus_width;
 	host->max_freq = info->max_freq;
+	/*
+	 * Measured, not read out of the part: four blocks of 512 bytes go
+	 * through and eight do not. See the comment on max_blocks.
+	 */
+	host->max_blocks = 4;
 	return OK;
 }

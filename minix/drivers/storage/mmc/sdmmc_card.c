@@ -749,10 +749,22 @@ data_address(uint64_t sector)
 	return (uint32_t)(sector * SDMMC_SECTOR_SIZE);
 }
 
+/* How much of a request one command may carry. */
+static uint32_t
+run_length(uint32_t count)
+{
+	uint32_t n = count;
+
+	if (host->max_blocks != 0 && n > host->max_blocks)
+		n = host->max_blocks;
+	return n;
+}
+
 int
 sdmmc_card_read(uint64_t sector, uint32_t count, void *buf)
 {
 	struct sdmmc_cmd cmd;
+	uint32_t n;
 	int r;
 
 	if (!card->present)
@@ -762,21 +774,33 @@ sdmmc_card_read(uint64_t sector, uint32_t count, void *buf)
 	if (sector + count > card->sectors)
 		return EINVAL;
 
-	if (count > 1 && (r = set_block_count(count)) != OK)
-		return r;
+	while (count > 0) {
+		n = run_length(count);
 
-	r = send_data(count > 1 ? MMC_READ_BLOCK_MULTIPLE :
-	    MMC_READ_BLOCK_SINGLE, data_address(sector), SDMMC_RSP_R1, 0,
-	    buf, count, 0, &cmd);
-	if (r != OK)
-		return r;
-	return check_r1(&cmd);
+		if (n > 1 && (r = set_block_count(n)) != OK)
+			return r;
+
+		r = send_data(n > 1 ? MMC_READ_BLOCK_MULTIPLE :
+		    MMC_READ_BLOCK_SINGLE, data_address(sector),
+		    SDMMC_RSP_R1, 0, buf, n, 0, &cmd);
+		if (r != OK)
+			return r;
+		if ((r = check_r1(&cmd)) != OK)
+			return r;
+
+		sector += n;
+		count -= n;
+		buf = (uint8_t *)buf + n * SDMMC_SECTOR_SIZE;
+	}
+
+	return OK;
 }
 
 int
 sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf)
 {
 	struct sdmmc_cmd cmd;
+	uint32_t n;
 	int r;
 
 	if (!card->present)
@@ -786,15 +810,26 @@ sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf)
 	if (sector + count > card->sectors)
 		return EINVAL;
 
-	if (count > 1 && (r = set_block_count(count)) != OK)
-		return r;
+	while (count > 0) {
+		n = run_length(count);
 
-	r = send_data(count > 1 ? MMC_WRITE_BLOCK_MULTIPLE :
-	    MMC_WRITE_BLOCK_SINGLE, data_address(sector), SDMMC_RSP_R1, 1,
-	    (void *)(uintptr_t)buf, count, 0, &cmd);
-	if (r != OK)
-		return r;
-	return check_r1(&cmd);
+		if (n > 1 && (r = set_block_count(n)) != OK)
+			return r;
+
+		r = send_data(n > 1 ? MMC_WRITE_BLOCK_MULTIPLE :
+		    MMC_WRITE_BLOCK_SINGLE, data_address(sector),
+		    SDMMC_RSP_R1, 1, (void *)(uintptr_t)buf, n, 0, &cmd);
+		if (r != OK)
+			return r;
+		if ((r = check_r1(&cmd)) != OK)
+			return r;
+
+		sector += n;
+		count -= n;
+		buf = (const uint8_t *)buf + n * SDMMC_SECTOR_SIZE;
+	}
+
+	return OK;
 }
 
 /*

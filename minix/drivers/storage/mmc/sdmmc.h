@@ -164,6 +164,20 @@ struct sdmmc_host {
 
 	unsigned	max_bus_width;	/* what the board wired up */
 	uint32_t	max_freq;	/* what the board says it can take */
+
+	/*
+	 * How many blocks may be asked for in one command.
+	 *
+	 * The standard's programmed transfer does not need a limit: the
+	 * controller is supposed to hold the card off while its buffer is
+	 * full and let it go on as the processor empties it. This one does
+	 * not. It takes the whole length the block-count register was given,
+	 * keeps what fits and drops the rest, and the card's next block
+	 * arrives against a framing error. Four blocks go through and eight
+	 * do not, so the limit is the buffer, and a transfer longer than it
+	 * has to be several commands.
+	 */
+	unsigned	max_blocks;
 };
 
 /* The card, as the block layer sees it. */

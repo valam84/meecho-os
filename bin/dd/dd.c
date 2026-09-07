@@ -72,6 +72,7 @@ static void dd_in(void);
 static void getfdtype(IO *);
 static void redup_clean_fd(IO *);
 static void setup(void);
+static void swapbytes(void *, size_t);
 
 IO		in, out;		/* input/output state */
 STAT		st;			/* statistics */
@@ -441,11 +442,34 @@ dd_in(void)
 				++st.swab;
 				--n;
 			}
-			swab(in.dbp, in.dbp, n);
+			swapbytes(in.dbp, (size_t)n);
 		}
 
 		in.dbp += in.dbrcnt;
 		(*cfunc)();
+	}
+}
+
+/*
+ * Swap adjacent bytes of a buffer, in place.
+ *
+ * This was swab(3) called with one buffer as both source and destination,
+ * which is what conv=swab wants and what swab(3) does not promise: both its
+ * parameters are restrict-qualified, so the two are declared not to alias
+ * and a compiler is entitled to assume it.  GCC 15 says so out loud.  The
+ * loop below is the same work with the aliasing made legal, and it is what
+ * NetBSD did with the same call.
+ */
+static void
+swapbytes(void *buf, size_t len)
+{
+	unsigned char *p = buf;
+	unsigned char t;
+
+	for (; len > 1; len -= 2, p += 2) {
+		t = p[0];
+		p[0] = p[1];
+		p[1] = t;
 	}
 }
 

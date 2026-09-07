@@ -25,6 +25,11 @@ d--755 0 0
 		mv ---755 0 0 mv
 		cp ---755 0 0 cp
 		sync ---755 0 0 sync
+/* Raw sectors first, a filesystem second: dd is how a block driver nobody
+ * has run before gets tried, and df is how the result is looked at.
+ */
+		dd ---755 0 0 dd
+		df ---755 0 0 df
 #endif
 	$
 	sbin d--755 0 0
@@ -32,6 +37,13 @@ d--755 0 0
 #ifdef __aarch64__
 		reboot ---755 0 0 reboot
 		shutdown ---755 0 0 shutdown
+/* This image is the whole system until there is a root to switch to, so it
+ * is also the thing that has to create that root.  The program is
+ * mkfs.mfsv3 and mkfs.mfs is the name it answers to, exactly as on an
+ * installed system.
+ */
+		mkfs.mfsv3 ---755 0 0 mkfs.mfsv3
+		mkfs.mfs s--755 0 0 /sbin/mkfs.mfsv3
 		diskctl ---755 0 0 diskctl
 /* reboot decides what to do from the name it was called by, the way the
  * installed system links it three ways.

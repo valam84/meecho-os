@@ -158,6 +158,21 @@ PROGRAMS+=		cp
 dir.cp:=	bin/cp
 PROGRAMS+=		sync
 dir.sync:=	bin/sync
+# Making a filesystem on a disk the machine has only just learned to talk to.
+# Without mkfs.mfs in the image there is nothing on the board that can put a
+# filesystem on the eMMC at all: this image is the whole of the system until
+# there is a root to switch to, and it is the thing that has to create that
+# root.  dd is here for the step before it - reading and writing raw sectors
+# is how a new block driver is tried before a filesystem is trusted to it -
+# and df for looking at the result.
+# The program is mkfs.mfsv3; mkfs.mfs is the name it is reached by, and on
+# an installed system a symlink.  The image does the same, in proto.
+PROGRAMS+=		mkfs.mfsv3
+dir.mkfs.mfsv3:= minix/usr.sbin/mkfs.mfs/v3
+PROGRAMS+=		dd
+dir.dd:=	bin/dd
+PROGRAMS+=		df
+dir.df:=	bin/df
 # A filesystem that is only ever read can be sized to its contents exactly,
 # and that is what mkfs.mfs does by default.  This one is written to - utmpx,
 # wtmpx, lastlogx, /tmp - so it needs free inodes and free blocks, or the

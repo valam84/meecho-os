@@ -77,8 +77,6 @@ struct log
 #define log_trace(driver, fmt, args...) \
 		__log(driver, LEVEL_TRACE, fmt, ## args)
 
-#endif /* __LOG_H__ */
-
 static void
 default_log(struct log *driver,
     int level,
@@ -115,3 +113,5 @@ hexdump(unsigned char *d, unsigned int size)
 	}
 }
 #endif
+
+#endif /* __LOG_H__ */

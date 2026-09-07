@@ -328,6 +328,39 @@ command_error(struct sdmmc_cmd *cmd)
 	return EIO;
 }
 
+/*
+ * Wait out the busy period of a command that answers with R1b.
+ *
+ * Two things say it is over, and not every part says both. The standard has
+ * Transfer Complete set when a command with busy finishes; it also has
+ * Command Inhibit (DAT), which is raised the moment such a command is issued
+ * and dropped when the card releases DAT0. Taking whichever arrives first
+ * costs nothing and avoids sitting out the whole timeout on a part that only
+ * reports one of them - which would be ten seconds on every SWITCH, and a
+ * SWITCH is what a cache flush is.
+ */
+static int
+wait_busy_end(uint32_t usecs)
+{
+	spin_t s;
+	uint16_t n;
+
+	spin_init(&s, usecs);
+	do {
+		n = rd16(SDHC_NINTR_STATUS);
+		if (n & SDHC_ERROR_INTERRUPT)
+			return EIO;
+		if (n & SDHC_TRANSFER_COMPLETE) {
+			wr16(SDHC_NINTR_STATUS, SDHC_TRANSFER_COMPLETE);
+			return OK;
+		}
+		if ((rd32(SDHC_PRESENT_STATE) & SDHC_CMD_INHIBIT_DAT) == 0)
+			return OK;
+	} while (spin_check(&s));
+
+	return ETIMEDOUT;
+}
+
 /* One block in or out of the FIFO. */
 static int
 transfer_block(struct sdmmc_cmd *cmd, uint32_t *buf)
@@ -392,8 +425,14 @@ sdhci_command(struct sdmmc_cmd *cmd)
 			mode |= SDHC_MULTI_BLOCK_MODE | SDHC_BLOCK_COUNT_ENABLE;
 		if (cmd->stop)
 			mode |= SDHC_AUTO_CMD12_ENABLE;
+		/*
+		 * Written only when there is data: the standard says the
+		 * transfer mode register is not to be written otherwise, and
+		 * with Data Present Select clear in the command the part
+		 * ignores whatever it holds anyway.
+		 */
+		wr16(SDHC_TRANSFER_MODE, mode);
 	}
-	wr16(SDHC_TRANSFER_MODE, mode);
 
 	creg = (uint16_t)((cmd->index & SDHC_COMMAND_INDEX_MASK) <<
 	    SDHC_COMMAND_INDEX_SHIFT);
@@ -471,29 +510,30 @@ sdhci_command(struct sdmmc_cmd *cmd)
 		}
 	}
 
-	/*
-	 * Transfer complete ends both a data transfer and the busy period of
-	 * an R1b command. When it does not arrive but the card has let DAT0
-	 * go, the transfer did finish and the controller simply did not say
-	 * so; that is worth a note and not a failed request.
-	 */
-	if (cmd->data_dir != SDMMC_DATA_NONE || cmd->rsp_type == SDMMC_RSP_R1B) {
-		r = wait_intr(SDHC_TRANSFER_COMPLETE, BUSY_TIMEOUT_US, &got);
+	/* A data transfer ends when the part says transfer complete. */
+	if (cmd->data_dir != SDMMC_DATA_NONE) {
+		r = wait_intr(SDHC_TRANSFER_COMPLETE, DATA_TIMEOUT_US, &got);
 		if (r == EIO)
 			return command_error(cmd);
 		if (r != OK) {
-			if (rd32(SDHC_PRESENT_STATE) & SDHC_DAT0_LINE_LEVEL) {
-				log_warn(&sdmmc_log, "CMD%u: no transfer "
-				    "complete, but DAT0 is free\n", cmd->index);
-			} else {
-				log_warn(&sdmmc_log, "CMD%u: card still busy\n",
-				    cmd->index);
-				(void)reset(SDHC_RESET_CMD);
-				(void)reset(SDHC_RESET_DAT);
-				return r;
-			}
+			log_warn(&sdmmc_log, "CMD%u: transfer never "
+			    "completed\n", cmd->index);
+			(void)reset(SDHC_RESET_CMD);
+			(void)reset(SDHC_RESET_DAT);
+			return r;
 		}
 		wr16(SDHC_NINTR_STATUS, SDHC_TRANSFER_COMPLETE);
+	} else if (cmd->rsp_type == SDMMC_RSP_R1B) {
+		r = wait_busy_end(BUSY_TIMEOUT_US);
+		if (r == EIO)
+			return command_error(cmd);
+		if (r != OK) {
+			log_warn(&sdmmc_log, "CMD%u: the card stayed busy\n",
+			    cmd->index);
+			(void)reset(SDHC_RESET_CMD);
+			(void)reset(SDHC_RESET_DAT);
+			return r;
+		}
 	}
 
 	return OK;

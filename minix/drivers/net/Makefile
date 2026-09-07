@@ -20,4 +20,8 @@ SUBDIR+=	vt6105
 SUBDIR+=	lan8710a
 .endif # ${MACHINE_ARCH} == "earm"
 
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+=	virtio_net
+.endif # ${MACHINE_ARCH} == "aarch64"
+
 .include <bsd.subdir.mk>

@@ -272,10 +272,67 @@ then
 #!/bin/sh
 # /etc/rc of the disk root.  The ramdisk's rc has started the disk driver,
 # mounted this file system over / and mounted procfs; init runs this, and
-# when it returns, starts the sessions listed in /etc/ttys.  There is
-# no service of its own to start yet: there is no network until 8.4, and
-# everything else is brought up by the kernel and RS.
+# when it returns, starts the sessions listed in /etc/ttys.  Everything
+# but the network is brought up by the kernel and RS before this runs.
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+export PATH
+
 echo "Root is on `sysenv rootdevname`."
+
+# The source of randomness.  Nothing before this point needs one, and
+# several things after it do - the first being the secret behind TCP
+# initial sequence numbers, further along ssh.
+minix-service up /service/random -dev /dev/random ||
+    echo "WARNING: no random device"
+
+# Networking (8.4).  The driver first: LWIP watches DS for "drv.net.*" and
+# would pick up a driver started later just as well, but starting it first
+# means the interface is there by the time this script configures it.
+if [ -x /service/virtio_net ]
+then
+	minix-service up /service/virtio_net -label virtio_net_0 -args instance=0 || echo "WARNING: no network driver"
+	minix-service up /service/lwip -dev /dev/bpf || echo "WARNING: no network stack"
+
+	# The interface is looked for in the list rather than named: the
+	# name LWIP gives an ethernet interface comes from the driver
+	# label, and this script has no business knowing how that is spelt.
+	netif=
+	for i in `ifconfig -l 2>/dev/null`
+	do
+		if [ "$i" != lo0 ]
+		then	netif="$i"
+			break
+		fi
+	done
+	ifconfig lo0 inet 127.0.0.1 up 2>/dev/null
+	if [ -n "$netif" ]
+	then
+		# The addresses of QEMU user-mode networking: the guest is
+		# 10.0.2.15, the gateway and the DNS forwarder are .2 and
+		# .3.  Static, because there is no DHCP client yet.
+		ifconfig "$netif" inet 10.0.2.15 netmask 255.255.255.0 up
+		route -q add default 10.0.2.2
+		echo "Network on $netif: 10.0.2.15, gateway 10.0.2.2"
+
+		# The secret behind TCP initial sequence numbers.  Without
+		# one the stack numbers its connections from a known start,
+		# which is what makes them guessable from off the machine.
+		# An attempt, not a requirement: the only entropy source on
+		# this port is interrupt timing, a machine this quiet has
+		# almost none, and /dev/random is usually still unseeded
+		# here.  Waiting for it would hold up every boot.
+		isnlen=`sysctl -n net.inet.tcp.isn_secret |
+		    awk '{print length/2}'`
+		isn=`dd if=/dev/random bs=$isnlen count=1 2>/dev/null |
+		    hexdump -v -e '/1 "%02x"'`
+		if [ -n "$isn" ]
+		then	sysctl -qw net.inet.tcp.isn_secret=$isn
+		fi
+	else
+		echo "WARNING: no network interface"
+	fi
+fi
+
 exit 0
 END_RC
 	# The disk root is not the ramdisk.  The ramdisk holds what it takes
@@ -318,7 +375,13 @@ then
 fi
 
 cmd="${QEMU} -M ${virt} -cpu ${QEMU_CPU} -m ${QEMU_MEM} -smp ${QEMU_SMP}"
-cmd="${cmd} -display none -serial stdio -net none"
+cmd="${cmd} -display none -serial stdio"
+# User-mode networking on the machine's virtio-mmio transport: the guest is
+# 10.0.2.15, the gateway 10.0.2.2, the DNS forwarder 10.0.2.3.  Nothing is
+# forwarded inward; this is for the system to reach out.  A machine whose
+# system has no network driver just sees one more transport it ignores.
+cmd="${cmd} -netdev user,id=net0"
+cmd="${cmd} -device virtio-net-device,netdev=net0"
 cmd="${cmd} -kernel ${KERNEL_BIN} -initrd ${ARCHIVE}"
 if [ ${disk} -eq 1 ]
 then

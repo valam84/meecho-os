@@ -15,8 +15,10 @@ EXIT=0
 # boot    => kmem mem null ram zero
 RAMDISK_DEVICES="
 	boot
+	bpf
 	console
 	input
+	random
 	c0d0 c0d0p0 c0d0p0s0 c0d1 c0d1p0 c0d1p0s0
 	c0d2 c0d2p0 c0d2p0s0 c0d3 c0d3p0 c0d3p0s0
 	c0d4 c0d4p0 c0d4p0s0 c0d5 c0d5p0 c0d5p0s0
@@ -33,7 +35,6 @@ RAMDISK_DEVICES="
 STD_DEVICES="
 	${RAMDISK_DEVICES}
 	bmp085b1s77 bmp085b2s77 bmp085b3s77
-	bpf
 	eepromb1s50 eepromb1s51 eepromb1s52 eepromb1s53
 	eepromb1s54 eepromb1s55 eepromb1s56 eepromb1s57
 	eepromb2s50 eepromb2s51 eepromb2s52 eepromb2s53
@@ -42,7 +43,7 @@ STD_DEVICES="
 	eepromb3s54 eepromb3s55 eepromb3s56 eepromb3s57
 	fb0 fbd filter hello
 	i2c-1 i2c-2 i2c-3
-	klog ptmx random
+	klog ptmx
 	sht21b1s40 sht21b2s40 sht21b3s40
 	tsl2550b1s39 tsl2550b2s39 tsl2550b3s39
 	ttyp0 ttyp1 ttyp2 ttyp3 ttyp4 ttyp5 ttyp6 ttyp7 ttyp8 ttyp9

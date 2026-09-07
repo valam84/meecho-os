@@ -104,6 +104,8 @@ dir.mmc:=	minix/drivers/storage/mmc
 ETC+=			gettytab
 ETC+=			man.conf
 ETC+=			motd
+# The search path of every login shell; see the comment in etc/profile.
+ETC+=			profile
 EXTRA+=			ttys
 PROGRAMS+=		getty
 dir.getty:=	libexec/getty
@@ -274,7 +276,7 @@ etc/master.passwd: ${NETBSDSRCDIR}/etc/master.passwd
 	${INSTALL} $> $@
 	${TOOL_PWD_MKDB} -V 0 -p -d . etc/master.passwd
 
-proto.dev.mtree:
+proto.dev.mtree: ${NETBSDSRCDIR}/minix/commands/MAKEDEV/MAKEDEV.sh
 	@echo ". type=dir uname=root gname=wheel mode=0755" \
 		>${.TARGET}.tmp && \
 	echo "./dev type=dir uname=root gname=wheel mode=0755" \

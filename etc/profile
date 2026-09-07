@@ -3,6 +3,11 @@
 # System-wide .profile file for sh(1).
 
 # MEECHO specifics
+# Set the search path.  What login(1) sets has the system directories
+# missing; on NetBSD they come from /etc/login.conf, which this system has
+# no need for otherwise.
+export PATH="/sbin:/usr/sbin:/bin:/usr/bin:/usr/pkg/bin:/usr/local/bin"
+
 # Set library path
 export LD_LIBRARY_PATH="/lib:/usr/lib:/usr/X11R7/lib:/usr/pkg/lib:/usr/local/lib"
 

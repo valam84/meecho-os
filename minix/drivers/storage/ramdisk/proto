@@ -117,6 +117,12 @@ d--755 0 0
 		$
 		log d--755 0 0
 		$
+/* dhcpcd keeps the lease and its monotonic counter here. Without the
+ * directory it asks for an address, gets one, and cannot remember it, so
+ * every boot looks like a new machine to the server.
+ */
+		db d--755 0 0
+		$
 /* vi keeps recovery files here and complains on every start when the
  * directory is missing -- which is the first thing a new root notices.
  */

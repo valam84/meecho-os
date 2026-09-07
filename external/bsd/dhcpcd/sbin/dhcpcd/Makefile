@@ -18,6 +18,42 @@ CPPFLAGS+=	-DHAVE_CONFIG_H
 CWARNFLAGS.gcc+=	-Wno-maybe-uninitialized
 .endif # defined(__MINIX)
 
+#
+# dhcpcd 6.9.3 is an import, and this is the mechanism NetBSD itself uses
+# for imports a modern compiler has caught up with: one named diagnostic in
+# one named file, never a blanket -w.  What each of these is, so that a
+# later import can be checked against it rather than have the list copied
+# forward blindly:
+#
+# if.c, dhcp6.c - a switch case that falls into the next with no comment
+#	saying so.  GCC 7 wants the comment; the code is from before it
+#	asked.
+# dhcp6.c - the address of a field of a packed structure, which on a
+#	machine that faults on unaligned access would be a real defect and
+#	on this one is not: AArch64 does unaligned loads in normal memory.
+# dhcp6.c - a "%s" whose argument GCC can prove is NULL on one path
+#	through a log call.  A real hole, and one this system does not fall
+#	into: its vfprintf prints "(null)" rather than dereferencing.
+# if-bsd.c - a four-byte read past the end of a sockaddr union.  This one
+#	is a genuine defect and worth writing down: ADDSU copies
+#	RT_ROUNDUP(sa_len) bytes out of a union whose largest member is a
+#	20-byte sockaddr_dl, and RT_ROUNDUP rounds to eight, so the
+#	sockaddr_dl case copies twenty-four.  The four extra bytes come off
+#	the same stack frame and go into the padding of a routing message
+#	that the receiver ignores, which is why it has never shown up as
+#	anything.  Upstream fixed it much later by giving the union a
+#	sockaddr_storage member; that is an import away, not a local patch.
+#	GCC reports it under two names - as an out-of-bounds offset and as
+#	an over-read of a known size ("reading 24 bytes from a region of
+#	size 20", which is exactly the arithmetic above) - so both are
+#	named here rather than one of them being found later by surprise.
+#
+COPTS.if.c+=		${CC_WNO_IMPLICIT_FALLTHROUGH}
+COPTS.dhcp6.c+=		${CC_WNO_IMPLICIT_FALLTHROUGH} \
+			${CC_WNO_ADDRESS_OF_PACKED_MEMBER} \
+			${CC_WNO_FORMAT_OVERFLOW}
+COPTS.if-bsd.c+=	${CC_WNO_ARRAY_BOUNDS} ${CC_WNO_STRINGOP_OVERREAD}
+
 SRCS+=		auth.c hmac_md5.c
 
 USE_INET?=	yes

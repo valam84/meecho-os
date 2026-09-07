@@ -318,12 +318,31 @@ then
 	ifconfig lo0 inet 127.0.0.1 up 2>/dev/null
 	if [ -n "$netif" ]
 	then
-		# The addresses of QEMU user-mode networking: the guest is
-		# 10.0.2.15, the gateway and the DNS forwarder are .2 and
-		# .3.  Static, because there is no DHCP client yet.
-		ifconfig "$netif" inet 10.0.2.15 netmask 255.255.255.0 up
-		route -q add default 10.0.2.2
-		echo "Network on $netif: 10.0.2.15, gateway 10.0.2.2"
+		# Ask the network what this machine is called, and fall back
+		# to the addresses QEMU's user-mode networking hands out
+		# anyway - the guest is 10.0.2.15, the gateway and the DNS
+		# forwarder are .2 and .3.  The fallback is worth keeping
+		# even though slirp runs a DHCP server of its own: it is
+		# what makes "the lease did not arrive" visible as itself
+		# rather than as a machine with no address and no reason.
+		ifconfig "$netif" up
+		leased=
+		if [ -x /sbin/dhcpcd ]
+		then
+			echo "Asking for an address on $netif"
+			if dhcpcd -q -t 20 "$netif"
+			then	leased=yes
+			fi
+		fi
+		if [ -z "$leased" ]
+		then
+			ifconfig "$netif" inet 10.0.2.15 netmask 255.255.255.0 up
+			route -q add default 10.0.2.2
+			echo "No lease on $netif: static 10.0.2.15, gateway 10.0.2.2"
+		else
+			echo "Leased on $netif:"
+			ifconfig "$netif" | grep 'inet '
+		fi
 
 		# The secret behind TCP initial sequence numbers.  Without
 		# one the stack numbers its connections from a known start,

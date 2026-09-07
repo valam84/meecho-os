@@ -382,11 +382,55 @@ static uint32_t crc32(uint32_t crc, const void *data, size_t len)
 }
 
 /* The first block of the journal, and how many there are. */
+/*
+ * Follow one subtree of indirect blocks, checking that every block number
+ * in it continues the run: *next is the block the run wants next, *left is
+ * how many are still to come.
+ *
+ * Each indirect block is read once, which is the reason this is not simply
+ * a loop around bmap(): the journal is a hundredth of the file system, so
+ * on a volume of any size it is thousands of blocks, and asking for them
+ * one at a time would read the same indirect blocks thousands of times.
+ */
+static int run_indirect(uint64_t blk, unsigned int level, uint64_t *next,
+	uint32_t *left)
+{
+	static char *buf[MFS4_NR_LEVELS];
+	uint32_t *ind;
+	unsigned int i;
+
+	if (buf[level - 1] == NULL)
+		buf[level - 1] = xalloc(bsize);
+
+	if (!read_block(blk, buf[level - 1]))
+		return 0;
+
+	ind = (uint32_t *) buf[level - 1];
+
+	for (i = 0; i < nindirs && *left > 0; i++) {
+		if (level > 1) {
+			if (ind[i] == 0 ||
+			    !run_indirect(ind[i], level - 1, next, left))
+				return 0;
+			continue;
+		}
+
+		if (ind[i] != *next)
+			return 0;
+
+		(*next)++;
+		(*left)--;
+	}
+
+	return 1;
+}
+
 static int journal_extent(uint64_t *start, uint32_t *count)
 {
 	struct mfs4_inode ino;
-	uint32_t i;
-	uint64_t b;
+	uint64_t next;
+	uint32_t i, left;
+	unsigned int level;
 
 	if (sb.s_journal_inum == 0 || sb.s_journal_inum > ninodes)
 		return 0;
@@ -398,36 +442,41 @@ static int journal_extent(uint64_t *start, uint32_t *count)
 	if (*count < JOURNAL_MIN_BLOCKS)
 		return 0;
 
-	/* It has to be one run, and it has to be within the direct and
-	 * single indirect blocks or this simple reader cannot follow it.
+	/*
+	 * It has to be one run.  That is the invariant which lets the journal
+	 * be read without knowing how this file system stores a block map -
+	 * mkfs lays it out that way - and it is also the check: a run that is
+	 * not one would be replayed onto blocks that are not the journal's.
+	 *
+	 * The whole map is walked, all three levels of it.  Stopping at the
+	 * single indirect block, as this did, is a limit that holds until the
+	 * file system is about a quarter of a gigabyte and then quietly turns
+	 * every journal into a missing one: a hundredth of 262144 blocks is
+	 * 2621, and 12 + 1024 is where a one-level reader ends.  The first
+	 * root file system that was not a test image found it.
 	 */
 	*start = ino.i_zone[0];
+	if (*start == 0)
+		return 0;
 
-	for (i = 0; i < *count && i < MFS4_NR_DZONES; i++)
-		if (ino.i_zone[i] != *start + i)
+	next = *start;
+	left = *count;
+
+	for (i = 0; i < MFS4_NR_DZONES && left > 0; i++) {
+		if (ino.i_zone[i] != next)
 			return 0;
-
-	if (*count > MFS4_NR_DZONES) {
-		static char *buf = NULL;
-		uint32_t *ind;
-
-		if (buf == NULL)
-			buf = xalloc(bsize);
-		if (ino.i_zone[MFS4_NR_DZONES] == 0 ||
-		    !read_block(ino.i_zone[MFS4_NR_DZONES], buf))
-			return 0;
-
-		ind = (uint32_t *) buf;
-		for (i = MFS4_NR_DZONES; i < *count; i++) {
-			if (i - MFS4_NR_DZONES >= nindirs)
-				return 0;	/* needs a second level */
-			b = ind[i - MFS4_NR_DZONES];
-			if (b != *start + i)
-				return 0;
-		}
+		next++;
+		left--;
 	}
 
-	return 1;
+	for (level = 1; level <= MFS4_NR_LEVELS && left > 0; level++) {
+		uint64_t blk = ino.i_zone[MFS4_NR_DZONES + level - 1];
+
+		if (blk == 0 || !run_indirect(blk, level, &next, &left))
+			return 0;
+	}
+
+	return left == 0;
 }
 
 static int journal_replay(void)

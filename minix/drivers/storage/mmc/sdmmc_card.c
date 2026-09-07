@@ -47,15 +47,6 @@
 /* The voltage window this driver asks for: 2.7V to 3.6V, the whole of it. */
 #define OCR_VOLTAGE_WINDOW	0x00ff8000
 
-/* EXT_CSD fields sdmmcreg.h predates. */
-#define EXT_CSD_FLUSH_CACHE	32
-#define EXT_CSD_CACHE_CTRL	33
-#define EXT_CSD_SEC_COUNT	212
-#define EXT_CSD_CACHE_SIZE	249	/* four bytes, KiB */
-
-/* EXT_CSD_CARD_TYPE bits sdmmcreg.h predates. */
-#define EXT_CSD_CARD_TYPE_HS_52	(1 << 1)
-
 /*
  * Card status bit 7: the last SWITCH was refused. sdmmcreg.h names two bits
  * of the status word and this is the third one anything here looks at.

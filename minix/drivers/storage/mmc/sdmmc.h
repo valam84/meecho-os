@@ -62,6 +62,22 @@
 #define SDMMC_SECTOR_SIZE 512
 
 /*
+ * EXT_CSD fields sdmmcreg.h predates.
+ *
+ * They are here rather than beside the code that uses them because the host
+ * test in port/test/sdmmc builds a card out of the same numbers, and two
+ * copies of an offset is one copy too many when getting it wrong means
+ * reading the wrong byte of a 512-byte register.
+ */
+#define EXT_CSD_FLUSH_CACHE	32	/* write 1: empty the cache */
+#define EXT_CSD_CACHE_CTRL	33	/* 1: the cache is on */
+#define EXT_CSD_SEC_COUNT	212	/* four bytes, sectors */
+#define EXT_CSD_CACHE_SIZE	249	/* four bytes, KiB */
+
+/* An EXT_CSD_CARD_TYPE bit sdmmcreg.h predates: 52 MHz high speed. */
+#define EXT_CSD_CARD_TYPE_HS_52	(1 << 1)
+
+/*
  * One command, filled in by the card layer and executed by the host.
  *
  * data points at memory the driver owns, never at a user page: the transfer

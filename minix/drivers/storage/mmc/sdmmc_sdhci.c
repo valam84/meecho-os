@@ -139,13 +139,19 @@ wait_intr(uint16_t wanted, uint32_t usecs, uint16_t *got)
 	spin_init(&s, usecs);
 	do {
 		n = rd16(SDHC_NINTR_STATUS);
+		/*
+		 * The error is looked at first on purpose: a transfer that
+		 * ends badly can raise the bit the caller is waiting for in
+		 * the same status word, and taking that as success would
+		 * turn a CRC error into data.
+		 */
+		if (n & SDHC_ERROR_INTERRUPT)
+			return EIO;
 		if (n & wanted) {
 			if (got != NULL)
 				*got = n;
 			return OK;
 		}
-		if (n & SDHC_ERROR_INTERRUPT)
-			return EIO;
 	} while (spin_check(&s));
 
 	return ETIMEDOUT;
@@ -218,6 +224,15 @@ sdhci_set_clock(uint32_t hz, uint32_t *actual)
 	spin_init(&s, CLOCK_TIMEOUT_US);
 	while ((rd16(SDHC_CLOCK_CTL) & SDHC_INTCLK_STABLE) == 0) {
 		if (!spin_check(&s)) {
+			/*
+			 * If this ever fires on the Rockchip part, the thing
+			 * to try is bit 1 of its MISC_CON register at 0x81c,
+			 * which recent Linux sets after every reset and calls
+			 * "enable internal clock". U-Boot's driver for the
+			 * same silicon does not touch it, which is why this
+			 * driver does not either - but that is an argument
+			 * from precedent, not from the manual.
+			 */
 			log_warn(&sdmmc_log, "internal clock never settled\n");
 			return EIO;
 		}

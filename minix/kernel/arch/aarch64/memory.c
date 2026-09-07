@@ -479,7 +479,28 @@ arch_cache_range(struct proc *caller, vir_bytes addr, vir_bytes len, int op)
 	while (len > 0) {
 		vir_bytes chunk = len;
 		void *kaddr;
+		phys_bytes pa;
+		u64_t desc;
 		int r;
+
+		/*
+		 * The caller's mapping has to be Normal cacheable, like the
+		 * kernel's.  Maintenance on memory the caller mapped as
+		 * Device or Non-cacheable is a contradiction: its own
+		 * accesses bypass the cache, so whatever the kernel finds in
+		 * the cache for that page is somebody else's - stale zeroes
+		 * from the allocator, as it turned out - and cleaning it
+		 * writes that somebody else's data over the caller's.  Saying
+		 * EINVAL here is what would have pointed at the page
+		 * attributes on the first run instead of the sixth.
+		 */
+		if (!iskernelp(caller)) {
+			if (vm_lookup_desc(caller, addr, &pa, &desc) != OK)
+				return EFAULT;
+			if ((desc & AARCH64_VM_ATTRINDX(7)) !=
+			    AARCH64_VM_ATTRINDX(AARCH64_MAIR_NORMAL))
+				return EINVAL;
+		}
 
 		if ((r = resolve(caller, addr, &chunk, write, &kaddr)) != OK)
 			return r;

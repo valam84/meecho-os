@@ -34,11 +34,34 @@ struct mem_type mem_type_anon_contig = {
 	.pt_flags = anon_contig_pt_flags,
 };
 
+/*
+ * Contiguous memory is what drivers ask for when a device is going to read
+ * or write it, and the two ARM ports answer differently.
+ *
+ * earm maps it as Device memory - uncached - so that a driver written
+ * without any cache maintenance sees what the device wrote and the device
+ * sees what the driver wrote.  That works only as long as nothing else maps
+ * the same physical page cacheably, and something always does: the kernel
+ * has all of RAM in its linear map, and this server writes zeroes into every
+ * page it hands out through its own mapping of it.  Two mappings of one
+ * page with different memory types is behaviour the architecture leaves
+ * undefined, and on the CB2 it was not undefined for long.  Dirty lines
+ * left by the zeroing sat in the cache, the driver's Device-mapped writes
+ * went straight past them to memory, and the first cache clean the driver
+ * asked for - meant to publish its descriptors - wrote the stale zeroes
+ * back on top of them.  Descriptor rings the device saw as empty, at
+ * random, depending on which lines had been evicted in between.
+ *
+ * So on aarch64 this memory is Normal cacheable like everything else, and
+ * keeping it coherent with a device is the driver's job, done explicitly
+ * with sys_cachectl(2).  One memory type for one page; the cache does not
+ * have two opinions about what the memory holds.
+ */
 static int anon_contig_pt_flags(struct vir_region *vr){
 #if defined(__arm__)
 	return  ARM_VM_PTE_DEVICE;
 #elif defined(__aarch64__)
-	return  AARCH64_VM_PTE_DEVICE;
+	return  AARCH64_VM_PTE_CACHED;
 #else
 	return  0;
 #endif

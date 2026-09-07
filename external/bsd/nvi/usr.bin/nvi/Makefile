@@ -26,6 +26,33 @@ CPPFLAGS+=-I${DIST}/include -I${.CURDIR} -I. -DGTAGS
 #COPTS+=-fno-strict-aliasing
 #.endif
 
+#
+# nvi's dist/ is an import of the 1.81 sources and is not ours to reformat.
+# Each of these is one diagnostic GCC 15 raises in one file:
+#
+#   ex_map.c      a switch over the whole key enum that handles the special
+#                 keys and lets the rest fall to the code after it
+#   log1.c        a case that falls into the next on purpose
+#   options.c     a copy whose source and destination the compiler cannot
+#                 prove distinct
+#   ex_subst.c    regexec's match array declared as a pointer, which it is
+#   ipc_cmd.c     the ip_* dispatch table, one entry type per message
+#   delete.c      a length GCC believes can wrap, along a path through the
+#                 line cache it cannot follow
+#   cl_funcs.c,   indentation that does not match the control flow
+#   vs_refresh.c
+#
+CWARNFLAGS.gcc+=	-Wno-switch
+COPTS.log1.c+=		${CC_WNO_IMPLICIT_FALLTHROUGH}
+COPTS.options.c+=	${CC_WNO_RESTRICT}
+COPTS.ex_subst.c+=	${CC_WNO_ARRAY_PARAMETER}
+COPTS.ipc_cmd.c+=	${CC_WNO_CAST_FUNCTION_TYPE}
+COPTS.delete.c+=	${CC_WNO_STRINGOP_OVERFLOW} \
+			${CC_WNO_ARRAY_BOUNDS} \
+			${CC_WNO_RESTRICT}
+COPTS.cl_funcs.c+=	${CC_WNO_MISLEADING_INDENTATION}
+COPTS.vs_refresh.c+=	${CC_WNO_MISLEADING_INDENTATION}
+
 LDADD+=	-lcurses -lterminfo
 DPADD+=	${LIBCURSES} ${LIBTERMINFO}
 PROG=	vi

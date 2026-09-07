@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.10 2014/01/17 16:31:45 roy Exp $
+#	$NetBSD: Makefile,v 1.14 2024/09/20 07:49:31 rin Exp $
 
 WARNS?= 4
 CWARNFLAGS.clang+=	-Wno-self-assign
@@ -11,7 +11,7 @@ DIST=	${.CURDIR}/../dist
 
 PROG=	awk
 SRCS=	awkgram.y b.c lex.c lib.c main.c parse.c proctab.c run.c tran.c
-CPPFLAGS+=	-I${DIST} -I.
+CPPFLAGS+=	-I${DIST} -I. -DHAS_ISBLANK
 LDADD+=	-lm
 .if !defined(HOSTPROG)
 DPADD+=	${LIBM}
@@ -22,11 +22,8 @@ COPTS.run.c+=	-Wno-format-nonliteral
 COPTS.tran.c+=	-Wno-format-nonliteral
 
 # info file originally from GNU awk 3.1.3, adjusted for nawk slightly
-.if !defined(__MINIX)
-# Don't install on Minix, we don't have it.
 .PATH:	${NETBSDSRCDIR}/external/gpl2/gawk/dist
 TEXINFO=        awk.info
-.endif # !defined(__MINIX)
 
 # During the tools build (from src/tools/awk/Makefile),
 # src/tools/Makefile.host changes .CURDIR back and forth between

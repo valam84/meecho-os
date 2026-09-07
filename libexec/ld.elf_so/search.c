@@ -137,7 +137,9 @@ _rtld_load_library(const char *name, const Obj_Entry *refobj, int flags)
 
 	tmperrorp = dlerror();
 	if (tmperrorp != NULL) {
-		strncpy(tmperror, tmperrorp, sizeof tmperror);
+		/* the copy is used as a string, so it must be terminated. */
+		strncpy(tmperror, tmperrorp, sizeof tmperror - 1);
+		tmperror[sizeof tmperror - 1] = '\0';
 		tmperrorp = tmperror;
 	}
 

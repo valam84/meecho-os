@@ -777,6 +777,48 @@ CTFCONVERT=	${TOOL_CTFCONVERT}
 CTFMERGE=	${TOOL_CTFMERGE}
 .endif
 
+#
+# Clang and GCC compiler-specific options, usually to disable warnings.
+# The naming convention is "CC" + the compiler flag converted
+# to upper case, with '-' and '=' changed to '_' a la `tr -=a-z __A-Z`.
+# For variable naming purposes, treat -Werror=FLAG as -WFLAG,
+# and -Wno-error=FLAG as -Wno-FLAG (usually from Clang).
+#
+# E.g., CC_WNO_ADDRESS_OF_PACKED_MEMBER contains
+# both -Wno-error=address-of-packed-member for Clang,
+# and -Wno-address-of-packed-member for GCC 9+.
+#
+# Use these with e.g.
+#	COPTS.foo.c+= ${CC_WNO_ADDRESS_OF_PACKED_MEMBER}
+#
+# These belong to third-party sources imported under external/, where the
+# code is not ours to reformat and the import should stay refreshable.  Code
+# that IS ours gets the real fix instead.
+#
+CC_WNO_ADDRESS_OF_PACKED_MEMBER=${${ACTIVE_CC} == "clang" :? -Wno-error=address-of-packed-member :} \
+				${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 9:? -Wno-address-of-packed-member :}
+
+CC_WNO_ARRAY_BOUNDS=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 12:? -Wno-array-bounds :}
+CC_WNO_CALLOC_TRANSPOSED_ARGS=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 14:? -Wno-calloc-transposed-args :}
+CC_WNO_CAST_FUNCTION_TYPE=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-cast-function-type :}
+CC_WNO_DANGLING_POINTER=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 14:? -Wno-dangling-pointer :}
+CC_WNO_ENUM_INT_MISMATCH=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 14:? -Wno-enum-int-mismatch :}
+CC_WNO_FORMAT_OVERFLOW=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-format-overflow :}
+CC_WNO_FORMAT_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-format-truncation :}
+CC_WNO_IMPLICIT_FALLTHROUGH=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-implicit-fallthrough :}
+CC_WNO_MAYBE_UNINITIALIZED=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 10:? -Wno-maybe-uninitialized :}
+CC_WNO_MISSING_TEMPLATE_KEYWORD=${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 12:? -Wno-missing-template-keyword :}
+CC_WNO_REGISTER=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 12:? -Wno-register :}
+CC_WNO_RETURN_LOCAL_ADDR=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 10:? -Wno-return-local-addr :}
+CC_WNO_STRINGOP_OVERFLOW=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-stringop-overflow :}
+CC_WNO_STRINGOP_OVERREAD=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 12:? -Wno-stringop-overread :}
+CC_WNO_STRINGOP_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-stringop-truncation :}
+CC_WNO_ARRAY_PARAMETER=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 11:? -Wno-array-parameter :}
+CC_WNO_MISLEADING_INDENTATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 6:? -Wno-misleading-indentation :}
+CC_WNO_RESTRICT=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-restrict :}
+CC_WNO_UNTERMINATED_STRING_INITIALIZATION=	\
+				${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 15:? -Wno-unterminated-string-initialization :}
+
 # For each ${MACHINE_CPU}, list the ports that use it.
 MACHINES.aarch64=	evbarm64
 MACHINES.alpha=		alpha

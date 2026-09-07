@@ -80,10 +80,10 @@
  * PIPEC is 1 if you wish to have the "|" command
  * which allows the user to pipe data into a shell command.
  */
-#define	PIPEC		(!SECURE)
+#define	PIPEC		(!SECURE && HAVE_POPEN)
 
 /*
- * LOGFILE is 1 if you wish to allow the -l option (to create log files).
+ * LOGFILE is 1 if you wish to allow the -o option (to create log files).
  */
 #define	LOGFILE		(!SECURE)
 
@@ -112,6 +112,7 @@
 #define	LESSKEYFILE		".less"
 #define	LESSKEYFILE_SYS		SYSDIR "/sysless"
 #define	DEF_LESSKEYINFILE	".lesskey"
+#define	LESSKEYINFILE_SYS	SYSDIR "/syslesskey"
 #define LESSHISTFILE		".lesshst"
 
 
@@ -132,6 +133,11 @@
  * Some HP-UX systems return 0 on success.
  */
 #define TGETENT_OK  1
+
+/*
+ * HAVE_ANSI_PROTOS	is 1 if your compiler supports ANSI function prototypes.
+ */
+#define HAVE_ANSI_PROTOS	1
 
 /*
  * HAVE_SYS_TYPES_H is 1 if your system has <sys/types.h>.
@@ -162,7 +168,7 @@
 /*
  * Default shell metacharacters and meta-escape character.
  */
-#define	DEF_METACHARS	"; *?\t\n'\"()<>[]|&^`#\\$%=~"
+#define	DEF_METACHARS	"; *?\t\n'\"()<>[]|&^`#\\$%=~{},"
 #define	DEF_METAESCAPE	"\\"
 
 /* 
@@ -178,6 +184,9 @@
 
 /* Define to 1 if you have the strstr() function. */
 #define HAVE_STRSTR 1
+
+/* Define to 1 to support reading lesskey source files (not just binary). */
+#define HAVE_LESSKEYSRC 1
 
 /*
  * Sizes of various buffers.
@@ -203,6 +212,9 @@
 #define	TAGLINE_SIZE	1024	/* Max size of line in tags file */
 #define	TABSTOP_MAX	128	/* Max number of custom tab stops */
 #endif
+
+/* Define as the return type of signal handlers (int or void).  */
+#define RETSIGTYPE void
 
 /* Settings automatically determined by configure.  */
 
@@ -231,9 +243,6 @@
 /* Define HAVE_FILENO if you have the fileno() macro. */
 #undef HAVE_FILENO
 
-/* Define HAVE_FLOAT if your compiler supports the "double" type. */
-#undef HAVE_FLOAT
-
 /* Define to 1 if you have the `fsync' function. */
 #undef HAVE_FSYNC
 
@@ -246,11 +255,20 @@
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
 
+/* Define to 1 if you have the <linux/magic.h> header file. */
+#undef HAVE_LINUX_MAGIC_H
+
 /* Define HAVE_LOCALE if you have locale.h and setlocale. */
 #undef HAVE_LOCALE
 
-/* Define to 1 if you have the <memory.h> header file. */
-#undef HAVE_MEMORY_H
+/* Define to 1 if you have the `nanosleep' function. */
+#undef HAVE_NANOSLEEP
+
+/* Define to 1 if you have the <ncursesw/termcap.h> header file. */
+#undef HAVE_NCURSESW_TERMCAP_H
+
+/* Define to 1 if you have the <ncurses/termcap.h> header file. */
+#undef HAVE_NCURSES_TERMCAP_H
 
 /* Define HAVE_OSPEED if your termcap library has the ospeed variable. */
 #undef HAVE_OSPEED
@@ -258,11 +276,24 @@
 /* PCRE (Perl-compatible regular expression) library */
 #undef HAVE_PCRE
 
+/* PCRE2 (Perl-compatible regular expression) library */
+#undef HAVE_PCRE2
+
+/* Define to 1 if you have the `poll' function. */
+#undef HAVE_POLL
+
 /* Define to 1 if you have the `popen' function. */
 #undef HAVE_POPEN
 
 /* POSIX regcomp() and regex.h */
 #undef HAVE_POSIX_REGCOMP
+
+/* Define HAVE_PROCFS if have have fstatfs with f_type and PROC_SUPER_MAGIC.
+   */
+#undef HAVE_PROCFS
+
+/* Define to 1 if you have the `realpath' function. */
+#undef HAVE_REALPATH
 
 /* System V regcmp() */
 #undef HAVE_REGCMP
@@ -294,6 +325,9 @@
 /* Define HAVE_STAT_INO if your struct stat has st_ino and st_dev. */
 #undef HAVE_STAT_INO
 
+/* Define to 1 if you have the <stdckdint.h> header file. */
+#undef HAVE_STDCKDINT_H
+
 /* Define to 1 if you have the <stdint.h> header file. */
 #undef HAVE_STDINT_H
 
@@ -311,6 +345,9 @@
 
 /* Define to 1 if you have the <string.h> header file. */
 #undef HAVE_STRING_H
+
+/* Define to 1 if you have the `strsignal' function. */
+#undef HAVE_STRSIGNAL
 
 /* Define to 1 if you have the `system' function. */
 #undef HAVE_SYSTEM
@@ -330,6 +367,9 @@
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
 
+/* Define to 1 if you have the <sys/wait.h> header file. */
+#undef HAVE_SYS_WAIT_H
+
 /* Define to 1 if you have the <termcap.h> header file. */
 #undef HAVE_TERMCAP_H
 
@@ -348,11 +388,17 @@
 /* Define HAVE_TIME_T if your system supports the "time_t" type. */
 #undef HAVE_TIME_T
 
+/* Define to 1 if you have the `ttyname' function. */
+#undef HAVE_TTYNAME
+
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
 /* Define HAVE_UPPER_LOWER if you have isupper, islower, toupper, tolower. */
 #undef HAVE_UPPER_LOWER
+
+/* Define to 1 if you have the `usleep' function. */
+#undef HAVE_USLEEP
 
 /* Henry Spencer V8 regcomp() and regexp.h */
 #undef HAVE_V8_REGCOMP
@@ -401,20 +447,16 @@
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
 
-/* Define as the return type of signal handlers (`int' or `void'). */
-#undef RETSIGTYPE
-
 /* Define SECURE_COMPILE=1 to build a secure version of less. */
 #undef SECURE_COMPILE
 
 /* Define to 1 if the `S_IS*' macros in <sys/stat.h> do not work properly. */
 #undef STAT_MACROS_BROKEN
 
-/* Define to 1 if you have the ANSI C header files. */
+/* Define to 1 if all of the C90 standard headers exist (not just the ones
+   required in a freestanding environment). This macro is provided for
+   backward compatibility; new code need not use it. */
 #undef STDC_HEADERS
-
-/* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
-#undef TIME_WITH_SYS_TIME
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 #undef _FILE_OFFSET_BITS

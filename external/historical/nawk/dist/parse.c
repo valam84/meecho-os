@@ -33,11 +33,11 @@ THIS SOFTWARE.
 #include "awk.h"
 #include "awkgram.h"
 
-Node *nodealloc(int n)
+Node *nodealloc(size_t n)
 {
 	Node *x;
 
-	x = malloc(sizeof(Node) + (n-1)*sizeof(Node *));
+	x = (Node *) malloc(sizeof(*x) + (n-1) * sizeof(x));
 	if (x == NULL)
 		FATAL("out of space in nodealloc");
 	x->nnext = NULL;
@@ -187,7 +187,7 @@ Node *op5(int a, Node *b, Node *c, Node *d, Node *e, Node *f)
 {
 	Node *x;
 
-	x = node5(a,b,c,d,e, f);
+	x = node5(a,b,c,d,e,f);
 	x->ntype = NEXPR;
 	return(x);
 }
@@ -277,7 +277,7 @@ void defn(Cell *v, Node *vl, Node *st)	/* turn on FCN bit in definition, */
 	for (p = vl; p; p = p->nnext)
 		n++;
 	v->fval = n;
-	dprintf( ("defining func %s (%d args)\n", v->nval, n) );
+	DPRINTF("defining func %s (%d args)\n", v->nval, n);
 }
 
 int isarg(const char *s)		/* is s in argument list for current function? */
@@ -286,7 +286,7 @@ int isarg(const char *s)		/* is s in argument list for current function? */
 	Node *p = arglist;
 	int n;
 
-	for (n = 0; p != 0; p = p->nnext, n++)
+	for (n = 0; p != NULL; p = p->nnext, n++)
 		if (strcmp(((Cell *)(p->narg[0]))->nval, s) == 0)
 			return n;
 	return -1;

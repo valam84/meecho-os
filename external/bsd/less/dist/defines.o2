@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1984-2012  Mark Nudelman
+ * Copyright (C) 1984-2023  Mark Nudelman
  *
  * You may distribute under the terms of either the GNU General Public
  * License or the Less License, as specified in the README file.
@@ -86,7 +86,7 @@
 #define	PIPEC		(!SECURE)
 
 /*
- * LOGFILE is 1 if you wish to allow the -l option (to create log files).
+ * LOGFILE is 1 if you wish to allow the -o option (to create log files).
  */
 #define	LOGFILE		(!SECURE)
 
@@ -115,6 +115,7 @@
 #define	LESSKEYFILE		"less.ini"
 #define	LESSKEYFILE_SYS		"C:\\sysless.ini"
 #define	DEF_LESSKEYINFILE	"lesskey.ini"
+#define	LESSKEYINFILE_SYS	"C:\\syslesskey.ini"
 #define LESSHISTFILE		"lesshst.ini"
 
 
@@ -125,6 +126,11 @@
  * Pathname separator character.
  */
 #define	PATHNAME_SEP	"\\"
+
+/*
+ * HAVE_ANSI_PROTOS	is 1 if your compiler supports ANSI function prototypes.
+ */
+#define HAVE_ANSI_PROTOS	1
 
 /*
  * HAVE_SYS_TYPES_H is 1 if your system has <sys/types.h>.
@@ -162,6 +168,9 @@
  * HAVE_DUP is 1 if your system has the dup() call.
  */
 #define	HAVE_DUP	1
+
+/* Define to 1 to support reading lesskey source files (not just binary). */
+#define HAVE_LESSKEYSRC 1
 
 /*
  * Sizes of various buffers.

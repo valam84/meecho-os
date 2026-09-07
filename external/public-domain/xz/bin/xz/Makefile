@@ -50,4 +50,6 @@ LDADD+=	-lpthread
 DPADD+=	${LIBPTHREAD}
 .endif # !defined(__MINIX)
 
+COPTS.message.c+=	${CC_WNO_FORMAT_TRUNCATION}
+
 .include <bsd.prog.mk>

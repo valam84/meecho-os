@@ -20,4 +20,10 @@ SRCS.libmandoc!=cd ${.PARSEDIR}/../../lib/libmandoc && ${MAKE} -V '$${SRCS}'
 SRCS+=		${SRCS.libmandoc}
 .endif
 
+COPTS.tree.c+=		${CC_WNO_FORMAT_OVERFLOW}
+COPTS.mdoc_term.c+=	${CC_WNO_FORMAT_TRUNCATION}
+COPTS.man_term.c+=	${CC_WNO_FORMAT_TRUNCATION}
+COPTS.mdoc_macro.c+=	${CC_WNO_IMPLICIT_FALLTHROUGH}
+COPTS.mdoc_man.c+=	${CC_WNO_FORMAT_TRUNCATION}
+
 .include <bsd.prog.mk>

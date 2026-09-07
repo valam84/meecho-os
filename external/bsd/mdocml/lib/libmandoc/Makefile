@@ -10,4 +10,7 @@ SRCS=	man.c man_hash.c man_macro.c man_validate.c \
 	mandoc.c read.c
 MAN=	mandoc.3
 
+COPTS.mdoc_macro.c+=	${CC_WNO_IMPLICIT_FALLTHROUGH}
+COPTS.mdoc_man.c+=	${CC_WNO_FORMAT_TRUNCATION}
+
 .include <bsd.lib.mk>

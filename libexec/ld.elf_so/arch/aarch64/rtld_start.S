@@ -47,13 +47,8 @@ RCSID("$NetBSD: rtld_start.S,v 1.1 2014/08/10 05:47:37 matt Exp $")
 ENTRY_NP(_rtld_start)
 	mov	x24, x2			/* save ps_strings */
 
-#if 1
-	adrp	x1, _PROCEDURE_LINKAGE_TABLE_	/* load _DYNAMIC offset from GOT */
-	ldr	x1, [x1, #:got_lo12:_PROCEDURE_LINKAGE_TABLE_]
-#else
 	adrp	x1, :got:_DYNAMIC	/* load _DYNAMIC offset from GOT */
 	ldr	x1, [x1, #:got_lo12:_DYNAMIC]
-#endif
 
 	adrp	x0, _DYNAMIC		/* get &_DYNAMIC */
 	add	x0, x0, #:lo12:_DYNAMIC

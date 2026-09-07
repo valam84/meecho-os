@@ -34,6 +34,7 @@ INCS=		magic.h
 INCSDIR=	/usr/include
 
 COPTS.softmagic.c = -Wno-format-nonliteral
+COPTS.readelf.c+=	${CC_WNO_MAYBE_UNINITIALIZED}
 
 magic.c:	magic.h
 magic.h:        magic.h.in

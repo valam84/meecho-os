@@ -96,6 +96,27 @@ dcache_flush(unsigned long start, unsigned long end, unsigned long line)
 }
 
 /*===========================================================================*
+ *				arch_cache_info				     *
+ *===========================================================================*/
+/*
+ * The two registers that describe the caches, for a driver that asks.  Only
+ * EL1 can read them here: SCTLR_EL1.UCT is not set, so an EL0 read of
+ * CTR_EL0 traps.
+ */
+#ifndef CACHE_TEST
+void
+arch_cache_info(vir_bytes *ctr, vir_bytes *clidr)
+{
+	unsigned long v;
+
+	__asm__ volatile("mrs %0, ctr_el0" : "=r"(v));
+	*ctr = v;
+	__asm__ volatile("mrs %0, clidr_el1" : "=r"(v));
+	*clidr = v;
+}
+#endif /* !CACHE_TEST */
+
+/*===========================================================================*
  *				dcache_range				     *
  *===========================================================================*/
 /*

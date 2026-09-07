@@ -46,6 +46,9 @@ do_cachectl(struct proc * caller, message * m_ptr)
 	case CACHE_INVALIDATE:
 	case CACHE_CLEAN_INVALIDATE:
 		break;
+	case CACHE_INFO:
+		arch_cache_info(&m_ptr->SCACHE_ADDR, &m_ptr->SCACHE_LEN);
+		return OK;
 	default:
 		return EINVAL;
 	}

@@ -44,4 +44,16 @@
 #define CACHE_INVALIDATE	2
 #define CACHE_CLEAN_INVALIDATE	3
 
+/*
+ * Not an operation on memory: a question about the caches.  The reply
+ * carries the two identification registers a driver cannot read for itself
+ * - CTR_EL0, which says how long a cache line is, and CLIDR_EL1, which says
+ * how many levels there are and where coherency starts - in the fields that
+ * were the address and the length.  A driver that shares memory with a
+ * device has to know the line size to lay its descriptors out; guessing it
+ * is what this replaces.  On an architecture that has no such registers the
+ * reply is zeroes.
+ */
+#define CACHE_INFO		4
+
 #endif /* _MINIX_CACHECTL_H */

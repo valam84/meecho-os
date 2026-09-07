@@ -414,6 +414,16 @@ int arch_cache_range(struct proc *caller, vir_bytes addr, vir_bytes len,
 }
 
 /*===========================================================================*
+ *				arch_cache_info				     *
+ *===========================================================================*/
+void arch_cache_info(vir_bytes *ctr, vir_bytes *clidr)
+{
+	/* No such registers on this architecture; the reply is zeroes. */
+	*ctr = 0;
+	*clidr = 0;
+}
+
+/*===========================================================================*
  *				vm_check_range				     *
  *===========================================================================*/
 int vm_check_range(struct proc *caller, struct proc *target,

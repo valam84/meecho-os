@@ -59,6 +59,7 @@ int sys_vm_setbuf(phys_bytes base, phys_bytes size, phys_bytes high);
 int sys_vm_map(endpoint_t proc_ep, int do_map, phys_bytes base,
 	phys_bytes size, phys_bytes offset);
 int sys_cachectl(int op, void *addr, size_t len);
+int sys_cacheinfo(unsigned long *ctr, unsigned long *clidr);
 int sys_vmctl(endpoint_t who, int param, u32_t value);
 int sys_vmctl_get_pdbr(endpoint_t who, u32_t *pdbr);
 int sys_vmctl_get_memreq(endpoint_t *who, vir_bytes *mem, vir_bytes

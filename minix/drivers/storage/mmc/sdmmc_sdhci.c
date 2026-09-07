@@ -158,6 +158,29 @@ wait_intr(uint16_t wanted, uint32_t usecs, uint16_t *got)
 }
 
 /*
+ * The registers worth seeing when something has gone wrong, in one line.
+ *
+ * This is for the first contact with a part nobody here has driven: on a
+ * machine where the driver does not get as far as a card, the difference
+ * between "the registers are not mapped", "the part is held in reset" and
+ * "the clock never started" is entirely in these numbers, and reading them
+ * out of a hung board afterwards is not possible.
+ */
+static void
+dump_regs(const char *when)
+{
+	log_debug(&sdmmc_log, "%s: state %08x ctl %02x pwr %02x clk %04x "
+	    "to %02x nis %04x eis %04x nie %04x eie %04x ctl2 %04x "
+	    "caps %08x/%08x ver %04x\n", when,
+	    rd32(SDHC_PRESENT_STATE), rd8(SDHC_HOST_CTL), rd8(SDHC_POWER_CTL),
+	    rd16(SDHC_CLOCK_CTL), rd8(SDHC_TIMEOUT_CTL),
+	    rd16(SDHC_NINTR_STATUS), rd16(SDHC_EINTR_STATUS),
+	    rd16(SDHC_NINTR_STATUS_EN), rd16(SDHC_EINTR_STATUS_EN),
+	    rd16(SDHC_HOST_CTL2), rd32(SDHC_CAPABILITIES),
+	    rd32(SDHC_CAPABILITIES + 4), rd16(SDHC_HOST_CTL_VERSION));
+}
+
+/*
  * Reset part of the controller and wait for the bit to fall.
  *
  * SDHC_RESET_ALL puts every register back to its power-on value, so init
@@ -466,6 +489,7 @@ sdhci_command(struct sdmmc_cmd *cmd)
 		if (r == EIO)
 			return command_error(cmd);
 		log_warn(&sdmmc_log, "CMD%u: no completion\n", cmd->index);
+		dump_regs("stuck");
 		(void)reset(SDHC_RESET_CMD);
 		(void)reset(SDHC_RESET_DAT);
 		return r;
@@ -654,6 +678,7 @@ sdhci_init(void)
 	log_info(&sdmmc_log, "SDHCI %u.00 at 0x%lx, base clock %u Hz, "
 	    "caps 0x%08x\n", spec_version + 1, (unsigned long)reg_base,
 	    base_clock, caps);
+	dump_regs("after init");
 	return OK;
 }
 

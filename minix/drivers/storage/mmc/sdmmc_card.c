@@ -455,6 +455,18 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 		return r;
 	memcpy(card->csd, cmd.resp, sizeof(card->csd));
 
+	/*
+	 * Printed raw, most significant word first, which is the order
+	 * Linux prints them in /sys/class/mmc_host/.../cid and .../csd. On
+	 * first contact with a new part that is the cheapest check there is
+	 * that the host put the response together right - a wrong shift
+	 * shows up here as recognisable numbers moved by a byte, long
+	 * before it shows up as a card of the wrong size.
+	 */
+	log_debug(&sdmmc_log, "CID %08x%08x%08x%08x  CSD %08x%08x%08x%08x\n",
+	    card->cid[3], card->cid[2], card->cid[1], card->cid[0],
+	    card->csd[3], card->csd[2], card->csd[1], card->csd[0]);
+
 	if ((r = send(MMC_SELECT_CARD, MMC_ARG_RCA(card->rca), SDMMC_RSP_R1B,
 	    &cmd)) != OK)
 		return r;

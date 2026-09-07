@@ -100,10 +100,17 @@ d--755 0 0
  * writes to: a home for root, /var/run for utmpx, /var/log for wtmpx and
  * lastlogx, and a /tmp. Without the directories libc cannot create the
  * files, and init and login complain once per boot and once per login.
+ *
+ * And a /mnt, because this image is also the thing that makes the root it
+ * will hand over to: a file system it cannot mount is one it cannot fill,
+ * and "mount: No such file or directory" names the mount point, not the
+ * device, which is a confusing way to learn that a directory is missing.
  */
 	root d--700 0 0
 	$
 	tmp d--777 0 0
+	$
+	mnt d--755 0 0
 	$
 	var d--755 0 0
 		run d--755 0 0

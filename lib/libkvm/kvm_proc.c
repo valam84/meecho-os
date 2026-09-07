@@ -93,6 +93,7 @@ __RCSID("$NetBSD: kvm_proc.c,v 1.90 2014/02/19 20:21:22 dsl Exp $");
 #include <errno.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 #include <nlist.h>
@@ -973,24 +974,34 @@ kvm_argv(kvm_t *kd, const struct miniproc *p, u_long addr, int narg,
 		if (ep != NULL)
 			cc = ep - cp + 1;
 		if (len + cc > kd->argspc_len) {
-			ptrdiff_t off;
 			char **pp;
-			char *op = kd->argspc;
+			size_t apoff, npoff;
+
+			/*
+			 * Everything that points into the string space
+			 * becomes an offset before the realloc, and a
+			 * pointer again after it.  The old base must not
+			 * outlive the call: once realloc has moved the
+			 * block, the value of a pointer into the old one
+			 * is indeterminate, so it may not be read -- not
+			 * even to compute a difference.
+			 */
+			apoff = (size_t)(ap - kd->argspc);
+			npoff = (size_t)(np - kd->argspc);
+			for (pp = kd->argv; pp < argv; pp++)
+				*pp = (char *)(uintptr_t)
+				    (size_t)(*pp - kd->argspc);
 
 			kd->argspc_len *= 2;
 			kd->argspc = _kvm_realloc(kd, kd->argspc,
 			    kd->argspc_len);
 			if (kd->argspc == NULL)
 				return (NULL);
-			/*
-			 * Adjust argv pointers in case realloc moved
-			 * the string space.
-			 */
-			off = kd->argspc - op;
+
 			for (pp = kd->argv; pp < argv; pp++)
-				*pp += off;
-			ap += off;
-			np += off;
+				*pp = kd->argspc + (size_t)(uintptr_t)*pp;
+			ap = kd->argspc + apoff;
+			np = kd->argspc + npoff;
 		}
 		memcpy(np, cp, cc);
 		np += cc;

@@ -37,8 +37,13 @@
 #include "sdmmc.h"
 #include "sdmmcreg.h"
 
-/* An eMMC has no socket to publish an address, so the host names it. */
-#define SDMMC_EMMC_RCA		2
+/*
+ * An eMMC has no socket to publish an address, so the host names it. One,
+ * because that is what every bootloader and both kernels use; any non-zero
+ * value is legal, but on first contact with an unfamiliar part it is worth
+ * differing from the known-good sequence in as few places as possible.
+ */
+#define SDMMC_EMMC_RCA		1
 
 /* "The device must complete its initialization within 1 second of the first
  * CMD1 issued with a valid OCR range" (JESD84). Twice that, as emmc.c does. */
@@ -59,6 +64,20 @@
 
 static struct sdmmc_host *host;
 static struct sdmmc_card *card;
+
+/*
+ * Ceilings on how far the card is taken, both settable from the service's
+ * arguments as buswidth= and maxmhz=.
+ *
+ * Not a tuning knob: it is how a data path is brought up on hardware nobody
+ * has driven. Identification and transfer are different mechanisms - one
+ * uses the command line, the other the data lines - and when the second
+ * fails the useful question is whether it fails at one bit and the slowest
+ * clock too. Answering that by rebuilding with different constants wastes a
+ * boot each time; answering it from the command line costs nothing.
+ */
+static unsigned limit_width = 8;
+static uint32_t limit_hz = 52000000;
 
 /*
  * Every mandatory step of identification, with its name attached.
@@ -194,6 +213,20 @@ mmc_switch(uint8_t index, uint8_t value)
 }
 
 /*
+ * An all-ones response is not a card, it is the bus with its pull-ups: no
+ * device drove the line and the controller called the command complete
+ * anyway. Worth naming, because a driver that does not notice carries on and
+ * blames whatever fails next. The low byte is the CRC's place, which the
+ * host shifted in as zero.
+ */
+static int
+all_ones_cid(const uint32_t *resp)
+{
+	return (resp[3] & 0x00ffffff) == 0x00ffffff && resp[2] == ~0u &&
+	    resp[1] == ~0u && (resp[0] | 0xff) == ~0u;
+}
+
+/*
  * CMD0, and the pause the specification asks for afterwards. Sent twice over
  * the life of an identification: once at the start, and once more when the
  * SD branch has been tried and failed, because a card that answered nothing
@@ -204,6 +237,17 @@ go_idle(void)
 {
 	int r;
 
+	/*
+	 * Two arguments, in order. CMD0 with 0xf0f0f0f0 is GO_PRE_IDLE_STATE:
+	 * JEDEC gives it to bring a device back from states a plain CMD0 does
+	 * not cover, and it costs one command. This matters here because the
+	 * device is not being met cold - the bootloader has already had it at
+	 * HS200, eight bits wide - and a device that did not hear CMD0 says
+	 * nothing about it: the command has no response, so the first sign of
+	 * trouble is several commands later.
+	 */
+	(void)send(MMC_GO_IDLE_STATE, 0xf0f0f0f0, SDMMC_RSP_NONE, NULL);
+	micro_delay(2000);
 	r = send(MMC_GO_IDLE_STATE, 0, SDMMC_RSP_NONE, NULL);
 	micro_delay(2000);
 	return r;
@@ -261,7 +305,10 @@ static int
 mmc_op_cond(int *found)
 {
 	struct sdmmc_cmd cmd;
+	struct sdmmc_cmd probe;
 	spin_t s;
+	uint32_t ocr;
+	unsigned tries;
 
 	*found = 0;
 
@@ -269,9 +316,35 @@ mmc_op_cond(int *found)
 	if (send(MMC_SEND_OP_COND, 0, SDMMC_RSP_R3, &cmd) != OK)
 		return OK;	/* nothing there at all */
 
+	/*
+	 * What to ask for is the intersection, not the wish.
+	 *
+	 * JEDEC is blunt about this: a device sent an operating range it does
+	 * not support goes to the Inactive state, and an inactive device
+	 * answers nothing ever again. So the range in every CMD1 after the
+	 * first is the one the device just named, narrowed by what this
+	 * driver would accept - which is what U-Boot and Linux both do, and
+	 * for the same reason.
+	 *
+	 * It cost a day to find, because the failure does not look like a
+	 * refusal. The device answers the first few CMD1s, reports itself
+	 * ready, and only then falls silent: CMD2 comes back as all ones,
+	 * which is an idle bus read through its pull-ups, and the controller
+	 * calls that a completed command. The card was already gone.
+	 */
+	ocr = MMC_R3(cmd.resp) & OCR_VOLTAGE_WINDOW;
+	if (ocr == 0) {
+		log_warn(&sdmmc_log, "the card names no voltage range; "
+		    "asking for all of ours\n");
+		ocr = OCR_VOLTAGE_WINDOW;
+	}
+	log_debug(&sdmmc_log, "the card's range is %08x\n", ocr);
+
+	tries = 0;
 	spin_init(&s, OCR_TIMEOUT_US);
 	do {
-		if (send(MMC_SEND_OP_COND, MMC_OCR_HCS | OCR_VOLTAGE_WINDOW,
+		tries++;
+		if (send(MMC_SEND_OP_COND, MMC_OCR_HCS | ocr,
 		    SDMMC_RSP_R3, &cmd) != OK)
 			return EIO;
 		if (MMC_R3(cmd.resp) & MMC_OCR_MEM_READY) {
@@ -283,6 +356,24 @@ mmc_op_cond(int *found)
 			 */
 			card->sector_addressed =
 			    (MMC_R3(cmd.resp) & MMC_OCR_HCS) != 0;
+			log_debug(&sdmmc_log, "OCR %08x after %u CMD1\n",
+			    MMC_R3(cmd.resp), tries);
+
+			/*
+			 * Ask once more, now that the device says it is
+			 * done. CMD1 is a command of the Idle state: a
+			 * device that has moved on to Ready should ignore
+			 * it. If it answers anyway then it never left Idle,
+			 * whatever the busy bit claimed - and that, not the
+			 * command after it, is where to look.
+			 */
+			if (send(MMC_SEND_OP_COND, 0, SDMMC_RSP_R3,
+			    &probe) == OK)
+				log_debug(&sdmmc_log, "still answers CMD1 "
+				    "when ready: %08x\n", MMC_R3(probe.resp));
+			else
+				log_debug(&sdmmc_log, "ignores CMD1 once "
+				    "ready, as it should\n");
 			*found = 1;
 			return OK;
 		}
@@ -342,19 +433,28 @@ mmc_tune(void)
 	unsigned width;
 	uint32_t hz;
 
+	hz = 52000000;
+	if (hz > limit_hz)
+		hz = limit_hz;
+	if (hz > host->max_freq)
+		hz = host->max_freq;
+
 	if ((ext_csd[EXT_CSD_CARD_TYPE] & EXT_CSD_CARD_TYPE_HS_52) &&
-	    host->max_freq >= 52000000) {
+	    hz > 26000000) {
 		if (mmc_switch(EXT_CSD_HS_TIMING, 1) == OK) {
 			(void)host->set_timing(1);
-			hz = 52000000;
 			if (host->set_clock(hz, &card->clock) == OK)
 				card->high_speed = 1;
 		} else {
 			log_warn(&sdmmc_log, "the card refused high speed\n");
 		}
+	} else {
+		(void)host->set_clock(hz, &card->clock);
 	}
 
 	width = host->max_bus_width;
+	if (width > limit_width)
+		width = limit_width;
 	if (width > 8)
 		width = 8;
 	if (width >= 8)
@@ -421,6 +521,7 @@ int
 sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 {
 	struct sdmmc_cmd cmd;
+	unsigned attempt;
 	int r, found;
 
 	host = h;
@@ -429,8 +530,22 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 	memset(card, 0, sizeof(*card));
 	card->bus_width = 1;
 
+	{
+		long v;
+
+		v = 8;
+		(void)env_parse("buswidth", "d", 0, &v, 1, 8);
+		limit_width = (unsigned)v;
+		v = 52;
+		(void)env_parse("maxmhz", "d", 0, &v, 1, 200);
+		limit_hz = (uint32_t)v * 1000000;
+		if (limit_width != 8 || limit_hz != 52000000)
+			log_info(&sdmmc_log, "held to %u bits and %u MHz by "
+			    "request\n", limit_width, limit_hz / 1000000);
+	}
+
 	STEP("cannot set the identification clock",
-	    host->set_clock(400000, &card->clock));
+	    host->set_clock(SDMMC_IDENT_HZ, &card->clock));
 	(void)host->set_bus_width(1);
 	(void)host->set_timing(0);
 
@@ -446,9 +561,68 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 		return ENODEV;
 	}
 
-	STEP("CMD2 (all send CID)",
-	    send(MMC_ALL_SEND_CID, 0, SDMMC_RSP_R2, &cmd));
+	/*
+	 * The card has just finished its own initialisation; give it the
+	 * moment Linux gives it before asking anything else. Ten
+	 * milliseconds is what mmc_delay() spends between operating-condition
+	 * polls there, and nothing here is in a hurry once per boot.
+	 */
+	micro_delay(10000);
+
+	/*
+	 * CMD2 is a broadcast, and a broadcast whose answer is lost leaves
+	 * nothing behind to ask again about - so it is worth asking again.
+	 * Three attempts, with the identification restarted in between,
+	 * because a card that has stopped listening will not start because
+	 * the same question was repeated.
+	 */
+	for (attempt = 1; ; attempt++) {
+		STEP("CMD2 (all send CID)",
+		    send(MMC_ALL_SEND_CID, 0, SDMMC_RSP_R2, &cmd));
+		if (!all_ones_cid(cmd.resp) || attempt == 3)
+			break;
+		log_warn(&sdmmc_log, "CMD2 attempt %u read an idle bus; "
+		    "starting over\n", attempt);
+
+		/*
+		 * Ask the same question expecting a short answer. The card's
+		 * reply does not change, but the controller's handling of it
+		 * does: if a 48-bit read brings back something that is not
+		 * all ones, then the card is answering and it is the 136-bit
+		 * path that loses it, which is a different fault in a
+		 * different place. Two lines to tell those apart is cheap
+		 * next to guessing between them.
+		 */
+		if (send(MMC_ALL_SEND_CID, 0, SDMMC_RSP_R3, &cmd) == OK)
+			log_warn(&sdmmc_log, "CMD2 as a 48-bit response: "
+			    "%08x\n", MMC_R3(cmd.resp));
+		else
+			log_warn(&sdmmc_log, "CMD2 as a 48-bit response: "
+			    "no answer at all\n");
+		STEP("CMD0 (retry)", go_idle());
+		STEP("CMD1 (retry)", mmc_op_cond(&found));
+		if (!found)
+			return ENODEV;
+		micro_delay(10000);
+	}
 	memcpy(card->cid, cmd.resp, sizeof(card->cid));
+
+	/*
+	 * Printed as soon as it is read, and not later with the CSD, because
+	 * this is the first thing the card says about itself: on a board
+	 * nobody has driven before it settles at once whether the card is
+	 * answering at all and whether the 136-bit response was put back
+	 * together right. Linux prints the same bytes in the same order in
+	 * /sys/class/mmc_host/.../cid, so the two can be held side by side.
+	 */
+	log_debug(&sdmmc_log, "CID %08x%08x%08x%08x\n", card->cid[3],
+	    card->cid[2], card->cid[1], card->cid[0]);
+
+	if (all_ones_cid(card->cid)) {
+		log_warn(&sdmmc_log, "CMD2 read an idle bus: no card is "
+		    "answering\n");
+		return ENODEV;
+	}
 
 	if (card->is_sd) {
 		STEP("CMD3 (publish RCA)",
@@ -473,9 +647,8 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 	 * shows up here as recognisable numbers moved by a byte, long
 	 * before it shows up as a card of the wrong size.
 	 */
-	log_debug(&sdmmc_log, "CID %08x%08x%08x%08x  CSD %08x%08x%08x%08x\n",
-	    card->cid[3], card->cid[2], card->cid[1], card->cid[0],
-	    card->csd[3], card->csd[2], card->csd[1], card->csd[0]);
+	log_debug(&sdmmc_log, "CSD %08x%08x%08x%08x\n", card->csd[3],
+	    card->csd[2], card->csd[1], card->csd[0]);
 
 	STEP("CMD7 (select card)",
 	    send(MMC_SELECT_CARD, MMC_ARG_RCA(card->rca), SDMMC_RSP_R1B, &cmd));
@@ -544,6 +717,29 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 	return OK;
 }
 
+/*
+ * Tell the card how many blocks are coming, so that it stops by itself.
+ *
+ * The alternative is to let the controller send CMD12 at the end, which the
+ * standard provides for and this part gets wrong: every multi-block read
+ * came back with the auto-command reported as both not executed and timed
+ * out. CMD23 is mandatory on an eMMC of version 4.4 and later, Linux uses
+ * it on this very card, and it removes the whole mechanism rather than
+ * working around it. An SD card that does not offer CMD23 falls back to the
+ * stop command; none is attached here, and that is the only reason the
+ * fallback is untried.
+ */
+static int
+set_block_count(uint32_t count)
+{
+	struct sdmmc_cmd cmd;
+	int r;
+
+	if ((r = send(MMC_SET_BLOCK_COUNT, count, SDMMC_RSP_R1, &cmd)) != OK)
+		return r;
+	return check_r1(&cmd);
+}
+
 /* Sector or byte, as the card said when it came up. */
 static uint32_t
 data_address(uint64_t sector)
@@ -566,9 +762,12 @@ sdmmc_card_read(uint64_t sector, uint32_t count, void *buf)
 	if (sector + count > card->sectors)
 		return EINVAL;
 
+	if (count > 1 && (r = set_block_count(count)) != OK)
+		return r;
+
 	r = send_data(count > 1 ? MMC_READ_BLOCK_MULTIPLE :
 	    MMC_READ_BLOCK_SINGLE, data_address(sector), SDMMC_RSP_R1, 0,
-	    buf, count, count > 1, &cmd);
+	    buf, count, 0, &cmd);
 	if (r != OK)
 		return r;
 	return check_r1(&cmd);
@@ -587,9 +786,12 @@ sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf)
 	if (sector + count > card->sectors)
 		return EINVAL;
 
+	if (count > 1 && (r = set_block_count(count)) != OK)
+		return r;
+
 	r = send_data(count > 1 ? MMC_WRITE_BLOCK_MULTIPLE :
 	    MMC_WRITE_BLOCK_SINGLE, data_address(sector), SDMMC_RSP_R1, 1,
-	    (void *)(uintptr_t)buf, count, count > 1, &cmd);
+	    (void *)(uintptr_t)buf, count, 0, &cmd);
 	if (r != OK)
 		return r;
 	return check_r1(&cmd);

@@ -69,4 +69,31 @@
 #define DWCMSHC_EMMC_MISC_CON		0x81c
 #define  DWCMSHC_MISC_INTCLK_EN		(1<<1)
 
+/*
+ * The delay line, which decides when the controller samples what the card
+ * drives back. It lives in the same Rockchip block as MISC_CON, so a
+ * software reset does not touch it either, and whatever the bootloader left
+ * there stays: on this board U-Boot runs the eMMC at HS200, and a sampling
+ * phase computed for 200 MHz is not one that finds a response at 400 kHz.
+ * The symptom is not silence but nonsense - a 136-bit response read as all
+ * ones, which is an idle bus with its pull-ups, reported as a completed
+ * command.
+ *
+ * Below 52 MHz the answer is not to train the line but to switch it off:
+ * bypass the DLL and take the sample clock straight from the source, which
+ * is what Linux does for every mode this driver uses.
+ */
+#define DWCMSHC_EMMC_DLL_CTRL		0x800
+#define  DWCMSHC_DLL_START		(1<<0)
+#define  DWCMSHC_DLL_BYPASS		(1<<24)
+#define DWCMSHC_EMMC_DLL_RXCLK		0x804
+#define  DWCMSHC_RXCLK_ORI_GATE		(1u<<31)
+#define DWCMSHC_EMMC_DLL_TXCLK		0x808
+#define DWCMSHC_EMMC_DLL_STRBIN		0x80c
+#define  DWCMSHC_DLL_DLYENA		(1<<27)
+#define  DWCMSHC_STRBIN_DELAY_SEL	(1<<26)
+#define  DWCMSHC_STRBIN_DELAY_SHIFT	16
+#define  DWCMSHC_STRBIN_DELAY_DEFAULT	0x16
+#define DWCMSHC_EMMC_DLL_CMDOUT		0x810
+
 #endif /* _SDMMC_SDHCI_H */

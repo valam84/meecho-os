@@ -89,6 +89,49 @@ read_devinfo(const struct fdt_node *node, struct sdmmc_devinfo *info)
 		info->max_freq = (uint32_t)fdt_read_cells(p, 1);
 	if (fdt_getprop(node, "non-removable", NULL) != NULL)
 		info->non_removable = 1;
+
+	/*
+	 * "resets" is a list of <controller, line> pairs. The controller is
+	 * a phandle, and this reader cannot follow one - so the line numbers
+	 * are taken here and the controller is found by its compatible
+	 * string in a second walk. That is not a shortcut for its own sake:
+	 * a machine has one clock-and-reset controller, and following the
+	 * phandle would need a lookup table this reader deliberately does
+	 * not keep.
+	 */
+	if ((p = fdt_getprop(node, "resets", &len)) != NULL) {
+		unsigned i;
+
+		for (i = 0; i + 8 <= len && info->nresets < SDMMC_MAX_RESETS;
+		    i += 8)
+			info->reset_id[info->nresets++] = (unsigned)
+			    fdt_read_cells((const char *)p + i + 4, 1);
+	}
+}
+
+/* The reset controller, wherever the tree keeps it. */
+struct reset_search {
+	phys_bytes base;
+	size_t size;
+};
+
+static int
+find_reset_controller(void *cookie, int depth, const char *UNUSED(name),
+	const struct fdt_node *node)
+{
+	struct reset_search *s = cookie;
+	u64_t base, size;
+
+	if (depth == 0)
+		return 0;
+	if (!fdt_node_is_compatible(node, "rockchip,rk3568-cru"))
+		return 0;
+	if (fdt_node_reg(node, 0, &base, &size) != 0)
+		return 0;
+
+	s->base = (phys_bytes)base;
+	s->size = (size_t)size;
+	return 1;
 }
 
 static int
@@ -122,15 +165,30 @@ find_host(void *cookie, int depth, const char *name,
 			continue;
 		}
 
+		if (info.nresets > 0) {
+			struct reset_search rs;
+
+			memset(&rs, 0, sizeof(rs));
+			(void)fdt_walk(node->dtb, find_reset_controller, &rs);
+			info.reset_base = rs.base;
+			info.reset_size = rs.size;
+			if (rs.base == 0)
+				log_warn(&sdmmc_log, "%s: the tree names %u "
+				    "reset lines but no controller this "
+				    "driver knows holds them\n", name,
+				    info.nresets);
+		}
+
 		if (drivers[i].probe(node, &info, s->host) != OK)
 			continue;
 
 		s->host->name = drivers[i].compatible;
 		log_info(&sdmmc_log, "%s: %s at 0x%lx (%u bytes), irq %d, "
-		    "%u-bit bus, up to %u Hz%s\n", name,
-		    drivers[i].compatible, (unsigned long)info.base,
+		    "%u-bit bus, up to %u Hz%s, %u reset lines at 0x%lx\n",
+		    name, drivers[i].compatible, (unsigned long)info.base,
 		    (unsigned)info.size, info.irq, info.bus_width,
-		    info.max_freq, info.non_removable ? ", soldered" : "");
+		    info.max_freq, info.non_removable ? ", soldered" : "",
+		    info.nresets, (unsigned long)info.reset_base);
 		s->found = &drivers[i];
 		return 1;	/* stops the walk */
 	}

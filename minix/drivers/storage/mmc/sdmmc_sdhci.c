@@ -57,10 +57,73 @@
 #define RESET_TIMEOUT_US	100000
 #define CLOCK_TIMEOUT_US	100000
 
+/*
+ * Whether the controller is asked to check the CRC and index of a response.
+ *
+ * On by default, because a response that fails its CRC is not a response.
+ * Switchable because on first contact with this part every command carrying
+ * a check went unanswered while the one without any was answered every
+ * time, and telling "the checks are broken" from "the bits are wrong and
+ * the checks are right" is one boot with them off: a correct CID means the
+ * former, a corrupt one means the latter.
+ */
+static int check_responses = 1;
+
 /* Where the registers are, and where they ended up. */
 static phys_bytes reg_base;
 static size_t reg_size;
 static vir_bytes regs;
+
+/*
+ * The reset controller: where it is, where it ended up, and which of its
+ * lines belong to this controller. Empty on a machine whose tree names none,
+ * which is every machine but this board so far.
+ */
+static phys_bytes rst_base;
+static size_t rst_size;
+static vir_bytes rst_regs;
+static unsigned rst_n;
+static unsigned rst_id[SDMMC_MAX_RESETS];
+
+/*
+ * Rockchip's software reset registers: sixteen lines each, from 0x400 up,
+ * and every write carries its own mask in the top half so that one line can
+ * be changed without reading the register first. Line n lives in register
+ * n / 16 at bit n % 16.
+ */
+#define RK_SOFTRST_CON0		0x400
+#define RK_SOFTRST_PER_REG	16
+
+/*
+ * The card clock's source, which on this SoC is a multiplexer and not a
+ * divider - and getting that wrong is not a slow card but a wrong one.
+ *
+ * With the delay line bypassed the controller samples what the card drives
+ * against the *source* clock, not against the divided card clock. Leave the
+ * source at 198 MHz and divide it by 534 for identification and the card is
+ * clocked correctly while its answers are sampled at the wrong instants:
+ * a 48-bit response comes back with bits missing but still looking like a
+ * plausible number, and a 136-bit one does not come back at all. That is
+ * how this driver spent an afternoon believing an eMMC had the operating
+ * range 0x003f8000 when it was really answering 0x40ff8080.
+ *
+ * Hence the mux, and hence 375 kHz: it is not "at most 400" rounded down,
+ * it is the one sub-megahertz input the multiplexer has. CLKSEL_CON28 bits
+ * 14:12 choose between these six, and every Rockchip register takes its own
+ * write mask in the top half so one field can be set without a read.
+ */
+#define RK_CLKSEL_CON28		0x170
+#define RK_CCLK_EMMC_SHIFT	12
+#define RK_CCLK_EMMC_MASK	0x7
+
+static const struct { uint32_t hz; unsigned sel; } cclk_emmc[] = {
+	{    375000, 5 },
+	{  24000000, 0 },
+	{  50000000, 4 },
+	{ 100000000, 3 },
+	{ 150000000, 2 },
+	{ 200000000, 1 }
+};
 
 /* Read out of the part at init, not written down here. */
 static uint32_t base_clock;		/* the divider's input, in Hz */
@@ -186,6 +249,13 @@ dump_regs(const char *when)
 	    rd16(SDHC_EINTR_STATUS), rd16(SDHC_NINTR_STATUS_EN),
 	    rd16(SDHC_EINTR_STATUS_EN), rd16(SDHC_HOST_CTL2),
 	    rd16(SDHC_HOST_CTL_VERSION));
+	if (is_dwcmshc)
+		log_debug(&sdmmc_log, "%s: dll ctl %08x rx %08x tx %08x "
+		    "strbin %08x cmdout %08x\n", when,
+		    rd32(DWCMSHC_EMMC_DLL_CTRL), rd32(DWCMSHC_EMMC_DLL_RXCLK),
+		    rd32(DWCMSHC_EMMC_DLL_TXCLK),
+		    rd32(DWCMSHC_EMMC_DLL_STRBIN),
+		    rd32(DWCMSHC_EMMC_DLL_CMDOUT));
 }
 
 /*
@@ -196,6 +266,47 @@ dump_regs(const char *when)
  * SDHC_RESET_CMD and SDHC_RESET_DAT are the ones an error path uses, and
  * they leave the rest alone.
  */
+/*
+ * Pull the controller's reset lines, if the tree gave it any.
+ *
+ * The software reset of the standard reaches the standard registers and
+ * nothing else; the vendor half of this part - the delay line, the clock
+ * enable, whatever mode the bootloader left it in - is behind these lines.
+ * Both the vendor kernel and mainline pull them around a full reset
+ * whenever the description provides them, and the board's own tree does.
+ */
+static void
+hardware_reset(void)
+{
+	unsigned i, reg, bit;
+	uint32_t v;
+
+	if (rst_regs == 0 || rst_n == 0)
+		return;
+
+	for (i = 0; i < rst_n; i++) {
+		reg = RK_SOFTRST_CON0 + (rst_id[i] / RK_SOFTRST_PER_REG) * 4;
+		bit = rst_id[i] % RK_SOFTRST_PER_REG;
+		if (reg + 4 > rst_size)
+			continue;
+		v = (1u << (bit + 16)) | (1u << bit);
+		*(volatile uint32_t *)(rst_regs + reg) = v;
+	}
+
+	micro_delay(10);
+
+	for (i = 0; i < rst_n; i++) {
+		reg = RK_SOFTRST_CON0 + (rst_id[i] / RK_SOFTRST_PER_REG) * 4;
+		bit = rst_id[i] % RK_SOFTRST_PER_REG;
+		if (reg + 4 > rst_size)
+			continue;
+		v = (1u << (bit + 16));		/* mask set, value clear */
+		*(volatile uint32_t *)(rst_regs + reg) = v;
+	}
+
+	micro_delay(100);
+}
+
 static int
 reset(uint8_t mask)
 {
@@ -212,6 +323,9 @@ reset(uint8_t mask)
 	 */
 	if (is_dwcmshc && regs != 0)
 		misc = rd32(DWCMSHC_EMMC_MISC_CON);
+
+	if (mask & SDHC_RESET_ALL)
+		hardware_reset();
 
 	wr8(SDHC_SOFTWARE_RESET, mask);
 
@@ -240,10 +354,50 @@ reset(uint8_t mask)
  * base is 198 MHz on this board and the fastest mode this driver uses is
  * 52 MHz - so the search starts at N = 1.
  */
+/*
+ * Point the card clock's multiplexer at the lowest source that a whole
+ * divider can bring down to hz, and answer with that source's rate. Zero
+ * when there is no reset controller mapped - which is the same register
+ * block - and the caller then divides whatever the part came up with.
+ */
+static uint32_t
+set_source_clock(uint32_t hz)
+{
+	unsigned i, best = 0;
+	uint32_t v, best_got = 0;
+
+	if (rst_regs == 0 || RK_CLKSEL_CON28 + 4 > rst_size || hz == 0)
+		return 0;
+
+	/*
+	 * The best source is the one whose highest achievable rate at or
+	 * below hz is greatest: a source at or below hz is used undivided,
+	 * a faster one is divided down.
+	 */
+	for (i = 0; i < sizeof(cclk_emmc) / sizeof(cclk_emmc[0]); i++) {
+		uint32_t cand = cclk_emmc[i].hz;
+		uint32_t got = (cand <= hz) ? cand :
+		    cand / (2 * ((cand + 2 * hz - 1) / (2 * hz)));
+
+		if (got <= hz && got > best_got) {
+			best = i;
+			best_got = got;
+		}
+	}
+
+	v = ((uint32_t)RK_CCLK_EMMC_MASK << (RK_CCLK_EMMC_SHIFT + 16)) |
+	    ((uint32_t)cclk_emmc[best].sel << RK_CCLK_EMMC_SHIFT);
+	*(volatile uint32_t *)(rst_regs + RK_CLKSEL_CON28) = v;
+
+	log_debug(&sdmmc_log, "card clock source %u Hz (mux %u) for %u Hz\n",
+	    cclk_emmc[best].hz, cclk_emmc[best].sel, hz);
+	return cclk_emmc[best].hz;
+}
+
 static int
 sdhci_set_clock(uint32_t hz, uint32_t *actual)
 {
-	uint32_t n, got;
+	uint32_t n, got, src;
 	uint16_t clk;
 	spin_t s;
 
@@ -257,13 +411,24 @@ sdhci_set_clock(uint32_t hz, uint32_t *actual)
 		return OK;
 	}
 
-	/* Smallest N with base/(2N) <= hz, which is ceil(base / 2hz). */
-	n = (base_clock + 2 * hz - 1) / (2 * hz);
-	if (n < 1)
-		n = 1;
-	if (n > 0x3ff)
-		n = 0x3ff;
-	got = base_clock / (2 * n);
+	/*
+	 * The source first, because it decides both the rate the divider
+	 * works from and the clock the responses are sampled against.
+	 */
+	if (is_dwcmshc && (src = set_source_clock(hz)) != 0)
+		base_clock = src;
+
+	if (base_clock <= hz) {
+		/* The source is already at or below the wish: no divider. */
+		n = 0;
+		got = base_clock;
+	} else {
+		/* Smallest N with base/(2N) <= hz, which is ceil(base/2hz). */
+		n = (base_clock + 2 * hz - 1) / (2 * hz);
+		if (n > 0x3ff)
+			n = 0x3ff;
+		got = base_clock / (2 * n);
+	}
 
 	clk = (uint16_t)(((n & 0xff) << SDHC_SDCLK_DIV_SHIFT) |
 	    (((n >> 8) & SDHC_SDCLK_XDIV_MASK) << SDHC_SDCLK_XDIV_SHIFT) |
@@ -288,6 +453,25 @@ sdhci_set_clock(uint32_t hz, uint32_t *actual)
 	}
 
 	wr16(SDHC_CLOCK_CTL, clk | SDHC_SDCLK_ENABLE);
+
+	/*
+	 * And the sampling phase, which on the Rockchip part is not part of
+	 * the standard block and therefore survives every reset. See
+	 * sdmmc_sdhci.h: the delay line is put in bypass for every speed
+	 * this driver uses, because training it is only needed above
+	 * 52 MHz and a phase left over from the bootloader's HS200 makes
+	 * the controller read an idle bus as a valid response.
+	 */
+	if (is_dwcmshc && got <= 52000000) {
+		wr32(DWCMSHC_EMMC_DLL_CTRL,
+		    DWCMSHC_DLL_BYPASS | DWCMSHC_DLL_START);
+		wr32(DWCMSHC_EMMC_DLL_RXCLK, DWCMSHC_RXCLK_ORI_GATE);
+		wr32(DWCMSHC_EMMC_DLL_TXCLK, 0);
+		wr32(DWCMSHC_EMMC_DLL_CMDOUT, 0);
+		wr32(DWCMSHC_EMMC_DLL_STRBIN, DWCMSHC_DLL_DLYENA |
+		    DWCMSHC_STRBIN_DELAY_SEL |
+		    (DWCMSHC_STRBIN_DELAY_DEFAULT << DWCMSHC_STRBIN_DELAY_SHIFT));
+	}
 
 	if (actual != NULL)
 		*actual = got;
@@ -355,18 +539,26 @@ sdhci_set_timing(int high_speed)
 static int
 command_error(struct sdmmc_cmd *cmd)
 {
-	uint16_t e;
+	uint16_t e, acmd;
 
 	e = rd16(SDHC_EINTR_STATUS);
+	acmd = rd16(SDHC_CMD12_ERROR_STATUS);
 	wr16(SDHC_EINTR_STATUS, e);
 	wr16(SDHC_NINTR_STATUS, 0xffff);
 
-	if (e & (SDHC_CMD_TIMEOUT_ERROR | SDHC_CMD_CRC_ERROR |
-	    SDHC_CMD_END_BIT_ERROR | SDHC_CMD_INDEX_ERROR))
-		(void)reset(SDHC_RESET_CMD);
-	if (e & (SDHC_DATA_TIMEOUT_ERROR | SDHC_DATA_CRC_ERROR |
-	    SDHC_DATA_END_BIT_ERROR))
-		(void)reset(SDHC_RESET_DAT);
+	/*
+	 * Both lines, whatever the error was.
+	 *
+	 * The first version reset the command line for command errors and
+	 * the data line for data errors, which reads sensibly and leaves the
+	 * controller wedged: an Auto CMD12 failure is neither, so nothing
+	 * was reset, and the data line stayed inhibited for every request
+	 * after it - one bad read turned into a dead device. The standard's
+	 * own recovery procedure resets both, and there is nothing to save
+	 * by being cleverer once a transfer has already gone wrong.
+	 */
+	(void)reset(SDHC_RESET_CMD);
+	(void)reset(SDHC_RESET_DAT);
 
 	if (e == SDHC_CMD_TIMEOUT_ERROR) {
 		/*
@@ -377,12 +569,14 @@ command_error(struct sdmmc_cmd *cmd)
 		 * "the card said nothing" and "the controller is not
 		 * driving the bus", and those look the same from above.
 		 */
-		log_debug(&sdmmc_log, "CMD%u: no answer\n", cmd->index);
+		log_debug(&sdmmc_log, "CMD%u arg %08x: no answer (eis %04x)\n",
+		    cmd->index, cmd->arg, e);
 		dump_regs("no answer");
 		return ETIMEDOUT;
 	}
 
-	log_warn(&sdmmc_log, "CMD%u: error status 0x%04x\n", cmd->index, e);
+	log_warn(&sdmmc_log, "CMD%u: error status 0x%04x, auto-cmd 0x%04x\n",
+	    cmd->index, e, acmd);
 	return EIO;
 }
 
@@ -432,6 +626,8 @@ transfer_block(struct sdmmc_cmd *cmd, uint32_t *buf)
 
 	if ((r = wait_intr(want, DATA_TIMEOUT_US, &got)) != OK)
 		return r;
+	log_trace(&sdmmc_log, "buffer ready: nis %04x st %08x bc %04x\n",
+	    got, rd32(SDHC_PRESENT_STATE), rd16(SDHC_BLOCK_COUNT));
 	wr16(SDHC_NINTR_STATUS, want);
 
 	if (cmd->data_dir == SDMMC_DATA_READ)
@@ -467,9 +663,21 @@ sdhci_command(struct sdmmc_cmd *cmd)
 		return r;
 	}
 
-	/* Nothing left over from the command before. */
+	/*
+	 * Nothing left over from the command before - and it is worth
+	 * checking that the acknowledgement took. A status bit that cannot
+	 * be cleared makes the very next wait return at once on the previous
+	 * command's completion, and then the response registers are read
+	 * before there is a response in them. That failure reads as a card
+	 * that answers nonsense, which is a long way from where it starts.
+	 */
 	wr16(SDHC_NINTR_STATUS, 0xffff);
 	wr16(SDHC_EINTR_STATUS, 0xffff);
+	if ((rd16(SDHC_NINTR_STATUS) & ~SDHC_CARD_INTERRUPT) != 0 ||
+	    rd16(SDHC_EINTR_STATUS) != 0)
+		log_debug(&sdmmc_log, "CMD%u: status will not clear "
+		    "(nis %04x eis %04x)\n", cmd->index,
+		    rd16(SDHC_NINTR_STATUS), rd16(SDHC_EINTR_STATUS));
 
 	mode = 0;
 	if (cmd->data_dir != SDMMC_DATA_NONE) {
@@ -477,6 +685,9 @@ sdhci_command(struct sdmmc_cmd *cmd)
 			return EINVAL;
 		wr16(SDHC_BLOCK_SIZE, (uint16_t)cmd->blocklen);
 		wr16(SDHC_BLOCK_COUNT, (uint16_t)cmd->blocks);
+		log_trace(&sdmmc_log, "set bs %04x bc %04x, read back "
+		    "%04x %04x\n", cmd->blocklen, cmd->blocks,
+		    rd16(SDHC_BLOCK_SIZE), rd16(SDHC_BLOCK_COUNT));
 		if (cmd->data_dir == SDMMC_DATA_READ)
 			mode |= SDHC_READ_MODE;
 		if (cmd->blocks > 1)
@@ -499,25 +710,33 @@ sdhci_command(struct sdmmc_cmd *cmd)
 		creg |= SDHC_NO_RESPONSE;
 		break;
 	case SDMMC_RSP_R2:
-		creg |= SDHC_RESP_LEN_136 | SDHC_CRC_CHECK_ENABLE;
+		creg |= SDHC_RESP_LEN_136;
+		if (check_responses)
+			creg |= SDHC_CRC_CHECK_ENABLE;
 		break;
 	case SDMMC_RSP_R3:
 		/* The OCR carries neither a CRC nor its own index. */
 		creg |= SDHC_RESP_LEN_48;
 		break;
 	case SDMMC_RSP_R1B:
-		creg |= SDHC_RESP_LEN_48_CHK_BUSY | SDHC_CRC_CHECK_ENABLE |
-		    SDHC_INDEX_CHECK_ENABLE;
+		creg |= SDHC_RESP_LEN_48_CHK_BUSY;
+		if (check_responses)
+			creg |= SDHC_CRC_CHECK_ENABLE |
+			    SDHC_INDEX_CHECK_ENABLE;
 		break;
 	default:
-		creg |= SDHC_RESP_LEN_48 | SDHC_CRC_CHECK_ENABLE |
-		    SDHC_INDEX_CHECK_ENABLE;
+		creg |= SDHC_RESP_LEN_48;
+		if (check_responses)
+			creg |= SDHC_CRC_CHECK_ENABLE |
+			    SDHC_INDEX_CHECK_ENABLE;
 		break;
 	}
 	if (cmd->data_dir != SDMMC_DATA_NONE)
 		creg |= SDHC_DATA_PRESENT_SELECT;
 
 	wr32(SDHC_ARGUMENT, cmd->arg);
+	log_debug(&sdmmc_log, "CMD%u: creg %04x mode %04x st %08x\n",
+	    cmd->index, creg, mode, rd32(SDHC_PRESENT_STATE));
 	wr16(SDHC_COMMAND, creg);
 
 	if ((r = wait_intr(SDHC_COMMAND_COMPLETE, CMD_TIMEOUT_US, &got)) != OK) {
@@ -544,11 +763,17 @@ sdhci_command(struct sdmmc_cmd *cmd)
 
 		for (i = 0; i < 4; i++)
 			raw[i] = rd32(SDHC_RESPONSE + 4 * i);
+		log_debug(&sdmmc_log, "CMD%u: raw %08x %08x %08x %08x "
+		    "(nis %04x)\n", cmd->index, raw[3], raw[2], raw[1], raw[0],
+		    got);
 		for (i = 0; i < 4; i++)
 			cmd->resp[i] = (raw[i] << 8) |
 			    ((i > 0) ? (raw[i - 1] >> 24) : 0);
-	} else if (cmd->rsp_type != SDMMC_RSP_NONE)
+	} else if (cmd->rsp_type != SDMMC_RSP_NONE) {
 		cmd->resp[0] = rd32(SDHC_RESPONSE);
+		log_debug(&sdmmc_log, "CMD%u: raw %08x (nis %04x)\n",
+		    cmd->index, cmd->resp[0], got);
+	}
 
 	if (cmd->data_dir != SDMMC_DATA_NONE) {
 		uint8_t *p = cmd->data;
@@ -556,6 +781,12 @@ sdhci_command(struct sdmmc_cmd *cmd)
 		for (i = 0; i < cmd->blocks; i++) {
 			r = transfer_block(cmd, (uint32_t *)(void *)p);
 			if (r != OK) {
+				log_warn(&sdmmc_log, "CMD%u: block %u of %u "
+				    "failed (%d), st %08x bs %04x bc %04x\n",
+				    cmd->index, i, cmd->blocks, r,
+				    rd32(SDHC_PRESENT_STATE),
+				    rd16(SDHC_BLOCK_SIZE),
+				    rd16(SDHC_BLOCK_COUNT));
 				if (r == EIO)
 					return command_error(cmd);
 				log_warn(&sdmmc_log,
@@ -621,6 +852,21 @@ sdhci_init(void)
 		regs = (vir_bytes)v;
 	}
 
+	if (rst_regs == 0 && rst_base != 0 && rst_n > 0) {
+		v = vm_map_phys(SELF, (void *)rst_base, rst_size);
+		if (v == MAP_FAILED) {
+			log_warn(&sdmmc_log, "cannot map the reset "
+			    "controller at 0x%lx; not granted by RS? "
+			    "carrying on without a hardware reset\n",
+			    (unsigned long)rst_base);
+			rst_n = 0;
+		} else {
+			rst_regs = (vir_bytes)v;
+			log_debug(&sdmmc_log, "reset controller at 0x%lx\n",
+			    (unsigned long)rst_base);
+		}
+	}
+
 	if ((r = reset(SDHC_RESET_ALL)) != OK)
 		return r;
 
@@ -634,15 +880,38 @@ sdhci_init(void)
 	if (is_dwcmshc) {
 		vendor_area = rd16(DWCMSHC_VENDOR_PTR) & DWCMSHC_VENDOR_PTR_MASK;
 		if (vendor_area != 0 && vendor_area + 0x40 <= reg_size) {
+			uint16_t ec;
+
 			wr32(vendor_area + DWCMSHC_HOST_CTRL3, 0);
-			log_debug(&sdmmc_log, "vendor area at 0x%x\n",
-			    vendor_area);
+			/*
+			 * And tell the part what is attached to it. Linux
+			 * sets this bit only on the way into HS400, where it
+			 * gates the data strobe, but it is named for the
+			 * device and not for the mode, and the device here
+			 * is soldered on and never anything else.
+			 */
+			ec = rd16(vendor_area + DWCMSHC_EMMC_CONTROL);
+			wr16(vendor_area + DWCMSHC_EMMC_CONTROL,
+			    ec | DWCMSHC_CARD_IS_EMMC);
+			log_debug(&sdmmc_log, "vendor area at 0x%x, "
+			    "emmc control %04x -> %04x\n", vendor_area, ec,
+			    rd16(vendor_area + DWCMSHC_EMMC_CONTROL));
 		} else {
 			log_warn(&sdmmc_log, "vendor pointer 0x%x is out of "
 			    "range; leaving the vendor block alone\n",
 			    vendor_area);
 			vendor_area = 0;
 		}
+	}
+
+	{
+		long v = 1;
+
+		(void)env_parse("checkresp", "d", 0, &v, 0, 1);
+		check_responses = (int)v;
+		if (!check_responses)
+			log_warn(&sdmmc_log, "response CRC and index checks "
+			    "are off by request\n");
 	}
 
 	spec_version = rd16(SDHC_HOST_CTL_VERSION) & SDHC_SPEC_VERS_MASK;
@@ -698,8 +967,14 @@ sdhci_init(void)
 	/*
 	 * Every status bit is latched so that polling can see it; none is
 	 * signalled to the GIC, because nothing here waits on a message.
+	 *
+	 * All but one: the card interrupt is an SDIO signal, there is no
+	 * SDIO card here, and enabling it made the bit latch on every
+	 * command. Linux leaves it out unless SDIO is in use, and a status
+	 * bit that is always set is at best noise in a dump.
 	 */
-	wr16(SDHC_NINTR_STATUS_EN, SDHC_NINTR_SIGNAL_MASK);
+	wr16(SDHC_NINTR_STATUS_EN,
+	    SDHC_NINTR_SIGNAL_MASK & ~SDHC_CARD_INTERRUPT);
 	wr16(SDHC_EINTR_STATUS_EN, 0x03ff);
 	wr16(SDHC_NINTR_SIGNAL_EN, 0);
 	wr16(SDHC_EINTR_SIGNAL_EN, 0);
@@ -707,7 +982,7 @@ sdhci_init(void)
 	if ((r = sdhci_set_bus_width(1)) != OK)
 		return r;
 	(void)sdhci_set_timing(0);
-	if ((r = sdhci_set_clock(400000, NULL)) != OK)
+	if ((r = sdhci_set_clock(SDMMC_IDENT_HZ, NULL)) != OK)
 		return r;
 
 	/*
@@ -755,6 +1030,13 @@ sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	reg_base = info->base;
 	reg_size = info->size;
 	base_clock = info->max_freq;	/* the fallback, see sdhci_init */
+
+	rst_base = info->reset_base;
+	rst_size = info->reset_size;
+	rst_n = info->nresets;
+	if (rst_n > SDMMC_MAX_RESETS)
+		rst_n = SDMMC_MAX_RESETS;
+	memcpy(rst_id, info->reset_id, sizeof(rst_id));
 	is_dwcmshc = fdt_node_is_compatible(node, "rockchip,dwcmshc-sdhci") ||
 	    fdt_node_is_compatible(node, "rockchip,rk3568-dwcmshc");
 

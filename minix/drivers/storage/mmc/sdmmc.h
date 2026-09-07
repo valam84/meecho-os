@@ -62,6 +62,20 @@
 #define SDMMC_SECTOR_SIZE 512
 
 /*
+ * The clock identification runs at.
+ *
+ * The specifications say "at most 400 kHz" and every driver written to them
+ * uses exactly that. This one uses 375 kHz because the Rockchip controller
+ * asks for it by name: Linux's driver forces any request at or below 400 kHz
+ * down to 375 kHz with the comment that the platform only supports that rate
+ * for identification. A platform constraint stated that plainly is not one
+ * to round off - and 400 kHz on this board gets answers to CMD1 and silence
+ * to CMD2, which is exactly what a rate the part cannot quite manage looks
+ * like from above.
+ */
+#define SDMMC_IDENT_HZ	375000
+
+/*
  * EXT_CSD fields sdmmcreg.h predates.
  *
  * They are here rather than beside the code that uses them because the host
@@ -101,6 +115,8 @@ struct sdmmc_cmd {
  * What the tree said about the controller, read once by sdmmc_host.c so that
  * each host driver does not repeat the same four property lookups.
  */
+#define SDMMC_MAX_RESETS	8
+
 struct sdmmc_devinfo {
 	phys_bytes	base;		/* "reg", first pair */
 	size_t		size;
@@ -108,6 +124,23 @@ struct sdmmc_devinfo {
 	unsigned	bus_width;	/* "bus-width", 1 when absent */
 	uint32_t	max_freq;	/* "max-frequency", 0 when absent */
 	int		non_removable;	/* "non-removable" present */
+
+	/*
+	 * The reset lines the tree gives the controller, and where the thing
+	 * that holds them lives.
+	 *
+	 * Not every machine has them - the mainline description of this SoC
+	 * has none for this controller - but the board's own tree does, and
+	 * the drivers that work on it pull those lines on every full reset.
+	 * A controller that a bootloader left configured for a mode this
+	 * driver does not use is exactly what a hardware reset is for, and
+	 * the software reset of the standard does not reach the vendor's
+	 * half of it.
+	 */
+	phys_bytes	reset_base;	/* the reset controller's registers */
+	size_t		reset_size;
+	unsigned	nresets;
+	unsigned	reset_id[SDMMC_MAX_RESETS];
 };
 
 /*

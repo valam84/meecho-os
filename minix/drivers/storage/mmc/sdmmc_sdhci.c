@@ -169,15 +169,23 @@ wait_intr(uint16_t wanted, uint32_t usecs, uint16_t *got)
 static void
 dump_regs(const char *when)
 {
-	log_debug(&sdmmc_log, "%s: state %08x ctl %02x pwr %02x clk %04x "
-	    "to %02x nis %04x eis %04x nie %04x eie %04x ctl2 %04x "
-	    "caps %08x/%08x ver %04x\n", when,
-	    rd32(SDHC_PRESENT_STATE), rd8(SDHC_HOST_CTL), rd8(SDHC_POWER_CTL),
-	    rd16(SDHC_CLOCK_CTL), rd8(SDHC_TIMEOUT_CTL),
-	    rd16(SDHC_NINTR_STATUS), rd16(SDHC_EINTR_STATUS),
-	    rd16(SDHC_NINTR_STATUS_EN), rd16(SDHC_EINTR_STATUS_EN),
-	    rd16(SDHC_HOST_CTL2), rd32(SDHC_CAPABILITIES),
-	    rd32(SDHC_CAPABILITIES + 4), rd16(SDHC_HOST_CTL_VERSION));
+	/*
+	 * Two short lines rather than one long one. The board's console runs
+	 * at 1500000 and reaches this workstation over a USB bridge that
+	 * cannot take it: long lines come back with a hole in the middle,
+	 * and a register dump with a hole in it is worse than none, because
+	 * it reads as a plausible number.
+	 */
+	log_debug(&sdmmc_log, "%s: st %08x ctl %02x pwr %02x clk %04x "
+	    "to %02x misc %08x\n", when, rd32(SDHC_PRESENT_STATE),
+	    rd8(SDHC_HOST_CTL), rd8(SDHC_POWER_CTL), rd16(SDHC_CLOCK_CTL),
+	    rd8(SDHC_TIMEOUT_CTL),
+	    is_dwcmshc ? rd32(DWCMSHC_EMMC_MISC_CON) : 0);
+	log_debug(&sdmmc_log, "%s: nis %04x eis %04x nie %04x eie %04x "
+	    "ctl2 %04x ver %04x\n", when, rd16(SDHC_NINTR_STATUS),
+	    rd16(SDHC_EINTR_STATUS), rd16(SDHC_NINTR_STATUS_EN),
+	    rd16(SDHC_EINTR_STATUS_EN), rd16(SDHC_HOST_CTL2),
+	    rd16(SDHC_HOST_CTL_VERSION));
 }
 
 /*
@@ -191,18 +199,36 @@ dump_regs(const char *when)
 static int
 reset(uint8_t mask)
 {
+	uint32_t misc = 0;
 	spin_t s;
+	int r = EIO;
+
+	/*
+	 * On the Rockchip part a reset also clears the bit that lets the
+	 * internal clock run, and the register it lives in is outside the
+	 * standard block, so the reset does not put it back. Saved here and
+	 * restored below, which is what Linux does around the same reset.
+	 * Skipped before the registers are known to be readable.
+	 */
+	if (is_dwcmshc && regs != 0)
+		misc = rd32(DWCMSHC_EMMC_MISC_CON);
 
 	wr8(SDHC_SOFTWARE_RESET, mask);
 
 	spin_init(&s, RESET_TIMEOUT_US);
 	do {
-		if ((rd8(SDHC_SOFTWARE_RESET) & mask) == 0)
-			return OK;
+		if ((rd8(SDHC_SOFTWARE_RESET) & mask) == 0) {
+			r = OK;
+			break;
+		}
 	} while (spin_check(&s));
 
-	log_warn(&sdmmc_log, "reset 0x%x did not complete\n", mask);
-	return EIO;
+	if (is_dwcmshc && regs != 0)
+		wr32(DWCMSHC_EMMC_MISC_CON, misc | DWCMSHC_MISC_INTCLK_EN);
+
+	if (r != OK)
+		log_warn(&sdmmc_log, "reset 0x%x did not complete\n", mask);
+	return r;
 }
 
 /*
@@ -343,7 +369,16 @@ command_error(struct sdmmc_cmd *cmd)
 		(void)reset(SDHC_RESET_DAT);
 
 	if (e == SDHC_CMD_TIMEOUT_ERROR) {
-		log_trace(&sdmmc_log, "CMD%u: no answer\n", cmd->index);
+		/*
+		 * Not always a fault - this is how the card layer learns
+		 * which kind of card it has - so it is not a warning. It is
+		 * a debug line rather than a trace one because on a board
+		 * nobody has driven before it is the difference between
+		 * "the card said nothing" and "the controller is not
+		 * driving the bus", and those look the same from above.
+		 */
+		log_debug(&sdmmc_log, "CMD%u: no answer\n", cmd->index);
+		dump_regs("no answer");
 		return ETIMEDOUT;
 	}
 
@@ -675,9 +710,22 @@ sdhci_init(void)
 	if ((r = sdhci_set_clock(400000, NULL)) != OK)
 		return r;
 
-	log_info(&sdmmc_log, "SDHCI %u.00 at 0x%lx, base clock %u Hz, "
-	    "caps 0x%08x\n", spec_version + 1, (unsigned long)reg_base,
-	    base_clock, caps);
+	/*
+	 * The version field is not a number to add one to: 0, 1 and 2 are
+	 * 1.00, 2.00 and 3.00, and from 3 on it counts 4.00, 4.10, 4.20.
+	 * The Rockchip part reports 5, which is 4.20 and not 6.00.
+	 */
+	{
+		static const char *const vers[] = {
+			"1.00", "2.00", "3.00", "4.00", "4.10", "4.20"
+		};
+		const char *v = (spec_version <
+		    sizeof(vers) / sizeof(vers[0])) ? vers[spec_version] : "?";
+
+		log_info(&sdmmc_log, "SDHCI %s at 0x%lx, base clock %u Hz, "
+		    "caps 0x%08x\n", v, (unsigned long)reg_base, base_clock,
+		    caps);
+	}
 	dump_regs("after init");
 	return OK;
 }

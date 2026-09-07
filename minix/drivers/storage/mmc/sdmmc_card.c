@@ -61,6 +61,22 @@ static struct sdmmc_host *host;
 static struct sdmmc_card *card;
 
 /*
+ * Every mandatory step of identification, with its name attached.
+ *
+ * Without this the whole sequence answers with one number - "no usable
+ * card: -60" - and sixty is ETIMEDOUT, which every one of a dozen commands
+ * can produce. Naming the step costs one string per call site and turns a
+ * boot failure on an unfamiliar board from a guess into a fact.
+ */
+#define STEP(what, expr)						\
+	do {								\
+		if ((r = (expr)) != OK) {				\
+			log_warn(&sdmmc_log, "%s: %d\n", (what), r);	\
+			return r;					\
+		}							\
+	} while (0)
+
+/*
  * The EXT_CSD register, kept because three separate questions are answered
  * out of it and re-reading costs a data transfer each time. Aligned because
  * the FIFO is read a word at a time.
@@ -413,46 +429,40 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 	memset(card, 0, sizeof(*card));
 	card->bus_width = 1;
 
-	if ((r = host->set_clock(400000, &card->clock)) != OK)
-		return r;
+	STEP("cannot set the identification clock",
+	    host->set_clock(400000, &card->clock));
 	(void)host->set_bus_width(1);
 	(void)host->set_timing(0);
 
-	if ((r = go_idle()) != OK)
-		return r;
+	STEP("CMD0 (go idle)", go_idle());
 
-	if ((r = sd_op_cond(&found)) != OK)
-		return r;
+	STEP("the SD branch", sd_op_cond(&found));
 	if (!found) {
-		if ((r = go_idle()) != OK)
-			return r;
-		if ((r = mmc_op_cond(&found)) != OK)
-			return r;
+		STEP("CMD0 (go idle, again)", go_idle());
+		STEP("CMD1 (MMC operating conditions)", mmc_op_cond(&found));
 	}
 	if (!found) {
 		log_warn(&sdmmc_log, "no card answered\n");
 		return ENODEV;
 	}
 
-	if ((r = send(MMC_ALL_SEND_CID, 0, SDMMC_RSP_R2, &cmd)) != OK)
-		return r;
+	STEP("CMD2 (all send CID)",
+	    send(MMC_ALL_SEND_CID, 0, SDMMC_RSP_R2, &cmd));
 	memcpy(card->cid, cmd.resp, sizeof(card->cid));
 
 	if (card->is_sd) {
-		if ((r = send(SD_SEND_RELATIVE_ADDR, 0, SDMMC_RSP_R6,
-		    &cmd)) != OK)
-			return r;
+		STEP("CMD3 (publish RCA)",
+		    send(SD_SEND_RELATIVE_ADDR, 0, SDMMC_RSP_R6, &cmd));
 		card->rca = SD_R6_RCA(cmd.resp);
 	} else {
 		card->rca = SDMMC_EMMC_RCA;
-		if ((r = send(MMC_SET_RELATIVE_ADDR, MMC_ARG_RCA(card->rca),
-		    SDMMC_RSP_R1, &cmd)) != OK)
-			return r;
+		STEP("CMD3 (set RCA)",
+		    send(MMC_SET_RELATIVE_ADDR, MMC_ARG_RCA(card->rca),
+		    SDMMC_RSP_R1, &cmd));
 	}
 
-	if ((r = send(MMC_SEND_CSD, MMC_ARG_RCA(card->rca), SDMMC_RSP_R2,
-	    &cmd)) != OK)
-		return r;
+	STEP("CMD9 (send CSD)",
+	    send(MMC_SEND_CSD, MMC_ARG_RCA(card->rca), SDMMC_RSP_R2, &cmd));
 	memcpy(card->csd, cmd.resp, sizeof(card->csd));
 
 	/*
@@ -467,9 +477,8 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 	    card->cid[3], card->cid[2], card->cid[1], card->cid[0],
 	    card->csd[3], card->csd[2], card->csd[1], card->csd[0]);
 
-	if ((r = send(MMC_SELECT_CARD, MMC_ARG_RCA(card->rca), SDMMC_RSP_R1B,
-	    &cmd)) != OK)
-		return r;
+	STEP("CMD7 (select card)",
+	    send(MMC_SELECT_CARD, MMC_ARG_RCA(card->rca), SDMMC_RSP_R1B, &cmd));
 
 	if (card->is_sd) {
 		SD_CID_PNM_CPY(card->cid, card->name);
@@ -486,11 +495,10 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 
 		/* Everything past this point is read out of the EXT_CSD. */
 		memset(ext_csd, 0, sizeof(ext_csd));
-		if ((r = send_data(MMC_SEND_EXT_CSD, 0, SDMMC_RSP_R1, 0,
-		    ext_csd, 1, 0, &cmd)) != OK)
-			return r;
-		if ((r = check_r1(&cmd)) != OK)
-			return r;
+		STEP("CMD8 (send EXT_CSD)",
+		    send_data(MMC_SEND_EXT_CSD, 0, SDMMC_RSP_R1, 0, ext_csd, 1,
+		    0, &cmd));
+		STEP("CMD8 status", check_r1(&cmd));
 	}
 
 	read_capacity();
@@ -504,9 +512,8 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 	 * 512 is the reset value on every other; setting it costs one
 	 * command and removes a case.
 	 */
-	if ((r = send(MMC_SET_BLOCKLEN, SDMMC_SECTOR_SIZE, SDMMC_RSP_R1,
-	    &cmd)) != OK)
-		return r;
+	STEP("CMD16 (set block length)",
+	    send(MMC_SET_BLOCKLEN, SDMMC_SECTOR_SIZE, SDMMC_RSP_R1, &cmd));
 
 	if (card->is_sd) {
 		/*

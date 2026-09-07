@@ -57,4 +57,16 @@
 #define DWCMSHC_EMMC_CONTROL		0x2c	/* within the vendor area */
 #define  DWCMSHC_CARD_IS_EMMC		(1<<0)
 
+/*
+ * The Rockchip block at 0x800, and the one bit of it that has to be set for
+ * the controller to work at all: a reset clears it, and with it clear the
+ * internal clock never reaches "stable", so no card clock can be started.
+ * Linux calls it "enable INTERNAL CLOCK" and writes it after every reset;
+ * U-Boot's driver for the same silicon never touches it, which is why the
+ * first version of this driver did not either - and hung on the board.
+ * These offsets are absolute, not relative to the vendor area.
+ */
+#define DWCMSHC_EMMC_MISC_CON		0x81c
+#define  DWCMSHC_MISC_INTCLK_EN		(1<<1)
+
 #endif /* _SDMMC_SDHCI_H */

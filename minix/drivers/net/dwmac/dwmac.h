@@ -45,6 +45,12 @@ struct dwmac_devinfo {
 	phys_bytes cru_base;		/* clocks and resets */
 	size_t cru_size;
 
+	phys_bytes otp_base;		/* the fuses that name this chip */
+	size_t otp_size;
+	uint32_t soc_id_phandle;	/* the "soc-id" cell, by pointer */
+	unsigned soc_id_offset;		/* and where in the OTP it sits */
+	unsigned soc_id_size;
+
 	phys_bytes gpio_base;		/* the bank that resets the PHY */
 	size_t gpio_size;
 	int reset_pin;			/* -1 when the tree names none */
@@ -68,6 +74,7 @@ struct dwmac {
 	vir_bytes grf;
 	vir_bytes cru;
 	vir_bytes gpio;
+	vir_bytes otp;
 
 	int irq_hook;
 	int irq_enabled;
@@ -132,6 +139,10 @@ int dwmac_phy_reset(void);
 int dwmac_phy_link(unsigned *speed, int *full_duplex);
 void dwmac_phy_dump(void);
 void dwmac_phy_dump_ext(void);
+
+/* dwmac_otp.c */
+int dwmac_otp_map(void);
+int dwmac_otp_hwaddr(netdriver_addr_t *addr);
 
 /* dwmac_ring.c, diagnostics */
 void dwmac_ring_dump(void);

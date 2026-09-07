@@ -419,4 +419,72 @@ struct dwmac_desc {
 	{ 0xa03a, 0x9696 }, { 0xa03f, 0x9696 }, { 0xa040, 0xffff },	\
 	{ 0xa041, 0x00ff }
 
+/*
+ * The one-time-programmable memory, which is not part of this controller at
+ * all: a separate block with its own node in the device tree, read once at
+ * start-up for the identifier the station address is made from.  Offsets
+ * and the read sequence are the vendor driver's (rockchip-otp.c); Rockchip
+ * publishes no manual for this block, so what is not in that driver is not
+ * known here either.
+ */
+#define RK3568_OTP_SBPI_CTRL		0x0020
+#define RK3568_OTP_SBPI_CMD_VALID_PRE	0x0024
+#define RK3568_OTP_LOCK_CTRL		0x0050
+#define RK3568_OTP_USER_CTRL		0x0100
+#define RK3568_OTP_USER_ADDR		0x0104
+#define RK3568_OTP_USER_ENABLE		0x0108
+#define RK3568_OTP_USER_QP		0x0120
+#define RK3568_OTP_USER_Q		0x0124
+#define RK3568_OTP_INT_STATUS		0x0304
+#define RK3568_OTP_SBPI_CMD0		0x1000
+#define RK3568_OTP_SBPI_CMD1		0x1004
+
+/*
+ * These registers take the same hiword mask as the CRU: the upper half
+ * says which bits of the lower half a write may change.
+ */
+#define RK3568_OTP_USER_ADDR_MASK	0xffff0000u
+#define RK3568_OTP_USE_USER		(1u << 0)
+#define RK3568_OTP_USE_USER_MASK	(1u << 16)
+#define RK3568_OTP_USER_FSM_ENABLE	(1u << 0)
+#define RK3568_OTP_USER_FSM_ENABLE_MASK	(1u << 16)
+#define RK3568_OTP_LOCK			(1u << 0)
+#define RK3568_OTP_LOCK_MASK		(1u << 16)
+
+/* Status bits, cleared by writing them back. */
+#define RK3568_OTP_SBPI_DONE		(1u << 1)
+#define RK3568_OTP_USER_DONE		(1u << 2)
+
+/* The side channel that reaches the OTP macro behind the controller. */
+#define RK3568_OTP_SBPI_DAP_ADDR	0x02
+#define RK3568_OTP_SBPI_DAP_ADDR_SHIFT	8
+#define RK3568_OTP_SBPI_DAP_ADDR_MASK	0xff000000u
+#define RK3568_OTP_SBPI_CMD_VALID_MASK	0xffff0000u
+#define RK3568_OTP_SBPI_DAP_CMD_WRF	0xc0
+#define RK3568_OTP_SBPI_DAP_REG_ECC	0x3a
+#define RK3568_OTP_SBPI_ECC_ON		0x00
+#define RK3568_OTP_SBPI_ECC_OFF		0x09
+#define RK3568_OTP_SBPI_ENABLE		(1u << 0)
+#define RK3568_OTP_SBPI_ENABLE_MASK	(1u << 16)
+
+#define RK3568_OTP_NBYTES		2	/* an address is a word */
+#define RK3568_OTP_TIMEOUT_US		10000
+
+/*
+ * Its clocks, in two gate registers because the fourth of them belongs to
+ * the OTP's analogue side and lives elsewhere in the CRU.  Named in the
+ * device tree as usr, sbpi, apb and phy; the register and bit of each are
+ * from clk-rk3568.c, which is the only place they are written down.
+ */
+#define RK3568_CRU_OTP_CLKGATE		RK3568_CRU_CLKGATE_CON(26)
+#define RK3568_OTP_GATE_PCLK		(1u << 9)
+#define RK3568_OTP_GATE_SBPI		(1u << 10)
+#define RK3568_OTP_GATE_USR		(1u << 11)
+#define RK3568_OTP_GATES		(RK3568_OTP_GATE_PCLK |		\
+					 RK3568_OTP_GATE_SBPI |		\
+					 RK3568_OTP_GATE_USR)
+
+#define RK3568_CRU_OTPPHY_CLKGATE	RK3568_CRU_CLKGATE_CON(34)
+#define RK3568_OTPPHY_GATE		(1u << 13)
+
 #endif /* _DWMAC_REG_H */

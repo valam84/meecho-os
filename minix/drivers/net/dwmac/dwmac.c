@@ -419,6 +419,30 @@ dwmac_init(unsigned int instance, netdriver_addr_t *addr, uint32_t *caps,
 	dwmac_read_hwaddr(&dwmac.hwaddr);
 
 	/*
+	 * The address the fuses give, which beats the invented one above in
+	 * the only way that matters: it is this board's address under every
+	 * system that ever runs on it, because it is computed from a number
+	 * burnt into this particular chip.  A failure here is not fatal -
+	 * the invented address still works on a wire - but it is worth a
+	 * word, because the difference only shows up much later, as a lease
+	 * that was not renewed or a rule that stopped matching.
+	 */
+	if (dwmac_otp_map() == OK) {
+		netdriver_addr_t otp_addr;
+
+		if (dwmac_otp_hwaddr(&otp_addr) == OK) {
+			dwmac.hwaddr = otp_addr;
+			log_info(&dwmac_log, "station address from the "
+			    "fuses: %02x:%02x:%02x:%02x:%02x:%02x\n",
+			    otp_addr.na_addr[0], otp_addr.na_addr[1],
+			    otp_addr.na_addr[2], otp_addr.na_addr[3],
+			    otp_addr.na_addr[4], otp_addr.na_addr[5]);
+		} else
+			log_warn(&dwmac_log, "the fuses did not give a "
+			    "station address; keeping the made-up one\n");
+	}
+
+	/*
 	 * A station address from the boot arguments, twelve hex digits with
 	 * or without colons.  Diagnostic: on a managed network the switch may
 	 * hold an IP-to-MAC binding from DHCP and drop at ingress every frame

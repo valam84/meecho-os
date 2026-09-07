@@ -38,6 +38,19 @@ static const char *const compatibles[] = {
 	"rockchip,rk3566-gmac",
 };
 
+/*
+ * And the fuses, which are a different block entirely.  The controller
+ * points at one cell of them - the tree calls it "soc-id" - and that cell
+ * is what the station address is made from, so the block has to be found
+ * too.  It is looked for by compatible string, and then the cell inside it
+ * by the pointer the controller wrote: the SoC has one OTP block, but it
+ * has thirty cells, and picking the right one is not a matter of guessing.
+ */
+static const char *const otp_compatibles[] = {
+	"rockchip,rk3568-otp",
+	"rockchip,rk3566-otp",
+};
+
 struct search {
 	struct dwmac_devinfo *info;
 	int skip;
@@ -141,6 +154,33 @@ read_devinfo(const struct fdt_node *node, struct dwmac_devinfo *info)
 			    (fdt_read_cells((const char *)p + 8, 1) & 1) != 0;
 		}
 	}
+	/*
+	 * "nvmem-cells" is a list of pointers to cells of some fuse block,
+	 * and "nvmem-cell-names" names them in the same order.  Only one is
+	 * wanted, so the name is looked up and its position in the list
+	 * decides which pointer to keep.  Where that cell lives is not here
+	 * but in the cell's own node, which the second walk goes and reads.
+	 */
+	if ((p = fdt_getprop(node, "nvmem-cells", &len)) != NULL && len >= 4) {
+		const char *names;
+		unsigned nlen, off, idx;
+
+		if ((names = fdt_getprop(node, "nvmem-cell-names", &nlen))
+		    != NULL) {
+			for (off = 0, idx = 0; off < nlen; idx++) {
+				if (strcmp(names + off, "soc-id") == 0) {
+					if ((idx + 1) * 4 <= len)
+						info->soc_id_phandle =
+						    (uint32_t)fdt_read_cells(
+						    (const char *)p + idx * 4,
+						    1);
+					break;
+				}
+				off += strlen(names + off) + 1;
+			}
+		}
+	}
+
 	if (fdt_getprop(node, "snps,reset-active-low", NULL) != NULL)
 		info->reset_active_low = 1;
 
@@ -211,6 +251,66 @@ find_controller(void *cookie, int depth, const char *name,
 	return 0;
 }
 
+/*
+ * The second walk: the fuse block, and inside it the one cell the
+ * controller pointed at.  A separate walk rather than more state in the
+ * first, because the two have nothing to do with each other - the OTP is
+ * not under the controller and may come before or after it in the tree -
+ * and a walk of a device tree costs nothing worth saving.
+ */
+struct otp_search {
+	struct dwmac_devinfo *info;
+	int in_otp;
+	int otp_depth;
+};
+
+static int
+find_otp(void *cookie, int depth, const char *name __unused,
+	const struct fdt_node *node)
+{
+	struct otp_search *s = cookie;
+	const void *p;
+	u64_t base, size;
+	unsigned i, len;
+
+	if (depth == 0)
+		return 0;
+
+	if (s->in_otp) {
+		if (depth <= s->otp_depth)
+			return 1;		/* past the subtree: done */
+
+		if ((p = fdt_getprop(node, "phandle", &len)) != NULL &&
+		    len >= 4 && (uint32_t)fdt_read_cells(p, 1) ==
+		    s->info->soc_id_phandle &&
+		    fdt_node_reg(node, 0, &base, &size) == 0) {
+			s->info->soc_id_offset = (unsigned)base;
+			s->info->soc_id_size = (unsigned)size;
+			return 1;
+		}
+
+		return 0;
+	}
+
+	for (i = 0; i < sizeof(otp_compatibles) / sizeof(otp_compatibles[0]);
+	    i++) {
+		if (!fdt_node_is_compatible(node, otp_compatibles[i]))
+			continue;
+		if (!node_enabled(node))
+			continue;
+		if (fdt_node_reg(node, 0, &base, &size) != 0)
+			continue;
+
+		s->info->otp_base = (phys_bytes)base;
+		s->info->otp_size = (size_t)size;
+		s->in_otp = 1;
+		s->otp_depth = depth;
+		return 0;
+	}
+
+	return 0;
+}
+
 int
 dwmac_find(struct dwmac_devinfo *info, int skip)
 {
@@ -227,6 +327,15 @@ dwmac_find(struct dwmac_devinfo *info, int skip)
 	}
 
 	(void)fdt_walk(dtb, find_controller, &s);
+
+	if (info->soc_id_phandle != 0) {
+		struct otp_search os;
+
+		memset(&os, 0, sizeof(os));
+		os.info = info;
+		(void)fdt_walk(dtb, find_otp, &os);
+	}
+
 	free(dtb);
 
 	if (!s.found) {
@@ -242,6 +351,14 @@ dwmac_find(struct dwmac_devinfo *info, int skip)
 	    (unsigned long)info->cru_base, info->nresets,
 	    (unsigned long)info->gpio_base, info->reset_pin,
 	    info->reset_active_low ? " (active low)" : "");
+	if (info->soc_id_size != 0)
+		log_info(&dwmac_log, "otp 0x%lx, soc-id at 0x%x, %u bytes\n",
+		    (unsigned long)info->otp_base, info->soc_id_offset,
+		    info->soc_id_size);
+	else
+		log_info(&dwmac_log, "the tree names no soc-id cell; the "
+		    "station address will not come from the fuses\n");
+
 	log_info(&dwmac_log, "rgmii delays tx 0x%x rx 0x%x, clock %s, "
 	    "phy at %d\n", info->tx_delay, info->rx_delay,
 	    info->clock_from_phy ? "from the PHY" : "from the SoC",

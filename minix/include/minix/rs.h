@@ -32,8 +32,17 @@ Interface to the reincarnation server
  * interrupts of every node that matches. The counterpart of "pci device" on
  * a machine that describes itself with a tree rather than a bus that can be
  * enumerated. Longest string in use is Rockchip's "rockchip,rk3568-uart".
+ *
+ * Eight rather than the four this started with, because four turned out to
+ * be a guess at how many blocks one device needs, and the guess was wrong
+ * on the second driver that used it: the network controller of this SoC
+ * reaches its own registers, the general register file, the clock and reset
+ * controller, a GPIO bank and the fuses - five, and a driver of a device
+ * with an integrated PHY would want a sixth. The number costs a pointer's
+ * worth of unused array per service and nothing else, and the failure it
+ * causes is a service that will not start at all.
  */
-#define RSS_NR_DEVICETREE	4
+#define RSS_NR_DEVICETREE	8
 #define RSS_DEVICETREE_LEN	40
 #define RSS_IPC_ALL		"IPC_ALL"
 #define RSS_IPC_ALL_SYS		"IPC_ALL_SYS"

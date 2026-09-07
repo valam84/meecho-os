@@ -199,7 +199,17 @@ int	ptrace_machdep_dorequest(struct lwp *, struct lwp *, int,
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
+#if defined(__minix)
+/*
+ * MINIX's ptrace() is not NetBSD's: T_GETINS, T_GETDATA and T_GETUSER
+ * return a whole word of the traced process, and T_SET* take one.  The
+ * word is the size of a pointer, so the value has to be long -- with int
+ * the top half of every read is thrown away on an LP64 machine.
+ */
+long	ptrace(int _request, pid_t _pid, void *_addr, long _data);
+#else
 int	ptrace(int _request, pid_t _pid, void *_addr, int _data);
+#endif /* defined(__minix) */
 __END_DECLS
 
 #endif /* !_KERNEL */

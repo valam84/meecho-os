@@ -63,9 +63,10 @@ fi
 # Chosen once the options are read, unless given: the root is the ramdisk
 # ("bootramdisk=1"), or with -d the disk ("rootdevname=c0d0").
 : ${BOOTARGS=}
-# The disk image -d makes, and its size.  The contents are the ramdisk's,
-# so a few megabytes would do; the rest is room to write in.
-: ${DISK_MB=64}
+# The disk image -d makes, and its size.  Its contents are the whole
+# userland the tree installed into DESTDIR, which is some sixty
+# megabytes of static binaries, plus room to write in.
+: ${DISK_MB=512}
 
 : ${QEMU=qemu-system-aarch64}
 : ${QEMU_CPU=cortex-a72}
@@ -272,24 +273,32 @@ then
 # /etc/rc of the disk root.  The ramdisk's rc has started the disk driver,
 # mounted this file system over / and mounted procfs; init runs this, and
 # when it returns, starts the sessions listed in /etc/ttys.  There is
-# nothing to start yet: this is the ramdisk's contents on a disk that
-# keeps what is written to it, no more.
+# no service of its own to start yet: there is no network until 8.4, and
+# everything else is brought up by the kernel and RS.
 echo "Root is on `sysenv rootdevname`."
 exit 0
 END_RC
+	# The disk root is not the ramdisk.  The ramdisk holds what it takes
+	# to reach a root; the disk has room, so it gets everything the tree
+	# installed into DESTDIR on top of the ramdisk's device nodes, /etc
+	# and boot servers.  evbarm64_rootproto.py merges the two.
+	python3 releasetools/evbarm64_rootproto.py \
+		"${RAMDISK_OBJ}/proto.gen" "${RAMDISK_OBJ}" "${DESTDIR}" \
+		> "${WORK_DIR}/proto.full"
 	sed "s|^\([ 	]*rc ---755 0 0 \).*|\1${WORK_DIR}/rc.disk|" \
-		"${RAMDISK_OBJ}/proto.gen" > "${WORK_DIR}/proto.disk"
+		"${WORK_DIR}/proto.full" > "${WORK_DIR}/proto.disk"
 	# mkfs.mfs sizes a file system to the device it is given, so the
 	# device has to exist at its full size first; seeking past the end
 	# makes it sparse, so the image costs what is written to it.
 	rm -f "${DISK}"
 	dd if=/dev/zero of="${DISK}" bs=1M count=0 seek=${DISK_MB} 2>/dev/null
-	# The proto names its files relative to the ramdisk's object directory.
+	# The proto names its files by absolute path, so the working
+	# directory does not matter.
 	# The disk is V4: 64-bit sizes and times, variable-length directory
 	# entries.  The ramdisk stays V3 - it is the boot image, and its
 	# format is not what this is about.  MKFS_VERSION=-3 makes a V3
 	# disk instead, which is how the two are compared.
-	(cd "${RAMDISK_OBJ}" && ${MKFSMFS} ${MKFS_VERSION:--4} -B 4096 \
+	(${MKFSMFS} ${MKFS_VERSION:--4} -B 4096 \
 		-b $((${DISK_MB} * 1024 * 1024 / 4096)) \
 		"${DISK}" "${WORK_DIR}/proto.disk")
 	fi

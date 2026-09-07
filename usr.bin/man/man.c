@@ -741,7 +741,9 @@ build_page(const char *fmt, char **pathp, struct manstate *mp)
 	int olddir, fd, n;
 	size_t tmpdirlen;
 	char *p, *b;
-	char buf[MAXPATHLEN], cmd[MAXPATHLEN], tpath[MAXPATHLEN];
+	/* buf holds a format string and a temporary path; cmd holds the
+	 * result of expanding it, so both hold two paths. */
+	char buf[2 * MAXPATHLEN], cmd[2 * MAXPATHLEN], tpath[MAXPATHLEN];
 	const char *tmpdir;
 
 	/* Let the user know this may take awhile. */

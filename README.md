@@ -16,6 +16,12 @@
   <a href="README.ru.md">По-русски</a>
 </p>
 
+<p align="center">
+  <a href="https://meecho.ru"><b>meecho.ru</b></a> ·
+  <a href="https://github.com/valam84/meecho-os/releases/latest">Releases</a> ·
+  <a href="https://github.com/valam84/meecho-os/issues">Open work</a>
+</p>
+
 ---
 
 ```
@@ -109,8 +115,8 @@ Known gaps, stated plainly:
 
 ## Try it in five minutes
 
-Download a release, unpack it, and run QEMU. Nothing is built, nothing is
-installed:
+Download a release from [the releases page][rel] (or from [meecho.ru][site]),
+unpack it, and run QEMU. Nothing is built, nothing is installed:
 
 ```bash
 tar xf meecho-qemu-0.1.0.tar.gz
@@ -195,3 +201,6 @@ The platform identity stays `minix`: the predefined `__minix`, the target
 triple `aarch64-elf64-minix`, `*-minix` in `config.sub`. Third-party software
 recognises the system by those, and renaming them would break it silently, by
 compiling the wrong branch. What changed is the name a *person* sees.
+
+[rel]: https://github.com/valam84/meecho-os/releases/latest
+[site]: https://meecho.ru

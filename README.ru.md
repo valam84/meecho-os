@@ -16,6 +16,12 @@
   <a href="README.md">In English</a>
 </p>
 
+<p align="center">
+  <a href="https://meecho.ru"><b>meecho.ru</b></a> ·
+  <a href="https://github.com/valam84/meecho-os/releases/latest">Релизы</a> ·
+  <a href="https://github.com/valam84/meecho-os/issues">Открытые задачи</a>
+</p>
+
 > Документация для новых участников — на английском: её читают люди, которых
 > в проекте ещё нет. Журнал порта (`port/PORTING-LOG.md`, 9400 строк) и план
 > (`PLAN.md`) остаются русскими.
@@ -112,8 +118,8 @@ MINIX 3 — микроядерная операционная система: я
 
 ## Попробовать за пять минут
 
-Скачать релиз, распаковать, запустить QEMU. Ничего не собирается и не
-устанавливается:
+Скачать релиз со [страницы релизов][rel] (или с [meecho.ru][site]),
+распаковать, запустить QEMU. Ничего не собирается и не устанавливается:
 
 ```bash
 tar xf meecho-qemu-0.1.0.tar.gz
@@ -175,3 +181,6 @@ BSD 3-Clause, от MINIX 3 и NetBSD; см. [LICENSE](LICENSE). Апстрим �
 `aarch64-elf64-minix`, цель `*-minix` в `config.sub`. По ним стороннее ПО
 узнаёт систему, и переименование сломало бы его молча — неверной веткой
 компиляции, а не ошибкой сборки. Изменилось то, что видит **человек**.
+
+[rel]: https://github.com/valam84/meecho-os/releases/latest
+[site]: https://meecho.ru

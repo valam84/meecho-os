@@ -106,6 +106,12 @@ ETC+=			man.conf
 ETC+=			motd
 # The search path of every login shell; see the comment in etc/profile.
 ETC+=			profile
+# What the DHCP client asks for.  It is a CONFIGFILES item of its own
+# Makefile, which is to say a file the NetBSD sets install and this build
+# does not; without it dhcpcd asks for an address and nothing else, and a
+# server that gives only what was asked - most of them - gives no name
+# servers.  See the comment in etc/dhcpcd.conf.
+ETC+=			dhcpcd.conf
 EXTRA+=			ttys
 PROGRAMS+=		getty
 dir.getty:=	libexec/getty

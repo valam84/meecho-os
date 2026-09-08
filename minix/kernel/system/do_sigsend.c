@@ -192,6 +192,15 @@ int do_sigsend(struct proc * caller, message * m_ptr)
 #endif
 
   /* Signal handler should get clean FPU. */
+#if defined(__aarch64__)
+  /*
+   * Saving the state is not enough with lazy switching: while rp remains
+   * the owner, return-to-user leaves FP enabled and the handler would see
+   * the interrupted register file. Drop ownership only after the frame was
+   * copied out, since everything before that point may be retried.
+   */
+  release_fpu(rp);
+#endif
   rp->p_misc_flags &= ~MF_FPU_INITIALIZED;
 
   if(!RTS_ISSET(rp, RTS_PROC_STOP)) {
@@ -204,4 +213,3 @@ int do_sigsend(struct proc * caller, message * m_ptr)
 }
 
 #endif /* USE_SIGSEND */
-

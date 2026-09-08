@@ -86,7 +86,9 @@ FILES += t84_h_nonexec.sh
 MINIX_TESTS+= \
                   47          51                57 \
    62
-.endif #  ${MACHINE_ARCH} == "i386"
+.elif ${MACHINE_ARCH} == "aarch64"
+MINIX_TESTS+= 62
+.endif #  i386/aarch64 additions
 
 .for t in ${MINIX_TESTS}
 PROGS+= test${t}

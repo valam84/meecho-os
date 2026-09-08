@@ -1,0 +1,289 @@
+# Снято с платы: 2026-09-07 18:15 UTC
+# Linux bigtreetech-cb2 6.1.115-btt-rockchip64 #1 SMP PREEMPT Mon Jun 29 19:45:03 CST 2026 aarch64 GNU/Linux
+
+############ 1. Что это за контроллер
+
+/sys/devices/platform/fe010000.ethernet
+of:NethernetT(null)Crockchip,rk3568-gmacCsnps,dwmac-4.20a
+driver: st_gmac
+version: 6.1.115-btt-rockchip64
+firmware-version: 
+
+rk_gmac-dwmac fe010000.ethernet: Looking up phy-supply from device tree
+rk_gmac-dwmac fe010000.ethernet: clock input or output? (input).
+rk_gmac-dwmac fe010000.ethernet: TX delay(0x30).
+rk_gmac-dwmac fe010000.ethernet: RX delay(0x10).
+rk_gmac-dwmac fe010000.ethernet: integrated PHY? (no).
+rk_gmac-dwmac fe010000.ethernet: clock input from PHY
+rk_gmac-dwmac fe010000.ethernet: init for RGMII
+rk_gmac-dwmac fe010000.ethernet: User ID: 0x30, Synopsys ID: 0x51
+rk_gmac-dwmac fe010000.ethernet: 	DWMAC4/5
+rk_gmac-dwmac fe010000.ethernet: DMA HW capability register supported
+rk_gmac-dwmac fe010000.ethernet: RX Checksum Offload Engine supported
+rk_gmac-dwmac fe010000.ethernet: TX Checksum insertion supported
+rk_gmac-dwmac fe010000.ethernet: Wake-Up On Lan supported
+rk_gmac-dwmac fe010000.ethernet: TSO supported
+rk_gmac-dwmac fe010000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+rk_gmac-dwmac fe010000.ethernet: rk_get_eth_addr_from_otp(soc-id) done
+rk_gmac-dwmac fe010000.ethernet: device MAC address 8a:6e:41:09:8e:2f
+rk_gmac-dwmac fe010000.ethernet: Enabled RFS Flow TC (entries=10)
+rk_gmac-dwmac fe010000.ethernet: TSO feature enabled
+rk_gmac-dwmac fe010000.ethernet: Using 32/32 bits DMA host/device width
+rk_gmac-dwmac fe010000.ethernet eth0: Register MEM_TYPE_PAGE_POOL RxQ-0
+rk_gmac-dwmac fe010000.ethernet eth0: PHY [stmmac-0:00] driver [YT8531 Gigabit Ethernet] (irq=POLL)
+dwmac4: Master AXI performs any burst length
+rk_gmac-dwmac fe010000.ethernet eth0: No Safety Features support found
+rk_gmac-dwmac fe010000.ethernet eth0: IEEE 1588-2008 Advanced Timestamp supported
+rk_gmac-dwmac fe010000.ethernet eth0: registered PTP clock
+rk_gmac-dwmac fe010000.ethernet eth0: configuring for phy/rgmii link mode
+rk_gmac-dwmac fe010000.ethernet eth0: Link is Up - 100Mbps/Full - flow control off
+
+############ 2. Узел дерева
+
+	ethernet@fe010000 {
+		pinctrl-names = "default";
+		phy-supply = <0x30>;
+		phy-mode = "rgmii";
+		snps,mixed-burst;
+		snps,mtl-rx-config = <0x7e>;
+		nvmem-cells = <0x0c>;
+		snps,reset-active-low;
+		pinctrl-0 = <0x81 0x82 0x83 0x84 0x85 0x86>;
+		clock-names = "stmmaceth", "mac_clk_rx", "mac_clk_tx", "clk_mac_refout", "aclk_mac", "pclk_mac", "clk_mac_speed", "ptp_ref", "pclk_xpcs", "clk_xpcs_eee";
+		assigned-clocks = <0x22 0x189 0x22 0x187 0x22 0x186>;
+		assigned-clock-parents = <0x22 0x187 0x22 0x186 0x80>;
+		snps,mtl-tx-config = <0x7f>;
+		resets = <0x22 0xec>;
+		interrupts = <0x00 0x20 0x04 0x00 0x1d 0x04 0x00 0x1c 0x04>;
+		clocks = <0x22 0x186 0x22 0x189 0x22 0x189 0x22 0xc7 0x22 0xc3 0x22 0xc4 0x22 0x189 0x22 0xc8 0x22 0xac 0x22 0xab>;
+		clock_in_out = "input";
+		snps,tso;
+		compatible = "rockchip,rk3568-gmac", "snps,dwmac-4.20a";
+		status = "okay";
+		rockchip,grf = <0x35>;
+		interrupt-names = "macirq", "eth_wake_irq", "eth_lpi";
+		snps,reset-gpio = <0x39 0x15 0x01>;
+		nvmem-cell-names = "soc-id";
+		reg = <0x00 0xfe010000 0x00 0x10000>;
+		rx_delay = <0x10>;
+		phandle = <0x7c>;
+		phy-handle = <0x87>;
+		reset-names = "stmmaceth";
+		tx_delay = <0x30>;
+		snps,axi-config = <0x7d>;
+		snps,reset-delays-us = <0x00 0xc350 0x30d40>;
+
+		mdio {
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			compatible = "snps,dwmac-mdio";
+			phandle = <0x192>;
+
+			phy@0 {
+				compatible = "ethernet-phy-ieee802.3-c22";
+				reg = <0x00>;
+				phandle = <0x87>;
+			};
+		};
+
+		tx-queues-config {
+			phandle = <0x7f>;
+			snps,tx-queues-to-use = <0x01>;
+
+			queue0 {
+			};
+		};
+
+		stmmac-axi-config {
+			snps,wr_osr_lmt = <0x04>;
+			phandle = <0x7d>;
+			snps,blen = <0x00 0x00 0x00 0x00 0x10 0x08 0x04>;
+			snps,rd_osr_lmt = <0x08>;
+		};
+
+		rx-queues-config {
+			snps,rx-queues-to-use = <0x01>;
+			phandle = <0x7e>;
+
+			queue0 {
+			};
+		};
+	};
+
+# phandle -> узел:
+#   		phandle = <0x35>;          -> 	syscon@fdc60000 {
+#   			phandle = <0x39>;         -> 		gpio@fdd60000 {
+#   				phandle = <0x87>;        -> 			phy@0 {
+#   					phandle = <0x30>;       -> 				SWITCH_REG1 {
+#   		phandle = <0x22>;          -> 	clock-controller@fdd20000 {
+
+############ 3. Прерывания (как их видит GIC)
+
+ 92:          0          0          0       5153     GICv3  64 Level     eth0
+ 93:          0          0          0          0     GICv3  61 Level     eth0
+ 94:          0          0          0          0     GICv3  60 Level     eth0
+
+############ 4. Обвязка: GRF, пинмукс, сброс PHY
+
+# GRF:
+	syscon@fdc60000 {
+		compatible = "rockchip,rk3568-grf", "syscon", "simple-mfd";
+		reg = <0x00 0xfdc60000 0x00 0x10000>;
+		phandle = <0x35>;
+# GPIO банк для сброса PHY:
+		gpio@fdd60000 {
+			gpio-controller;
+			interrupts = <0x00 0x21 0x04>;
+			clocks = <0x34 0x2e 0x34 0x0c>;
+			compatible = "rockchip,gpio-bank";
+			#interrupt-cells = <0x02>;
+			reg = <0x00 0xfdd60000 0x00 0x100>;
+			phandle = <0x39>;
+			#gpio-cells = <0x02>;
+			interrupt-controller;
+		};
+# pinctrl:
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "rockchip,rk3568-pinctrl";
+		rockchip,pmu = <0x36>;
+		ranges;
+		rockchip,grf = <0x35>;
+
+# группы выводов, которые драйвер просит (rockchip,pins = <банк вывод мукс конфиг>...):
+  gmac1m0-rgmii-clk-level2
+  				rockchip,pins = <0x03 0x07 0x03 0x129 0x03 0x06 0x03 0x12c>;
+  gmac1m0-rgmii-bus-level3
+  				rockchip,pins = <0x03 0x04 0x03 0x129 0x03 0x05 0x03 0x129 0x03 0x02 0x03 0x131 0x03 0x03 0x03 0x131>;
+  gmac1m0-tx-bus2-level3
+  				rockchip,pins = <0x03 0x0d 0x03 0x131 0x03 0x0e 0x03 0x131 0x03 0x0f 0x03 0x129>;
+  gmac1m0-rx-bus2
+  				rockchip,pins = <0x03 0x09 0x03 0x129 0x03 0x0a 0x03 0x129 0x03 0x0b 0x03 0x129>;
+  gmac1m0-rgmii-bus
+  				rockchip,pins = <0x03 0x04 0x03 0x129 0x03 0x05 0x03 0x129 0x03 0x02 0x03 0x12c 0x03 0x03 0x03 0x12c>;
+  gmac1m0-miim
+  				rockchip,pins = <0x03 0x14 0x03 0x129 0x03 0x15 0x03 0x129>;
+  gmac1m0-rgmii-clk
+  				rockchip,pins = <0x03 0x07 0x03 0x129 0x03 0x06 0x03 0x12d>;
+  gmac1m0-clkinout
+  				rockchip,pins = <0x03 0x10 0x03 0x129>;
+  gmac1m0-rx-er
+  				rockchip,pins = <0x03 0x0c 0x03 0x129>;
+  gmac1m0-tx-bus2
+  				rockchip,pins = <0x03 0x0d 0x03 0x12c 0x03 0x0e 0x03 0x12c 0x03 0x0f 0x03 0x129>;
+
+############ 5. PHY
+
+# stmmac-0:00
+#   phy_id        0x4f51e91b
+#   phy_interface rgmii
+#   DRIVER=YT8531 Gigabit Ethernet
+#   OF_FULLNAME=/ethernet@fe010000/mdio/phy@0
+
+	Speed: 100Mb/s
+	Duplex: Full
+	Auto-negotiation: on
+	master-slave cfg: preferred slave
+	master-slave status: slave
+	PHYAD: 0
+	Link detected: yes
+
+############ 6. Снимок регистров работающего контроллера
+
+ST GMAC Registers
+GMAC Registers
+Reg0  0x0807E203
+Reg1  0x00000000
+Reg2  0x00000404
+Reg3  0x00000000
+Reg4  0x00020002
+Reg5  0x00811001
+Reg6  0x00000000
+Reg7  0x00000000
+Reg8  0x00000000
+Reg9  0x00000000
+Reg10  0x00000000
+Reg11  0x00000000
+Reg12  0x00000000
+Reg13  0x00000000
+Reg14  0x00000000
+Reg15  0x00000000
+Reg16  0x00000000
+Reg17  0x00000000
+Reg18  0x00000000
+Reg19  0x00000000
+Reg20  0x00000000
+Reg21  0x00000000
+Reg22  0x00000000
+Reg23  0x00000000
+Reg24  0x00000000
+Reg25  0x00000000
+Reg26  0x00000000
+Reg27  0x00000000
+Reg28  0x00000000
+Reg29  0x00000000
+Reg30  0x00000000
+Reg31  0x00000000
+Reg32  0x00000000
+Reg33  0x00000000
+Reg34  0x00000000
+Reg35  0x00000000
+Reg36  0x00000000
+Reg37  0x00000000
+Reg38  0x00000000
+Reg39  0x00000000
+Reg40  0x00000000
+Reg41  0x00000000
+Reg42  0x00000000
+Reg43  0x00000000
+Reg44  0x00000000
+Reg45  0x00001030
+Reg46  0x00000000
+Reg47  0x00000000
+Reg48  0x02000000
+Reg49  0x00000000
+Reg50  0x00000000
+Reg51  0x00000000
+Reg52  0x00020000
+Reg53  0x03E80000
+Reg54  0x00000000
+
+DMA Registers
+Reg0  0x00010000
+Reg1  0x00081011
+Reg2  0x00080C01
+Reg3  0x00000000
+Reg4  0x00000000
+Reg5  0x6B6DA000
+Reg6  0x00000000
+Reg7  0x6B6D8000
+Reg8  0x6B6DB130
+Reg9  0x00000000
+Reg10  0x6B6D8760
+Reg11  0x000001FF
+Reg12  0x000001FF
+Reg13  0x0000D041
+Reg14  0x000000A0
+Reg15  0x00000000
+Reg16  0x00000000
+Reg17  0x6B6DB130
+Reg18  0x00000000
+Reg19  0x6B6D8760
+Reg20  0x00000000
+Reg21  0x06060188
+Reg22  0x00000000
+
+############ 7. Питание PHY
+
+# phy-supply = SWITCH_REG1 у PMIC:
+# 				SWITCH_REG1 {
+# 					regulator-boot-on;
+# 					regulator-always-on;
+# 					regulator-name = "vcc_3v3";
+# 					phandle = <0x30>;
+# 
+# 					regulator-state-mem {
+# 						regulator-off-in-suspend;
+# 					};
+# regulator-always-on и regulator-boot-on: включается загрузчиком и
+# никогда не гасится, значит драйвера PMIC для сети не нужно.

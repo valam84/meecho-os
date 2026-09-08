@@ -1,0 +1,304 @@
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: switching console to 115200
+=== ÑĞºĞ¾Ñ€Ğ¾ÑÑ‚ÑŒ 115200
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: login:
+>>> root
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: they are.
+>>> export TERM=vt100 PAGER=cat
+>>> uname -a; printf 'd%s\n' 0
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d0
+>>> ls /bin /sbin /usr/bin /usr/sbin | wc -l; df -k /; printf 'd%s\n' 1
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d1
+>>> awk --version; less --version | head -1; bzip2 --version </dev/null 2>&1 | head -1; printf 'd%s\n' 2
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d2
+>>> man ls 2>&1 | head -6; printf 'd%s\n' 3
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d3
+>>> ps -axl 2>&1 | head -4; printf 'd%s\n' 4
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d4
+>>> sed -n 2p /etc/passwd; sort -u /etc/ttys | head -2; printf 'd%s\n' 5
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d5
+>>> file /bin/sh | cut -c1-58; printf 'd%s\n' 6
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d6
+>>> printf 'a\nline from ed\n.\nw /tmp/e\nq\n' | ed; cat /tmp/e; printf 'd%s\n' 7
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d7
+>>> find /usr/man -name ls.1; stat -f %z /bin/sh; printf 'd%s\n' 8
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d8
+>>> tar cf /tmp/a.tar /etc/passwd; tar tf /tmp/a.tar; xz -c /etc/passwd | xz -dc | head -1; printf 'd%s\n' 9
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d9
+>>> cat /proc/cpuinfo | head -6; uptime; printf 'd%s\n' 10
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d10
+>>> TERM=vt100 vi /tmp/e < /dev/null > /dev/null 2>&1; echo "vi said $?"; printf 'd%s\n' 11
+=== Ğ´Ğ¾Ğ¶Ğ´Ğ°Ğ»ÑÑ: d11
+>>> /sbin/reboot
+--- Ğ¶ÑƒÑ€Ğ½Ğ°Ğ» ---
+[!p]104[?7h[6n[32766;32766H[6n[[0;32m  OK  [0m] Stopped [0;1;39mrc-local.service[0m - /etc/rc.local Compatibility.
+[[00.
+[[0;32m  OK  [0m] Stopped target [0;1;39mnetwork-onlinet [0;1;39mnetwork.target[0m - Network.
+[[0;32m  OK  [0m] 
+[[0;32m  OK  [0m] Stopped target [0;1;39mremote-fs-pre.targepped target [0;1;39mnfs-client.target[0m - NFS client services€¦vice[0m - Network Manager Wait Online.
+         Stopping opping [0;1;39mnetworking.service[0m - Raise network interfaceLogin Management...
+         Stopping [0;1;39mwpa_supplicant[[0;32m  OK  [0m] Started [0;1;39mplymouth-reboot.service[0m[[0;32m  OK  [0m] Stopped [0;1;39msystemd-logind.service[0m .
+[[0;32m  OK  [0m] Stopped [0;1;39mwpa_supplicant.service[0m icant.
+[[0;32m  OK  [0m] Stopped [0;1;39mnetworking.service[0m - Raise network interfaces.
+[[0;32m  OK  [0m] Stopped [0;1;39mNetworkManager.service[0m          Stopping [0;1;39mdbus.service[0m - D-Bus System Messa[[0;32m  OK  [0m] Stopped [0;1;39mdbus.service[0m - D-Bus Sy[[0;32m  OK  [0m] Stopped target [0;1;39mbasic.target[0m - Basic System.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-ask
+[[0;32m  OK  [0m] Stopped target [0;1;39mpaths.target[0m -[[0;32m  OK  [0m] Stopped [0;1;39msystemd-ask-password-wall.â[0md Requests to Wall Directory Watch.
+[[0;32m  OK  [0m] St[[0;32m  OK  [0m] Removed slicm - User and Session Slice.
+[[0;32m  OK  [0m] Stopped targe[[0;32m  OK  [0m] Closed [0;1mon.socket[0m - Avahiâ€¦DNS/DNS-SD Stack Activation Socket.
+ D-Bus System Message Bus Socket.
+[[0;32m  OK  [0m] Closed [0;1;39msshd-unix-local.socket[0m - Opâ€¦temd-ssh-generator, A[[0;32m  OK  [0m] Closed [0;1;39msyslog.socket[0m - Syslog S[[0;32m  OK  [0m] Closed [0;1ket.
+[[0;32m  OK  [0m] Stopped target [0;1;39msysinit.targ         Stopping [0;1;39marmbian-ramlog.service[0m - Armbian          Stopping [0;1;39msystemd-binfmt.service[0m - Set Up A         Stopping [0;1;39msystemd-resolved.service[0m - Networ[[0;32m  OK  [0m] Stopped [0;ectories.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-resolved.service[0m - Network Name Resolution.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-binfmt.service[0m [[0;32m  OK  [0m] Unset automount [0;1;39mproc-sys-fs-binfmtâPoint.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-sysctl.se[[0;32m  OK  [0m] Stopped [0;s-load.service[0m - Load Kernel Modules.
+[[0;32m  OK  [0m] Unmounted [0;1;39mvar-log.mount[0m - /var/[[0;32m  OK  [0m] Unmounted [0;1;39mvar-log.hdd.mount[0m - /var/log.hdd.
+[[0;32m  OK  [0m] Stopped [0;1;39marmbian-ramlog.service[0m g.
+         Stopping [0;1;39marmbian-zram-config.service[0m - Armg...
+[[0;32m  OK  [0m] Stopped [0;1;39marmbian-zram-config.service[[0;32m  OK  [0m] Stopped targcal File Systems.
+         Unmounting [0;1;39mboot.mount[0m - /boot...
+         Unmounting [0;1;39mrun-lock.mount[0m - Legacy Locks Directory /run/lock...
+         Unmounting [0;1;39mtmp.mount[0m - /tmp...
+[[0;32m  OK  [0m] Unmounted [0;1;39mboot.mount[0m - /boot.
+[[0;32m  OK  [0m] Unmounted [lock.
+[[0;32m  OK  [0m] Unmounted [0;1;39mtmp.mount[0m - [[0;32m  OK  [0m] Stopped target [0;1;39mswap.target[0m - Swaps.
+         Deactivating swap [0;1;39mdev-zram0.swap[0m - /dev/zr32m  OK  [0m] Stopped [0;1;39msystemd-fsck@dev-disk-by\xâ€¦[0meck on /dev/disk/by-uuid/78AE-1[[0;32m  OK  [0m] Removed slicsystemd\x2dfsâ€¦slice[0m - Slice /system/systemd-fsck.
+[[0;ration for Local File Systems.
+[[0;32m  OK  [0m] Stopped [stems.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-tmpfiles-
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-tmpfiles-setup-d0m] Reached target [0;1;39mshutdown.target[0m - System Shutdow[[0;32m  OK  [0m] Deactivated swap [0;1;39mdev-zram0.swap[0m[[0;32m  OK  [0m] Reached target [0;1;39mumount.target[0m - hed target [0;1;39mfinal.target[0m - Late Shutdown Services.0;1;39msystemd-reboot.service[0m - System Reboot.
+[[0;32m  .target[0m - System Reboot.
+[  310.973632] reboot: Restarting system
+DDR 2d653b3476 typ 24/01/20-15:04:19,fwver: v1.21
+ln
+LP4/4x dete en, other dram:1x trefi
+SRX
+ddrconfig:0
+LPDDR4, 324MHz
+BW=32 Col=10 Bk=8 CS0 Row=16 CS=1 Die BW=16 Sizetdqss: cs0 dqs0: -48ps, dqs1: -1PHY drv:clk:38,ca:38,DQ:30,odt:0ner:41%, vrefout:41%
+dram drv:40,odt:0
+clk skew:0x64
+rx vref: 43.9%
+tx vref: 38.0%
+
+change to: 528MHz
+PHY drv:clk:38,ca:38,DQ:30,odt:0
+vrefinner:41%, vrefout:41%
+dram drv:40,odt:0
+clk skew:0x58
+rx vref: 43.9%
+tx vref: 38.0%
+
+change to: 780MHz
+PHY drv:clk:38,ca:38,DQ:30,odt:60
+vrefinner:16%, vrefout:4clk skew:0x58
+rx vref: 15.4%
+tx vref: 38.0%
+
+change to: 1056MHz(final freq)
+PHY drv:clk:38,ca:38,DQ:30,odt:60
+vrefinner:16%, vrefout:29%
+dram drv:40,odtclk skew:0x38
+rx vref: 14.4%
+tx vref: 32.0%
+cs 0:
+the read training result:
+DQS0:0x3a, DQS  0xa  0x1  0x3  0x5  0x5 , 0x7  0x7  0x2  0x1  0x8  0xa  0x9  0x1  0x1  0x7 , 0xa  0x6  0x4  0x1  0xb  0xd  0x7  0xc ,
+mid  :0,0x24 0x23 0x1f 0x1d 0x25 0x25 0x26 0x24 ,
+      0x2e 0x2c 0x270x20 0x1d 0x28 0x29 0x24 0x28 ,
+max  :0x45 0x46 0x46 0x46 0x3b x43 0x41 0x43 0x41 ,
+      0x4c 0x49 0x44 0x45 0x3c 0x3a 0x39 02 0x44 ,
+range:0x39 0x39 0x37 0x3c 0x3a 0x39 0x3a 0x39 ,0x3a 0x    0x3b 0x39 0x39 0x39 0x38 0x39 0x38 0x38 ,0x3a 0x38 0x39 0x38ing result:
+DQS0:0x32, DQS1:0x25, DQS2:0x2c, DQS3:0x1f, 
+min  0x55 ,0x48 0x49 0x44 0x42 0x4b 0x4c 0x4c 0x4b 0x48 ,
+      0x52e ,0x49 0x47 0x45 0x42 0x4b 0x4b 0x46 0x4c 0x46 ,
+mid  :0x74 0x0x63 0x63 0x5e 0x5c 0x66 0x67 0x67 0x66 0x63 ,
+      0x6e 0x6e 64 0x60 0x5f 0x5c 0x66 0x66 0x62 0x67 0x62 ,
+max  :0x90 0x92 0x 0x7d 0x79 0x77 0x82 0x82 0x82 0x81 0x7f ,
+      0x8a 0x8a 0x847a 0x79 0x76 0x82 0x81 0x7e 0x82 0x7e ,
+range:0x37 0x37 0x37 0x 0x35 0x35 0x37 0x36 0x36 0x36 0x37 ,
+      0x38 0x38 0x34 0x36x34 0x34 0x37 0x36 0x38 0x36 0x38 ,
+CA Training result:
+cs:0 m 0x37 0x38 ,0x40 0x3c 0x38 0x32 0x36 0x33 0x3a ,
+cs:0 mid  :0x8 0x7c 0x74 0x73 0x74 0x74 0x68 ,
+cs:0 max  :0xbf 0xc2 0xb6 0xb60xb3 0xb5 0x97 ,
+cs:0 range:0x7d 0x80 0x7d 0x81 0x7d 0x7f 0x62 
+out
+
+U-Boot SPL 2026.04_armbian-2026.04-Sf96e-P0000-Hd9fb-V91fc-Bea026 - 19:55:03 +0800)
+Trying to boot from MMC2
+## Checking hash(es) for config config-1 ... OK
+## Checking hash(es) for Image atf-1 ... sha256+ OK
+## Checking hash(es) for Image u-boot ... sha256+ OK
+## Checking hash(es) for Image fdt-1 ... sha256+ OK
+## Checking hash(es) for Image atf-2 ... sha256+ OK
+## Checking hash(es) for Image atf-3 ... sha256+ OK
+## Checking hash(es) for Image atf-4 ... sha256+ OK
+## Checking hash(es) for Image atf-5 ... sha256+ OK
+## Checking hash(es) for Image atf-6 ... sha256+ OK
+INFO:    Preloader serial: 2
+NOTICE:  BL31: v2.3():v2.3-645-g8cea6ab0b:cl, fwver: v1.44
+NOTICE:  BL31: Built : 16:36:43, SepINFO:    GICv3 without legacy support detected.
+INFO:    ARM GIu v1 is valid 220114
+INFO:    l3 cache partition cfg-0
+INFO:  [0].freq_mhz= 1056MHz
+INFO:    dfs DDR fsp_param[1].freq_mhz= 3
+INFO:    dfs DDR fsp_param[3].freq_mhz= 780MHz
+INFO:    Using NFO:    BL31: Initializing runtime services
+WARNING: No OPTEE pE initialization. SMC`s destined for OPTEE will return SMC_UNK
+t
+INFO:    BL31: Preparing for EL3 exit to normal world
+INFO: 9
+
+
+U-Boot 2026.04_armbian-2026.04-Sf96e-P0000-Hd9fb-V91fc-Bea38-R448a (Jun 29 2026 - 19:55:03 +Model: BigTreeTech CB2
+SoC:   RK3566
+DRAM:  2 GiB
+PMIC:  RK809 (on=0x40, off=0x00)
+Core:  636 devices, 31 uclasses, devicetree: separate
+MMC:   mmc@fe2b0000: 1, mmc@fe310000: 0
+Loading Environment from nowhere... OK
+In:    serial@fe660000
+Out:   serial@fe660000
+Err:   serial@fe660000
+Model: BigTree7[r[999;999H[6n8** Booting bootflow 'mmc@fe2b0000.bootdev.part_1' with script
+Boot script loaded from mmc 1:1
+5985 bytes read in 3 ms (1.9 MiB/s)
+23060718 bytes read in 2105 ms (10.4 MiB/s)
+44610048 bytes read in 3681 ms (11.6 MiB/s)
+171618 bytes read in 24 ms (6.8 MiB/s)
+Working FDT set to 120001073 bytes read in 8 ms (130.9 KiB/s)
+Applying kernel provided -hdmi.dtbo
+3570 bytes read in 9 ms (386.7 KiB/s)
+Applying kernel provided t 09000000
+7506 bytes read in 3 ms (2.4 MiB/s)
+Applying user provided fixucript at 09000000
+MEECHO: one-shot flag found, clearing it
+MEECHO: switching console to 115200
+## Switch baudrate to 11520ss ENTER ...
+MEECHO: root on eMMC (meecho/root_emmc present)
+MEECHO: single CPU (meecho/no_smp present)
+MEECHO: loading from mmc 1:1
+124584 bytes read in 30 ms (4 MiB/s)
+11472896 bytes read in 1113 ms (9.8 MiB/s)
+171618 bytes read in 25 ms (6.5 MiB/s)
+MEECHO: booting, archive af1000 bytes
+## Flattened Device Tree blob at 4a000000
+   Booting using the fdt blob at 0x4a000000
+Working FDT set to 4a000000
+   Loading Ramdisk to 7c10f000, end 7cc00000 ... OK
+   Loading Device Tree to 000000007ce8d000, end 000000007ceb9e61 ... OK
+Working FDT set to 7ce8d000
+
+Starting kernel ...
+
+MEECHO/aarch64: 4 cores, memory 0000000000200000-0000000040200000 00000000402f2000-000000007c10f000 000000007ceb8000-0000000080000000 000000007cc00000-000000007ce8d000 
+free chunks 4, memory ends at 0000000080000000
+boot archive 000000007c10f000-000000007cc00000, 12 images
+
+  |\/|
+==<-->==   MEECHO 0.1.0 (aarch64)
+           microkernel. messages.
+
+Copyright (c) 2026 MEECHO Project.  BSD-3-Clause.
+Derived from MINIX 3, Copyright 2016 Vrije Universiteit Amsterdam.
+Started VFS: 9 worker thread(s)
+readclock.arch(info)no real-time clock on this machine
+date: udp/timed: unknown service
+Tue Jan  1 00:00:00 GMT 2013
+Starting the SD/MMC block driver
+sdmmc(info)mmc@fe310000: rockchip,dwcmshc-sdhci at 0xfe310000 (65536 bytes), irq 51, 8-bit bus, up to 200000000 Hz, soldered, 5 reset lines at 0xfdd20000
+sdmmc(info)SDHCI 4.20 at 0xfe310000, base clock 375000 Hz, caps 0x226dc881
+sdmmc(info)write cache on, 1024 KiB
+sdmmc(info)eMMC "PJ3032": 61079552 sectors (29824 MiB), 8-bit bus at 50000000 Hz, high speed
+Root device name is /dev/c0d0
+/dev/c0d0: dirty, checking
+/dev/c0d0 is mounted on /
+none is mounted on /proc
+Root is on c0d0
+MEECHO/evbarm64 (Amnesiac) (console)
+
+login: root
+Copyright (c) 2026 MEECHO Project.  BSD-3-Clause.
+    Derived from MINIX 3, Copyright 2016
+    Vrije Universiteit, Amsterdam, The Netherlands.
+Copyright (c) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
+    2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015
+    The NetBSD Foundation, Inc.  All rights reserved.
+Copyright (c) 1982, 1986, 1989, 1991, 1993
+    The Regents of the University of California.  All rights reserved.
+
+  |\/|       __  __ ___ ___ ___ _  _  ___
+==<-->==    |  \/  | __| __/ __| || |/ _ \
+            | |\/| | _|| _| (__| __ | (_) |
+            |_|  |_|___|___\___|_||_|\___/
+
+MEECHO 0.1.0 (aarch64) -- microkernel. messages.
+
+A fork of MINIX 3, ported to AArch64.  This is an early
+development release; expect sharp edges.
+
+The source tree carries its own documentation: PLAN.md for
+the roadmap, port/PORTING-LOG.md for why things are the way
+they are.
+
+# export TERM=vt100 PAGER=cat
+# uname -a; printf 'd%s\n' 0
+MEECHO  0.1.0 MEECHO 0.1.0 (GENERIC) evbarm64
+d0
+# ls /bin /sbin /usr/bin /usr/sbin | wc -l; df -k /; printf 'd%s\n' 1
+     276
+Filesystem    1K-blocks       Used      Avail %Cap Mounted on
+/dev/c0d0       1048576     143252     905324  13% /
+d1
+# awk --version; less --version | head -1; bzip2 --version </dev/null 2>&1 | head -1; printf 'd%s\n' 2
+awk version 20260426
+less 643 (POSIX regular expressions)
+bzip2, a block-sorting file compressor.  Version 1.0.8, 13-Jul-2019.
+d2
+# man ls 2>&1 | head -6; printf 'd%s\n' 3
+man: Formatting manual page...
+LS(1)                       General Commands Manual                      LS(1)
+
+NNAAMMEE
+     llss -- list directory contents
+
+d3
+# ps -axl 2>&1 | head -4; printf 'd%s\n' 4
+UID PID PPID CPU PRI NI  VSZ  RSS WCHAN  STAT TT    TIME COMMAND
+  0   0    0   0   0  0 7620 7620 kernel SKl  ?  0:00.00 [kernel]
+  0   1    1   0   7  0  404  404 wait   Is   ?  0:00.07 (init)
+  0   3    4   0   7  0  272  272 (any)  I    ?  0:00.00 (ds)
+d4
+# sed -n 2p /etc/passwd; sort -u /etc/ttys | head -2; printf 'd%s\n' 5
+toor:*:0:0:Bourne-again Superuser:/root:/bin/sh
+#
+# "console=" boot argument through line2tty(), so the entry does not have to
+d5
+# file /bin/sh | cut -c1-58; printf 'd%s\n' 6
+/bin/sh: ELF 64-bit LSB executable, ARM aarch64, version 1
+d6
+# printf 'a\nline from ed\n.\nw /tmp/e\nq\n' | ed; cat /tmp/e; printf 'd%s\n' 7
+13
+line from ed
+d7
+# find /usr/man -name ls.1; stat -f %z /bin/sh; printf 'd%s\n' 8
+/usr/man/man1/ls.1
+641128
+d8
+# tar cf /tmp/a.tar /etc/passwd; tar tf /tmp/a.tar; xz -c /etc/passwd | xz -dc | head -1; printf 'd%s\n' 9
+tar: Removing leading / from absolute path names in the archive
+etc/passwd
+root:*:0:0:Charlie &:/root:/bin/sh
+d9
+# cat /proc/cpuinfo | head -6; uptime; printf 'd%s\n' 10
+processor       : 0
+12:00AM  up 1 min, 1 user, load averages: 0.27, 0.05, 0.01
+d10
+# TERM=vt100 vi /tmp/e < /dev/null > /dev/null 2>&1; echo "vi said $?"; printf 'd%s\n' 11
+vi said 1
+d11
+# /sbin/reboot
+reboot: rebooted by root
+VFS: VM fd close for fd 0, 8 (-9)
+MEECHO will now be shut down ...
+MEECHO will now reset.
+??¿ıùøùÿşóù~ÿ~şó÷áü?x~~¿?ÿù~ÿ~şøüøüü?ÿ~?ÿùğùøxü~~ıüùğüóø?>şàø?ÿ~~>½~nfınfÅÂ?~~înfn8ş~}~ş|ıŸ|}?ş~8ù|ıÿüı~?~ş~pù~şøù|ıŸ|úüù|}ÿı~ì<ü~?>ü=~?//?|=?~¾?Ÿ>?=ü=??Ÿ?_?ü?>ü?œ/?>~?>?=/?¼"~>??/?œBü?>y?>|ÿ¿Aöùıüıñøşıúùı¾øÿşúòùÿııùùÿòü¹ÕËíáÉÑ©éy‹ªúÿ¨èŠ_ñÂ‹4/ù£Ñrßñ)š·ıâ‹¸¿û¨èŠü¨*¬ıúy‹¸§ûOÃğğãøÿğüÿüşşÿÿøøüÿÿàñşÿşÿÿÿÿãşÇşÿãşüÿşÇşâüşşÿÿÿüøüÿÿàüüüşüüÿ€ÿª¥…¹Š«‹ë[Cİş‡Ñ¹øŠäªñı­Á‰Íı½¡¥Éÿí}¨İÿ­)ªŠı<qôíÁıëáÑø¿¾ó‰(áŠÑÿ¥Êzå‹íÉªxÚ?zÑªÅıù«uU´­8Ùÿ*éÊ#Á(y‹y9xq¬QqU	ª‰êõü«áÑá ÑıééSS½9ÿ¿ÑæÑÍ+Éı-Åò(áã«íêŠùşıêéóÍÊíšùœYÿúòéš´|yQ5]ıÍ«»²ú«‹òÍëåâíÅÏœ

@@ -1,0 +1,45 @@
+# Веха 8.3 на плате: userland на корне с eMMC.
+#
+# U-Boot печатает на 1500000 и сам переходит на 115200, если лежит
+# meecho/slow_console; после смены он ждёт возврата каретки. Прогон, который
+# придётся цитировать, гоняется на 115200: на полутора мегабодах через
+# переходник знаки теряются молча.
+#
+# Метка конца команды печатается через printf с подстановкой, а не echo:
+# терминал отражает набранную строку обратно, и метка, написанная в команде
+# буквально, находится в журнале ДО того, как команда что-нибудь сделает.
+# Один прогон на этом и потерян - расписание прошло насквозь по эху.
+120 WAIT switching console to 115200
+1 BAUD 115200
+2 <CR>
+1 <CR>
+300 WAIT login:
+2 root
+60 WAIT they are.
+2 export TERM=vt100 PAGER=cat
+5 uname -a; printf 'd%s\n' 0
+30 WAIT d0
+2 ls /bin /sbin /usr/bin /usr/sbin | wc -l; df -k /; printf 'd%s\n' 1
+40 WAIT d1
+2 awk --version; less --version | head -1; bzip2 --version </dev/null 2>&1 | head -1; printf 'd%s\n' 2
+40 WAIT d2
+2 man ls 2>&1 | head -6; printf 'd%s\n' 3
+90 WAIT d3
+2 ps -axl 2>&1 | head -4; printf 'd%s\n' 4
+40 WAIT d4
+2 sed -n 2p /etc/passwd; sort -u /etc/ttys | head -2; printf 'd%s\n' 5
+40 WAIT d5
+2 file /bin/sh | cut -c1-58; printf 'd%s\n' 6
+40 WAIT d6
+2 printf 'a\nline from ed\n.\nw /tmp/e\nq\n' | ed; cat /tmp/e; printf 'd%s\n' 7
+40 WAIT d7
+2 find /usr/man -name ls.1; stat -f %z /bin/sh; printf 'd%s\n' 8
+40 WAIT d8
+2 tar cf /tmp/a.tar /etc/passwd; tar tf /tmp/a.tar; xz -c /etc/passwd | xz -dc | head -1; printf 'd%s\n' 9
+60 WAIT d9
+2 cat /proc/cpuinfo | head -6; uptime; printf 'd%s\n' 10
+40 WAIT d10
+2 TERM=vt100 vi /tmp/e < /dev/null > /dev/null 2>&1; echo "vi said $?"; printf 'd%s\n' 11
+40 WAIT d11
+2 /sbin/reboot
+20

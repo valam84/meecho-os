@@ -57,3 +57,22 @@ minix/kernel/arch/aarch64/bringup/kernel.elf
 # The message payload tools import a shared module, so python leaves a
 # bytecode cache beside them.
 minix/kernel/arch/aarch64/tools/__pycache__/
+
+# Your own installation: the address of the board, the console machine and
+# the ssh key are different for everybody.  port/board.conf.example is the
+# template.
+port/board.conf
+
+# A public key belongs to a person, not to an operating system.  mkroot.sh
+# puts this one into the eMMC image if it is there.
+port/authorized_keys
+
+# Reference sources kept beside the GMAC driver: they are Linux, under the
+# GPL, and this tree is BSD.  port/cb2-gmac/ref/README.md says where to get
+# them and what was taken from them (register numbers, not text).
+port/cb2-gmac/ref/*.c
+port/cb2-gmac/ref/*.h
+port/cb2-gmac/ref/*.dts
+
+# Scratch space and run logs that nothing cites.
+port/scratch/

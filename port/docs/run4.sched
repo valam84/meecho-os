@@ -1,0 +1,19 @@
+# Четвёртый прогон: консоль на 115200, чтобы журнал доходил целиком.
+# U-Boot переключает скорость и ждёт ENTER — шлём его вслепую, с запасом.
+0
+12 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+30 root
+6 /sbin/minix-service up /service/sdmmc -dev /dev/c0d0 -label sdmmc_0 -args "log_level=3"
+20 dd if=/dev/c0d0 bs=512 count=1 skip=1234 | grep SECTOR
+7 dd if=/dev/c0d0 bs=512 count=1 skip=61079551 | grep SECTOR
+8 /sbin/reboot
+15

@@ -1,0 +1,15 @@
+# Второй прогон: с починенным MISC_INTCLK_EN, на уровне info.
+0
+58 root
+6 /sbin/minix-service up /service/sdmmc -dev /dev/c0d0 -label sdmmc_0
+14 dd if=/dev/c0d0 bs=512 count=1 skip=1234 | grep SECTOR
+7 dd if=/dev/c0d0 bs=512 count=1 skip=61079551 | grep SECTOR
+7 dd if=/dev/c0d0 of=/tmp/big bs=512 count=100 skip=0
+8 ls -l /tmp/big
+6 grep -c "SECTOR 0000000001" /tmp/big
+6 echo MEECHO-WROTE-THIS-FROM-THE-BOARD > /tmp/mark
+5 dd if=/tmp/mark of=/dev/c0d0 bs=512 count=1 seek=100
+6 sync
+6 dd if=/dev/c0d0 bs=512 count=1 skip=100 | grep MEECHO-WROTE
+8 /sbin/reboot
+15

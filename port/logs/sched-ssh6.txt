@@ -1,0 +1,36 @@
+# ssh на плате, прогон шестой: проверка правки VFS.
+#
+# Открытый вопрос вехи 8.4 закрыт на QEMU: select(2) объявлял пустую трубу
+# готовой к чтению, потому что close_filp() будил другую сторону FIFO при
+# ЛЮБОМ закрытии дескриптора, а не только при уходе последнего.  Монитор
+# sshd видел «в трубе журнала что-то есть», уходил читать её и вставал там
+# навсегда, не ответив своему sshd-auth - отсюда «Connection timed out
+# during banner exchange» на втором и всех дальнейших соединениях.
+#
+# Правка - в VFS, то есть в загрузочном образе; корень на eMMC не менялся.
+# Здесь плата просто грузится и держит окно, в которое с рабочей машины
+# делается несколько входов подряд в ОДИН И ТОТ ЖЕ sshd, поднятый /etc/rc.
+#
+# Каждый вход сам говорит, куда он вошёл: адрес 192.168.33.36 занимают оба -
+# и MEECHO, и вендорский Armbian.  Признаки MEECHO: uname -s = MEECHO,
+# /proc/uptime в одно число, есть sysenv(1).
+120 WAIT switching console to 115200
+1 BAUD 115200
+2 <CR>
+1 <CR>
+420 WAIT login:
+2 root
+60 WAIT they are.
+2 export TERM=vt100 PAGER=cat
+3 uname -s; cat /proc/uptime; ifconfig | grep 'inet '; printf 'd%s\n' 1
+40 WAIT d1
+3 ps ax | grep -v grep | grep -c sshd; printf 'd%s\n' 2
+40 WAIT d2
+# Окно: с рабочей машины входы подряд в порт 22.
+600 WAIT ---hold-open---
+3 cat /proc/uptime; printf 'd%s\n' 3
+40 WAIT d3
+3 ps ax | grep -v grep | grep sshd; printf 'd%s\n' 4
+60 WAIT d4
+2 /sbin/reboot
+20

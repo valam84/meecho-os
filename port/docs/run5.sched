@@ -1,0 +1,19 @@
+# Пятый прогон: ждём текст, а не время.
+0
+12 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+2 <CR>
+120 WAIT MEECHO/evbarm64
+3 root
+120 WAIT Amnesiac
+2
+5 /sbin/minix-service up /service/sdmmc -dev /dev/c0d0 -label sdmmc_0 -args "log_level=3"
+25 dd if=/dev/c0d0 bs=512 count=1 skip=1234 | grep SECTOR
+8 dd if=/dev/c0d0 bs=512 count=1 skip=61079551 | grep SECTOR
+8 /sbin/reboot
+12

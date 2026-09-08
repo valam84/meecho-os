@@ -1,0 +1,12 @@
+# Первый прогон драйвера sdmmc на плате.
+# Отсчёт от старта моста; перезагрузка платы запускается отдельно через ssh
+# примерно на шестой секунде.
+0
+58 root
+6 /sbin/minix-service up /service/sdmmc -dev /dev/c0d0 -label sdmmc_0 -args "instance=0 log_level=3"
+14 dd if=/dev/c0d0 bs=512 count=1 skip=1234 | grep SECTOR
+7 dd if=/dev/c0d0 bs=512 count=1 skip=61079551 | grep SECTOR
+7 dd if=/dev/c0d0 of=/tmp/big bs=512 count=100 skip=0
+8 ls -l /tmp/big; grep -c "SECTOR 0000000001" /tmp/big
+8 /sbin/reboot
+15

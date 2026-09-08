@@ -92,6 +92,11 @@ __BEGIN_DECLS
 int	pollts(struct pollfd * __restrict, nfds_t,
     const struct timespec * __restrict, const sigset_t * __restrict)
     __RENAME(__pollts50);
+#if defined(__minix)
+/* MEECHO: ppoll(2) - имя, которым им пользуется всё современное ПО. */
+int	ppoll(struct pollfd * __restrict, nfds_t,
+    const struct timespec * __restrict, const sigset_t * __restrict);
+#endif /* defined(__minix) */
 #endif /* __LIBC12_SOURCE__ */
 __END_DECLS
 #endif /* _NETBSD_SOURCE */

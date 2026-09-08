@@ -38,9 +38,26 @@
 #include <unistd.h>
 #include <sys/poll.h>
 #include <errno.h>
+#include <signal.h>
+#include <limits.h>
 
-int
-poll(struct pollfd *p, nfds_t nfds, int timout)
+/*
+ * MEECHO: ppoll(2) нужен OpenSSH, а в libc его не было. Реализуется тем же
+ * способом, что и poll(2) выше - через select(2), потому что другого
+ * механизма ожидания у системы нет.
+ *
+ * Маска сигналов накладывается НЕ атомарно: sigprocmask() и select() - два
+ * вызова, и сигнал, пришедший между ними, будет обработан до того, как мы
+ * заснём, то есть его обработчик выставит флаг, а мы всё равно уснём. Чтобы
+ * это не превращалось в вечное ожидание, при заданной маске время ожидания
+ * ограничивается PPOLL_MASK_CAP_MS: вызывающий получит 0 (таймаут) и
+ * перечитает свои флаги. Настоящая атомарность требует передачи маски в
+ * VFS вместе с SELECT и согласования с PM - это работа не в libc.
+ */
+#define PPOLL_MASK_CAP_MS	1000
+
+static int
+poll_common(struct pollfd *p, nfds_t nfds, int timout)
 {
 	fd_set rd, wr, except;
 	struct timeval tv;
@@ -98,5 +115,52 @@ poll(struct pollfd *p, nfds_t nfds, int timout)
 		if (p[i].revents != 0)
 			rval++;
 	}
+	return rval;
+}
+
+int
+poll(struct pollfd *p, nfds_t nfds, int timout)
+{
+	return poll_common(p, nfds, timout);
+}
+
+int
+ppoll(struct pollfd * __restrict p, nfds_t nfds,
+	const struct timespec * __restrict ts,
+	const sigset_t * __restrict sigmask)
+{
+	sigset_t omask;
+	int timout, rval, saved_errno;
+
+	if (ts == NULL)
+		timout = -1;
+	else {
+		if (ts->tv_sec < 0 || ts->tv_nsec < 0 ||
+		    ts->tv_nsec >= 1000000000L) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (ts->tv_sec > (INT_MAX - 1) / 1000)
+			timout = INT_MAX;
+		else {
+			timout = (int)(ts->tv_sec * 1000 +
+			    (ts->tv_nsec + 999999L) / 1000000L);
+		}
+	}
+
+	if (sigmask == NULL)
+		return poll_common(p, nfds, timout);
+
+	/* См. комментарий выше: маска не атомарна, поэтому сон ограничен. */
+	if (timout < 0 || timout > PPOLL_MASK_CAP_MS)
+		timout = PPOLL_MASK_CAP_MS;
+
+	if (sigprocmask(SIG_SETMASK, sigmask, &omask) == -1)
+		return -1;
+	rval = poll_common(p, nfds, timout);
+	saved_errno = errno;
+	(void)sigprocmask(SIG_SETMASK, &omask, NULL);
+	errno = saved_errno;
+
 	return rval;
 }

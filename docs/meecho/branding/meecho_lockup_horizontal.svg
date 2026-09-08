@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="430" height="95" viewBox="0 0 430 95">
+<g transform="translate(0,10) scale(0.95)">
+<g transform="scale(1.0,1.0)"><path d="M 16 36 L 16 12 L 50 36 L 84 12 L 84 36" fill="none" stroke="#000000" stroke-width="8.0" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 34 52 H 66" fill="none" stroke="#000000" stroke-width="7.0" stroke-linecap="round"/>
+<path d="M 34 52 L 43 43 M 34 52 L 43 61" fill="none" stroke="#000000" stroke-width="7.0" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 66 52 L 57 43 M 66 52 L 57 61" fill="none" stroke="#000000" stroke-width="7.0" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 6 45 H 22" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round"/>
+<path d="M 78 45 H 94" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round"/>
+<path d="M 6 52 H 22" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round"/>
+<path d="M 78 52 H 94" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round"/>
+<path d="M 6 59 H 22" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round"/>
+<path d="M 78 59 H 94" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round"/></g>
+</g>
+<g transform="translate(110,18)"><g transform="translate(0,0) scale(0.8)" fill="#000000"><path d="M0 72 V0 H10 L30 24 L50 0 H60 V72 H46 V24 L30 42 L14 24 V72 Z"/></g>
+<g transform="translate(51.2,0) scale(0.8)" fill="#000000"><path d="M0 0 H58 V13 H14 V29 H49 V42 H14 V59 H58 V72 H0 Z"/></g>
+<g transform="translate(102.4,0) scale(0.8)" fill="#000000"><path d="M0 0 H58 V13 H14 V29 H49 V42 H14 V59 H58 V72 H0 Z"/></g>
+<g transform="translate(153.60000000000002,0) scale(0.8)" fill="#000000"><path d="M58 0 H18 C7 0 0 7 0 18 V54 C0 65 7 72 18 72 H58 V58 H21 C17 58 14 55 14 51 V21 C14 17 17 14 21 14 H58 Z"/></g>
+<g transform="translate(204.8,0) scale(0.8)" fill="#000000"><path d="M0 0 H14 V29 H46 V0 H60 V72 H46 V43 H14 V72 H0 Z"/></g>
+<g transform="translate(256.0,0) scale(0.8)" fill="#000000"><path fill-rule="evenodd" d="M18 0 H42 C53 0 60 7 60 18 V54 C60 65 53 72 42 72 H18 C7 72 0 65 0 54 V18 C0 7 7 0 18 0 Z M21 14 C17 14 14 17 14 21 V51 C14 55 17 58 21 58 H39 C43 58 46 55 46 51 V21 C46 17 43 14 39 14 Z"/></g></g>
+</svg>

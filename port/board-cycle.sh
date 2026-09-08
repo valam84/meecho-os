@@ -8,18 +8,30 @@
 # загрузки не попадёт в журнал - а именно там печатается всё интересное про
 # драйвер.
 #
-#   board-cycle.sh [-e|-E] [-n] расписание.txt [журнал]
+#   board-cycle.sh [-e|-E] [-s|-S] [-w|-l|-W] [-n] расписание.txt [журнал]
 #
 #     -e   взвести meecho/root_emmc (корень на eMMC)
 #     -E   снять meecho/root_emmc (корень - ramdisk)
 #     -s   снять meecho/no_smp (грузиться на всех ядрах)
 #     -S   взвести meecho/no_smp (грузиться на одном ядре)
+#     -w   сторож загрузки как обычно, 900 с (снять оба флага)
+#     -l   сторож на час: под работу руками по ssh, спасение остаётся
+#     -W   сторож снят совсем - ОПАСНО, см. ниже
 #     -n   не перезагружать: плата уже в MEECHO, просто взять консоль
 #
 # Без -e и -E переключатель корня не трогается, без -s и -S - переключатель
-# ядер. Оба сделаны ключами, а не отдельной командой по ssh, по одной причине:
-# отдельная команда уходит в ту систему, которая сейчас на плате, а флаг живёт
-# в /boot вендорской - промахнуться этим способом уже случалось.
+# ядер, без -w/-l/-W - сторож. Все они сделаны ключами, а не отдельной
+# командой по ssh, по одной причине: отдельная команда уходит в ту систему,
+# которая сейчас на плате, а флаг живёт в /boot вендорской - промахнуться
+# этим способом уже случалось.
+#
+# Про -W отдельно. Сторож - единственное, что возвращает плату, если MEECHO
+# не дошла до приглашения или зависла: одноразовый флаг meecho.go загрузчик
+# снимает сам, так что ПЕРЕЗАГРУЗКА вернёт вендорскую систему, но зависшая
+# не перезагрузится. Со снятым сторожем возврат - человек у выключателя, а
+# плата может стоять не там, где вы. Поэтому для интерактивной работы есть
+# -l (час), а -W оставлен на случай, когда часа действительно мало, и
+# снимать его надо тем же скриптом с -w сразу после.
 #
 # Запуск консоли живёт отдельным файлом на хабе (/root/run-sched.sh): та же
 # строка, переданная через ssh, обрастает кавычками быстрее, чем читается, и
@@ -56,6 +68,7 @@ BOARD_SSH="$SSH -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
 root_emmc=""
 no_smp=""
+bootwd=""
 reboot=1
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -63,6 +76,9 @@ while [ $# -gt 0 ]; do
 	-E) root_emmc=off; shift ;;
 	-s) no_smp=off; shift ;;
 	-S) no_smp=on; shift ;;
+	-w) bootwd=short; shift ;;
+	-l) bootwd=long; shift ;;
+	-W) bootwd=off; shift ;;
 	-n) reboot=0; shift ;;
 	*) break ;;
 	esac
@@ -71,7 +87,7 @@ done
 SCHED=${1:-}
 LOG=${2:-./board-run.log}
 [ -n "$SCHED" ] && [ -f "$SCHED" ] || {
-	echo "usage: board-cycle.sh [-e|-E] [-n] расписание.txt [журнал]" >&2
+	echo "usage: board-cycle.sh [-e|-E] [-s|-S] [-w|-l|-W] [-n] расписание.txt [журнал]" >&2
 	exit 2
 }
 
@@ -96,6 +112,15 @@ esac
 case "$no_smp" in
 on)	$BOARD_SSH "$BOARD" -p "$BOARD_PORT" 'touch /boot/meecho/no_smp; sync; echo "no_smp: on"' || exit 1 ;;
 off)	$BOARD_SSH "$BOARD" -p "$BOARD_PORT" 'rm -f /boot/meecho/no_smp; sync; echo "no_smp: off"' || exit 1 ;;
+esac
+
+# Сторож - три состояния и два файла, поэтому каждая ветка ставит оба, а не
+# только свой: иначе оставленный с прошлого раза no_bootwd переживёт -l и
+# тихо отменит его.
+case "$bootwd" in
+short)	$BOARD_SSH "$BOARD" -p "$BOARD_PORT" 'rm -f /boot/meecho/no_bootwd /boot/meecho/bootwd_long; sync; echo "bootwd: 900s"' || exit 1 ;;
+long)	$BOARD_SSH "$BOARD" -p "$BOARD_PORT" 'rm -f /boot/meecho/no_bootwd; touch /boot/meecho/bootwd_long; sync; echo "bootwd: 3600s"' || exit 1 ;;
+off)	$BOARD_SSH "$BOARD" -p "$BOARD_PORT" 'touch /boot/meecho/no_bootwd; sync; echo "bootwd: OFF - вернуть плату сможет только человек у выключателя"' || exit 1 ;;
 esac
 
 $SSH "$HUB" -p "$HUB_PORT" 'cat > /tmp/sched.txt' < "$SCHED" || exit 1

@@ -92,8 +92,18 @@ if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho.go; then
 		# Сторож загрузки: ядро само сбросит машину через это число
 		# секунд. Плата стоит не здесь, и загрузка, не дошедшая до
 		# приглашения, иначе оставляет её мёртвой до человека.
+		#
+		# Три ступени, а не две. Пятнадцать минут - под прогон по
+		# расписанию, но мало под работу руками по ssh, а снятый
+		# сторож (no_bootwd) означает, что зависшую плату вернёт
+		# только человек у выключателя. Поэтому между ними есть час:
+		# сессии хватает, спасение остаётся. no_bootwd проверяется
+		# первым - он сильнее.
 		if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho/no_bootwd; then
 			echo "MEECHO: boot watchdog off (meecho/no_bootwd present)"
+		elif test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho/bootwd_long; then
+			setenv bootargs "${bootargs} bootwd=3600"
+			echo "MEECHO: boot watchdog 3600s (meecho/bootwd_long present)"
 		else
 			setenv bootargs "${bootargs} bootwd=900"
 		fi

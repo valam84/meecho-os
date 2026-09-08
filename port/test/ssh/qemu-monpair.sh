@@ -10,9 +10,6 @@
 # Образ диска пересобирается (DISK_FRESH=1): monpair кладётся в DESTDIR и
 # попадает в корень только так.
 set -u
-PORT=$(cd "$(dirname "$0")/../.." && pwd)
-SRCDIR=${SRCDIR:-$(cd "$PORT/.." && pwd)}
-
 
 QEMU_TIMEOUT=${QEMU_TIMEOUT:-900}
 PORT=${PORT:-2222}
@@ -30,7 +27,7 @@ PUB=$(cat "$KEY.pub")
 pkill -9 -f qemu-system-aarch64 2>/dev/null && sleep 2
 
 DISK_FRESH=${DISK_FRESH:-1} QEMU_HOSTFWD=$PORT QEMU_TIMEOUT=$QEMU_TIMEOUT \
-	bash "$PORT/ramimage.sh" -d < "$IN" > "$LOG" 2>&1 &
+	bash /home/minix/bin/ramimage.sh -d < "$IN" > "$LOG" 2>&1 &
 QPID=$!
 exec 9> "$IN"
 
@@ -70,7 +67,7 @@ say "/usr/sbin/sshd && echo UP"
 mark 3 || true
 
 echo "--- вход 1 ---"
-timeout 45 ssh -p $PORT -i "$KEY" -o StrictHostKeyChecking=no \
+timeout 45 ssh -p "$PORT" -i "$KEY" -o StrictHostKeyChecking=no \
 	-o UserKnownHostsFile=/dev/null -o BatchMode=yes \
 	root@127.0.0.1 'uname -s; echo ATTEMPT-OK' > "$WORK/a1.out" 2>&1
 echo "rc=$?"; tail -2 "$WORK/a1.out"
@@ -83,7 +80,7 @@ say "monpair -loop 4"
 mark 4 180 || true
 
 echo "--- вход 2 ---"
-timeout 45 ssh -p $PORT -i "$KEY" -o StrictHostKeyChecking=no \
+timeout 45 ssh -p "$PORT" -i "$KEY" -o StrictHostKeyChecking=no \
 	-o UserKnownHostsFile=/dev/null -o BatchMode=yes \
 	root@127.0.0.1 'uname -s; echo ATTEMPT-OK' > "$WORK/a2.out" 2>&1
 echo "rc=$?"; tail -2 "$WORK/a2.out"

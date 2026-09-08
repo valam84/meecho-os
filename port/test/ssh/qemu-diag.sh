@@ -13,9 +13,6 @@
 #      lwip, а не через uds;
 #   3. таблицу процессов и застрявшие пары.
 set -u
-PORT=$(cd "$(dirname "$0")/../.." && pwd)
-SRCDIR=${SRCDIR:-$(cd "$PORT/.." && pwd)}
-
 
 QEMU_TIMEOUT=${QEMU_TIMEOUT:-900}
 PORT=${PORT:-2222}
@@ -35,7 +32,7 @@ PUB=$(cat "$KEY.pub")
 pkill -9 -f qemu-system-aarch64 2>/dev/null && sleep 2
 
 QEMU_HOSTFWD=$PORT QEMU_TIMEOUT=$QEMU_TIMEOUT \
-	bash "$PORT/ramimage.sh" -d < "$IN" > "$LOG" 2>&1 &
+	bash /home/minix/bin/ramimage.sh -d < "$IN" > "$LOG" 2>&1 &
 QPID=$!
 exec 9> "$IN"
 
@@ -74,7 +71,7 @@ n=0
 while [ "$n" -lt "$TRIES" ]; do
 	n=$((n + 1))
 	echo "--- вход $n ---"
-	timeout 45 ssh -p $PORT -i "$KEY" \
+	timeout 45 ssh -p "$PORT" -i "$KEY" \
 		-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
 		-o BatchMode=yes -o ConnectTimeout=10 \
 		root@127.0.0.1 'uname -s; cat /proc/uptime; echo ATTEMPT-OK' \

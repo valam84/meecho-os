@@ -23,9 +23,6 @@
 #
 # Переменные: PORT (проброшенный порт хоста, 2222), QEMU_TIMEOUT.
 set -u
-PORT=$(cd "$(dirname "$0")/../.." && pwd)
-SRCDIR=${SRCDIR:-$(cd "$PORT/.." && pwd)}
-
 
 PORT=${PORT:-2222}
 QEMU_TIMEOUT=${QEMU_TIMEOUT:-900}
@@ -69,7 +66,7 @@ echo "=== запуск QEMU (порт хоста $PORT -> 22 гостя) ==="
 # расписание разъезжается с гостем.  Гнать построчно.
 QEMU_HOSTFWD=$PORT QEMU_TIMEOUT=$QEMU_TIMEOUT \
 	QEMU="stdbuf -o0 -e0 qemu-system-aarch64" \
-	bash "$PORT/ramimage.sh" -d < "$IN" > "$LOG" 2>&1 &
+	bash /home/minix/bin/ramimage.sh -d < "$IN" > "$LOG" 2>&1 &
 QPID=$!
 exec 9> "$IN"
 
@@ -132,7 +129,7 @@ mark 4 || true
 echo "=== вход снаружи, $TRIES раз ==="
 for i in $(seq 1 "$TRIES"); do
 	echo "--- попытка $i ---"
-	timeout 45 ssh -p $PORT -i "$KEY" \
+	timeout 45 ssh -p "$PORT" -i "$KEY" \
 		-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
 		-o BatchMode=yes -o ConnectTimeout=10 -vv \
 		root@127.0.0.1 'uname -s; cat /proc/uptime; echo MARK-OK' \

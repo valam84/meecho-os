@@ -15,9 +15,6 @@
 #
 # Переменные: QEMU_TIMEOUT.  Порты хоста 2222 -> 22 гостя и 2223 -> 2223.
 set -u
-PORT=$(cd "$(dirname "$0")/../.." && pwd)
-SRCDIR=${SRCDIR:-$(cd "$PORT/.." && pwd)}
-
 
 QEMU_TIMEOUT=${QEMU_TIMEOUT:-900}
 SEQ=${SEQ:-"2222 2222 2223 2223 2222"}
@@ -36,7 +33,7 @@ pkill -9 -f qemu-system-aarch64 2>/dev/null && sleep 2
 
 echo "=== запуск QEMU (2222 -> 22, 2223 -> 2223) ==="
 QEMU_HOSTFWD="2222,2223:2223" QEMU_TIMEOUT=$QEMU_TIMEOUT \
-	bash "$PORT/ramimage.sh" -d < "$IN" > "$LOG" 2>&1 &
+	bash /home/minix/bin/ramimage.sh -d < "$IN" > "$LOG" 2>&1 &
 QPID=$!
 exec 9> "$IN"
 

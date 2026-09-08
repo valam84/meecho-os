@@ -1,0 +1,25 @@
+# Загрузить MEECHO и держать окно: расписание для работы руками по ssh.
+#
+# Консоль здесь нужна только для того, чтобы довести систему до входа и
+# оставить её живой; всё остальное делается по ssh с рабочей машины. Окно
+# длинное, поэтому запускать с board-cycle.sh -l (сторож на час), иначе
+# сторож на 900 с сбросит плату посреди работы.
+#
+# Метки конца команды - printf, а не echo: терминал отражает набранное, и
+# echo нашёлся бы в журнале раньше, чем команда выполнилась.
+120 WAIT switching console to 115200
+1 BAUD 115200
+2 <CR>
+1 <CR>
+420 WAIT login:
+2 root
+60 WAIT they are.
+2 export TERM=vt100 PAGER=cat
+3 uname -s; cat /proc/uptime; ifconfig | grep 'inet '; printf 'd%s\n' 1
+40 WAIT d1
+# Окно: работаем по ssh с рабочей машины.
+900 WAIT ---hold-open---
+3 cat /proc/uptime; ps ax | grep -v grep | grep -c sshd; printf 'd%s\n' 2
+40 WAIT d2
+2 /sbin/reboot
+20

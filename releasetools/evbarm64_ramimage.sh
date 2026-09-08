@@ -429,12 +429,27 @@ cmd="${cmd} -display none -serial stdio"
 # 10.0.2.15, the gateway 10.0.2.2, the DNS forwarder 10.0.2.3.  Nothing is
 # forwarded inward; this is for the system to reach out.  A machine whose
 # system has no network driver just sees one more transport it ignores.
-# QEMU_HOSTFWD=<port>: пробросить TCP-порт хоста на порт 22 гостя, чтобы
-# входить по ssh снаружи - через сетевой драйвер и стек, а не через
-# loopback внутри гостя. Проверка ssh через 127.0.0.1 ни драйвера, ни
-# пути пакета через lwip не касается вовсе, и однажды это сбило с толку.
+# QEMU_HOSTFWD: пробросить TCP-порт хоста внутрь, чтобы входить по ssh
+# снаружи - через сетевой драйвер и стек, а не через loopback внутри гостя.
+# Проверка ssh через 127.0.0.1 ни драйвера, ни пути пакета через lwip не
+# касается вовсе, и однажды это сбило с толку.
+#
+# Правил можно перечислить несколько через запятую, и у каждого свой порт
+# гостя: "2222" - хостовый 2222 на 22 гостя, "2222,2223:2223" - ещё и
+# хостовый 2223 на 2223 гостя. Нескольких сразу требует сравнение двух
+# слушателей в одной загрузке: один и тот же вопрос, заданный слушателю,
+# который уже обслужил соединение, и свежему, - и без второго порта его
+# не задать.
 if [ -n "${QEMU_HOSTFWD:-}" ]
-then	cmd="${cmd} -netdev user,id=net0,hostfwd=tcp::${QEMU_HOSTFWD}-:22"
+then	fwd=""
+	for rule in `echo "${QEMU_HOSTFWD}" | tr ',' ' '`
+	do	case "${rule}" in
+		*:*)	hostport=${rule%%:*}; guestport=${rule##*:} ;;
+		*)	hostport=${rule}; guestport=22 ;;
+		esac
+		fwd="${fwd},hostfwd=tcp::${hostport}-:${guestport}"
+	done
+	cmd="${cmd} -netdev user,id=net0${fwd}"
 else	cmd="${cmd} -netdev user,id=net0"
 fi
 cmd="${cmd} -device virtio-net-device,netdev=net0"

@@ -81,10 +81,13 @@ fi
 usage()
 {
 	cat >&2 <<EOF
-usage: $0 [-b] [-d] [-r] [-2] [-3]
+usage: $0 [-b] [-d] [-n] [-r] [-2] [-3]
 	-b  build the ramdisk image and the memory driver first
 	-d  make a disk image from the ramdisk's contents and boot with the
 	    root on it, over virtio-blk, instead of on the ramdisk (implies -r)
+	-n  assemble everything asked for, but do not run QEMU.  This is how
+	    a release is built: -d makes the disk image, -n keeps it from
+	    being booted right away.
 	-r  run QEMU on the result
 	-2  enter at EL2, where U-Boot leaves a kernel on a real board
 	    (implies -r)
@@ -104,17 +107,26 @@ do_run=0
 disk=0
 el2=0
 gicv3=0
-while getopts "bdr23h" c
+no_run=0
+while getopts "bdnr23h" c
 do
 	case "$c" in
 	b)	do_build=1 ;;
 	d)	do_run=1; disk=1 ;;
+	n)	no_run=1 ;;
 	r)	do_run=1 ;;
 	2)	do_run=1; el2=1 ;;
 	3)	do_run=1; gicv3=1 ;;
 	*)	usage ;;
 	esac
 done
+
+# -n is read after the loop on purpose: it has to override the flags that
+# imply a run, whatever order they were given in.
+if [ ${no_run} -eq 1 ]
+then
+	do_run=0
+fi
 
 if [ ! -f ${BUILDSH} ]
 then

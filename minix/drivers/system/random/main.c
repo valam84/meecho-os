@@ -9,11 +9,13 @@
 
 #include "assert.h"
 #include "random.h"
+#include "trng.h"
 
 #define NR_DEVS            1		/* number of minor devices */
 #  define RANDOM_DEV  0			/* minor device for /dev/random */
 
 #define KRANDOM_PERIOD    1 		/* ticks between krandom calls */
+#define TRNG_EVERY	  32		/* krandom calls between TRNG reads */
 
 static struct device m_geom[NR_DEVS];  /* base and size of each device */
 static dev_t m_device;			/* current device */
@@ -87,6 +89,14 @@ static int sef_cb_init_fresh(int UNUSED(type), sef_init_info_t *UNUSED(info))
   int i, s;
 
   random_init();
+
+  /*
+   * Аппаратный источник, если он у машины есть: он и сеет пул на
+   * загрузке. ENODEV - машина без него, и это не отказ: пул тогда
+   * живёт на временах прихода прерываний, как и раньше.
+   */
+  (void)trng_init();
+
   r_random(0);				/* also set periodic timer */
 
   /* Retrieve first randomness buffer with parameters. */
@@ -233,12 +243,22 @@ static void r_random(clock_t UNUSED(stamp))
   /* Fetch random information from the kernel to update /dev/random. */
   int s;
   static int bin = 0;
+  static int trng_countdown = TRNG_EVERY;
   static struct k_randomness_bin krandom_bin;
   u32_t hi, lo;
   rand_t r;
   int nextperiod = random_isseeded() ? KRANDOM_PERIOD*500 : KRANDOM_PERIOD;
 
   bin = (bin+1) % RANDOM_SOURCES;
+
+  /*
+   * Подсыпать из аппаратного источника - не на каждом такте: одна
+   * порция это 256 бит, и чаще его дёргать незачем.
+   */
+  if (++trng_countdown >= TRNG_EVERY) {
+	trng_countdown = 0;
+	(void)trng_feed();
+  }
 
   if(sys_getrandom_bin(&krandom_bin, bin) == OK)
 	r_updatebin(bin, &krandom_bin);

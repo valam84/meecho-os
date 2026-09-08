@@ -62,6 +62,7 @@ __RCSID("$NetBSD: arc4random.c,v 1.30 2015/05/13 23:15:57 justin Exp $");
 #include <sys/errno.h>
 #if defined(__minix)
 #include <sys/fcntl.h>
+#include <time.h>
 #endif
 #include <sys/mman.h>
 #include <sys/sysctl.h>
@@ -425,18 +426,71 @@ arc4random_prng_addrandom(struct arc4random_prng *prng, const void *data,
 	SHA256_Update(&ctx, buf, sizeof buf);
 
 #if defined(__minix)
-	/* LSC: We do not have a compatibility layer for the 
-	 * KERN_ARND call, so do it the old way... */
-	int fd;
+	/*
+	 * MEECHO: KERN_ARND у mib нет, поэтому посевной материал берётся из
+	 * устройства. Здесь было три ошибки, и все три - молчаливые.
+	 *
+	 * Во-первых, результат read() отбрасывался: (void)read(...). На этой
+	 * системе /dev/random отвечает EAGAIN, пока пул не посеян, - то есть
+	 * отказ был не теоретическим, а обычным делом на загрузке. Во-вторых,
+	 * короткое чтение считалось полным. В-третьих - и это главное - при
+	 * отказе в buf оставалось не "что было на стеке", как обещал прежний
+	 * комментарий, а СОБСТВЕННЫЙ вывод этого же PRNG, записанный туда
+	 * строкой выше и уже подмешанный в хэш. На первом посеве PRNG не
+	 * посеян, то есть его вывод предопределён, и весь arc4random(3)
+	 * оказывался предопределённым - при том, что вызывающий об этом никак
+	 * не узнавал. Именно из него OpenSSH берёт всю свою случайность.
+	 *
+	 * Теперь: читать до конца, отличать отказ от успеха, и при отказе
+	 * подмешивать хоть что-то ИЗМЕНЧИВОЕ и заведомо определённое, а не
+	 * оставлять в buf старое. Это по-прежнему НЕ источник энтропии - это
+	 * способ не выдавать одно и то же на каждой загрузке. Настоящий
+	 * источник - у драйвера random: аппаратный генератор, если он у
+	 * машины есть (см. minix/drivers/system/random/trng.c), и времена
+	 * прихода прерываний.
+	 *
+	 * Громко отказать (abort(), как делает ветка NetBSD ниже) здесь
+	 * нельзя: arc4random(3) зовут программы, работающие до того, как
+	 * поднимется драйвер random, и на машине без аппаратного источника
+	 * это означало бы систему, которая не загружается.
+	 */
+	static const char *const sources[] = { "/dev/urandom", "/dev/random" };
+	size_t got = 0;
+	unsigned i;
 
-	fd = open("/dev/urandom", O_RDONLY);
-	if (fd != -1) {
-		(void)read(fd, buf, buflen);
-		close(fd);
+	for (i = 0; i < __arraycount(sources) && got < buflen; i++) {
+		int fd = open(sources[i], O_RDONLY);
+
+		if (fd == -1)
+			continue;
+		while (got < buflen) {
+			ssize_t n = read(fd, buf + got, buflen - got);
+
+			if (n <= 0)
+				break;
+			got += (size_t)n;
+		}
+		(void)close(fd);
 	}
 
-        /* fd < 0 or failed sysctl ?  Ah, what the heck. We'll just take
-         * whatever was on the stack... */
+	if (got < buflen) {
+		struct {
+			struct timespec ts;
+			pid_t pid;
+			pid_t ppid;
+			const void *sp;
+			size_t got;
+		} weak;
+
+		(void)memset(&weak, 0, sizeof(weak));
+		(void)clock_gettime(CLOCK_MONOTONIC, &weak.ts);
+		weak.pid = getpid();
+		weak.ppid = getppid();
+		weak.sp = &weak;
+		weak.got = got;
+		SHA256_Update(&ctx, (const uint8_t *)&weak, sizeof(weak));
+		(void)explicit_memset(buf + got, 0, buflen - got);
+	}
 #else
 	if (sysctl(mib, (u_int)__arraycount(mib), buf, &buflen, NULL, 0) == -1)
 		abort();

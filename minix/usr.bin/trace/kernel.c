@@ -16,6 +16,7 @@
 
 #include "inc.h"
 
+#include <err.h>
 #include <machine/archtypes.h>
 #include <minix/timers.h>
 #include "kernel/proc.h"
@@ -43,11 +44,31 @@ int
 kernel_check(pid_t pid)
 {
 
+	/*
+	 * Two very different failures used to come out as one message
+	 * advising to recompile: not being able to read the process table at
+	 * all, and reading it fine but finding another value there.  Only the
+	 * second one is about recompiling, so say which happened.
+	 */
 	if (mem_get_user(pid, offsetof(struct proc, p_magic),
-	    &kernel_proc.p_magic, sizeof(kernel_proc.p_magic)) < 0)
-		return FALSE;
+	    &kernel_proc.p_magic, sizeof(kernel_proc.p_magic)) < 0) {
+		warn("Unable to read the kernel process table at offset %u",
+		    (unsigned int)offsetof(struct proc, p_magic));
 
-	return (kernel_proc.p_magic == PMAGIC);
+		return FALSE;
+	}
+
+	if (kernel_proc.p_magic != PMAGIC) {
+		warnx("Kernel magic is %#x at offset %u, expected %#x: "
+		    "trace(1) and the kernel disagree about struct proc",
+		    (unsigned int)kernel_proc.p_magic,
+		    (unsigned int)offsetof(struct proc, p_magic),
+		    (unsigned int)PMAGIC);
+
+		return FALSE;
+	}
+
+	return TRUE;
 }
 
 /*

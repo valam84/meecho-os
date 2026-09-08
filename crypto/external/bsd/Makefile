@@ -2,10 +2,10 @@
 
 .include <bsd.own.mk>
 
-.if defined(__MINIX)
-SUBDIR+= openssl .WAIT heimdal netpgp .WAIT libsaslc
-.else
+# MEECHO: openssh был исключён из сборки MINIX вместе с самим импортом -
+# каталога dist в дереве не было вовсе. Импортирован заново из
+# NetBSD-current (OpenSSH 10.3) и собирается без libcrypto; почему именно
+# так - в openssh/Makefile.inc и в PORTING-LOG.md, «Этап 8.4: ssh».
 SUBDIR+= openssl .WAIT heimdal netpgp .WAIT openssh libsaslc
-.endif # defined(__MINIX)
 
 .include <bsd.subdir.mk>

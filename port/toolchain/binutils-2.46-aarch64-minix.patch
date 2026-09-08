@@ -1,0 +1,94 @@
+diff --git a/bfd/config.bfd b/bfd/config.bfd
+index 4dde5321..62b694a7 100644
+--- a/bfd/config.bfd
++++ b/bfd/config.bfd
+@@ -285,7 +285,7 @@ case "${targ}" in
+     targ_selvecs="aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec"
+     want64=true
+     ;;
+-  aarch64-*-linux* | aarch64-*-netbsd* | aarch64-*-nto* | aarch64-*-gnu*)
++  aarch64-*-linux* | aarch64-*-netbsd* | aarch64-*-nto* | aarch64-*-gnu* | aarch64-*-minix*)
+     targ_defvec=aarch64_elf64_le_vec
+     targ_selvecs="aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec aarch64_pei_le_vec aarch64_pe_le_vec"
+     want64=true
+diff --git a/gas/configure.tgt b/gas/configure.tgt
+index f0ea55d9..e75088fb 100644
+--- a/gas/configure.tgt
++++ b/gas/configure.tgt
+@@ -136,6 +136,7 @@ case ${generic_target} in
+     esac ;;
+   aarch64*-*-gnu*)			fmt=elf em=gnu ;;
+   aarch64*-*-netbsd*)			fmt=elf em=nbsd;;
++  aarch64*-*-minix*)			fmt=elf;;
+   aarch64*-*-nto*)			fmt=elf;;
+   aarch64*-*-openbsd*)			fmt=elf;;
+   aarch64*-*-pe* | aarch64*-*-mingw*)	fmt=coff em=pepaarch64 ;;
+diff --git a/ld/Makefile.am b/ld/Makefile.am
+index 8d520c25..30581a6e 100644
+--- a/ld/Makefile.am
++++ b/ld/Makefile.am
+@@ -374,6 +374,7 @@ ALL_EMULATIONS = $(ALL_EMULATION_SOURCES:.c=.@OBJEXT@)
+ 
+ ALL_64_EMULATION_SOURCES = \
+ 	eaarch64elf.c \
++	eaarch64elf_minix.c \
+ 	eaarch64elf32.c \
+ 	eaarch64elf32b.c \
+ 	eaarch64elfb.c \
+diff --git a/ld/Makefile.in b/ld/Makefile.in
+index 7efa47a4..11c7e6cc 100644
+--- a/ld/Makefile.in
++++ b/ld/Makefile.in
+@@ -890,6 +890,7 @@ ALL_EMULATION_SOURCES = \
+ ALL_EMULATIONS = $(ALL_EMULATION_SOURCES:.c=.@OBJEXT@)
+ ALL_64_EMULATION_SOURCES = \
+ 	eaarch64elf.c \
++	eaarch64elf_minix.c \
+ 	eaarch64elf32.c \
+ 	eaarch64elf32b.c \
+ 	eaarch64elfb.c \
+@@ -1271,6 +1272,7 @@ distclean-compile:
+ 
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/deffilep.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eaarch64elf.Po@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eaarch64elf_minix.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eaarch64elf32.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eaarch64elf32b.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eaarch64elfb.Po@am__quote@
+diff --git a/ld/configure.tgt b/ld/configure.tgt
+index 3e158913..c1e65eb2 100644
+--- a/ld/configure.tgt
++++ b/ld/configure.tgt
+@@ -92,6 +92,9 @@ aarch64-*-elf | aarch64-*-rtems* | aarch64-*-genode*)
+ aarch64-*-freebsd*)	targ_emul=aarch64fbsd
+ 			targ_extra_emuls="aarch64fbsdb aarch64elf"
+ 			;;
++aarch64-*-minix*)	targ_emul=aarch64elf_minix
++			targ_extra_emuls="aarch64elf"
++			;;
+ aarch64-*-fuchsia*)	targ_emul=aarch64elf
+ 			targ_extra_emuls="aarch64elfb armelf armelfb"
+ 			;;
+diff --git a/ld/emulparams/aarch64elf_minix.sh b/ld/emulparams/aarch64elf_minix.sh
+new file mode 100644
+index 00000000..886c30f9
+--- /dev/null
++++ b/ld/emulparams/aarch64elf_minix.sh
+@@ -0,0 +1,17 @@
++# AArch64 MINIX 3: the generic AArch64 ELF emulation, shaped for an operating
++# system rather than for a simulator. This is the AArch64 counterpart of
++# armelf_minix.sh in the MINIX tree.
++source_sh ${srcdir}/emulparams/aarch64elf.sh
++
++# aarch64elf.sh describes a bare-metal target: EMBEDDED drops the ELF header
++# from the first page and STACK_ADDR places a .stack section for the
++# simulator. An executable loaded by an operating system wants neither.
++unset EMBEDDED
++unset STACK_ADDR
++
++TEXT_START_ADDR=0x400000
++MAXPAGESIZE="CONSTANT (MAXPAGESIZE)"
++COMMONPAGESIZE="CONSTANT (COMMONPAGESIZE)"
++
++# Where MINIX installs its run-time linker, when there is dynamic linking.
++ELF_INTERPRETER_NAME=\"/usr/libexec/ld.elf_so\"

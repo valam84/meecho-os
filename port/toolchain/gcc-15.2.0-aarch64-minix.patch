@@ -1,0 +1,367 @@
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+index 087aaa7be..d5cc56d18 100644
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -993,6 +993,15 @@ case ${target} in
+   rust_target_objs="${rust_target_objs} netbsd-rust.o"
+   target_has_targetrustm=yes
+   ;;
++*-*-minix*)
++  # MINIX 3: NetBSD's userland on a microkernel, so the compiler-facing
++  # conventions are NetBSD's.  See config/minix.h.
++  tmake_file="t-slibgcc"
++  gas=yes
++  gnu_ld=yes
++  use_gcc_stdint=wrap
++  default_use_cxa_atexit=yes
++  ;;
+ *-*-openbsd*)
+   tmake_file="t-openbsd"
+   case ${enable_threads} in
+@@ -1236,6 +1245,12 @@ aarch64*-*-netbsd*)
+ 	tmake_file="${tmake_file} aarch64/t-aarch64 aarch64/t-aarch64-netbsd"
+ 	extra_options="${extra_options} netbsd.opt netbsd-elf.opt"
+ 	;;
++aarch64*-*-minix*)
++	tm_file="${tm_file} elfos.h netbsd-stdint.h minix.h"
++	tm_file="${tm_file} aarch64/aarch64-elf.h aarch64/aarch64-errata.h aarch64/aarch64-minix.h"
++	tmake_file="${tmake_file} aarch64/t-aarch64"
++	extra_options="${extra_options} netbsd.opt netbsd-elf.opt"
++	;;
+ aarch64*-*-linux*)
+ 	tm_file="${tm_file} elfos.h gnu-user.h linux.h glibc-stdint.h"
+ 	tm_file="${tm_file} aarch64/aarch64-elf.h aarch64/aarch64-errata.h aarch64/aarch64-linux.h"
+diff --git a/gcc/config/aarch64/aarch64-minix.h b/gcc/config/aarch64/aarch64-minix.h
+new file mode 100644
+index 000000000..4efe6c2d1
+--- /dev/null
++++ b/gcc/config/aarch64/aarch64-minix.h
+@@ -0,0 +1,63 @@
++/* Definitions for AArch64 running MINIX 3
++   Copyright (C) 2016-2025 Free Software Foundation, Inc.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify it
++   under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful, but
++   WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with GCC; see the file COPYING3.  If not see
++   <http://www.gnu.org/licenses/>.  */
++
++/* This is aarch64-netbsd.h for MINIX: the same userland conventions,
++   little-endian only, with the MINIX linker emulation and the MINIX
++   system identity from config/minix.h.  */
++
++#ifndef GCC_AARCH64_MINIX_H
++#define GCC_AARCH64_MINIX_H
++
++#define TARGET_LINKER_EMULATION "aarch64elf_minix"
++
++/* NetBSD's crt0 exports __start; ours is NetBSD's.  */
++#define MINIX_ENTRY_POINT "__start"
++
++#define MINIX_TARGET_LINK_SPEC  "%{h*} -X -m " TARGET_LINKER_EMULATION " "
++
++#ifndef CC1_SPEC
++# define CC1_SPEC AARCH64_ERRATA_COMPILE_SPEC
++#endif
++
++#ifndef CC1PLUS_SPEC
++# define CC1PLUS_SPEC AARCH64_ERRATA_COMPILE_SPEC
++#endif
++
++#undef  LINK_SPEC
++#define LINK_SPEC MINIX_TARGET_LINK_SPEC	\
++		  MINIX_LINK_SPEC_ELF		\
++		  AARCH64_ERRATA_LINK_SPEC
++
++#undef TARGET_OS_CPP_BUILTINS
++#define TARGET_OS_CPP_BUILTINS()		\
++  do						\
++    {						\
++      MINIX_OS_CPP_BUILTINS();			\
++    }						\
++  while (0)
++
++#undef SUBTARGET_CPP_SPEC
++#define SUBTARGET_CPP_SPEC MINIX_CPP_SPEC
++
++#undef EXTRA_SPECS
++#define EXTRA_SPECS \
++  { "asm_cpu_spec",             ASM_CPU_SPEC }, \
++  MINIX_SUBTARGET_EXTRA_SPECS
++
++#endif  /* GCC_AARCH64_MINIX_H */
+diff --git a/gcc/config/minix.h b/gcc/config/minix.h
+new file mode 100644
+index 000000000..627411e92
+--- /dev/null
++++ b/gcc/config/minix.h
+@@ -0,0 +1,192 @@
++/* Base configuration file for all MINIX 3 targets.
++   Copyright (C) 1997-2025 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++/* MINIX 3 runs the NetBSD userland - libc, csu, ld.elf_so - on its own
++   microkernel, so everything the compiler driver has to know about the
++   system is NetBSD's: the crt files, the library names, the run-time
++   linker path, the wide character type.  This file is netbsd.h and
++   netbsd-elf.h with MINIX's identity, kept in one place.  What differs
++   from NetBSD is what the preprocessor says about the system and that
++   there is no libpthread.
++
++   The per-architecture file (aarch64/aarch64-minix.h) is expected to
++   consume MINIX_OS_CPP_BUILTINS, MINIX_CPP_SPEC, MINIX_LINK_SPEC_ELF and
++   MINIX_SUBTARGET_EXTRA_SPECS, and to provide MINIX_ENTRY_POINT.  */
++
++#define MINIX_OS_CPP_BUILTINS()			\
++  do						\
++    {						\
++      builtin_define ("__minix");		\
++      builtin_define ("__minix__");		\
++      builtin_define ("__unix__");		\
++      builtin_assert ("system=bsd");		\
++      builtin_assert ("system=unix");		\
++      builtin_assert ("system=minix");		\
++    }						\
++  while (0)
++
++/* CPP_SPEC parts common to all MINIX targets: only -posix has meaning,
++   there is no libpthread to make -pthread meaningful.  */
++
++#define MINIX_CPP_SPEC				\
++  "%{posix:-D_POSIX_SOURCE}"
++
++/* Select the right libc.  -pthread is refused rather than silently
++   ignored, because a program that asks for it will not get threads.  The
++   message carries no semicolon: inside %{...} a semicolon separates the
++   alternatives of an n-way choice, so one inside a %e message ends the body
++   there and the rest of LIB_SPEC is then read as a condition.  */
++
++#define MINIX_LIB_SPEC						\
++  "%{pthread:%eMINIX has no libpthread, -pthread is not supported} \
++   %{posix:			\
++     %{!p:			\
++       %{!pg:-lposix}}		\
++     %{p:-lposix_p}		\
++     %{pg:-lposix_p}}		\
++   %{shared:-lc}		\
++   %{!shared:			\
++     %{!symbolic:		\
++       %{!p:			\
++	 %{!pg:-lc}}		\
++       %{p:-lc_p}		\
++       %{pg:-lc_p}}}"
++
++#undef LIB_SPEC
++#define LIB_SPEC MINIX_LIB_SPEC
++
++#undef LIBGCC_SPEC
++#define LIBGCC_SPEC "-lgcc"
++
++#if defined(HAVE_LD_EH_FRAME_HDR)
++#define LINK_EH_SPEC "%{!static|static-pie:--eh-frame-hdr} "
++#endif
++
++/* The libc is NetBSD's; make the same conservative assumption about it
++   that GCC makes for NetBSD.  */
++#undef TARGET_LIBC_HAS_FUNCTION
++#define TARGET_LIBC_HAS_FUNCTION no_c99_libc_has_function
++
++/* When building shared libraries, the initialization and finalization
++   functions for the library are .init and .fini respectively.  */
++
++#define COLLECT_SHARED_INIT_FUNC(STREAM,FUNC)				\
++  do {									\
++    fprintf ((STREAM), "void __init() __asm__ (\".init\");");		\
++    fprintf ((STREAM), "void __init() {\n\t%s();\n}\n", (FUNC));	\
++  } while (0)
++
++#define COLLECT_SHARED_FINI_FUNC(STREAM,FUNC)				\
++  do {									\
++    fprintf ((STREAM), "void __fini() __asm__ (\".fini\");");		\
++    fprintf ((STREAM), "void __fini() {\n\t%s();\n}\n", (FUNC));	\
++  } while (0)
++
++#undef TARGET_POSIX_IO
++#define TARGET_POSIX_IO
++
++/* Define some types that are the same on all NetBSD-derived platforms,
++   making them agree with <machine/ansi.h>.  */
++
++#undef WCHAR_TYPE
++#define WCHAR_TYPE "int"
++
++#undef WCHAR_TYPE_SIZE
++#define WCHAR_TYPE_SIZE 32
++
++#undef WINT_TYPE
++#define WINT_TYPE "int"
++
++/* Provide a STARTFILE_SPEC appropriate for MINIX ELF.  Here we provide
++   support for the special GCC option -static.  We also add the crtbegin.o
++   file, which provides part of the support for getting C++ file-scope
++   static objects constructed before entering "main".  All of these come
++   from the MINIX tree (lib/csu), none from the compiler.  */
++
++#define MINIX_STARTFILE_SPEC	\
++  "%{!shared:			\
++     %{pg:gcrt0%O%s}		\
++     %{!pg:			\
++       %{p:gcrt0%O%s}		\
++       %{!p:crt0%O%s}}}		\
++   %:if-exists(crti%O%s)	\
++   %{static:%:if-exists-else(crtbeginT%O%s crtbegin%O%s)} \
++   %{!static:                   \
++     %{!shared:                 \
++       %{!pie:crtbegin%O%s}     \
++       %{pie:crtbeginS%O%s}}    \
++     %{shared:crtbeginS%O%s}}"
++
++#undef STARTFILE_SPEC
++#define STARTFILE_SPEC MINIX_STARTFILE_SPEC
++
++/* Provide an ENDFILE_SPEC appropriate for MINIX ELF.  Here we add crtend.o,
++   which provides part of the support for getting C++ file-scope static
++   objects deconstructed after exiting "main".  */
++
++#define MINIX_ENDFILE_SPEC	\
++  "%{!shared:                   \
++    %{!pie:crtend%O%s}          \
++    %{pie:crtendS%O%s}}         \
++   %{shared:crtendS%O%s}        \
++   %:if-exists(crtn%O%s)"
++
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC MINIX_ENDFILE_SPEC
++
++/* Provide a LINK_SPEC appropriate for MINIX ELF.  Here we provide
++   support for the special GCC options -assert, -R, -rpath, -shared,
++   -nostdlib, -static, -rdynamic, and -dynamic-linker.
++
++   Target-specific code can use this in conjunction with any other
++   target-specific LINK_SPEC options.
++
++   Target-specific code must provide the %(minix_entry_point) spec.  */
++
++#define MINIX_LINK_LD_ELF_SO_SPEC \
++  "%{!dynamic-linker:-dynamic-linker /usr/libexec/ld.elf_so}"
++
++#define MINIX_LINK_SPEC_ELF \
++  "%{assert*} %{R*} %{rpath*} \
++   %{shared:-shared} \
++   %{symbolic:-Bsymbolic} \
++   %{!shared: \
++     -dc -dp \
++     %{!nostdlib: \
++       %{!r: \
++	 %{!e*:-e %(minix_entry_point)}}} \
++     %{!static: \
++       %{rdynamic:-export-dynamic} \
++       -dynamic-linker /usr/libexec/ld.elf_so} \
++     %{static:-static}}"
++
++#define MINIX_SUBTARGET_EXTRA_SPECS \
++  { "minix_link_ld_elf_so",	MINIX_LINK_LD_ELF_SO_SPEC }, \
++  { "minix_cpp_spec",		MINIX_CPP_SPEC }, \
++  { "minix_link_spec",		MINIX_LINK_SPEC_ELF }, \
++  { "minix_entry_point",	MINIX_ENTRY_POINT }, \
++  { "minix_endfile_spec",	MINIX_ENDFILE_SPEC },
++
++#undef SUBTARGET_EXTRA_SPECS
++#define SUBTARGET_EXTRA_SPECS	MINIX_SUBTARGET_EXTRA_SPECS
++
++/* Use --as-needed -lgcc_s for eh support.  */
++#ifdef HAVE_LD_AS_NEEDED
++#define USE_LD_AS_NEEDED 1
++#endif
+diff --git a/gcc/ginclude/stddef.h b/gcc/ginclude/stddef.h
+index bacf24d24..3c1516297 100644
+--- a/gcc/ginclude/stddef.h
++++ b/gcc/ginclude/stddef.h
+@@ -46,15 +46,20 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+ /* This avoids lossage on SunOS but only if stdtypes.h comes first.
+    There's no way to win with the other order!  Sun lossage.  */
+ 
+-#if defined(__NetBSD__)
++/* MINIX 3 carries NetBSD's headers and therefore NetBSD's _BSD_*_T_
++   convention in <machine/ansi.h>; it is not there while libgcc is built
++   ahead of the libc.  */
++#if defined(__NetBSD__) || defined(__minix)
++#ifndef inhibit_libc
+ #include <machine/ansi.h>
+ #endif
++#endif
+ 
+ #if defined (__FreeBSD__)
+ #include <sys/_types.h>
+ #endif
+ 
+-#if defined(__NetBSD__)
++#if defined(__NetBSD__) || defined(__minix)
+ #if !defined(_SIZE_T_) && !defined(_BSD_SIZE_T_)
+ #define _SIZE_T
+ #endif
+@@ -81,7 +86,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+ #undef _WCHAR_T_
+ #undef _BSD_WCHAR_T_
+ #endif
+-#endif /* defined(__NetBSD__) */
++#endif /* defined(__NetBSD__) || defined(__minix) */
+ 
+ /* Sequent's header files use _PTRDIFF_T_ in some conflicting way.
+    Just ignore it.  */
+diff --git a/libgcc/config.host b/libgcc/config.host
+index 6a88ee5a2..51a394892 100644
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -327,6 +327,12 @@ case ${host} in
+   tmake_file="$tmake_file t-slibgcc-libgcc"
+   extra_parts="crtbegin.o crtend.o crtbeginS.o crtendS.o crtbeginT.o"
+   ;;
++*-*-minix*)
++  tmake_file="$tmake_file t-libgcc-pic t-eh-dw2-dip"
++  tmake_file="$tmake_file t-slibgcc t-slibgcc-gld t-slibgcc-elf-ver"
++  tmake_file="$tmake_file t-slibgcc-libgcc"
++  extra_parts=
++  ;;
+ *-*-openbsd*)
+   tmake_file="$tmake_file t-crtstuff-pic t-libgcc-pic t-eh-dw2-dip"
+   case ${target_thread_file} in
+@@ -429,6 +435,13 @@ aarch64*-*-netbsd*)
+ 	md_unwind_def_header=aarch64/aarch64-unwind-def.h
+ 	md_unwind_header=aarch64/aarch64-unwind.h
+ 	;;
++aarch64*-*-minix*)
++	tmake_file="${tmake_file} ${cpu_type}/t-aarch64"
++	tmake_file="${tmake_file} ${cpu_type}/t-lse t-slibgcc-libgcc"
++	tmake_file="${tmake_file} ${cpu_type}/t-softfp t-softfp"
++	md_unwind_def_header=aarch64/aarch64-unwind-def.h
++	md_unwind_header=aarch64/aarch64-unwind.h
++	;;
+ aarch64*-*-fuchsia*)
+ 	tmake_file="${tmake_file} ${cpu_type}/t-aarch64"
+ 	tmake_file="${tmake_file} ${cpu_type}/t-lse t-slibgcc-libgcc"

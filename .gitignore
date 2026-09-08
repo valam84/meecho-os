@@ -76,3 +76,11 @@ port/cb2-gmac/ref/*.dts
 
 # Scratch space and run logs that nothing cites.
 port/scratch/
+
+# ...but the toolchain patches are not "some patch somebody left lying
+# around", which is what the *.patch rule above is for.  They are the
+# difference between a stock GCC/binutils and one that knows the target
+# aarch64-elf64-minix, port/build-xtools.sh cannot run without them, and
+# without it there is no userland.  They were silently left out of the first
+# published commit for exactly this reason.
+!port/toolchain/*.patch

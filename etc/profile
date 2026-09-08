@@ -3,6 +3,14 @@
 # System-wide .profile file for sh(1).
 
 # MEECHO specifics
+
+# Маска прав по умолчанию. Без неё она равна нулю - её никто не ставит:
+# NetBSD берёт umask из /etc/login.conf, которого у этой системы нет, а
+# init оставляет ноль. То есть КАЖДЫЙ созданный файл получается доступным
+# на запись всему миру. Нашлось на ssh: mkdir ~/.ssh давал каталог 777, и
+# sshd отказывал во входе по ключу - "bad ownership or modes for directory
+# /root/.ssh", - что и правильно с его стороны.
+umask 022
 # Set the search path.  What login(1) sets has the system directories
 # missing; on NetBSD they come from /etc/login.conf, which this system has
 # no need for otherwise.

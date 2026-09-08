@@ -277,6 +277,11 @@ then
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 export PATH
 
+# Маска прав по умолчанию: её не ставит никто (см. комментарий в
+# etc/profile), и без этой строки службы, запущенные отсюда, - в том
+# числе sshd - создают файлы доступными на запись всем.
+umask 022
+
 echo "Root is on `sysenv rootdevname`."
 
 # The source of randomness.  Nothing before this point needs one, and
@@ -284,6 +289,20 @@ echo "Root is on `sysenv rootdevname`."
 # initial sequence numbers, further along ssh.
 minix-service up /service/random -dev /dev/random ||
     echo "WARNING: no random device"
+
+# Локальные сокеты (AF_UNIX). Их даёт отдельная служба, и без неё
+# socketpair(2) отказывает с ENOENT - VFS просто некому передать домен
+# LOCAL. Нашлось на sshd: он заводит socketpair, чтобы разговаривать со
+# своим sshd-session, и без него соединение рвётся сразу после установки
+# TCP - "reexec socketpair: No such file or directory" в его отладке и
+# "kex_exchange_identification: Connection reset" у клиента.
+minix-service up /service/uds ||
+    echo "WARNING: no local (AF_UNIX) sockets"
+
+# Псевдотерминалы. Интерактивной сессии по ssh без них не будет: шеллу
+# нужен управляющий терминал, а openpty(3) берёт его у этого драйвера.
+minix-service up /service/pty -dev /dev/ptyp0 ||
+    echo "WARNING: no pseudo terminals"
 
 # Networking (8.4).  The driver first: LWIP watches DS for "drv.net.*" and
 # would pick up a driver started later just as well, but starting it first
@@ -410,7 +429,14 @@ cmd="${cmd} -display none -serial stdio"
 # 10.0.2.15, the gateway 10.0.2.2, the DNS forwarder 10.0.2.3.  Nothing is
 # forwarded inward; this is for the system to reach out.  A machine whose
 # system has no network driver just sees one more transport it ignores.
-cmd="${cmd} -netdev user,id=net0"
+# QEMU_HOSTFWD=<port>: пробросить TCP-порт хоста на порт 22 гостя, чтобы
+# входить по ssh снаружи - через сетевой драйвер и стек, а не через
+# loopback внутри гостя. Проверка ssh через 127.0.0.1 ни драйвера, ни
+# пути пакета через lwip не касается вовсе, и однажды это сбило с толку.
+if [ -n "${QEMU_HOSTFWD:-}" ]
+then	cmd="${cmd} -netdev user,id=net0,hostfwd=tcp::${QEMU_HOSTFWD}-:22"
+else	cmd="${cmd} -netdev user,id=net0"
+fi
 cmd="${cmd} -device virtio-net-device,netdev=net0"
 cmd="${cmd} -kernel ${KERNEL_BIN} -initrd ${ARCHIVE}"
 if [ ${disk} -eq 1 ]

@@ -123,6 +123,15 @@ d--755 0 0
  */
 		db d--755 0 0
 		$
+/* sshd separates the protocol from the privileges: the part that talks
+ * to the network runs as the "sshd" pseudo-user chrooted here. The
+ * directory has to exist, be owned by root and be empty, or sshd says
+ * so and refuses to start.
+ */
+		chroot d--755 0 0
+			sshd d--755 0 0
+			$
+		$
 /* vi keeps recovery files here and complains on every start when the
  * directory is missing -- which is the first thing a new root notices.
  */

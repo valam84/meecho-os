@@ -19,6 +19,9 @@ RAMDISK_DEVICES="
 	console
 	input
 	random
+	urandom
+	ttyp0 ttyp1 ttyp2 ttyp3 ttyp4 ttyp5 ttyp6 ttyp7
+	ttyp8 ttyp9 ttypa ttypb ttypc ttypd ttype ttypf
 	c0d0 c0d0p0 c0d0p0s0 c0d1 c0d1p0 c0d1p0s0
 	c0d2 c0d2p0 c0d2p0s0 c0d3 c0d3p0 c0d3p0s0
 	c0d4 c0d4p0 c0d4p0s0 c0d5 c0d5p0 c0d5p0s0

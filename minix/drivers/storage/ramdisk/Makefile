@@ -112,6 +112,10 @@ ETC+=			profile
 # server that gives only what was asked - most of them - gives no name
 # servers.  See the comment in etc/dhcpcd.conf.
 ETC+=			dhcpcd.conf
+# Настройки sshd. Как и dhcpcd.conf, это CONFIGFILES чужого Makefile,
+# то есть файл, который ставит NetBSD'шный install и не ставит эта
+# сборка; к тому же наш отличается от импортного - см. etc/sshd_config.
+ETC+=			sshd_config
 EXTRA+=			ttys
 PROGRAMS+=		getty
 dir.getty:=	libexec/getty

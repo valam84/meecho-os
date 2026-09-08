@@ -1,0 +1,41 @@
+# sshd_config для MEECHO
+#
+# Отличия от файла, который приходит с импортом OpenSSH, и причины каждого.
+#
+# Вход только по ключу. У root на этой системе пароля нет вовсе (см.
+# etc/master.passwd), то есть пустить его по паролю означало бы пустить кого
+# угодно. PermitEmptyPasswords здесь не выключается, а не используется:
+# password-аутентификация выключена целиком.
+#
+# Ключ хоста один - ed25519. Сборка идёт без libcrypto (см.
+# crypto/external/bsd/openssh/Makefile.inc), поэтому RSA и ECDSA этой
+# системе недоступны, а curve25519 / sntrup761 / mlkem768 и
+# chacha20-poly1305 - есть. Современный клиент выбирает их и так.
+#
+# UsePAM в файле не упоминается вовсе: сборка идёт без PAM, и тогда sshd
+# не просто игнорирует эту строку, а ругается на неё - "Unsupported
+# option UsePAM".
+#
+# Subsystem sftp не объявлен: sftp-server не собирается - ему нужны
+# openat/fstatat относительно дескриптора каталога, а у VFS этого пока нет
+# (в libc есть обход через fchdir, но sftp-server в сборку не включён).
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+
+# Первый файл кладётся в образ сборкой корня (mkroot.sh), второй - обычное
+# место, куда пользователь допишет свой ключ уже на работающей системе.
+AuthorizedKeysFile	/etc/ssh/authorized_keys .ssh/authorized_keys
+
+PidFile /var/run/sshd.pid
+
+# Разрешение имён на каждый вход стоит задержки, а /etc/resolv.conf
+# появляется только после dhcpcd. Журналу хватает адреса.
+UseDNS no
+
+PrintMotd yes
+X11Forwarding no

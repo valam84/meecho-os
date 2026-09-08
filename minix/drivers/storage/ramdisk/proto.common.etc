@@ -2,6 +2,7 @@
 		mtab    s--555 2 1      /proc/mounts
 		system.conf ---644 0 0 etc/system.conf
 		passwd ---644 0 0 etc/passwd
+		group ---644 0 0 etc/group
 		pwd.db ---644 0 0 etc/pwd.db
 		spwd.db ---600 0 0 etc/spwd.db
 		master.passwd ---600 0 0 etc/master.passwd
@@ -16,5 +17,8 @@
 		profile ---644 0 0 etc/profile
 		motd ---644 0 0 etc/motd
 		dhcpcd.conf ---644 0 0 etc/dhcpcd.conf
+		ssh d--755 0 0
+			sshd_config ---644 0 0 etc/sshd_config
+		$
 #endif
 	$

@@ -46,11 +46,18 @@
  * | AuxExecName| fully resolve executable name, as an ASCIIZ string,
  *                at most PMEF_EXECNAMELEN1 long.
  * 
- * Here we put first the strings, then word-align, then ps_strings, to
+ * Here we put first the strings, then padding, then ps_strings, to
  * comply with the expected layout of NetBSD. This seems to matter for
  * the NetBSD ps command, so let's make sure we are compatible...
  *
- * | strings    | Maybe followed by some padding to word-align.
+ * The padding is however much the frame's alignment leaves, not a word's
+ * worth: ps_strings is the last sizeof(struct ps_strings) bytes of the
+ * frame, and that is a contract, not a coincidence. VFS finds it there when
+ * it patches the frame for a #! script and when it reads it for the ELF aux
+ * vectors, and the address it then hands the new process is computed from
+ * the end of the frame too.
+ *
+ * | strings    | Followed by padding up to ps_strings.
  * | **argv     | \
  * | argc       |  +---> ps_string structure content.
  * | **env      |  |
@@ -92,11 +99,7 @@
  * three of the boot servers returning to address zero, with nothing in the
  * fault to say the stack had been misaligned since exec.
  */
-#if defined(__aarch64__)
-#define STACK_ALIGN	16
-#else
-#define STACK_ALIGN	sizeof(void *)
-#endif
+#define STACK_ALIGN	PMEF_STACK_ALIGN
 
 /***************************************************************************** 
  * Computes stack size, argc, envc, for a given set of path, argv, envp.     *
@@ -187,8 +190,26 @@ void minix_stack_fill(const char *path, int argc, char * const *argv,
 	}
 	*fpw++ = NULL;
 
-	/* Padding, because of the stack alignement. */
-	while ((size_t)fp % sizeof(void *)) *fp++= 0;
+	/*
+	 * Padding, up to where ps_strings goes: the last thing in the frame,
+	 * by the contract in the comment at the top.  It used to be padded to
+	 * a word here while the frame was rounded to STACK_ALIGN above, and
+	 * on AArch64 those differ: half the time, depending on nothing but
+	 * the total length of the strings, the structure ended eight bytes
+	 * short of the frame and VFS - which takes the structure from the end
+	 * of the frame - patched the eight bytes after it instead when it
+	 * inserted the interpreter of a #! script.  What that did to the real
+	 * structure was to add one to ps_envstr, the pointer crt0 makes
+	 * environ from, so the interpreter read its environment one byte off
+	 * and died in getenv() before main().  A shell script that ran or did
+	 * not depending on how long its environment happened to be.
+	 */
+	{
+		char *end = frame + stack_size - sizeof(struct ps_strings);
+
+		memset(fp, 0, (size_t)(end - fp));
+		fp = end;
+	}
 
 	/* Fill in the ps_string struct*/
 	*psp = (struct ps_strings *) fp;

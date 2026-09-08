@@ -656,8 +656,21 @@ static int insert_arg(char stack[ARG_MAX], size_t *stk_bytes, char *arg,
 		offset = arg_len - strnlen(stack + a0, ARG_MAX - a0 - 1);
 	}
 
-	/* As ps_strings follows the strings, ensure the offset is word aligned. */
-	offset = offset + (PTRSIZE - ((PTRSIZE + offset) % PTRSIZE));
+	/*
+	 * The frame grows (or shrinks) by a whole number of alignment units,
+	 * so that the stack pointer it implies stays aligned - to a word on
+	 * the 32-bit machines, to sixteen bytes on AArch64, where a misaligned
+	 * SP does not fault but makes some later routine return to the wrong
+	 * place.  Rounded up, and up only: the formula this replaces added a
+	 * whole word to an offset that was already aligned.  ps_strings stays
+	 * the last thing in the frame either way, which is what the code
+	 * below relies on when it finds the structure to update.
+	 */
+	{
+		long const align = (long)PMEF_STACK_ALIGN;
+
+		offset = (int)((offset + align - 1) & ~(align - 1));
+	}
 
 	/* The stack will grow (or shrink) by offset bytes. */
 	if ((*stk_bytes += offset) > ARG_MAX) {

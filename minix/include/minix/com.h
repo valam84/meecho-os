@@ -359,6 +359,20 @@
 #define PMEF_AUXVECTORS	20
 #define PMEF_EXECNAMELEN1 PATH_MAX
 
+/*
+ * What the initial stack frame is aligned to - its size, and so the stack
+ * pointer a process starts with.  A stack word was enough for as long as
+ * every MINIX was 32-bit; AArch64 makes it architecture, SP has to be a
+ * multiple of 16.  Two parties build that frame - libc lays it out and VFS
+ * patches it for a #! script - and both round by this, because a frame one
+ * of them rounded differently is a frame the other one reads wrong.
+ */
+#if defined(__aarch64__)
+#define PMEF_STACK_ALIGN	16
+#else
+#define PMEF_STACK_ALIGN	sizeof(void *)
+#endif
+
 /* Flags for PR_FORK_FLAGS. */
 #define PFF_VMINHIBIT	0x01	/* Don't schedule until release by VM. */
 

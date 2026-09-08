@@ -487,14 +487,36 @@ close_filp(struct filp * f, int may_suspend)
 	}
   }
 
-  /* If the inode being closed is a pipe, release everyone hanging on it. */
-  if (S_ISFIFO(vp->v_mode)) {
-	rw = (f->filp_mode & R_BIT ? VFS_WRITE : VFS_READ);
-	release(vp, rw, susp_count);
-  }
-
   if (--f->filp_count == 0) {
 	if (S_ISFIFO(vp->v_mode)) {
+		/*
+		 * If the inode being closed is a pipe, release everyone
+		 * hanging on the other end -- but only if this really was the
+		 * last file pointer of its kind.  Waking readers means "end of
+		 * file" and waking writers means "broken pipe", and neither is
+		 * true while another descriptor of that kind is still open.
+		 *
+		 * This used to happen on every close of a pipe descriptor.  A
+		 * blocked read(2) survives that, because it rechecks the pipe
+		 * and blocks again; select(2) does not, because there is no
+		 * recheck on that path at all: select_callback() marks the
+		 * descriptor READY, and the read(2) that the caller does next
+		 * then blocks forever with a writer still there.  Any process
+		 * that arranges its descriptors before exec(2) does dup2(2)
+		 * followed by close(2) and hits this.  Found through sshd,
+		 * whose monitor polls the socket to its unprivileged child
+		 * together with the pipe that child logs through: the child
+		 * closing the original of its log descriptor made the poll
+		 * report the empty pipe readable, and the monitor sat in
+		 * read(2) on it instead of answering the child.
+		 *
+		 * Our own filp count is already zero here, so find_filp() does
+		 * not find this one.
+		 */
+		rw = (f->filp_mode & R_BIT ? VFS_WRITE : VFS_READ);
+		if (find_filp(vp, rw == VFS_WRITE ? R_BIT : W_BIT) == NULL)
+			release(vp, rw, susp_count);
+
 		/* Last reader or writer is going. Tell PFS about latest
 		 * pipe size.
 		 */

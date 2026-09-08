@@ -3,15 +3,21 @@
  *
  * Two things here are worth reading before changing anything.
  *
- * The bounce buffer is not a workaround. Data moves between the card and
- * this buffer through the controller's FIFO, a word at a time by the CPU,
- * and between this buffer and the caller through a grant. Both halves are
- * ordinary cached accesses by the processor, so there is no coherency
- * question anywhere in the path - which is exactly why the driver starts
- * this way. The controller's own DMA engine is not coherent with the
- * caches, and this port has no way for a driver to clean or invalidate
- * one: cache maintenance lives inside the kernel and is not exported. See
- * port/PORTING-LOG.md, "Кэши и DMA", for what a DMA path would need first.
+ * The bounce buffer is not a workaround. What a grant names is somewhere in
+ * the caller's address space, in pages this driver has no physical address
+ * for and which need not be contiguous; the controller fetches by physical
+ * address and walks straight through. So the transfer happens into memory
+ * this driver owns, and the grant copy happens around it.
+ *
+ * That buffer is obtained from alloc_contig() rather than declared, and both
+ * of its properties matter. Contiguous, because one command has to be one
+ * range - a bounce buffer split across pages would be a descriptor list
+ * assembled on every request, for no gain. And with its physical address
+ * known, because that is the only form the controller understands; the
+ * address is handed down to the card layer and on to the host, where a host
+ * that has DMA uses it and one that has not ignores it. See
+ * port/PORTING-LOG.md, "Этап 9", for the cache maintenance that makes the
+ * two views of this buffer agree.
  *
  * The vector libblockdriver hands over is an iovec_t whose iov_addr is a
  * grant for anyone else's request and a plain pointer for the driver's own
@@ -48,15 +54,20 @@ struct log sdmmc_log = {
 
 /*
  * How much moves in one command. Sixty-four sectors is 32 KiB, which is one
- * CMD18 or CMD25 and one grant copy per chunk; smaller chunks cost a command
- * each, and larger ones buy little because the FIFO, not the command, is the
- * slow part. The buffer is static so that nothing here can fail to allocate
- * at the moment a file system is trying to write.
+ * CMD18 or CMD25 and one grant copy per chunk.
+ *
+ * The buffer is allocated once, at start-up, and never again: a file system
+ * writing at the moment memory runs short is exactly when a driver must not
+ * be asking for any. It is page-aligned and a whole number of pages long,
+ * which is what keeps the cache maintenance simple - no line of it is shared
+ * with anything else, so nothing here has to worry about the partial-line
+ * rule that sys_cachectl(2) documents.
  */
 #define SDMMC_CHUNK_SECTORS	64
+#define SDMMC_CHUNK_BYTES	(SDMMC_CHUNK_SECTORS * SDMMC_SECTOR_SIZE)
 
-static uint8_t chunk[SDMMC_CHUNK_SECTORS * SDMMC_SECTOR_SIZE]
-	__attribute__((aligned(8)));
+static uint8_t *chunk;
+static phys_bytes chunk_phys;
 
 static struct sdmmc_host host;
 static struct sdmmc_card card;
@@ -227,8 +238,8 @@ sdmmc_transfer(devminor_t minor, int write, u64_t position, endpoint_t endpt,
 				return done;
 
 			bytes = iov[i].iov_size - iov_done;
-			if (bytes > sizeof(chunk))
-				bytes = sizeof(chunk);
+			if (bytes > SDMMC_CHUNK_BYTES)
+				bytes = SDMMC_CHUNK_BYTES;
 			if (pos + bytes > end)
 				bytes = (size_t)(end - pos);
 			bytes -= bytes % SDMMC_SECTOR_SIZE;
@@ -246,10 +257,10 @@ sdmmc_transfer(devminor_t minor, int write, u64_t position, endpoint_t endpt,
 					return r;
 				}
 				r = sdmmc_card_write(pos / SDMMC_SECTOR_SIZE,
-				    count, chunk);
+				    count, chunk, chunk_phys);
 			} else {
 				r = sdmmc_card_read(pos / SDMMC_SECTOR_SIZE,
-				    count, chunk);
+				    count, chunk, chunk_phys);
 			}
 
 			if (r != OK) {
@@ -333,6 +344,21 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 	if (env_parse("log_level", "d", 0, &v, LEVEL_NONE,
 	    LEVEL_TRACE) == EP_SET)
 		sdmmc_log.log_level = (int)v;
+
+	/*
+	 * The transfer buffer, before anything is asked of the hardware: a
+	 * driver that cannot get it cannot serve a single request, and
+	 * finding that out at the first read would mean finding it out with
+	 * a file system already mounted on top.
+	 */
+	chunk = alloc_contig(SDMMC_CHUNK_BYTES, AC_ALIGN4K, &chunk_phys);
+	if (chunk == NULL) {
+		log_warn(&sdmmc_log, "no %u bytes of contiguous memory for the "
+		    "transfer buffer\n", (unsigned)SDMMC_CHUNK_BYTES);
+		return ENOMEM;
+	}
+	log_debug(&sdmmc_log, "transfer buffer %u bytes at phys 0x%lx\n",
+	    (unsigned)SDMMC_CHUNK_BYTES, (unsigned long)chunk_phys);
 
 	if ((r = sdmmc_host_find(&host)) != OK) {
 		log_warn(&sdmmc_log, "no SD/MMC controller this driver knows "

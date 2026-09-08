@@ -10,23 +10,38 @@
  * has, plus two vendor registers. So this file is a plain SDHCI driver and
  * sdhcreg.h describes almost all of it; sdmmc_sdhci.h has the rest.
  *
- * Data moves through the FIFO by the CPU, not by the controller's DMA. That
- * is deliberate and is written up in port/PORTING-LOG.md: a DMA engine that
- * is not coherent with the caches needs the buffer cleaned before a write
- * and invalidated after a read, and this port has no way for a driver to ask
- * for either - cache maintenance exists only inside the kernel. Doing it
- * with a non-cacheable mapping instead does not work here either, because
- * the kernel maps all of RAM cacheably and sys_safecopy reads the buffer
- * through that mapping: the two aliases would disagree. PIO has no such
- * question, and QEMU cannot show the difference, so guessing was not an
- * option. See "Кэши и DMA" in the log.
+ * Data moves by ADMA2 where the controller says it can, and through the
+ * FIFO by the processor where it cannot.
  *
- * Interrupts are enabled in the status registers but not signalled to the
- * GIC: every wait here is a poll with a deadline. One unknown at a time -
- * the interrupt path can be added without changing anything a caller sees,
- * and the line is already granted by RS from the tree.
+ * The first version of this driver did only the second, and said why: a DMA
+ * engine that is not coherent with the caches needs its buffer cleaned
+ * before the device reads it and invalidated after the device writes it, and
+ * at the time this port had no way for a driver to ask for either. It has
+ * had one since sys_cachectl(2) (port/PORTING-LOG.md, "Обслуживание кэшей
+ * для DMA"), so that reason is gone and this comment is rewritten with the
+ * code rather than left to mislead the next reader. The other half of the
+ * old argument still holds and is why the maintenance is explicit rather
+ * than avoided: a non-cacheable mapping of the buffer would not work here,
+ * because the kernel maps all of RAM cacheably in its linear map and
+ * sys_safecopy reads the buffer through it, and two mappings of one page
+ * with different memory types are undefined.
+ *
+ * Which engine is decided by the capabilities register, not in advance:
+ * ADMA2 when the part offers it and addresses fit in 32 bits, and the
+ * programmed path otherwise. SDMA is offered by this part too and is not
+ * used - it would be a second, untested way to do what ADMA2 already does,
+ * and untested code that looks like working code is worse here than no code.
+ *
+ * Waiting is by interrupt where the tree gave the controller a line and RS
+ * granted it, and by polling with a deadline where it did not - and also
+ * where the line stops answering, which is checked rather than assumed. On
+ * this board the four registers that do not do what the specification says
+ * are documented in the log; an interrupt that does not arrive would be the
+ * fifth, and the driver survives it instead of hanging.
  */
 
+#include <minix/blockdriver.h>
+#include <minix/cachectl.h>
 #include <minix/drivers.h>
 #include <minix/log.h>
 #include <minix/spin.h>
@@ -131,6 +146,76 @@ static unsigned spec_version;
 static int is_dwcmshc;			/* the Rockchip part: vendor area */
 static unsigned vendor_area;
 
+/* The host this file drives, kept so that init can revise what probe set. */
+static struct sdmmc_host *this_host;
+
+/*
+ * The interrupt.
+ *
+ * irq_line is what the tree says; irq_ok is whether RS actually granted it
+ * and the hook was set. irq_dead is set the first time the line misbehaves,
+ * and from then on every wait is a poll: on this board the specification has
+ * already been wrong about four registers, and a driver that hangs forever
+ * because the fifth one is an interrupt that never comes is a worse outcome
+ * than a driver that goes slowly.
+ */
+static int irq_line = -1;
+static int irq_hook;
+static int irq_ok;
+static int irq_dead;
+
+/*
+ * How many hardware interrupts may arrive without the status register saying
+ * anything new before the line is declared useless.
+ *
+ * The failure this guards against is not hypothetical in shape: the line is
+ * asserted while a status bit is set, so a bit that is signalled and never
+ * cleared makes every sys_irqenable() produce another interrupt at once.
+ * That is a livelock, not a hang, and it would be visible only as a system
+ * that stopped doing anything else - which is exactly the shape of the UART
+ * interrupt storm this port has already met once (see the log, "Молчание
+ * после баннера").
+ */
+#define IRQ_SPURIOUS_MAX	64
+
+/*
+ * DMA.
+ *
+ * dma_mode is one of SDHC_DMA_SELECT_* or -1 for "the processor moves it".
+ * The descriptor table is one page, allocated once: at eight bytes and up
+ * to 64 KiB of payload per descriptor, a page describes 32 MiB, which is
+ * three orders of magnitude more than one command of this driver carries.
+ */
+#define ADMA_TABLE_BYTES	4096
+#define ADMA_DESCS		(ADMA_TABLE_BYTES / 8)
+
+static int dma_mode = -1;
+static uint32_t *adma_desc;
+static phys_bytes adma_desc_phys;
+
+/*
+ * Cache maintenance, with the answer looked at.
+ *
+ * Taken from dwmac_ring.c, and for the reason written there: a call that
+ * quietly does nothing looks exactly like a call that worked, and what it
+ * leaves behind is not an error but wrong data three layers away. Reported
+ * once, because a driver that prints on every block is a driver nobody
+ * reads - but reported, and the transfer is refused rather than run blind.
+ */
+static int
+cache_op(int op, void *addr, size_t len)
+{
+	static int complained;
+	int r;
+
+	if ((r = sys_cachectl(op, addr, len)) != OK && !complained) {
+		log_warn(&sdmmc_log, "cache maintenance refused (op %d): %d; "
+		    "falling back to the programmed path\n", op, r);
+		complained = 1;
+	}
+	return r;
+}
+
 static uint8_t
 rd8(unsigned off)
 {
@@ -186,38 +271,147 @@ wait_state_clear(uint32_t mask, uint32_t usecs)
 }
 
 /*
- * Spin until one of the wanted normal-interrupt bits is set, or an error is
- * flagged, or the time runs out.
+ * Has one of the wanted normal-interrupt bits arrived, or an error?
+ *
+ * The error is looked at first on purpose: a transfer that ends badly can
+ * raise the bit the caller is waiting for in the same status word, and
+ * taking that as success would turn a CRC error into data.
  *
  * The bit is not cleared here: which of several bits arrived is the caller's
  * business, and a data transfer wants to clear buffer-ready without touching
  * transfer-complete.
  */
 static int
-wait_intr(uint16_t wanted, uint32_t usecs, uint16_t *got)
+check_intr(uint16_t wanted, uint16_t *got)
+{
+	uint16_t n = rd16(SDHC_NINTR_STATUS);
+
+	if (n & SDHC_ERROR_INTERRUPT)
+		return EIO;
+	if (n & wanted) {
+		if (got != NULL)
+			*got = n;
+		return OK;
+	}
+	return EAGAIN;
+}
+
+/* Spin until one of them arrives, or the time runs out. */
+static int
+poll_intr(uint16_t wanted, uint32_t usecs, uint16_t *got)
 {
 	spin_t s;
-	uint16_t n;
+	int r;
 
 	spin_init(&s, usecs);
 	do {
-		n = rd16(SDHC_NINTR_STATUS);
-		/*
-		 * The error is looked at first on purpose: a transfer that
-		 * ends badly can raise the bit the caller is waiting for in
-		 * the same status word, and taking that as success would
-		 * turn a CRC error into data.
-		 */
-		if (n & SDHC_ERROR_INTERRUPT)
-			return EIO;
-		if (n & wanted) {
-			if (got != NULL)
-				*got = n;
-			return OK;
-		}
+		if ((r = check_intr(wanted, got)) != EAGAIN)
+			return r;
 	} while (spin_check(&s));
 
 	return ETIMEDOUT;
+}
+
+/*
+ * Sleep until one of them arrives, or the alarm says the time is up.
+ *
+ * Returns EAGAIN, and only EAGAIN, when the interrupt line has proved
+ * useless; the caller then polls, and every later wait polls too. Three
+ * things count as useless and all three are checked rather than assumed:
+ * the kernel refusing to arm the line, the line raising interrupt after
+ * interrupt without the status register saying anything new, and the alarm
+ * expiring while no interrupt at all has been seen.
+ *
+ * The last of those deserves the distinction it gets. If the deadline
+ * passes and interrupts *were* arriving, the transfer really did fail and
+ * ETIMEDOUT is the honest answer. If it passes with none seen, the failure
+ * is more likely the line than the card, and it is worth retrying the same
+ * wait by polling before telling the caller anything.
+ *
+ * Requests that arrive while we sleep are queued by libblockdriver, which
+ * is the same thing emmc(8) does in this directory and for the same reason:
+ * this driver's main loop is blockdriver_task(), and a message taken off
+ * the queue here would otherwise be lost.
+ */
+static int
+intr_wait(uint16_t wanted, uint32_t usecs, uint16_t *got)
+{
+	message m;
+	unsigned spurious = 0;
+	int ipc_status, r, seen = 0, expired = 0;
+
+	sys_setalarm(micros_to_ticks(usecs), 0);
+
+	for (;;) {
+		if ((r = check_intr(wanted, got)) != EAGAIN)
+			break;
+		if (expired) {
+			r = seen ? ETIMEDOUT : EAGAIN;
+			if (r == EAGAIN)
+				log_warn(&sdmmc_log, "no interrupt on line %d "
+				    "in %u us; polling from now on\n",
+				    irq_line, usecs);
+			break;
+		}
+		if (spurious > IRQ_SPURIOUS_MAX) {
+			log_warn(&sdmmc_log, "line %d interrupted %u times "
+			    "with nothing to show for it (nis %04x eis %04x); "
+			    "polling from now on\n", irq_line, spurious,
+			    rd16(SDHC_NINTR_STATUS), rd16(SDHC_EINTR_STATUS));
+			r = EAGAIN;
+			break;
+		}
+
+		if (sys_irqenable(&irq_hook) != OK) {
+			log_warn(&sdmmc_log, "cannot enable line %d; polling "
+			    "from now on\n", irq_line);
+			r = EAGAIN;
+			break;
+		}
+		if (driver_receive(ANY, &m, &ipc_status) != OK) {
+			r = EIO;
+			break;
+		}
+		if (is_ipc_notify(ipc_status)) {
+			if (_ENDPOINT_P(m.m_source) == CLOCK) {
+				expired = 1;
+				continue;
+			}
+			if (_ENDPOINT_P(m.m_source) == HARDWARE) {
+				seen = 1;
+				spurious++;
+				continue;
+			}
+		}
+		/* Somebody else's request: it waits until this one is done. */
+		blockdriver_mq_queue(&m, ipc_status);
+	}
+
+	sys_setalarm(0, 0);
+	(void)sys_irqdisable(&irq_hook);
+
+	if (r == EAGAIN)
+		irq_dead = 1;
+	return r;
+}
+
+/*
+ * Wait for one of the wanted bits, by whichever means this machine has.
+ *
+ * A wait that the interrupt path gives up on is retried by polling rather
+ * than reported: the deadline has passed by then, but the deadline was a
+ * bound on the hardware and the hardware has not been given its chance yet.
+ */
+static int
+wait_intr(uint16_t wanted, uint32_t usecs, uint16_t *got)
+{
+	int r;
+
+	if (irq_ok && !irq_dead) {
+		if ((r = intr_wait(wanted, usecs, got)) != EAGAIN)
+			return r;
+	}
+	return poll_intr(wanted, usecs, got);
 }
 
 /*
@@ -575,6 +769,18 @@ command_error(struct sdmmc_cmd *cmd)
 		return ETIMEDOUT;
 	}
 
+	/*
+	 * The ADMA error state is named separately because it is the only
+	 * error here that is about the driver rather than about the card: it
+	 * says the engine choked on a descriptor this file wrote, and which
+	 * state it was in says whether it was fetching the descriptor or
+	 * acting on it.
+	 */
+	if (e & SDHC_ADMA_ERROR)
+		log_warn(&sdmmc_log, "CMD%u: ADMA error, state 0x%08x, "
+		    "table at 0x%08x\n", cmd->index,
+		    rd32(SDHC_ADMA_ERROR_STATUS), rd32(SDHC_ADMA_ADDR));
+
 	log_warn(&sdmmc_log, "CMD%u: error status 0x%04x, auto-cmd 0x%04x\n",
 	    cmd->index, e, acmd);
 	return EIO;
@@ -624,7 +830,19 @@ transfer_block(struct sdmmc_cmd *cmd, uint32_t *buf)
 	want = (cmd->data_dir == SDMMC_DATA_READ) ?
 	    SDHC_BUFFER_READ_READY : SDHC_BUFFER_WRITE_READY;
 
-	if ((r = wait_intr(want, DATA_TIMEOUT_US, &got)) != OK)
+	/*
+	 * A poll, and deliberately not the interrupt path.
+	 *
+	 * Buffer-ready is a level, not an event: it says the FIFO has data
+	 * or has room, and it stays set until this loop has emptied or
+	 * filled it. Signalling that to the GIC is the shape that livelocks
+	 * - every re-enable finds the line still asserted - and the wait is
+	 * microseconds anyway, less than the message it would cost. So the
+	 * programmed path stays what it always was; the interrupt is for
+	 * the two events that really are events, and both of them belong to
+	 * the transfer as a whole.
+	 */
+	if ((r = poll_intr(want, DATA_TIMEOUT_US, &got)) != OK)
 		return r;
 	log_trace(&sdmmc_log, "buffer ready: nis %04x st %08x bc %04x\n",
 	    got, rd32(SDHC_PRESENT_STATE), rd16(SDHC_BLOCK_COUNT));
@@ -640,12 +858,86 @@ transfer_block(struct sdmmc_cmd *cmd, uint32_t *buf)
 	return OK;
 }
 
+/*
+ * Describe the buffer to the controller, and hand the caches over.
+ *
+ * Answers OK when the transfer will be done by the engine and something
+ * else when it will not; the caller then falls back to the FIFO, which is
+ * why every refusal here is a refusal and not a failure. The cases that
+ * refuse are the ones where a 32-bit ADMA2 descriptor cannot say what is
+ * wanted: no physical address, a buffer that does not fit below 4 GiB, one
+ * longer than the table can describe, one not aligned to a word.
+ *
+ * The cache maintenance is the rule taken from NetBSD's bus_dma and written
+ * up in the log: clean before the device reads, invalidate before the device
+ * writes - and, for a read, invalidate again afterwards, because a core that
+ * speculates could have pulled the line back in while the transfer ran. The
+ * buffer this driver hands down is page-aligned and a whole number of
+ * sectors, so no cache line of it is shared with anything else and the
+ * partial-line rule of sys_cachectl(2) never comes into it.
+ */
+static int
+dma_setup(struct sdmmc_cmd *cmd)
+{
+	size_t total = (size_t)cmd->blocks * cmd->blocklen;
+	phys_bytes addr = cmd->data_phys;
+	size_t left = total;
+	unsigned n = 0;
+	uint8_t ctl;
+	int op;
+
+	if (dma_mode < 0 || adma_desc == NULL || cmd->data_phys == 0 ||
+	    total == 0)
+		return EINVAL;
+	if ((uint64_t)addr + total > 0x100000000ULL || (addr & 3) != 0)
+		return EINVAL;
+	if ((total + ADMA2_MAX_LEN - 1) / ADMA2_MAX_LEN > ADMA_DESCS)
+		return EINVAL;
+
+	while (left > 0) {
+		size_t len = (left > ADMA2_MAX_LEN) ? ADMA2_MAX_LEN : left;
+		uint32_t attr = ADMA2_ATTR_VALID | ADMA2_ATTR_ACT_TRAN;
+
+		if (len == left)
+			attr |= ADMA2_ATTR_END;
+		/*
+		 * A length of 65536 is written as zero, which is what the
+		 * mask does on its own; the port is little-endian only, so
+		 * the two halves of the word are attribute then length
+		 * exactly as the specification draws them.
+		 */
+		adma_desc[2 * n] = attr | ((uint32_t)(len & 0xffff) << 16);
+		adma_desc[2 * n + 1] = (uint32_t)addr;
+		addr += len;
+		left -= len;
+		n++;
+	}
+
+	op = (cmd->data_dir == SDMMC_DATA_WRITE) ?
+	    CACHE_CLEAN : CACHE_INVALIDATE;
+	if (cache_op(op, cmd->data, total) != OK)
+		return EIO;
+	if (cache_op(CACHE_CLEAN, adma_desc, n * 8) != OK)
+		return EIO;
+
+	ctl = rd8(SDHC_HOST_CTL) &
+	    (uint8_t)~(SDHC_DMA_SELECT_MASK << SDHC_DMA_SELECT_SHIFT);
+	wr8(SDHC_HOST_CTL,
+	    ctl | (uint8_t)(dma_mode << SDHC_DMA_SELECT_SHIFT));
+	wr32(SDHC_ADMA_ADDR, (uint32_t)adma_desc_phys);
+
+	log_trace(&sdmmc_log, "adma: %u desc for %u bytes at phys 0x%lx, "
+	    "table 0x%lx\n", n, (unsigned)total, (unsigned long)cmd->data_phys,
+	    (unsigned long)adma_desc_phys);
+	return OK;
+}
+
 static int
 sdhci_command(struct sdmmc_cmd *cmd)
 {
 	uint32_t mask, i;
 	uint16_t mode, creg, got;
-	int r;
+	int r, use_dma = 0;
 
 	if (regs == 0)
 		return ENXIO;
@@ -694,6 +986,16 @@ sdhci_command(struct sdmmc_cmd *cmd)
 			mode |= SDHC_MULTI_BLOCK_MODE | SDHC_BLOCK_COUNT_ENABLE;
 		if (cmd->stop)
 			mode |= SDHC_AUTO_CMD12_ENABLE;
+		/*
+		 * And whether the controller fetches it or the processor
+		 * feeds it. Asked per command rather than once, because the
+		 * answer depends on the buffer: the card protocol's own
+		 * short reads land wherever their caller had them.
+		 */
+		if (dma_setup(cmd) == OK) {
+			use_dma = 1;
+			mode |= SDHC_DMA_ENABLE;
+		}
 		/*
 		 * Written only when there is data: the standard says the
 		 * transfer mode register is not to be written otherwise, and
@@ -775,7 +1077,7 @@ sdhci_command(struct sdmmc_cmd *cmd)
 		    cmd->index, cmd->resp[0], got);
 	}
 
-	if (cmd->data_dir != SDMMC_DATA_NONE) {
+	if (cmd->data_dir != SDMMC_DATA_NONE && !use_dma) {
 		uint8_t *p = cmd->data;
 
 		for (i = 0; i < cmd->blocks; i++) {
@@ -813,6 +1115,17 @@ sdhci_command(struct sdmmc_cmd *cmd)
 			return r;
 		}
 		wr16(SDHC_NINTR_STATUS, SDHC_TRANSFER_COMPLETE);
+		/*
+		 * And once more, after the device is done: while the
+		 * transfer ran, a speculating core may have pulled lines of
+		 * the buffer back into the cache from memory the device had
+		 * not written yet. NetBSD does the same and says why in
+		 * bus_dma; on ARMv8 there is no core that does not
+		 * speculate, so there is no condition around it.
+		 */
+		if (use_dma && cmd->data_dir == SDMMC_DATA_READ)
+			(void)cache_op(CACHE_INVALIDATE, cmd->data,
+			    (size_t)cmd->blocks * cmd->blocklen);
 	} else if (cmd->rsp_type == SDMMC_RSP_R1B) {
 		r = wait_busy_end(BUSY_TIMEOUT_US);
 		if (r == EIO)
@@ -948,6 +1261,54 @@ sdhci_init(void)
 	}
 
 	/*
+	 * Which engine moves the data, decided by what the part says rather
+	 * than by what this board is known to have.
+	 *
+	 * ADMA2 with 32-bit descriptors, or nothing. SDMA is refused even
+	 * where the capability bit is set: it would be a second way to do
+	 * what the first already does, tested nowhere, and it needs the
+	 * driver to reprogram the address at every buffer boundary - a
+	 * mechanism with no counterpart in ADMA2 and nothing here to
+	 * exercise it. A part that wants 96-bit descriptors (the 64-bit
+	 * system bus of specification 3.00) is refused for the same reason:
+	 * a descriptor of the wrong shape does not fail, it transfers into
+	 * the wrong address.
+	 */
+	if (adma_desc == NULL)
+		adma_desc = alloc_contig(ADMA_TABLE_BYTES, AC_ALIGN4K,
+		    &adma_desc_phys);
+
+	dma_mode = -1;
+	if (!(caps & SDHC_ADMA2_SUPPORT))
+		log_info(&sdmmc_log, "no ADMA2 in the capabilities; the "
+		    "processor will move the data\n");
+	else if (caps & SDHC_64BIT_BUS_V3)
+		log_info(&sdmmc_log, "the part wants 64-bit descriptors, "
+		    "which this driver does not write; the processor will "
+		    "move the data\n");
+	else if (adma_desc == NULL || adma_desc_phys == 0 ||
+	    adma_desc_phys + ADMA_TABLE_BYTES > 0x100000000ULL)
+		log_warn(&sdmmc_log, "no descriptor table below 4 GiB; the "
+		    "processor will move the data\n");
+	else
+		dma_mode = SDHC_DMA_SELECT_ADMA2_32;
+
+	/*
+	 * And the ceiling on one command.
+	 *
+	 * Four blocks is the FIFO's, measured on this board; it has nothing
+	 * to do with the engine, which streams the bytes as fast as it takes
+	 * them off the bus. What bounds a DMA transfer is the block count
+	 * register, which is sixteen bits, and the descriptor table, which
+	 * dma_setup() checks per command.
+	 */
+	if (this_host != NULL) {
+		this_host->max_blocks_pio = 4;
+		this_host->max_blocks = (dma_mode >= 0) ?
+		    0xffff : this_host->max_blocks_pio;
+	}
+
+	/*
 	 * Power. Pick the highest voltage the part says it supports: an
 	 * embedded eMMC has its supply wired up and this register only gates
 	 * it, while a socket needs it turned on at all.
@@ -965,8 +1326,28 @@ sdhci_init(void)
 	wr8(SDHC_TIMEOUT_CTL, SDHC_TIMEOUT_MAX);
 
 	/*
-	 * Every status bit is latched so that polling can see it; none is
-	 * signalled to the GIC, because nothing here waits on a message.
+	 * The interrupt line, if the tree named one and RS granted it.
+	 *
+	 * A refusal is not fatal and not even a warning at the level that
+	 * stops a boot: waiting by polling is what this driver did until
+	 * now, and it works. It is said out loud, though, because "slow for
+	 * a reason nobody noticed" is the failure this note exists to
+	 * prevent.
+	 */
+	if (irq_line >= 0 && !irq_ok) {
+		irq_hook = irq_line;
+		if ((r = sys_irqsetpolicy(irq_line, 0, &irq_hook)) != OK)
+			log_warn(&sdmmc_log, "line %d not granted (%d); every "
+			    "wait will be a poll\n", irq_line, r);
+		else
+			irq_ok = 1;
+	} else if (irq_line < 0) {
+		log_info(&sdmmc_log, "the tree names no interrupt for this "
+		    "controller; every wait will be a poll\n");
+	}
+
+	/*
+	 * Every status bit is latched so that a poll can see it.
 	 *
 	 * All but one: the card interrupt is an SDIO signal, there is no
 	 * SDIO card here, and enabling it made the bit latch on every
@@ -976,8 +1357,27 @@ sdhci_init(void)
 	wr16(SDHC_NINTR_STATUS_EN,
 	    SDHC_NINTR_SIGNAL_MASK & ~SDHC_CARD_INTERRUPT);
 	wr16(SDHC_EINTR_STATUS_EN, 0x03ff);
-	wr16(SDHC_NINTR_SIGNAL_EN, 0);
-	wr16(SDHC_EINTR_SIGNAL_EN, 0);
+
+	/*
+	 * Signalled to the GIC: only the two events a wait ever sleeps on,
+	 * plus every error.
+	 *
+	 * The narrowness is the point. The line is asserted for as long as a
+	 * signalled status bit is set, so a bit that is signalled and left
+	 * standing turns each sys_irqenable() into another interrupt at
+	 * once - a livelock rather than a hang, and one this port has
+	 * already met on the UART. Buffer-ready is deliberately not
+	 * signalled: it belongs to the programmed path, which stays a poll,
+	 * and it is set for as long as the FIFO has room.
+	 */
+	if (irq_ok) {
+		wr16(SDHC_NINTR_SIGNAL_EN,
+		    SDHC_COMMAND_COMPLETE | SDHC_TRANSFER_COMPLETE);
+		wr16(SDHC_EINTR_SIGNAL_EN, 0x03ff);
+	} else {
+		wr16(SDHC_NINTR_SIGNAL_EN, 0);
+		wr16(SDHC_EINTR_SIGNAL_EN, 0);
+	}
 
 	if ((r = sdhci_set_bus_width(1)) != OK)
 		return r;
@@ -1000,6 +1400,9 @@ sdhci_init(void)
 		log_info(&sdmmc_log, "SDHCI %s at 0x%lx, base clock %u Hz, "
 		    "caps 0x%08x\n", v, (unsigned long)reg_base, base_clock,
 		    caps);
+		log_info(&sdmmc_log, "transfers by %s, waits by %s\n",
+		    (dma_mode >= 0) ? "ADMA2" : "the processor",
+		    irq_ok ? "interrupt" : "polling");
 	}
 	dump_regs("after init");
 	return OK;
@@ -1009,8 +1412,19 @@ static void
 sdhci_exit(void)
 {
 	if (regs != 0) {
+		/*
+		 * The signals go before the line does: a bit left signalled
+		 * on a line nobody is listening to is the same livelock as
+		 * before, only now with no driver to notice it.
+		 */
+		wr16(SDHC_NINTR_SIGNAL_EN, 0);
+		wr16(SDHC_EINTR_SIGNAL_EN, 0);
 		(void)sdhci_set_clock(0, NULL);
 		vm_unmap_phys(SELF, (void *)regs, reg_size);
+	}
+	if (irq_ok) {
+		(void)sys_irqrmpolicy(&irq_hook);
+		irq_ok = 0;
 	}
 	regs = 0;
 }
@@ -1030,6 +1444,8 @@ sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	reg_base = info->base;
 	reg_size = info->size;
 	base_clock = info->max_freq;	/* the fallback, see sdhci_init */
+	irq_line = info->irq;
+	this_host = host;
 
 	rst_base = info->reset_base;
 	rst_size = info->reset_size;
@@ -1049,9 +1465,13 @@ sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	host->max_bus_width = info->bus_width;
 	host->max_freq = info->max_freq;
 	/*
-	 * Measured, not read out of the part: four blocks of 512 bytes go
-	 * through and eight do not. See the comment on max_blocks.
+	 * Measured, not read out of the part: through the FIFO, four blocks
+	 * of 512 bytes go through and eight do not. See the comment on
+	 * max_blocks. Both start at the FIFO's ceiling because probe has not
+	 * touched the hardware yet and does not know what it can do; init
+	 * raises max_blocks once the capabilities register has answered.
 	 */
 	host->max_blocks = 4;
+	host->max_blocks_pio = 4;
 	return OK;
 }

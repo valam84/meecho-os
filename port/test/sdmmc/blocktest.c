@@ -153,9 +153,49 @@ sdmmc_card_init(struct sdmmc_host *UNUSED(h), struct sdmmc_card *UNUSED(c))
 	return ENXIO;
 }
 
-int
-sdmmc_card_read(uint64_t sector, uint32_t count, void *buf)
+/*
+ * Модель памяти под буфер обмена.
+ *
+ * Драйвер берёт его у alloc_contig() и запоминает физический адрес, потому
+ * что контроллер понимает только его. Стенду важно не «сколько выделено», а
+ * то, что этот адрес доезжает до слоя карты неиспорченным: ошибка здесь
+ * означала бы обмен по чужому физическому адресу, то есть порчу памяти где
+ * угодно, кроме того места, где она видна.
+ */
+#define STUB_PHYS_BASE	0x40200000UL
+
+static int contig_fails;	/* 1: выделение отказывает */
+
+void *
+alloc_contig(size_t len, int UNUSED(flags), phys_bytes *phys)
 {
+	void *p = NULL;
+	size_t pages = (len + 4095) & ~(size_t)4095;
+
+	if (contig_fails)
+		return NULL;
+	/* Настоящий alloc_contig() отдаёт память, выровненную на страницу. */
+	if (posix_memalign(&p, 4096, pages) != 0)
+		return NULL;
+	if (phys != NULL)
+		*phys = STUB_PHYS_BASE;
+	return p;
+}
+
+void
+free_contig(void *UNUSED(addr), size_t UNUSED(len))
+{
+}
+
+/* Что слой карты увидел последним. */
+static phys_bytes last_phys;
+static const void *last_buf;
+
+int
+sdmmc_card_read(uint64_t sector, uint32_t count, void *buf, phys_bytes phys)
+{
+	last_buf = buf;
+	last_phys = phys;
 	record_op(sector, count, 0);
 	if (fail_after >= 0 && nops > fail_after)
 		return EIO;
@@ -167,8 +207,11 @@ sdmmc_card_read(uint64_t sector, uint32_t count, void *buf)
 }
 
 int
-sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf)
+sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf,
+	phys_bytes phys)
 {
+	last_buf = buf;
+	last_phys = phys;
 	record_op(sector, count, 1);
 	if (fail_after >= 0 && nops > fail_after)
 		return EIO;
@@ -231,6 +274,23 @@ setup(uint64_t base_sectors, uint64_t size_sectors)
 
 	for (i = 0; i < sizeof(medium); i++)
 		medium[i] = (uint8_t)(i * 31 + (i >> 8));
+
+	/*
+	 * Буфер обмена драйвер берёт один раз при запуске; стенд запуска не
+	 * делает, поэтому берёт его тем же вызовом здесь. Один раз на все
+	 * проверки — как в драйвере.
+	 */
+	if (chunk == NULL) {
+		chunk = alloc_contig(SDMMC_CHUNK_BYTES, AC_ALIGN4K,
+		    &chunk_phys);
+		if (chunk == NULL) {
+			fprintf(stderr, "стенду не хватило памяти\n");
+			exit(1);
+		}
+	}
+
+	last_buf = NULL;
+	last_phys = 0;
 
 	memset(&card, 0, sizeof(card));
 	card.present = 1;
@@ -484,6 +544,42 @@ test_flush_and_open(void)
 	check_i64(sdmmc_close(0), EINVAL, "лишнее закрытие отвергнуто");
 }
 
+/*
+ * Физический адрес буфера доезжает до слоя карты, и это тот самый буфер.
+ *
+ * Проверка дешёвая и стоит того: без физического адреса контроллер не может
+ * забрать данные сам, а с ЧУЖИМ он их заберёт откуда-то ещё — и это будет
+ * не отказ, а порча памяти в стороне. Ошибка такого рода на плате видна
+ * только тем, что система однажды ведёт себя странно.
+ */
+static void
+test_phys_address(void)
+{
+	static uint8_t buf[4 * SDMMC_SECTOR_SIZE];
+	iovec_t iov;
+
+	printf("Физический адрес буфера доходит до карты\n");
+	setup(0, CARD_SECTORS);
+
+	iov.iov_addr = grant_make(0, buf, sizeof(buf));
+	iov.iov_size = sizeof(buf);
+
+	check_i64(sdmmc_transfer(0, 0, 0, 42, &iov, 1, 0), sizeof(buf),
+	    "чтение прошло");
+	check(last_buf == chunk, "карта получила буфер драйвера", NULL);
+	check_i64((long long)last_phys, (long long)chunk_phys,
+	    "и его физический адрес");
+	check_i64((long long)chunk_phys, (long long)STUB_PHYS_BASE,
+	    "тот, который дал alloc_contig");
+	check(((uintptr_t)chunk & 4095) == 0,
+	    "буфер выровнен на страницу: ни одна строка кэша не общая", NULL);
+
+	check_i64(sdmmc_transfer(0, 1, 0, 42, &iov, 1, 0), sizeof(buf),
+	    "запись прошла");
+	check_i64((long long)last_phys, (long long)chunk_phys,
+	    "и в обратную сторону адрес тот же");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -499,6 +595,7 @@ main(int argc, char **argv)
 	test_bad_requests();
 	test_error_midway();
 	test_flush_and_open();
+	test_phys_address();
 
 	printf("\n%d проверок, %d отказов\n", checks, failures);
 	return failures != 0;

@@ -38,6 +38,59 @@
 #define SDHC_SPEC_VERS_400		0x03
 
 /*
+ * What the controller may fetch by itself, and how it is told to.
+ *
+ * sdhcreg.h has SDHC_DMA_SUPPORT, which is the SDMA bit and the only kind
+ * of DMA specification 2.00 knew; ADMA2 and the descriptor list came with
+ * 3.00, and the two more bits below with it.
+ *
+ * SDHC_64BIT_BUS_V3 is asked rather than assumed because it decides the
+ * shape of a descriptor - eight bytes with a 32-bit address, or twelve with
+ * a 64-bit one - and getting that wrong is not a slow transfer but a
+ * transfer into whatever the misread half of an address points at. This
+ * board answers no, and all of its RAM is below 4 GiB, so nothing is lost;
+ * a part that answers yes is refused DMA here rather than driven by
+ * untested code.
+ */
+#define SDHC_ADMA2_SUPPORT		(1<<19)
+#define SDHC_64BIT_BUS_V3		(1<<28)
+
+/* Host Control 1, DMA Select: which engine the transfer mode's DMA bit means. */
+#define SDHC_DMA_SELECT_SHIFT		3
+#define SDHC_DMA_SELECT_MASK		0x3
+#define  SDHC_DMA_SELECT_SDMA		0
+#define  SDHC_DMA_SELECT_ADMA2_32	2
+#define  SDHC_DMA_SELECT_ADMA2_64	3
+
+/*
+ * The ADMA2 descriptor table's address, and where ADMA reports its own
+ * failures. Error Interrupt Status bit 9 is "ADMA error"; sdhcreg.h's
+ * SDHC_DMA_ERROR at bit 12 is in the vendor half of that register on a
+ * modern part and is not this.
+ */
+#define SDHC_ADMA_ERROR_STATUS		0x54
+#define SDHC_ADMA_ADDR			0x58
+#define SDHC_ADMA_ADDR_HI		0x5c
+#define SDHC_ADMA_ERROR			(1<<9)
+
+/*
+ * One ADMA2 descriptor with a 32-bit address: attributes, length, address.
+ *
+ * The length field is sixteen bits and zero means 65536, which is why a
+ * descriptor covers at most that. Valid says the entry is one; End says it
+ * is the last, and the controller stops there; Int would raise an interrupt
+ * at this entry and is not used - the transfer's own completion is the only
+ * event this driver waits for.
+ */
+#define ADMA2_ATTR_VALID		(1<<0)
+#define ADMA2_ATTR_END			(1<<1)
+#define ADMA2_ATTR_INT			(1<<2)
+#define ADMA2_ATTR_ACT_NOP		(0<<4)
+#define ADMA2_ATTR_ACT_TRAN		(2<<4)
+#define ADMA2_ATTR_ACT_LINK		(3<<4)
+#define ADMA2_MAX_LEN			65536
+
+/*
  * The Rockchip DesignWare Cores part, "rockchip,rk3568-dwcmshc".
  *
  * It is an SDHCI controller, so everything above applies unchanged; these

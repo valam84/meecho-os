@@ -94,10 +94,19 @@
 /*
  * One command, filled in by the card layer and executed by the host.
  *
- * data points at memory the driver owns, never at a user page: the transfer
- * is done by the CPU through the controller's FIFO, and what a grant names
- * is copied in or out around it. See sdmmc.c for why that is not only the
- * simple choice.
+ * data points at memory the driver owns, never at a user page: what a grant
+ * names is copied in or out around the transfer. See sdmmc.c for why that is
+ * not only the simple choice.
+ *
+ * data_phys is where that memory is in physical terms, or zero when the
+ * caller does not know. It is not the same question as data: a host that
+ * moves the bytes with the processor needs the virtual address and nothing
+ * else, and one that lets the controller fetch them needs the physical one
+ * and cannot derive it. Zero therefore means "processor only" rather than
+ * "address zero", and a host with a DMA engine falls back to its programmed
+ * path when it sees it - which is what the short commands of the card
+ * protocol (the EXT_CSD, the SD status) do, because they land in whatever
+ * memory their caller had.
  */
 struct sdmmc_cmd {
 	uint8_t		index;		/* CMD number, 0..63 */
@@ -107,6 +116,7 @@ struct sdmmc_cmd {
 	uint32_t	arg;
 	uint32_t	resp[4];	/* filled in by the host */
 	void	       *data;
+	phys_bytes	data_phys;	/* 0: the host must not use DMA */
 	uint32_t	blocks;
 	uint32_t	blocklen;
 };
@@ -166,7 +176,7 @@ struct sdmmc_host {
 	uint32_t	max_freq;	/* what the board says it can take */
 
 	/*
-	 * How many blocks may be asked for in one command.
+	 * How many blocks may be asked for in one command; 0 is no limit.
 	 *
 	 * The standard's programmed transfer does not need a limit: the
 	 * controller is supposed to hold the card off while its buffer is
@@ -176,8 +186,18 @@ struct sdmmc_host {
 	 * arrives against a framing error. Four blocks go through and eight
 	 * do not, so the limit is the buffer, and a transfer longer than it
 	 * has to be several commands.
+	 *
+	 * That is a property of the programmed path only. With the
+	 * controller fetching the data itself there is no buffer to overrun
+	 * - it moves the bytes as fast as it takes them off the bus - so a
+	 * host that has DMA raises this, and a host whose DMA is not
+	 * available for a particular command lowers it back for that
+	 * command by refusing to use DMA rather than by changing this.
+	 * Hence max_blocks_pio below, which the card layer uses whenever
+	 * the buffer it was handed has no physical address.
 	 */
 	unsigned	max_blocks;
+	unsigned	max_blocks_pio;
 };
 
 /* The card, as the block layer sees it. */
@@ -219,10 +239,20 @@ int sdmmc_host_find(struct sdmmc_host *host);
 int sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	struct sdmmc_host *host);
 
-/* sdmmc_card.c: the card protocol, in terms of the host above. */
+/*
+ * sdmmc_card.c: the card protocol, in terms of the host above.
+ *
+ * phys is the physical address of buf, or zero when the caller has none.
+ * It is carried rather than looked up because the only caller that has a
+ * buffer worth transferring by DMA is the one that allocated it, and asking
+ * the kernel to translate an address on every request would cost more than
+ * the transfer saves.
+ */
 int sdmmc_card_init(struct sdmmc_host *host, struct sdmmc_card *card);
-int sdmmc_card_read(uint64_t sector, uint32_t count, void *buf);
-int sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf);
+int sdmmc_card_read(uint64_t sector, uint32_t count, void *buf,
+	phys_bytes phys);
+int sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf,
+	phys_bytes phys);
 int sdmmc_card_flush(void);
 
 /* Logging, shared so that one -args log_level= reaches every file. */

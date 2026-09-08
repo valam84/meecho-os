@@ -94,6 +94,7 @@ struct model {
 	uint32_t	last_data_arg;
 	uint32_t	last_blocks;
 	int		last_stop;
+	phys_bytes	last_data_phys;
 };
 
 static struct model m;
@@ -164,6 +165,7 @@ do_data(struct sdmmc_cmd *c)
 	m.last_data_arg = c->arg;
 	m.last_blocks = c->blocks;
 	m.last_stop = c->stop;
+	m.last_data_phys = c->data_phys;
 
 	if (sector + c->blocks > MEDIUM_SECTORS) {
 		printf("model: transfer past the modelled medium\n");
@@ -351,7 +353,14 @@ static struct sdmmc_host mock = {
 	.command = model_command,
 	.max_bus_width = 8,
 	.max_freq = 200000000,
-	.max_blocks = 4
+	/*
+	 * Два потолка, как у настоящего контроллера с ADMA2: длинный, когда
+	 * буфер можно отдать движку, и короткий (буфер FIFO этой части),
+	 * когда нельзя. Числа разные нарочно — по ним и видно, какой из них
+	 * слой карты применил.
+	 */
+	.max_blocks = 64,
+	.max_blocks_pio = 4
 };
 
 /* ------------------------------------------------------------------ */
@@ -481,7 +490,7 @@ test_emmc(void)
 	/* Чтение одного сектора: CMD17, аргумент — номер сектора. */
 	m.nseen = 0;
 	memset(buf, 0, sizeof(buf));
-	r = sdmmc_card_read(10, 1, buf);
+	r = sdmmc_card_read(10, 1, buf, 0);
 	check(r == OK, "чтение одного сектора", NULL);
 	check(count_cmd(MMC_READ_BLOCK_SINGLE) == 1, "это был CMD17", NULL);
 	check_u64(m.last_data_arg, 10, "аргумент — номер сектора");
@@ -492,7 +501,7 @@ test_emmc(void)
 	/* Четыре сектора: CMD18 и остановка. */
 	m.nseen = 0;
 	memset(buf, 0, sizeof(buf));
-	r = sdmmc_card_read(20, 4, buf);
+	r = sdmmc_card_read(20, 4, buf, 0);
 	check(r == OK, "чтение четырёх секторов", NULL);
 	check(count_cmd(MMC_READ_BLOCK_MULTIPLE) == 1, "это был CMD18", NULL);
 	check_u64(m.last_blocks, 4, "запрошено четыре блока");
@@ -508,31 +517,62 @@ test_emmc(void)
 
 	/* Длиннее предела контроллера: одна просьба, несколько команд. */
 	m.nseen = 0;
-	r = sdmmc_card_read(40, 10, big);
+	r = sdmmc_card_read(40, 10, big, 0);
 	check(r == OK, "чтение десяти секторов", NULL);
 	check_u64((uint64_t)(count_cmd(MMC_READ_BLOCK_MULTIPLE) + count_cmd(MMC_READ_BLOCK_SINGLE)),
 	    3, "разложено на три команды: 4 + 4 + 2");
 	check(memcmp(big, m.medium + 40 * SDMMC_SECTOR_SIZE,
 	    10 * SDMMC_SECTOR_SIZE) == 0, "и склеилось верно", NULL);
 
+	/*
+	 * То же самое, но с физическим адресом: буфер, который контроллер
+	 * может забрать сам, режется по длинному потолку, а не по короткому.
+	 *
+	 * Решение принимает слой карты, а не контроллер — контроллер лишь
+	 * смотрит на data_phys. Ошибка в эту сторону не ломает ничего
+	 * заметного: она просто оставляет потолок FIFO на месте, то есть
+	 * тихо отменяет всю веху.
+	 */
+	m.nseen = 0;
+	memset(big, 0, 10 * SDMMC_SECTOR_SIZE);
+	r = sdmmc_card_read(40, 10, big, 0x40200000UL);
+	check(r == OK, "то же чтение с физическим адресом", NULL);
+	check_u64((uint64_t)(count_cmd(MMC_READ_BLOCK_MULTIPLE) +
+	    count_cmd(MMC_READ_BLOCK_SINGLE)), 1,
+	    "одна команда: потолок FIFO к этому буферу не относится");
+	check_u64(m.last_blocks, 10, "все десять блоков в ней");
+	check_u64(m.last_data_phys, 0x40200000UL,
+	    "и физический адрес дошёл до контроллера");
+	check(memcmp(big, m.medium + 40 * SDMMC_SECTOR_SIZE,
+	    10 * SDMMC_SECTOR_SIZE) == 0, "содержимое то же", NULL);
+
+	/* И он сдвигается вместе с указателем, когда команд всё-таки много. */
+	m.nseen = 0;
+	mock.max_blocks = 4;
+	r = sdmmc_card_read(40, 10, big, 0x40200000UL);
+	mock.max_blocks = 64;
+	check(r == OK, "чтение с коротким потолком и физическим адресом", NULL);
+	check_u64(m.last_data_phys, 0x40200000UL + 8 * SDMMC_SECTOR_SIZE,
+	    "последняя команда получила адрес своего куска");
+
 	/* Запись. */
 	m.nseen = 0;
 	memset(buf, 0xa5, sizeof(buf));
-	r = sdmmc_card_write(30, 2, buf);
+	r = sdmmc_card_write(30, 2, buf, 0);
 	check(r == OK, "запись двух секторов", NULL);
 	check(count_cmd(MMC_WRITE_BLOCK_MULTIPLE) == 1, "это был CMD25", NULL);
 	check(memcmp(m.medium + 30 * SDMMC_SECTOR_SIZE, buf,
 	    2 * SDMMC_SECTOR_SIZE) == 0, "записанное легло на место", NULL);
 
 	m.nseen = 0;
-	r = sdmmc_card_write(33, 1, buf);
+	r = sdmmc_card_write(33, 1, buf, 0);
 	check(r == OK, "запись одного сектора", NULL);
 	check(count_cmd(MMC_WRITE_BLOCK_SINGLE) == 1, "это был CMD24", NULL);
 
 	/* За краем карты. */
-	r = sdmmc_card_read(card.sectors - 1, 4, buf);
+	r = sdmmc_card_read(card.sectors - 1, 4, buf, 0);
 	check(r == EINVAL, "чтение за краем отвергнуто", NULL);
-	r = sdmmc_card_write(card.sectors, 1, buf);
+	r = sdmmc_card_write(card.sectors, 1, buf, 0);
 	check(r == EINVAL, "запись за краем отвергнута", NULL);
 
 	/* Flush — это CMD6 на FLUSH_CACHE. */
@@ -591,7 +631,7 @@ test_small_emmc(void)
 	check_u64(card.sectors, 3842048, "ёмкость из CSD");
 
 	m.nseen = 0;
-	r = sdmmc_card_read(7, 1, buf);
+	r = sdmmc_card_read(7, 1, buf, 0);
 	check(r == OK, "чтение с малой карты", NULL);
 	check_u64(m.last_data_arg, 7 * SDMMC_SECTOR_SIZE,
 	    "аргумент — байтовое смещение");

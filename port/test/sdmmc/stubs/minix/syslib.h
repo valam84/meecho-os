@@ -9,4 +9,9 @@ int sys_safecopyto(int dst, int grant, vir_bytes off, vir_bytes addr,
 	size_t bytes);
 int sys_safecopyfrom(int src, int grant, vir_bytes off, vir_bytes addr,
 	size_t bytes);
+
+/* Настоящее значение MINIX: выравнивание на страницу. */
+#define AC_ALIGN4K	0x01
+void *alloc_contig(size_t len, int flags, phys_bytes *phys);
+void free_contig(void *addr, size_t len);
 #endif

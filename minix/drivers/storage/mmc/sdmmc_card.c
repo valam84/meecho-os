@@ -122,7 +122,7 @@ send(uint8_t index, uint32_t arg, uint8_t rsp_type, struct sdmmc_cmd *out)
 
 static int
 send_data(uint8_t index, uint32_t arg, uint8_t rsp_type, int write, void *buf,
-	uint32_t blocks, int stop, struct sdmmc_cmd *out)
+	phys_bytes phys, uint32_t blocks, int stop, struct sdmmc_cmd *out)
 {
 	struct sdmmc_cmd cmd;
 	int r;
@@ -133,6 +133,7 @@ send_data(uint8_t index, uint32_t arg, uint8_t rsp_type, int write, void *buf,
 	cmd.rsp_type = rsp_type;
 	cmd.data_dir = write ? SDMMC_DATA_WRITE : SDMMC_DATA_READ;
 	cmd.data = buf;
+	cmd.data_phys = phys;
 	cmd.blocks = blocks;
 	cmd.blocklen = SDMMC_SECTOR_SIZE;
 	cmd.stop = stop;
@@ -669,8 +670,8 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 		/* Everything past this point is read out of the EXT_CSD. */
 		memset(ext_csd, 0, sizeof(ext_csd));
 		STEP("CMD8 (send EXT_CSD)",
-		    send_data(MMC_SEND_EXT_CSD, 0, SDMMC_RSP_R1, 0, ext_csd, 1,
-		    0, &cmd));
+		    send_data(MMC_SEND_EXT_CSD, 0, SDMMC_RSP_R1, 0, ext_csd, 0,
+		    1, 0, &cmd));
 		STEP("CMD8 status", check_r1(&cmd));
 	}
 
@@ -749,19 +750,29 @@ data_address(uint64_t sector)
 	return (uint32_t)(sector * SDMMC_SECTOR_SIZE);
 }
 
-/* How much of a request one command may carry. */
+/*
+ * How much of a request one command may carry.
+ *
+ * Two ceilings, and which one applies is decided by the buffer rather than
+ * by the host: a buffer with no physical address cannot be fetched by the
+ * controller, so such a transfer goes through the FIFO whatever the host is
+ * capable of, and the FIFO's ceiling is the one that binds. Deciding it here
+ * rather than in the host keeps the two numbers in one place; the host still
+ * has the last word, because it is the one that looks at data_phys.
+ */
 static uint32_t
-run_length(uint32_t count)
+run_length(uint32_t count, phys_bytes phys)
 {
+	unsigned limit = (phys != 0) ? host->max_blocks : host->max_blocks_pio;
 	uint32_t n = count;
 
-	if (host->max_blocks != 0 && n > host->max_blocks)
-		n = host->max_blocks;
+	if (limit != 0 && n > limit)
+		n = limit;
 	return n;
 }
 
 int
-sdmmc_card_read(uint64_t sector, uint32_t count, void *buf)
+sdmmc_card_read(uint64_t sector, uint32_t count, void *buf, phys_bytes phys)
 {
 	struct sdmmc_cmd cmd;
 	uint32_t n;
@@ -775,14 +786,14 @@ sdmmc_card_read(uint64_t sector, uint32_t count, void *buf)
 		return EINVAL;
 
 	while (count > 0) {
-		n = run_length(count);
+		n = run_length(count, phys);
 
 		if (n > 1 && (r = set_block_count(n)) != OK)
 			return r;
 
 		r = send_data(n > 1 ? MMC_READ_BLOCK_MULTIPLE :
 		    MMC_READ_BLOCK_SINGLE, data_address(sector),
-		    SDMMC_RSP_R1, 0, buf, n, 0, &cmd);
+		    SDMMC_RSP_R1, 0, buf, phys, n, 0, &cmd);
 		if (r != OK)
 			return r;
 		if ((r = check_r1(&cmd)) != OK)
@@ -791,13 +802,16 @@ sdmmc_card_read(uint64_t sector, uint32_t count, void *buf)
 		sector += n;
 		count -= n;
 		buf = (uint8_t *)buf + n * SDMMC_SECTOR_SIZE;
+		if (phys != 0)
+			phys += n * SDMMC_SECTOR_SIZE;
 	}
 
 	return OK;
 }
 
 int
-sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf)
+sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf,
+	phys_bytes phys)
 {
 	struct sdmmc_cmd cmd;
 	uint32_t n;
@@ -811,14 +825,14 @@ sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf)
 		return EINVAL;
 
 	while (count > 0) {
-		n = run_length(count);
+		n = run_length(count, phys);
 
 		if (n > 1 && (r = set_block_count(n)) != OK)
 			return r;
 
 		r = send_data(n > 1 ? MMC_WRITE_BLOCK_MULTIPLE :
 		    MMC_WRITE_BLOCK_SINGLE, data_address(sector),
-		    SDMMC_RSP_R1, 1, (void *)(uintptr_t)buf, n, 0, &cmd);
+		    SDMMC_RSP_R1, 1, (void *)(uintptr_t)buf, phys, n, 0, &cmd);
 		if (r != OK)
 			return r;
 		if ((r = check_r1(&cmd)) != OK)
@@ -827,6 +841,8 @@ sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf)
 		sector += n;
 		count -= n;
 		buf = (const uint8_t *)buf + n * SDMMC_SECTOR_SIZE;
+		if (phys != 0)
+			phys += n * SDMMC_SECTOR_SIZE;
 	}
 
 	return OK;

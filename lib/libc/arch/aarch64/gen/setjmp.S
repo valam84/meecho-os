@@ -92,7 +92,11 @@ ENTRY(__longjmp14)
 
 	ldp	x4,  x5,  [x0, #_JB_X29]
 	cbz	x3, .Lbotch
-	cbz	x4, .Lbotch
+	/* x29 is deliberately not checked: AAPCS64 makes a zero frame
+	 * pointer the legal end of the frame chain, and that is exactly
+	 * what main() has when the tree builds it with
+	 * -fomit-frame-pointer.  Checking it rejected every jmp_buf
+	 * taken there as botched. */
 	cbz	x5, .Lbotch
 
 	ldp	x19, x20, [x0, #_JB_X19]
@@ -101,8 +105,11 @@ ENTRY(__longjmp14)
 	ldp	x25, x26, [x0, #_JB_X25]
 	ldp	x27, x28, [x0, #_JB_X27]
 
-	ldr	x5, [x0, #_JB_TPIDR]
-	msr	tpidr_el0, x5 
+	/* x6, not x5: x5 still holds the saved x30 that the return
+	 * below depends on.  Reusing it here made every longjmp(3)
+	 * return to TPIDR_EL0 instead of the caller. */
+	ldr	x6, [x0, #_JB_TPIDR]
+	msr	tpidr_el0, x6 
 
 	ldp	d8,  d9,  [x0, #_JB_D8]
 	ldp	d10, d11, [x0, #_JB_D10]

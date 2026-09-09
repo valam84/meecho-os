@@ -47,6 +47,11 @@ END(__sigsetjmp14)
 
 ENTRY(__siglongjmp14)
 	ldr	x3, [x0, #_JB_MAGIC]
-	tbz	x3, #0, _C_LABEL(__longjmp14)
+	/* Bit 0 of the magic says which setjmp wrote the buffer: it is set
+	 * for __setjmp14 (the one that saves the signal mask) and clear for
+	 * _setjmp.  The test was inverted, so every sigsetjmp(jb, 0) buffer
+	 * went to __longjmp14 and every sigsetjmp(jb, 1) buffer to _longjmp
+	 * -- each meeting the other's magic and dying as "longjmp botch". */
+	tbnz	x3, #0, _C_LABEL(__longjmp14)
 	b	_C_LABEL(_longjmp)
 END(__siglongjmp14)

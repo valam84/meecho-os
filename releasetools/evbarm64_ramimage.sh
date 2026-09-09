@@ -478,6 +478,16 @@ then
 	cmd="${cmd} -drive if=none,id=hd0,file=${DISK},format=raw,discard=unmap"
 	cmd="${cmd} -device virtio-blk-device,drive=hd0"
 fi
+# Anything else this run needs on the QEMU command line.  The use it was
+# added for is -icount: under "-icount shift=0" the virtual clock advances
+# one nanosecond per guest instruction, so CNTVCT_EL0 - which is what the
+# kernel counts cycles with - becomes an instruction counter, and the
+# kernel's own accounting turns into instruction counts.  That is only true
+# on one core, so pair it with QEMU_SMP=1.
+if [ -n "${QEMU_EXTRA:-}" ]
+then
+	cmd="${cmd} ${QEMU_EXTRA}"
+fi
 cmd="${cmd} -append \"${BOOTARGS}\""
 if [ -n "${QEMU_TIMEOUT}" ]
 then

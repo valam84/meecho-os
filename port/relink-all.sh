@@ -55,7 +55,10 @@ sed 's/\r$//' $PORT/build-dirs.sh > /tmp/bd.sh
 } | sed 's|/$||' | sort -u > "$LIST"
 
 echo "каталогов: $(wc -l < "$LIST")"
-bash /tmp/bd.sh $(cat "$LIST") > /tmp/relink.log 2>&1
+# SRCDIR передаётся явно: копия build-dirs.sh лежит в /tmp, а корень
+# дерева он вычисляет от своего пути - для копии это выходит "/", и
+# каждый каталог отказывает с "chdir bin/ls: Not a directory".
+SRCDIR="$M" bash /tmp/bd.sh $(cat "$LIST") > /tmp/relink.log 2>&1
 echo "ok:   $(grep -c '^ok' /tmp/relink.log)"
 echo "fail: $(grep -c '^FAIL' /tmp/relink.log)"
 grep '^FAIL' /tmp/relink.log | head -20

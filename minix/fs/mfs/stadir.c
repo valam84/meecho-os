@@ -115,5 +115,15 @@ int fs_statvfs(struct statvfs *st)
   st->f_favail = st->f_ffree;
   st->f_namemax = sp->s_name_max;
 
+  /* V3 silently truncates a name to the 60 bytes its directory entry
+   * holds; V4 refuses it with ENAMETOOLONG (search_dir() in path.c).
+   * ST_NOTRUNC says which, and callers have no other way to know: the
+   * test suite reads it to decide whether creating an over-long name
+   * must succeed or must fail, and with the flag missing it expected
+   * truncation from a file system that does not truncate.
+   */
+  if (sp->s_version == V4)
+	st->f_flag |= ST_NOTRUNC;
+
   return(OK);
 }

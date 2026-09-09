@@ -93,11 +93,16 @@ grant copies.
 
 These are known unknowns, not tasks with hidden answers.
 
-- **SMP occupancy tops out below two cores of four.** Adding jobs does not raise
-  it. Expected around three, since `pick_cpu()` gives the boot core to system
-  processes and spreads user processes over the rest. A candidate explanation is
-  named in the porting log (milestone 8.0.3) and **not one line of it is
-  confirmed**.
+- ~~**SMP occupancy tops out below two cores of four.**~~ Closed 2026-09-09:
+  there was no ceiling, the benchmark was measuring message passing. Under the
+  shell arithmetic loop it was measured with, one job spends 5.4% of its time
+  in user mode and 28.6% in the kernel and in system processes - and system
+  processes stay on the boot core by design, so such a load cannot use more
+  cores however many jobs are added. With a load that really computes the same
+  machine reports 74.7% user and 24.6% idle at eight jobs, which on four cores
+  is the three the policy predicts. The meter had three faults, all pushing
+  the same way; `kern.cp_time`, which answers this in one line, had been
+  wired up from the kernel to `sysctl` all along and never used.
 - ~~**`trace(1)` does not work on the machine.**~~ Closed 2026-09-09, and the
   cause was not in the code at all. The LP64 bug in the `ptrace()` wrapper was
   real and was fixed, but `trace`'s `mem.o` had been compiled before that fix
@@ -116,11 +121,14 @@ These are known unknowns, not tasks with hidden answers.
 ## What comes next
 
 Stage 9 was the last stage the plan had, and 10 is not written yet. What is
-open and named, in no particular order: the SMP occupancy ceiling above (the
-one place in the tree where a conclusion is recorded without a proof), 9.4 —
-the SD card controller, dynamic linking (`ld.elf_so` links; `exec` has no
-`PT_INTERP` path), `fpu_sigcontext()`, and the bounce buffer that still cuts
-every request into 32 KiB pieces.
+open and named, in no particular order: 9.4 — the SD card controller, dynamic
+linking (`ld.elf_so` links; `exec` has no `PT_INTERP` path), the bounce buffer
+that still cuts every request into 32 KiB pieces, and two defects in
+`servers/sched/schedule.c` found while closing the occupancy question —
+`pick_cpu()` overwrites the scheduler's idea of a process's core on a quantum
+expiry that never moves it, so `do_stop_scheduling()` later decrements the
+wrong counter, and `cpu_is_available()` compares `CPU_DEAD` against an
+unsigned counter.
 
 ## Deferred by decision
 

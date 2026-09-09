@@ -1,7 +1,7 @@
 # Roadmap
 
 The full plan, with the reasoning for each decision, is [`PLAN.md`](../../PLAN.md)
-(Russian). This is the summary and the state as of **2026-09-08**.
+(Russian). This is the summary and the state as of **2026-09-09**.
 
 ## Done
 
@@ -14,6 +14,7 @@ The full plan, with the reasoning for each decision, is [`PLAN.md`](../../PLAN.m
 | 6 | SMP: four cores through PSCI, per-CPU data, spinlocks |
 | 7 | storage: a root on disk, `readclock`, **MFS V4**, a metadata journal, `fsck` |
 | 8 | the board as a working machine: eMMC root, userland, network, ssh, SMP under load |
+| 9.1–9.3 | storage at the speed of the hardware: ADMA2 and an interrupt for the eMMC |
 
 Stage 8 is closed in full. What that means concretely: a CB2 boots from its own
 eMMC into a 1 GB root with 276 programs, brings up Ethernet, gets an address by
@@ -27,47 +28,66 @@ watchdog does not reach it. The server half is done and tested; the gain would
 have been negative anyway (11.4 MB over TFTP is 8.1 s against 1.1 s from the
 card), and ssh removed the card from the loop long ago.
 
-## Next: stage 9, storage at the speed of the hardware
+## Stage 9: storage at the speed of the hardware — 9.1-9.3 done
 
-The eMMC driver works and is **slow twice over**: data moves through a FIFO with
-the CPU, and waiting is a poll with a deadline. Both were deliberate, and
-neither is justified any more.
+The eMMC driver used to be **slow twice over**: data moved through a FIFO with
+the processor, and waiting was a poll with a deadline. Both were deliberate,
+both had stopped being justified, and both were replaced on 2026-09-09. The
+transfer is now ADMA2 and the wait is an interrupt on line 51.
 
-- The header of `sdmmc_sdhci.c` explains the absence of DMA by saying the port
-  has no way to ask for cache maintenance from a driver. Since 2026-09-07 it
-  has: `sys_cachectl`. **That comment is now wrong and must be rewritten with
-  the code**, or it will lie to the next reader.
-- The interrupt was not wired up "one unknown at a time". RS hands out the line
-  from the device tree (eMMC is SPI, line 51), and `sys_irqsetpolicy` works in
-  this port for both `dwmac` and `tty`.
-- `host->max_blocks = 4` is not a choice but the controller's PIO buffer
-  ceiling — four blocks pass, eight do not, and the flow control the standard
-  promises is absent in this part. With DMA the ceiling goes away with its
-  cause.
+**9.1 — the number first.** Measured before the change and the same way after,
+from the board over ssh, by `port/test/sdmmc/bench.sh`:
 
-**9.1 — the number first.** Measure before the change and the same way after,
-or "it got faster" is not a result. From the board over ssh: `dd if=/dev/c0d0
-of=/dev/null bs=64k count=N`, the time to unpack a tar, the time from
-`Starting sshd` to `login:`.
+| | Before | After |
+|---|---|---|
+| Read `/dev/c0d0`, `bs=64k`, 32 MiB | 6.0-7.2 MiB/s | **14.0-15.8 MiB/s** |
+| Read `bs=1m`, 32 MiB | 6.0-6.6 MiB/s | **13.8-18.7 MiB/s** |
+| Write 16 MiB and `sync` | 7.9 MiB/s | **15.5-32.0 MiB/s** |
+| Unpack `/bin` (10.4 MB) | 3.03 s | **1.74-2.09 s** |
+| Boot to `login:` | 24.61 s | 24.12 s — unchanged |
 
-**9.2 — DMA.** SDMA or ADMA2, decided by the controller's capability register
-rather than in advance. The buffer is handled by `sys_cachectl` under the rule
-taken from NetBSD. Then drop `max_blocks` and check that a long transfer really
-goes through. Corruption here is quieter than failure: compare contents, do not
-just ask whether the transfer returned.
+Boot did not move because it is not a storage measurement: the console at
+115200 and the network driver's per-tick debug printing cost far more than
+reading the images. An intermediate run gave 29.11 s there and nothing accounts
+for it but spread — recorded as spread, not as an effect.
 
-**9.3 — the interrupt.** `sys_irqsetpolicy` on line 51; the handler clears the
-cause in Normal Interrupt Status and waiting becomes a message. The polling path
-stays as a fallback — on this board a register has already failed to do what the
-specification promised.
+The first version of the benchmark measured the cache rather than the card:
+three reads of one region gave 6.4, 66.7 and 145.5 MiB/s, because a raw device
+read goes through the same block cache a file does. Each run now reads its own
+region.
 
-**9.4 — the SD card controller.** `mmc@fe2b0000` is a DesignWare mobile storage
-host: different registers, its own clock-update command, no driver. A file
-beside `sdmmc_sdhci.c` behind the same host table.
+**9.2 — DMA.** ADMA2 with 32-bit descriptors, chosen by the capability
+register rather than in advance (`caps = 0x226dc881`: ADMA2 yes, 64-bit bus
+no). SDMA is offered by this part too and is refused: a second untested way to
+do what the first already does, needing the driver to reprogram the address at
+every buffer boundary. The buffer comes from `alloc_contig()` and its physical
+address is carried down to the host; zero there means "the processor moves it",
+so there are two ceilings, and the four-block one still applies to any buffer
+without a physical address. Cache maintenance follows the rule taken from
+NetBSD's `bus_dma`, including the second invalidate after a read.
 
-**Criterion:** eMMC reads and writes through DMA, on an interrupt, with no
-four-block ceiling, and the difference from today is a measured number on the
-board.
+**9.3 — the interrupt.** Only Command Complete and Transfer Complete are
+signalled: Buffer Ready is a level that stands for as long as the FIFO has
+room, and signalling a level nobody clears is the livelock this port already
+met on the UART. Polling stays as the fallback and is reached three ways — no
+line in the tree, a line the kernel will not arm, and a line that interrupts
+64 times without the status register saying anything new.
+
+**How it was checked.** Digests of three 8 MiB regions of the eMMC were taken
+by the vendor kernel's own driver **before** the run and matched what MEECHO
+read through ADMA2; 72 MiB written through DMA survived a reboot with the same
+md5; `fsck_mfs` said `clean` afterwards. Host benches: 133 checks, 0 failures.
+None of this is checkable under QEMU, which models neither caches nor this
+controller.
+
+**9.4 — the SD card controller, still open.** `mmc@fe2b0000` is a DesignWare
+mobile storage host: different registers, its own clock-update command, no
+driver. A file beside `sdmmc_sdhci.c` behind the same host table.
+
+**What is left of 9.2.** The four-block ceiling is gone, but a request is
+still cut into 32 KiB pieces — that is `SDMMC_CHUNK_SECTORS`, the size of the
+bounce buffer, not a limit of the controller, and each piece still costs two
+grant copies.
 
 ## Open questions, honestly labelled
 
@@ -78,19 +98,32 @@ These are known unknowns, not tasks with hidden answers.
   processes and spreads user processes over the rest. A candidate explanation is
   named in the porting log (milestone 8.0.3) and **not one line of it is
   confirmed**.
-- **`trace(1)` does not work on the machine** ("Kernel magic check failed"). A
-  genuine LP64 bug was found and fixed on the way — the `ptrace()` wrapper in
-  libc returned `int` where a machine word goes over the wire — but the symptom
-  survived it, and `struct proc` has the same layout for `trace` and for the
-  kernel. The cause is not established, and no story has been invented for it.
+- ~~**`trace(1)` does not work on the machine.**~~ Closed 2026-09-09, and the
+  cause was not in the code at all. The LP64 bug in the `ptrace()` wrapper was
+  real and was fixed, but `trace`'s `mem.o` had been compiled before that fix
+  and carried the truncation to 32 bits already generated. Relinking does not
+  help when a *prototype* changes: the caller has to be recompiled.
 - **`fpu_sigcontext()` is unimplemented.** A signal handler sees the interrupted
   code's FP state and vice versa. It needs the layout of `struct sigcontext`
   agreed with libc, not three lines in the kernel.
-- **Entropy.** The board has a hardware RNG and uses it; nothing is claimed
-  about the quality of its numbers. On QEMU there is no source at all, so the
+- **Entropy.** The board has a hardware RNG and uses it. Its raw output is
+  measurably biased — sixteen sigmas on the monobit test over 256 KB, which is
+  ordinary for a ring oscillator and exactly why such sources are conditioned —
+  while the pool's output is indistinguishable from the reference. These
+  measures can only reject: a passed chi-square proves nothing about
+  cryptographic strength and does not replace SP 800-90B. On QEMU there is no source at all, so the
   TCP initial-sequence secret is set *if possible* rather than required —
   waiting for entropy at boot is a reliable way to get a system that sometimes
   does not boot.
+
+## What comes next
+
+Stage 9 was the last stage the plan had, and 10 is not written yet. What is
+open and named, in no particular order: the SMP occupancy ceiling above (the
+one place in the tree where a conclusion is recorded without a proof), 9.4 —
+the SD card controller, dynamic linking (`ld.elf_so` links; `exec` has no
+`PT_INTERP` path), `fpu_sigcontext()`, and the bounce buffer that still cuts
+every request into 32 KiB pieces.
 
 ## Deferred by decision
 

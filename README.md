@@ -99,12 +99,13 @@ desk, not a simulation of one.
 
 Known gaps, stated plainly:
 
-- **Storage is slow on purpose, and no longer has to be.** The eMMC driver
-  moves data through a FIFO with the CPU and waits by polling. Both were
-  deliberate — there was no way to ask the kernel for cache maintenance from a
-  driver, and one unknown at a time is enough. `sys_cachectl` exists now and
-  the interrupt line is available, so [milestone 9](docs/meecho/ROADMAP.md) is
-  DMA and interrupts. This is the best first task in the project.
+- ~~**Storage is slow on purpose.**~~ Fixed 2026-09-09: the eMMC driver
+  transfers by ADMA2 and waits on an interrupt. Reading is about 2.4× faster,
+  writing about twice, unpacking an archive about 1.5× — measured on the board
+  by the same script before and after, see
+  [milestone 9](docs/meecho/ROADMAP.md). A request is still cut into 32 KiB
+  pieces, which is the size of the bounce buffer rather than a limit of the
+  controller.
 - **No USB, no display, no audio.** The board's console is a serial port.
 - **Everything is statically linked.** `ld.elf_so` links for aarch64 now, but
   `exec` has no `PT_INTERP` path yet.

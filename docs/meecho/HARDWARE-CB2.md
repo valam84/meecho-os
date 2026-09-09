@@ -42,6 +42,9 @@ replace a board.
 - **Auto CMD12 does not work.** Use CMD23.
 - **Transfer length is capped by the controller's buffer**: four blocks pass,
   eight do not. The flow control the standard promises is absent in this part.
+  That is a property of the programmed path only. Through ADMA2 the engine
+  takes the bytes itself and the ceiling does not apply, so the driver keeps
+  both numbers and picks by whether the buffer has a physical address.
 
 ## Ethernet
 

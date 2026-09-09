@@ -138,8 +138,25 @@ def parse_block(text):
 	частотой.
 	"""
 	t, total, seen = None, 0, 0
-	per = {}
+	per, cp = {}, {}
 	for line in text.splitlines():
+		# Тики по состояниям на каждое ядро: user, nice, system,
+		# interrupt, idle - в этом порядке (sys/sys/sched.h). "system"
+		# у MINIX означает системные процессы, а "interrupt" - само
+		# ядро, и это ровно то различие, ради которого сюда смотрят:
+		# оно отделяет простаивающее ядро от занятого, но не процессом.
+		if "cp_time" in line and "=" in line:
+			# Сумма по машине, а не по ядру: адресовать ядро номером
+			# sysctl(8) не умеет ("third level name '0' is invalid"),
+			# хотя mib это поддерживает. Суммы достаточно - доля idle
+			# в ней и есть число простаивавших ядер.
+			# sysctl(8) печатает поля с именами:
+			# "kern.cp_time: user = 177, nice = 0, sys = 569, ..."
+			v = re.findall(r"(user|nice|sys|intr|idle)\s*=\s*(\d+)",
+			               line)
+			if len(v) == 5:
+				cp[0] = [int(x) for _, x in v]
+			continue
 		f = line.strip().split()
 		if t is None and len(f) == 1:
 			try:
@@ -160,7 +177,7 @@ def parse_block(text):
 				seen += 1
 			except ValueError:
 				pass
-	return t, total, seen, per
+	return t, total, seen, per, cp
 
 
 def main():
@@ -170,6 +187,12 @@ def main():
 	ap.add_argument("-n", "--iters", type=int, default=20000)
 	ap.add_argument("-w", "--window", type=int, default=6)
 	ap.add_argument("-l", "--log", default="/tmp/qemu-occ.log")
+	# Чем нагружать. Шелловский цикл считался счётным, а он не счётный:
+	# ядро отнесло к user-режиму 0.16 ядра из 1.04 занятого, остальное - в
+	# системные процессы и в само ядро. Значит он меряет пропускную
+	# способность обменов, а не параллелизм счёта. awk-цикл - один exec и
+	# дальше чистая интерпретация в своём адресном пространстве.
+	ap.add_argument("-k", "--kind", choices=("sh", "awk"), default="awk")
 	args = ap.parse_args()
 
 	jobs = [int(x) for x in args.jobs.split(",")]
@@ -182,7 +205,11 @@ def main():
 		sys.exit("другой QEMU ещё жив; он держит образ диска")
 	# Предельный срок QEMU: загрузка плюс каждая точка со своим окном, с
 	# запасом. Ядро паркуется на wfi, само оно не выйдет.
-	budget = 120 + sum(args.window + 14 for _ in jobs)
+	# Щедро. Точка стоит не окна, а времени, за которое все задачи добегут
+	# до конца: их считает `wait`, и при восьми задачах на трёх ядрах это
+	# десятки секунд. Ядро паркуется на wfi, само QEMU не выйдет, поэтому
+	# срок нужен - но скупой срок обрывает прогон на середине таблицы.
+	budget = 300 + sum(120 + 30 * j for j in jobs)
 
 	g = Guest(args.cpus, budget, args.log)
 	try:
@@ -192,6 +219,11 @@ def main():
 
 		# Замер файлом, а не строкой: длинная строка не пережила бы
 		# канонический буфер tty. Каждая строка здесь заведомо короткая.
+		JOB = {
+		    "sh": "(n=0; while [ $n -lt $N ]; do n=$((n+1)); done) &",
+		    "awk": 'awk -v n=$N "BEGIN { while (i < n) i++ }" &',
+		}[args.kind]
+
 		g.send("rm -f /tmp/occ.sh")
 		for line in [
 		    "J=$1",
@@ -199,18 +231,18 @@ def main():
 		    "W=$3",
 		    "j=0",
 		    "while [ $j -lt $J ]; do",
-		    "(n=0; while [ $n -lt $N ]; do n=$((n+1)); done) &",
+		    JOB,
 		    "j=$((j+1))",
 		    "done",
 		    "sleep 2",
 		    "echo MARK-A",
 		    "cat /proc/uptime",
-		    "cat /proc/[0-9]*/psinfo",
+		    "sysctl kern.cp_time",
 		    "echo MARK-END",
 		    "sleep $W",
 		    "echo MARK-B",
 		    "cat /proc/uptime",
-		    "cat /proc/[0-9]*/psinfo",
+		    "sysctl kern.cp_time",
 		    "echo MARK-END",
 		    "wait",
 		    "echo MARK-DONE",
@@ -219,34 +251,50 @@ def main():
 		g.send("wc -l /tmp/occ.sh")
 		g.drain("SETUP-1")
 
-		print("cpus=%d iters=%d window=%ds" %
-		      (args.cpus, args.iters, args.window))
+		print("cpus=%d iters=%d window=%ds kind=%s" %
+		      (args.cpus, args.iters, args.window, args.kind))
 		results = []
 		for j in jobs:
 			g.send("sh /tmp/occ.sh %d %d %d" % (j, args.iters,
 			    args.window))
-			out = g.expect("MARK-DONE", 240)
+			out = g.expect("MARK-DONE", 120 + 30 * j)
 			a = out.split("MARK-A", 1)[1].split("MARK-END", 1)[0]
 			b = out.split("MARK-B", 1)[1].split("MARK-END", 1)[0]
-			ta, ca, na, pa = parse_block(a)
-			tb, cb, nb, pb = parse_block(b)
+			ta, ca, na, pa, cpa = parse_block(a)
+			tb, cb, nb, pb, cpb = parse_block(b)
 			if ta is None or tb is None or tb <= ta:
 				print("%2d jobs: время не разобралось" % j)
 				continue
 			dt = tb - ta
-			rate = (cb - ca) / dt
+			rate = (cb - ca) / dt if pa and pb else 0.0
 			# Сколько досталось самому жадному процессу. Отвечает на
 			# вопрос, который сумма скрывает: одна задача занимает
 			# ядро целиком или тоже неполно.
 			top = sorted(((pb[k] - pa[k]) / dt, k)
 			             for k in pb if k in pa)
 			results.append((j, rate, nb, top[-1][0] if top else 0))
-			print("%2d jobs: %12.0f cyc / %5.2f s = %11.0f cyc/s "
-			      "(%d процессов, самый жадный %.0f cyc/s)" %
-			      (j, cb - ca, dt, rate, nb, top[-1][0] if top else 0))
+			print("%2d jobs: окно %5.2f s" % (j, dt))
+			# Прямой ответ на вопрос, которого сумма по процессам
+			# не даёт: простаивало ядро или было занято не процессом.
+			names = ("user", "nice", "sys", "intr", "idle")
+			if 0 in cpa and 0 in cpb and len(cpb[0]) >= 5:
+				d = [cpb[0][i] - cpa[0][i] for i in range(5)]
+				tot = sum(d) or 1
+				# Сумма по всем ядрам за окно: каждое ядро вносит
+				# полное окно, поэтому доля не-idle, умноженная на
+				# число ядер, и есть «сколько ядер было занято».
+				print("        cp_time: %s" % "  ".join(
+				    "%s %5.1f%%" % (names[i], 100.0 * d[i] / tot)
+				    for i in range(5)))
+				print("        не-idle %.1f%% учтённого "
+				      "(user %.1f%%, системные %.1f%%, "
+				      "ядро %.1f%%)" %
+				      (100.0 * (tot - d[4]) / tot,
+				       100.0 * d[0] / tot, 100.0 * d[2] / tot,
+				       100.0 * d[3] / tot))
 			g.drain("ROUND-1")
 
-		if results:
+		if False:
 			base = results[0][1]
 			# Единица берётся из самого жадного процесса при одной
 			# задаче: с одной задачей ровно одно ядро занято работой,

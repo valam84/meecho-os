@@ -135,8 +135,37 @@ unsigned counter.
 | Question | When |
 |---|---|
 | POSIX-compatible NetBSD userland, or a minimal one of our own | after stage 5 — still open |
-| IPC model: as it is, a fastpath, or capabilities | after stage 4; the measurements say a fastpath would be about the cost of *entry* |
+| IPC model: as it is, a fastpath, or capabilities | **settled 2026-09-09: as it is** — see below |
 | Dynamic linking | `ld.elf_so` links; `exec` needs a `PT_INTERP` path |
+
+**The IPC model stays as it is, and that is a measurement rather than an
+opinion.** The kernel can now count what it does — `KTRACE` in
+`kernel/debug.h`, read through `/proc/ktrace`: every way into the kernel,
+every IPC primitive, every kernel call by number, who caused each crossing,
+and beside each way in the cycles spent in the kernel before leaving through
+it. Run under QEMU's `-icount shift=0`, where the counter the kernel bills in
+advances one tick per guest instruction, those cycles become instruction
+counts.
+
+One crossing of the kernel boundary costs 750–920 instructions, and it barely
+matters what kind of crossing it is: a kernel call that reschedules nobody and
+copies no message between processes costs 754, an IPC with a context switch
+921. Of that, the architectural entry and exit is about 93 instructions — a
+tenth — and copying the 128-byte message about 77. The rest is the generic
+bookkeeping every crossing pays. So a fastpath that makes the *entry* cheaper
+addresses a tenth of the cost; the earlier note here, which said the
+measurements pointed at entry, was half right and is corrected. Capabilities
+are a question about the rights model, not about cost, and no measurement can
+settle them either way.
+
+Three places where the cost actually is, each with a number: lazy FP switching
+(12.7 % of kernel cycles, 0.74 traps per context switch, on workloads with no
+floating point in them at all); the generic per-crossing bookkeeping; and the
+userland — the shell's counting loop pays 13.7 kernel crossings per turn
+because ash asks `tcgetattr` twice a turn. And three that turned out to cost
+nothing: TLB flushes (138 per 112431 address-space switches — the ASID scheme
+removed that item outright), quantum-expiry messages to the scheduler (seven
+in eight seconds under full load), and message copying (8 %).
 
 **Rust, so as not to return to it:** the interesting parts of a kernel end up in
 `unsafe` anyway, and a mixed C/Rust kernel is the worst of both. Either all of

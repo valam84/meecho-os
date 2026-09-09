@@ -38,6 +38,7 @@
 #include "clock.h"
 #include "spinlock.h"
 #include "arch_proto.h"
+#include "kernel/ktrace.h"
 
 #include <minix/syslib.h>
 
@@ -183,6 +184,8 @@ static void idle(void)
 	 * the CPU utilization of certain workloads with high precision.
 	 */
 
+	KTRACE_EV(KTV_IDLE);
+
 	p = get_cpulocal_var(proc_ptr) = get_cpulocal_var_ptr(idle_proc);
 	if (priv(p)->s_flags & BILLABLE)
 		get_cpulocal_var(bill_ptr) = p;
@@ -266,6 +269,8 @@ static void delivermsg(struct proc *rp)
         assert(rp->p_misc_flags & MF_DELIVERMSG);
         assert(rp->p_delivermsg.m_source != NONE);
 
+        KTRACE_EV(KTV_MSGOUT);
+
         if (copy_msg_to_user(&rp->p_delivermsg,
                                 (message *) rp->p_delivermsg_vir)) {
                 if(rp->p_misc_flags & MF_MSGFAILED) {
@@ -302,11 +307,12 @@ void switch_to_user(void)
 	 * to be scheduled again.
 	 */
 	struct proc * p;
+	struct proc * entered;
 #ifdef CONFIG_SMP
 	int tlb_must_refresh = 0;
 #endif
 
-	p = get_cpulocal_var(proc_ptr);
+	p = entered = get_cpulocal_var(proc_ptr);
 	/*
 	 * if the current process is still runnable check the misc flags and let
 	 * it run unless it becomes not runnable in the meantime
@@ -436,6 +442,13 @@ check_misc_flags:
 
 	p = arch_finish_switch_to_user();
 	assert(p->p_cpu_time_left);
+
+	/*
+	 * A context switch is not every kernel entry: most of them resume
+	 * the process that trapped.  Counting only the ones that do not is
+	 * what separates the price of a crossing from the price of a switch.
+	 */
+	KTRACE_EV_IF(p != entered, KTV_CTXSW);
 
 	context_stop(proc_addr(KERNEL));
 
@@ -605,6 +618,9 @@ int do_ipc(reg_t r1, reg_t r2, reg_t r3)
 
   /* bill kernel time to this process. */
   kbill_ipc = caller_ptr;
+
+  KTRACE_IPC(call_nr);
+  KTRACE_CHARGE(caller_ptr, KT_PROC_IPC);
 
   /* If this process is subject to system call tracing, handle that first. */
   if (caller_ptr->p_misc_flags & (MF_SC_TRACE | MF_SC_DEFER)) {
@@ -898,6 +914,7 @@ int mini_send(
 	assert(!(dst_ptr->p_misc_flags & MF_DELIVERMSG));	
 
 	if (!(flags & FROM_KERNEL)) {
+		KTRACE_EV(KTV_MSGIN);
 		if(copy_msg_from_user(m_ptr, &dst_ptr->p_delivermsg))
 			return EFAULT;
 	} else {
@@ -932,7 +949,9 @@ int mini_send(
 	}
 
 	/* Destination is not waiting.  Block and dequeue caller. */
+	KTRACE_EV(KTV_SENDBLOCK);
 	if (!(flags & FROM_KERNEL)) {
+		KTRACE_EV(KTV_MSGIN);
 		if(copy_msg_from_user(m_ptr, &caller_ptr->p_sendmsg))
 			return EFAULT;
 	} else {
@@ -1103,6 +1122,7 @@ static int mini_receive(struct proc * caller_ptr,
           return(ELOCKED);
       }
 
+      KTRACE_EV(KTV_RECVBLOCK);
       caller_ptr->p_getfrom_e = src_e;		
       RTS_SET(caller_ptr, RTS_RECEIVING);
       return(OK);
@@ -1127,6 +1147,8 @@ int mini_notify(
   register struct proc *dst_ptr;
   int src_id;				/* source id for late delivery */
   int dst_p;
+
+  KTRACE_EV(KTV_NOTIFY);
 
   if (!isokendpt(dst_e, &dst_p)) {
 	util_stacktrace();
@@ -1606,7 +1628,9 @@ void enqueue(
  */
   int q = rp->p_priority;	 		/* scheduling queue to use */
   struct proc **rdy_head, **rdy_tail;
-  
+
+  KTRACE_EV(KTV_ENQUEUE);
+
   assert(proc_is_runnable(rp));
 
   assert(q >= 0);
@@ -1728,6 +1752,8 @@ void dequeue(struct proc *rp)
   struct proc *prev_xp;
   u64_t tsc, tsc_delta;
 
+  KTRACE_EV(KTV_DEQUEUE);
+
   struct proc **rdy_tail;
 
   assert(proc_ptr_ok(rp));
@@ -1793,6 +1819,8 @@ static struct proc * pick_proc(void)
   register struct proc *rp;			/* process to run */
   struct proc **rdy_head;
   int q;				/* iterate over queues */
+
+  KTRACE_EV(KTV_PICKPROC);
 
   /* Check each of the scheduling queues for ready processes. The number of
    * queues is defined in proc.h, and priorities are set in the task table.
@@ -1863,6 +1891,8 @@ static void notify_scheduler(struct proc *p)
 	int err;
 
 	assert(!proc_kernel_scheduler(p));
+
+	KTRACE_EV(KTV_NOQUANTUM);
 
 	/* dequeue the process */
 	RTS_SET(p, RTS_NO_QUANTUM);

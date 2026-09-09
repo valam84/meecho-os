@@ -33,6 +33,7 @@
 
 #include "archconst.h"
 #include "arch_proto.h"
+#include "kernel/ktrace.h"
 
 #include "bsp_timer.h"
 
@@ -275,6 +276,16 @@ context_stop(struct proc *p)
 #endif
 
 	tsc_delta = tsc - *__tsc_ctr_switch;
+
+	/*
+	 * Ending the account for KERNEL means the kernel is being left, so
+	 * this interval is everything the way in cost - entry, the work, and
+	 * the scheduling on the way out.  Charged to whatever trap_handler
+	 * recorded as the way in; the number is already computed here, so the
+	 * division by way in costs one add.
+	 */
+	if (p == proc_addr(KERNEL))
+		KTRACE_LEAVE(tsc_delta);
 
 	if (kbill_ipc) {
 		kbill_ipc->p_kipc_cycles += tsc_delta;

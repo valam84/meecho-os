@@ -340,6 +340,7 @@
 #   define GET_REGS	  24	/* get general process registers */
 #   define GET_CPUTICKS	  25	/* get per-state ticks for a cpu */
 #   define GET_DTB	  26	/* get the device tree the kernel booted with */
+#   define GET_KTRACE	  27	/* get the kernel event counters (KTRACE) */
 
 /* Subfunctions for SYS_PRIVCTL */
 #define SYS_PRIV_ALLOW		1	/* Allow process to run */

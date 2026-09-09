@@ -58,6 +58,7 @@
 #include "arch_proto.h"
 #include "kernel/proto.h"
 #include "kernel/debug.h"
+#include "kernel/ktrace.h"
 
 /*
  * Whether a process has an address space of its own. The kernel tasks do
@@ -756,8 +757,10 @@ __switch_address_space(struct proc *p, struct proc **__ptproc)
 	 * because the entries belong to the space being entered. The flag
 	 * itself is cleared by proc.c after this returns.
 	 */
-	if ((p->p_misc_flags & MF_FLUSH_TLB) && pg_asids_usable())
+	if ((p->p_misc_flags & MF_FLUSH_TLB) && pg_asids_usable()) {
+		KTRACE_EV(KTV_TLBFLUSH);
 		refresh_tlb_asid(AARCH64_PROC_ASID(p));
+	}
 
 	/*
 	 * Only TTBR0 changes. The kernel is in TTBR1 and stays there through
@@ -767,6 +770,13 @@ __switch_address_space(struct proc *p, struct proc **__ptproc)
 	 */
 	if (new_ttbr == read_ttbr0())
 		return;
+
+	/*
+	 * Counted here rather than at the call: switch_to_user() asks for a
+	 * switch on every entry, and most of them find the space already
+	 * loaded.  What costs something is the write below.
+	 */
+	KTRACE_EV(KTV_ASIDSW);
 
 	write_ttbr0(new_ttbr);
 
@@ -783,8 +793,10 @@ __switch_address_space(struct proc *p, struct proc **__ptproc)
 	 * kernel but a wrong one, so that machine pays what this port paid
 	 * before ASIDs: the whole TLB, on every switch.
 	 */
-	if (!pg_asids_usable())
+	if (!pg_asids_usable()) {
+		KTRACE_EV(KTV_TLBFLUSH);
 		refresh_tlb();
+	}
 
 	*__ptproc = p;
 }

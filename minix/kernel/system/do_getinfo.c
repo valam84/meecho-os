@@ -19,6 +19,8 @@
 #include <string.h>
 
 #include "kernel/system.h"
+#include "kernel/clock.h"
+#include "kernel/ktrace.h"
 
 #if defined(__aarch64__)
 #include <minix/fdt.h>
@@ -228,6 +230,38 @@ int do_getinfo(struct proc * caller, message * m_ptr)
 	if (!fdt_valid((const void *)src_vir))
 		return ENOENT;
 	length = fdt_size((const void *)src_vir);
+	break;
+    }
+#endif
+#if KTRACE
+    case GET_KTRACE: {
+	/*
+	 * The kernel event counters.  Three fields are filled in here rather
+	 * than kept up to date: the counter now, so that a reader can time
+	 * its own window without a second call, and what a cycle is, so that
+	 * the reader need not know the machine.
+	 */
+	int i;
+
+	for (i = 0; i < KT_NPROC; i++) {
+		if (ktrace.kt_proc[i][KT_PROC_IPC] == 0 &&
+		    ktrace.kt_proc[i][KT_PROC_KCALL] == 0)
+			continue;
+		/*
+		 * Bounded on the source as well as on the destination:
+		 * p_name is a fixed array, a name of full length fills it
+		 * with no terminator left, and strlcpy() would then read
+		 * on past it into the fields behind.
+		 */
+		memcpy(ktrace.kt_name[i], proc[i].p_name, KT_NAMELEN - 1);
+		ktrace.kt_name[i][KT_NAMELEN - 1] = '\0';
+	}
+
+	ktrace.kt_version = KTRACE_VERSION;
+	read_tsc_64(&ktrace.kt_tsc);
+	ktrace.kt_freq = ms_2_cpu_time(1000);
+	length = sizeof(ktrace);
+	src_vir = (vir_bytes) &ktrace;
 	break;
     }
 #endif

@@ -35,6 +35,7 @@
 #include "kernel/system.h"
 #include "kernel/vm.h"
 #include "kernel/clock.h"
+#include "kernel/ktrace.h"
 #include <stdlib.h>
 #include <stddef.h>
 #include <assert.h>
@@ -101,6 +102,9 @@ static int kernel_call_dispatch(struct proc * caller, message *msg)
 	hook_ipc_msgkcall(msg, caller);
 #endif
   call_nr = msg->m_type - KERNEL_CALL;
+
+  KTRACE_KCALL(call_nr);
+  KTRACE_CHARGE(caller, KT_PROC_KCALL);
 
   /* See if the caller made a valid request and try to handle it. */
   if (call_nr < 0 || call_nr >= NR_SYS_CALLS) {	/* check call number */
@@ -405,6 +409,8 @@ void cause_sig(proc_nr_t proc_nr, int sig_nr)
  * only called when a user process causes a CPU exception and from the kernel
  * process level, which runs to completion.
  */
+
+  KTRACE_EV(KTV_SIG);
   register struct proc *rp, *sig_mgr_rp;
   endpoint_t sig_mgr;
   int sig_mgr_proc_nr;

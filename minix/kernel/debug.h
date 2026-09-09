@@ -78,6 +78,24 @@
 /* DEBUG_IPCSTATS collects information on who sends messages to whom. */
 #define DEBUG_IPCSTATS			0
 
+/*
+ * KTRACE counts what the kernel does: every way in, every IPC primitive,
+ * every kernel call by number, the events a context switch is made of, and
+ * who caused each crossing.  Alongside each way in it accumulates the cycles
+ * spent in the kernel before leaving through it, using the number
+ * context_stop() computes anyway for its own accounting.
+ *
+ * Unlike DEBUG_DUMPIPC this is quiet and bounded - a few increments per
+ * kernel entry and one page of counters - so it can be left on for a whole
+ * workload and read once at the end, through /proc/ktrace.  It is still not
+ * free, and the price is measured by building both ways rather than assumed;
+ * see port/PORTING-LOG.md, "Из чего складывается вход в ядро".
+ *
+ * Set to 1, rebuild the kernel, and set it back afterwards, the same way
+ * DEBUG_DUMPIPC is used.
+ */
+#define KTRACE				0
+
 #if !USE_SYSDEBUG
 #undef DEBUG_SERIAL
 #undef DEBUG_ENABLE_IPC_WARNINGS

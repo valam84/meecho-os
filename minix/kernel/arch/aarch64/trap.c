@@ -22,6 +22,7 @@
 #include "archconst.h"
 #include "arch_proto.h"
 #include "kernel/debug.h"
+#include "kernel/ktrace.h"
 #include "trap.h"
 
 #include "bsp_intr.h"
@@ -271,6 +272,46 @@ do_syscall(struct proc *pr, u64_t esr)
 	}
 }
 
+#if KTRACE
+/*===========================================================================*
+ *				ktrace_entry_class			     *
+ *===========================================================================*/
+/*
+ * The counter this entry belongs to.  The svc immediate is already in the
+ * syndrome, so telling an IPC trap from a kernel call costs nothing here
+ * either - the same reason do_syscall() reads it from there.
+ */
+static unsigned
+ktrace_entry_class(u64_t kind, unsigned ec, u64_t esr)
+{
+
+	if (kind == EXC_EL1H_IRQ)
+		return KTE_IRQ_IDLE;
+	if (kind == EXC_EL0_64_IRQ || kind == EXC_EL0_32_IRQ)
+		return KTE_IRQ_USER;
+
+	switch (ec) {
+	case ESR_EC_SVC64:
+		switch ((unsigned)(ESR_ISS(esr) & 0xffff)) {
+		case KERVEC_INTR:	return KTE_KCALL;
+		case IPCVEC_INTR:	return KTE_IPC;
+		default:		return KTE_OTHER;
+		}
+	case ESR_EC_DABORT_LOWER:
+	case ESR_EC_DABORT_SAME:
+	case ESR_EC_IABORT_LOWER:
+	case ESR_EC_IABORT_SAME:
+		return KTE_FAULT;
+	case ESR_EC_FP_ACCESS:
+		return KTE_FPU;
+	default:
+		return KTE_OTHER;
+	}
+}
+#else
+#define ktrace_entry_class(kind, ec, esr)	0
+#endif /* KTRACE */
+
 /*===========================================================================*
  *				trap_handler				     *
  *===========================================================================*/
@@ -316,6 +357,15 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 		context_stop(pr);
 	else if (kind == EXC_EL1H_IRQ)
 		context_stop_idle();
+
+	/*
+	 * Which way in this was, recorded after the lock is held and before
+	 * anything is done about it: the way out does not know what the way
+	 * in was, and context_stop(KERNEL) charges the cycles to whatever is
+	 * recorded here.
+	 */
+	if (from_user || kind == EXC_EL1H_IRQ)
+		KTRACE_ENTER(ktrace_entry_class(kind, ec, esr));
 
 	switch (kind) {
 	case EXC_EL1H_IRQ:

@@ -6,6 +6,7 @@
 #include <machine/pci.h>
 #endif
 #include <minix/dmap.h>
+#include <minix/ktrace.h>
 
 static void root_hz(void);
 static void root_uptime(void);
@@ -18,6 +19,7 @@ static void root_pci(void);
 static void root_dmap(void);
 static void root_ipcvecs(void);
 static void root_mounts(void);
+static void root_ktrace(void);
 
 struct file root_files[] = {
 	{ "hz",		REG_ALL_MODE,	(data_t) root_hz	},
@@ -39,6 +41,12 @@ struct file root_files[] = {
 	{ "cpuinfo",	REG_ALL_MODE,	(data_t) root_cpuinfo	},
 	{ "ipcvecs",	REG_ALL_MODE,	(data_t) root_ipcvecs	},
 	{ "mounts",	REG_ALL_MODE,	(data_t) root_mounts	},
+	/*
+	 * What the kernel has been doing, in counts rather than in shares.
+	 * One line saying it is unavailable unless the kernel was built with
+	 * KTRACE set - see <minix/ktrace.h>.
+	 */
+	{ "ktrace",	REG_ALL_MODE,	(data_t) root_ktrace	},
 	{ NULL,		0,		NULL			}
 };
 
@@ -229,4 +237,57 @@ root_mounts(void)
 		    buf[i].f_mntonname, buf[i].f_fstypename,
 		    (buf[i].f_flag & ST_RDONLY) ? "ro" : "rw");
 	}
+}
+
+/*
+ * Print the kernel event counters.
+ *
+ * Name first on every line, so that the file can be read both by eye and by
+ * a script without either having to know the order the counters happen to be
+ * declared in.  Kernel calls are the exception and are printed by number:
+ * the kernel has no table of their names, and a second table written here is
+ * how two tables start to disagree.
+ */
+static void
+root_ktrace(void)
+{
+	static struct ktrace kt;	/* kilobytes of it; not on the stack */
+	static const char *entry_names[KT_NENTRY] = KT_ENTRY_NAMES;
+	static const char *ev_names[KT_NEV] = KT_EV_NAMES;
+	int i;
+
+	if (sys_getinfo(GET_KTRACE, &kt, sizeof(kt), NULL, 0) != OK) {
+		buf_printf("unavailable: kernel built without KTRACE\n");
+		return;
+	}
+
+	buf_printf("version %lu\n", (unsigned long)kt.kt_version);
+	buf_printf("freq %lu\n", (unsigned long)kt.kt_freq);
+	buf_printf("tsc %lu\n", (unsigned long)kt.kt_tsc);
+
+	for (i = 0; i < KT_NENTRY; i++)
+		buf_printf("entry %s %lu %lu\n", entry_names[i],
+		    (unsigned long)kt.kt_entry[i],
+		    (unsigned long)kt.kt_entry_cycles[i]);
+
+	for (i = 0; i < KT_NEV; i++)
+		buf_printf("ev %s %lu\n", ev_names[i],
+		    (unsigned long)kt.kt_ev[i]);
+
+	for (i = 0; i < KT_NIPC; i++)
+		if (kt.kt_ipc[i] != 0)
+			buf_printf("ipc %d %lu\n", i,
+			    (unsigned long)kt.kt_ipc[i]);
+
+	for (i = 0; i < KT_NKCALL; i++)
+		if (kt.kt_kcall[i] != 0)
+			buf_printf("kcall %d %lu\n", i,
+			    (unsigned long)kt.kt_kcall[i]);
+
+	for (i = 0; i < KT_NPROC; i++)
+		if (kt.kt_proc[i][KT_PROC_IPC] != 0 ||
+		    kt.kt_proc[i][KT_PROC_KCALL] != 0)
+			buf_printf("proc %d %s %lu %lu\n", i, kt.kt_name[i],
+			    (unsigned long)kt.kt_proc[i][KT_PROC_IPC],
+			    (unsigned long)kt.kt_proc[i][KT_PROC_KCALL]);
 }

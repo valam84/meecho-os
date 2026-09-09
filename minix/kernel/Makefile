@@ -12,7 +12,7 @@ DBG=-O0
 
 .include "arch/${MACHINE_ARCH}/Makefile.inc"
 
-SRCS+=	clock.c cpulocals.c interrupt.c main.c proc.c system.c \
+SRCS+=	clock.c cpulocals.c interrupt.c ktrace.c main.c proc.c system.c \
 	table.c utility.c usermapped_data.c
 
 LDADD+=	-ltimers -lsys -lexec 

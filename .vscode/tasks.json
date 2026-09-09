@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MEECHO: build bring-up kernel (macOS)",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/port/macos-dev.sh", "build"],
+      "problemMatcher": ["$gcc"],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "MEECHO: run QEMU (EL1)",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/port/macos-dev.sh", "run"],
+      "problemMatcher": []
+    },
+    {
+      "label": "MEECHO: run QEMU (EL2)",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/port/macos-dev.sh", "run-el2"],
+      "problemMatcher": []
+    },
+    {
+      "label": "MEECHO: host tests (macOS)",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/port/macos-dev.sh", "test"],
+      "problemMatcher": ["$gcc"],
+      "group": "test"
+    }
+  ]
+}

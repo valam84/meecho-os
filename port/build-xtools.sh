@@ -2,7 +2,7 @@
 #
 # Сборка внешнего кросс-тулчейна для цели aarch64-elf64-minix.
 #
-#	bash build-xtools.sh [binutils|gcc|all]
+#	bash build-xtools.sh [binutils|gcc|headers|all]
 #
 # Собирает binutils 2.46 и GCC 15.2 из исходников пакетов Ubuntu
 # (binutils-source, gcc-15-source) с патчами из port/toolchain/ и ставит
@@ -103,9 +103,33 @@ build_gcc() {
 	echo "==> gcc готов"
 }
 
+# GCC creates its private limits.h while the target sysroot is still empty.
+# In that bootstrap state it deliberately omits include_next <limits.h>, so
+# the compiler never sees such target definitions as SSIZE_MAX and PATH_MAX
+# after tree-includes.sh installs them. Recreate the header from the same
+# three inputs used by GCC's stmp-int-hdrs rule once the sysroot is populated.
+refresh_headers() {
+	unpack "${GCC_TAR}" "gcc-${GCC_VER}" \
+		"${PATCHES}/gcc-${GCC_VER}-aarch64-minix.patch"
+	local gcc="${PREFIX}/bin/${TARGET}-gcc"
+	[ -x "$gcc" ] || { echo "нет $gcc — сначала соберите gcc" >&2; exit 1; }
+	[ -f "${SYSROOT}/usr/include/limits.h" ] || {
+		echo "нет ${SYSROOT}/usr/include/limits.h — сначала установите headers" >&2
+		exit 1
+	}
+	local inc
+	inc=$($gcc -print-file-name=include)
+	cat "${WORK}/gcc-${GCC_VER}/gcc/limitx.h" \
+	    "${WORK}/gcc-${GCC_VER}/gcc/glimits.h" \
+	    "${WORK}/gcc-${GCC_VER}/gcc/limity.h" > "${inc}/limits.h"
+	echo | "$gcc" -dM -E -include limits.h - | grep -q '^#define SSIZE_MAX '
+	echo "==> системные limits.h подключены"
+}
+
 case "${WHAT}" in
 binutils)	build_binutils ;;
 gcc)		build_gcc ;;
+headers)	refresh_headers ;;
 all)		build_binutils; build_gcc ;;
-*)		echo "usage: $0 [binutils|gcc|all]" >&2; exit 1 ;;
+*)		echo "usage: $0 [binutils|gcc|headers|all]" >&2; exit 1 ;;
 esac

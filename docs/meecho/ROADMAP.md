@@ -103,9 +103,6 @@ These are known unknowns, not tasks with hidden answers.
   real and was fixed, but `trace`'s `mem.o` had been compiled before that fix
   and carried the truncation to 32 bits already generated. Relinking does not
   help when a *prototype* changes: the caller has to be recompiled.
-- **`fpu_sigcontext()` is unimplemented.** A signal handler sees the interrupted
-  code's FP state and vice versa. It needs the layout of `struct sigcontext`
-  agreed with libc, not three lines in the kernel.
 - **Entropy.** The board has a hardware RNG and uses it. Its raw output is
   measurably biased — sixteen sigmas on the monobit test over 256 KB, which is
   ordinary for a ring oscillator and exactly why such sources are conditioned —

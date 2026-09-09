@@ -14,7 +14,8 @@ int max_error = 3;
 #include "common.h"
 
 
-int subtest = 1;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 int zilch[5000];
 
 
@@ -26,6 +27,7 @@ int main(argc, argv)
 int argc;
 char *argv[];
 {
+  subtest = 1;
   int i, m = 0xFFFF;
 
   if (argc == 2) m = atoi(argv[1]);

@@ -15,7 +15,8 @@ int max_error = 3;
 #include "common.h"
 
 
-int subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 int zero[1024];
 int sigmap[5] = {SIGKILL, SIGUSR1, SIGSEGV};
 

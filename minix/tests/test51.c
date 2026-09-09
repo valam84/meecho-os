@@ -41,7 +41,8 @@ int max_error = 5;
 #define SWAPS 10
 
 
-int subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 ucontext_t ctx[3];
 int entered_func1, entered_func2, reentered_main, entered_overflow;
 

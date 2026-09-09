@@ -7,7 +7,8 @@ int max_error = 5;
 #include "common.h"
 
 
-int subtest = -1;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 
 void test_self(void);
 void test_setnone(void);
@@ -242,6 +243,7 @@ static void switch_to_su(void)
 
 int main(int argc, char **argv)
 {
+  subtest = -1;
   start(60);
   system("cp ../t60a nobits");
   system("cp ../t60a setgid");

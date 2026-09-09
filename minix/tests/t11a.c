@@ -9,7 +9,9 @@
 
 #define MAX_ERROR 4
 
-int errct, subtest=1;
+/* subtest and errct live in common.c, which is linked into every test
+ * program; this file does not include common.h, so declare them here. */
+extern int errct, subtest;
 
 int main(int argc, char *argv [], char *envp []);
 int diff(char *s1, char *s2);
@@ -19,6 +21,7 @@ int main(argc, argv, envp)
 int argc;
 char *argv[], *envp[];
 {
+  subtest = 1;
 /* See if arguments passed ok. */
 
   char aa[4];

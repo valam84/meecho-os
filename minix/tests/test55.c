@@ -18,7 +18,8 @@ void compare_statvfs(struct statvfs *st1, struct statvfs *st2);
 void test55a(void);
 void test55b(void);
 
-int subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 char filename[] = "statvfs_test_XXXXXX";
 
 static void create_file(void)

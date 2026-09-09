@@ -13,7 +13,8 @@ int max_error = 4;
 
 
 char name[20] = {"TMP14."};
-int subtest = 1;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 
 
 int main(void);
@@ -21,6 +22,7 @@ void quit(void);
 
 int main()
 {
+  subtest = 1;
   int fd0, i, pid;
 
   start(14);

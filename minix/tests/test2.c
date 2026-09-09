@@ -15,7 +15,9 @@ int max_error = 4;
 #include "common.h"
 
 
-int is, array[4], parsigs, parcum, sigct, cumsig, subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
+int is, array[4], parsigs, parcum, sigct, cumsig;
 int iteration, kk = 0;
 char buf[2048];
 

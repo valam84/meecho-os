@@ -30,7 +30,8 @@ int max_error = 	4;
 #define System(cmd)	if (system(cmd) != 0) printf("``%s'' failed\n", cmd)
 #define Chdir(dir)	if (chdir(dir) != 0) printf("Can't goto %s\n", dir)
 
-int subtest = 1;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 int superuser;
 
 char *MaxName;			/* Name of maximum length */
@@ -40,6 +41,7 @@ char ToLongPath[PATH_MAX + 1];	/* Same for path, both too long */
 
 int main(int argc, char *argv[])
 {
+  subtest = 1;
   int i, m = 0xFFFF;
 
   start(24);

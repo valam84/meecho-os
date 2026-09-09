@@ -20,7 +20,8 @@ int max_error = 4;
 #define DEBUG 0
 #endif
 
-int subtest = 1;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 
 
 int main(void);
@@ -150,6 +151,7 @@ static void show_timespec(char *msg, struct timespec *ts)
 
 int main(void)
 {
+  subtest = 1;
   start(69);
   struct timespec starttime, endtime;
 

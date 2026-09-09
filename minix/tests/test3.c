@@ -17,7 +17,8 @@ int max_error = 0;
 
 #define SIZE 64
 
-int subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 char el_weirdo[] = "\n\t\\\e@@!!##\e\e\n\n";
 
 

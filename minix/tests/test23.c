@@ -19,7 +19,8 @@ int max_error = 4;
 #define System(cmd)	if (system(cmd) != 0) printf("``%s'' failed\n", cmd)
 #define Chdir(dir)	if (chdir(dir) != 0) printf("Can't goto %s\n", dir)
 
-int subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 int superuser;			/* True if we are root. */
 
 char cwd[PATH_MAX];		/* Space for path names. */

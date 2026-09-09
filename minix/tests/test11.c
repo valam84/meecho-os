@@ -15,7 +15,8 @@ int max_error = 1;
 #include "common.h"
 
 
-int errct, subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 char *envp[3] = {"spring", "summer", 0};
 char *passwd_file = "/etc/passwd";
 

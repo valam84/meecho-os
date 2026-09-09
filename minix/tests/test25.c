@@ -28,7 +28,8 @@ int max_error = 	4;
 #define Creat(f)	if (close(creat(f,0777))!=0) printf("Can't creat %s\n",f)
 #define Report(s,n)	printf("Subtest %d" s,subtest,(n))
 
-int subtest = 1;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 int superuser;
 char *MaxName;			/* Name of maximum length */
 char MaxPath[PATH_MAX];		/* Same for path */
@@ -44,6 +45,7 @@ void makelongnames(void);
 
 int main(int argc, char *argv[])
 {
+  subtest = 1;
   int i, m = 0xFFFF;
 
   sync();

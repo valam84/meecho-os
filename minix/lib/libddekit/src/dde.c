@@ -15,7 +15,6 @@
 
 static ddekit_sem_t *exit_sem;
 
-unsigned long long jiffies;
 
 void ddekit_pgtab_init(void);
 

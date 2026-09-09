@@ -15,7 +15,8 @@ int max_error = 5;
 
 int pipefdc[2];
 int pipefdp[2];
-int subtest = 0;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 int child_is_dead = 0;
 
 void dead_child(int n);

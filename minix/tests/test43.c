@@ -14,7 +14,8 @@ int max_error = 3;
 #include "common.h"
 
 
-int subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 static const char *executable;
 
 

@@ -14,7 +14,9 @@ int max_error = 3;
 #define NB 30L
 #define NBOUNDS 6
 
-int subtest, passes, pipesigs;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
+int passes, pipesigs;
 long t1;
 
 char aa[100];

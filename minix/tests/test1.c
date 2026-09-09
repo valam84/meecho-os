@@ -15,7 +15,8 @@ int max_error = 4;
 #define ITERATIONS 10
 
 volatile int glov, gct;
-int subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 
 int main(int argc, char *argv []);
 void test1a(void);

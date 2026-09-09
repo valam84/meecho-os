@@ -10,7 +10,8 @@ int max_error = 3;
 #include "common.h"
 
 
-int subtest = -1;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 
 static void do_test(void)
 {
@@ -49,6 +50,7 @@ static void do_test(void)
 
 int main(void)
 {
+  subtest = -1;
 	start(54);
 	do_test();
 	quit();

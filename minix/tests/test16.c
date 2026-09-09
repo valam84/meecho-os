@@ -13,7 +13,9 @@ int max_error = 4;
 #include "common.h"
 
 
-int subtest, passes;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
+int passes;
 int V1filesystem = 0;
 
 

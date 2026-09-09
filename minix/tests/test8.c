@@ -21,7 +21,8 @@ int max_error = 	4;
 #define Time(t)		if (time(t) == (time_t)-1) printf("Time error\n")
 
 
-int subtest;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 
 void test8a(void);
 void test8b(void);

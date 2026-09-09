@@ -40,10 +40,13 @@ int max_error = 5;
 			  setuid(IMAGINARY_UID); \
 			} while(0)
 
-int subtest = -1, errorct = 0;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
+int errorct = 0;
 
 int main(int argc, char *argv[])
 {
+  subtest = -1;
   start(46);
 
   setuid(geteuid());

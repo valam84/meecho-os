@@ -11,7 +11,8 @@ int max_error = 2;
 #include "common.h"
 
 
-int subtest = 0;
+/* subtest and errct live in common.c; -fno-common makes a second
+ * tentative definition here a duplicate symbol at link time. */
 
 int
 main(int argc, char *argv[])

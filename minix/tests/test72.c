@@ -161,6 +161,14 @@ bdev_scatter(dev_t dev, u64_t pos, iovec_t *vec, int count, int flags)
 	return tot;
 }
 
+int
+bdev_flush(dev_t dev)
+{
+	/* The fake block store is memory; nothing to push out. */
+	assert(dev == MYDEV);
+	return 0;
+}
+
 ssize_t
 bdev_read(dev_t dev, u64_t pos, char *data, size_t count, int flags)
 {

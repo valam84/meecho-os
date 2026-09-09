@@ -104,10 +104,15 @@ SCRIPTS+= run check-install testinterp.sh testsh1.sh testsh2.sh testmfs.sh \
 # This way, we can link it in when linking the final binary
 LDADD.test57+= ${${USE_BITCODE:Uno} != "no":? test57loop.o -Wl,-allow-multiple-definition:}
 
-.if ${MKPIC} == "yes"
+.if ${MKPIC} == "yes" && ${MACHINE_ARCH} != "aarch64"
 # Build them as dynamic executables by default if shared libraries
 # are available; so that the building and executing of dynamic
-# executables is tested
+# executables is tested.
+#
+# aarch64 is excluded: ld.elf_so links there, but exec(2) has no PT_INTERP
+# path yet, so a dynamic binary dies before main().  Building the suite
+# dynamically would turn every single test into the same one failure and
+# hide everything the suite is for.
 LDSTATIC=	-dynamic
 
 LDFLAGS.mod+=	-shared		# make shared object

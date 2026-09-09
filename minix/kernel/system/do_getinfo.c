@@ -264,6 +264,16 @@ int do_getinfo(struct proc * caller, message * m_ptr)
 	src_vir = (vir_bytes) &ktrace;
 	break;
     }
+#else
+    case GET_KTRACE:
+	/*
+	 * Quietly, because this is the normal answer and not a mistake:
+	 * /proc/ktrace exists on every kernel and asking it what a kernel
+	 * without counters has been doing is a fair question with a short
+	 * answer.  Falling through to the default below would print a
+	 * kernel complaint on the console for each read of the file.
+	 */
+	return EINVAL;
 #endif
     default:
 	printf("do_getinfo: invalid request %d\n",

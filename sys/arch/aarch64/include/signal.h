@@ -41,6 +41,10 @@ typedef int sig_atomic_t;
 #if defined(__minix)
 #include <sys/featuretest.h>
 
+#if defined(_LIBMINC) || !defined(_STANDALONE)
+#include <machine/fpu.h>
+#endif
+
 #if defined(_NETBSD_SOURCE) && !defined(_LOCORE)
 /*
  * Information pushed on the stack when a signal is delivered. The kernel
@@ -63,6 +67,9 @@ struct sigcontext {
 	__uint64_t	sc_spsr;
 
 	sigset_t	sc_mask;	/* signal mask to restore (new style) */
+#if defined(_LIBMINC) || !defined(_STANDALONE)
+	struct fpu_state sc_fpu_state;	/* valid when MF_FPU_INITIALIZED */
+#endif
 #define SC_MAGIC	0xc0ffee3
 	int		sc_magic;
 	int		sc_flags;

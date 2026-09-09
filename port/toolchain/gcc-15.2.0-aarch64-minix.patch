@@ -321,7 +321,7 @@ index bacf24d24..3c1516297 100644
  #endif
  
 -#if defined(__NetBSD__)
-+#if defined(__NetBSD__) || defined(__minix)
++#if (defined(__NetBSD__) || defined(__minix)) && !defined(inhibit_libc)
  #if !defined(_SIZE_T_) && !defined(_BSD_SIZE_T_)
  #define _SIZE_T
  #endif
@@ -330,7 +330,7 @@ index bacf24d24..3c1516297 100644
  #undef _BSD_WCHAR_T_
  #endif
 -#endif /* defined(__NetBSD__) */
-+#endif /* defined(__NetBSD__) || defined(__minix) */
++#endif /* BSD headers available */
  
  /* Sequent's header files use _PTRDIFF_T_ in some conflicting way.
     Just ignore it.  */

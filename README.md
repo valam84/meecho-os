@@ -111,8 +111,6 @@ Known gaps, stated plainly:
   `exec` has no `PT_INTERP` path yet.
 - **No SD-card controller driver.** The card slot is a DesignWare mobile
   storage host — different registers from the eMMC's SDHCI, different file.
-- `fpu_sigcontext()` is unimplemented: a signal handler sees the interrupted
-  code's FP state.
 
 ## Try it in five minutes
 

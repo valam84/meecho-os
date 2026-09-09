@@ -27,6 +27,7 @@ set -uo pipefail
 
 PORT=$(cd "$(dirname "$0")" && pwd)
 SRCDIR=${SRCDIR:-$(cd "$PORT/.." && pwd)}
+export SRCDIR
 
 ARCH=evbarm64-el
 JOBS=${JOBS:-$(nproc)}
@@ -77,6 +78,9 @@ fi
 if want includes; then
 	say "includes: DESTDIR tree and headers"
 	bash "$PORT/tree-includes.sh" || die "includes failed (see ~/build-includes.log)"
+	# The bootstrap compiler was built before the target headers existed.
+	# Refresh GCC's private limits.h now so it includes the installed one.
+	bash "$PORT/build-xtools.sh" headers || die "toolchain headers failed"
 fi
 
 if want libs; then

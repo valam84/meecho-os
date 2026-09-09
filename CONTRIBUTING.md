@@ -36,10 +36,6 @@ If you only want to look at a running system first, take a release and run it â€
   move. Before importing, diff your copy against the 2015 NetBSD base: if MINIX
   never patched it, the replacement is safe. This is how `awk` went from 2012 to
   2026, `less` from 458 to 643, `bzip2` from 1.0.6 to 1.0.8.
-- **`fpu_sigcontext()`.** A signal handler currently sees the interrupted code's
-  FP state. What it needs is the layout of `struct sigcontext` agreed with libc
-   â€” not three lines in the kernel, but not a research project either.
-
 ### Medium
 
 - **`PT_INTERP` in `exec`, and dynamic linking.** `ld.elf_so` links for aarch64

@@ -202,24 +202,13 @@ void
 fpu_sigcontext(struct proc *pr, struct sigframe_sigcontext *fr,
 	struct sigcontext *sc)
 {
-	/*
-	 * Where the FP state would be copied into the signal frame, so that a
-	 * handler sees the arithmetic state the signal interrupted and
-	 * sigreturn puts it back.
-	 *
-	 * Still empty, and this is the one loose end left in FP support. The
-	 * kernel's half of it is three lines; the other half is a layout
-	 * agreed with libc, because struct sigcontext is what a handler and
-	 * sigreturn both read, and it was written at stage 1 to mirror
-	 * stackframe_s exactly so that the kernel could copy it as a block.
-	 * Widening it changes that agreement.
-	 *
-	 * What it costs meanwhile: a signal handler that uses FP runs with
-	 * whatever the interrupted code left in the registers, and the
-	 * interrupted code resumes with whatever the handler left. ARM leaves
-	 * this empty too, where it is harmless because that port is
-	 * soft-float. Here it is not harmless, only rare - MINIX's servers do
-	 * not do arithmetic in signal handlers - so it is written down rather
-	 * than fixed in passing.
-	 */
+	(void)fr;
+
+	if (!proc_used_fpu(pr))
+		return;
+
+	/* The live owner has the newest copy; make the saved area authoritative. */
+	save_fpu(pr);
+	assert(sizeof(sc->sc_fpu_state) == FPU_STATE_SIZE);
+	memcpy(&sc->sc_fpu_state, pr->p_seg.fpu_state, FPU_STATE_SIZE);
 }

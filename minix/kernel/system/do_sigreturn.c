@@ -8,6 +8,7 @@
  */
 
 #include "kernel/system.h"
+#include <assert.h>
 #include <string.h>
 #include <machine/cpu.h>
 
@@ -102,9 +103,22 @@ int do_sigreturn(struct proc * caller, message * m_ptr)
 	/* force reloading FPU */
 	release_fpu(rp);
   }
+#elif defined(__aarch64__)
+  /*
+   * Discard any FP state made by the handler and reinstate the state named
+   * by the interrupted context. Releasing ownership makes the next FP
+   * instruction load this saved copy rather than keep the live registers.
+   */
+  if (sc.sc_flags & MF_FPU_INITIALIZED) {
+	assert(sizeof(sc.sc_fpu_state) == FPU_STATE_SIZE);
+	memcpy(rp->p_seg.fpu_state, &sc.sc_fpu_state, FPU_STATE_SIZE);
+	rp->p_misc_flags |= MF_FPU_INITIALIZED;
+  } else {
+	rp->p_misc_flags &= ~MF_FPU_INITIALIZED;
+  }
+  release_fpu(rp);
 #endif
 
   return OK;
 }
 #endif /* USE_SIGRETURN */
-

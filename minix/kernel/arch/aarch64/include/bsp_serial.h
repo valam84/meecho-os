@@ -2,8 +2,9 @@
 #define _BSP_SERIAL_H_
 
 /*
- * The kernel's console, as the board support package provides it. Two calls,
- * the same two ARM has: bring the port up, and put one character out.
+ * The kernel's console, as the platform provides it. Two calls, the same two
+ * ARM has - which is where the bsp_ prefix comes from, and on this
+ * architecture it is historical: there is no board support package here.
  *
  * This is the console the kernel talks on before there is a tty driver and
  * after a panic has taken one away, so bsp_ser_putc() has to work at any

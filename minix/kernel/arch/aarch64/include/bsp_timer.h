@@ -5,8 +5,10 @@
 #include "kernel/type.h"	/* irq_handler_t */
 
 /*
- * The tick source, as the board support package provides it. The same four
- * calls ARM has.
+ * The tick source, as the platform provides it. The same four calls ARM has -
+ * the bsp_ prefix is what keeps the contract the same shape as earm's, not a
+ * claim that a board package implements it. On this architecture one file
+ * does, for every board: generic_timer.c.
  *
  * On this architecture the timer is the ARM generic timer, which is part of
  * the architecture rather than of the board: a counter and a comparator

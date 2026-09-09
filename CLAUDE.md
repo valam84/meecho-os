@@ -1014,8 +1014,12 @@ Arch-слой держит всё: `head.S`, `kernel.lds`, `arch_system.c`, `mem
 `arch_do_vmctl.c`, `arch_clock.c`, `arch_reset.c`, `psci.c`, `fpu.c`,
 `hw_intr.c`, `vectors.S`, `trap.c`, `usercopy.S`, `exception.c`,
 `direct_tty_utils.c`, `fdt.c`, `pg_utils.c`, `pre_init.c`, `protect.c`,
-`bsp/qemu-virt/` (PL011, PSCI, GICv2, generic timer) и заголовки в
-`include/`. Неразрешённых символов больше нет; проверять по-прежнему так:
+`generic_timer.c`, `psci_reset.c` и заголовки в `include/`. **Каталога `bsp`
+на этой архитектуре нет** (убран 2026-09-09): выбор BSP на этапе сборки —
+наследство earm, а здесь всё, что дерево умеет назвать, спрашивается в
+рантайме, и одно ядро грузится и на QEMU, и на CB2. Границы порта и правила
+добавления новых плат и устройств — `PLAN.md`, «Порт на новую плату:
+границы». Неразрешённых символов больше нет; проверять по-прежнему так:
 
 ```bash
 wsl -d Ubuntu -u minix -- bash -c 'cd /home/minix/minix-src && /home/minix/tools-evbarm64/bin/nbmake-evbarm64-el -C minix/kernel -k -j24 dependall 2>&1' | grep -o "undefined reference to .[a-zA-Z_0-9]*" | sed 's/.*to .//' | sort -u

@@ -29,22 +29,36 @@ CFLAGS+=	-mcmodel=small
 
 .PATH:	${HERE}
 
-# The GIC sits here and not in a board support package on purpose: every
-# AArch64 machine has one, and which version it is and where it lives are
-# read from the device tree, exactly as psci.c reads its conduit. QEMU's virt
-# machine on its own presents either version depending on gic-version=, so a
-# build-time choice would be wrong for a single board, never mind two.
+# There is no board support package on this architecture, and that is a
+# result rather than an omission. A BSP is a build-time choice between board
+# implementations of one contract; here every question a BSP would answer is
+# answered at run time out of the device tree, so one kernel binary runs on
+# QEMU's virt machine and on the CB2, and both are exercised by every run.
 #
-# The console followed it there, and for a stronger reason: the two machines
-# do not even have the same part. QEMU's virt machine has a PL011, the RK3566
-# of the CB2 has a DesignWare 8250, and one kernel has to print on both -
-# development happens in QEMU and the target is the board. serial.c reads
+# The GIC went first: every AArch64 machine has one, and which version it is
+# and where it lives are read from the tree, exactly as psci.c reads its
+# conduit. QEMU's virt machine alone presents either version depending on
+# gic-version=, so a build-time choice would be wrong for a single board,
+# never mind two.
+#
+# The console followed, for a stronger reason: the two machines do not even
+# have the same part. QEMU's virt machine has a PL011, the RK3566 of the CB2
+# a DesignWare 8250, and one kernel has to print on both - development
+# happens in QEMU and the target is the board. serial.c reads
 # /chosen/stdout-path and hands the two calls of <bsp_serial.h> to pl011.c or
 # dw8250.c.
+#
+# What was left in bsp/qemu-virt was a timer and a reset that carried a
+# board's name and no board's code: the ARM generic timer, whose interrupt
+# comes out of the tree, and PSCI, whose conduit does. They are
+# generic_timer.c and psci_reset.c now. The bsp_*.h headers stayed - they
+# are the contract, shared in shape with earm - and moved to include/ with
+# the rest of the architecture's headers.
 SRCS+=	head.S arch_system.c memory.c cache.c direct_tty_utils.c \
 	pg_utils.c pre_init.c protect.c arch_do_vmctl.c \
 	arch_reset.c arch_clock.c psci.c fpu.c \
 	gic.c gicv2.c gicv3.c \
+	generic_timer.c psci_reset.c \
 	serial.c pl011.c dw8250.c \
 	usercopy.S exception.c vectors.S trap.c hw_intr.c fpu_asm.S
 
@@ -54,8 +68,6 @@ SRCS+=	head.S arch_system.c memory.c cache.c direct_tty_utils.c \
 .ifdef CONFIG_SMP
 SRCS+=	arch_smp.c spinlock.S
 .endif
-
-.include "bsp/qemu-virt/Makefile.inc"
 
 # The rest of the architecture layer is written by taking the bring-up kernel
 # in arch/aarch64/bringup - mmu.c, trap.c, proc.c, intr.c, usercopy.S

@@ -13,7 +13,8 @@
  *
  * Nothing here is specific to a board. Even the interrupt is not: which PPI
  * the timer raises comes out of the device tree, so this file is the same on
- * the emulated machine and on the Compute Module.
+ * the emulated machine and on the CB2 - which is why it stopped being
+ * bsp/qemu-virt/virt_timer.c and joined the architecture layer.
  */
 
 #include <assert.h>

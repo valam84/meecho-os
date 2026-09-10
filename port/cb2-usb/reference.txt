@@ -1,0 +1,259 @@
+### uname
+Linux bigtreetech-cb2 6.1.115-btt-rockchip64 #1 SMP PREEMPT Mon Jun 29 19:45:03 CST 2026 aarch64 GNU/Linux
+
+### lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 1a40:0101 Terminus Technology Inc. Hub
+Bus 002 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 003 Device 001: ID 1d6b:0001 Linux Foundation 1.1 root hub
+Bus 004 Device 001: ID 1d6b:0001 Linux Foundation 1.1 root hub
+Bus 005 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 006 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 007 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+
+### lsusb -t
+/:  Bus 001.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 480M
+    |__ Port 001: Dev 002, If 0, Class=Hub, Driver=hub/4p, 480M
+/:  Bus 002.Port 001: Dev 001, Class=root_hub, Driver=ehci-platform/1p, 480M
+/:  Bus 003.Port 001: Dev 001, Class=root_hub, Driver=ohci-platform/1p, 12M
+/:  Bus 004.Port 001: Dev 001, Class=root_hub, Driver=ohci-platform/1p, 12M
+/:  Bus 005.Port 001: Dev 001, Class=root_hub, Driver=ehci-platform/1p, 480M
+/:  Bus 006.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 480M
+/:  Bus 007.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 5000M
+
+### device tree: usb nodes (reg / interrupts / clocks / phys)
+--- /proc/device-tree/usbdrd
+  compatible   rockchip,rk3568-dwc3 rockchip,rk3399-dwc3 
+  status       okay 
+  clock-names  ref_clk suspend_clk bus_clk pipe_clk 
+  ranges       
+  ++ usb@fcc00000: snps,dwc3  status=okay 
+--- /proc/device-tree/usbhost
+  compatible   rockchip,rk3568-dwc3 rockchip,rk3399-dwc3 
+  status       okay 
+  clock-names  ref_clk suspend_clk bus_clk pipe_clk 
+  ranges       
+  ++ usb@fd000000: snps,dwc3  status=okay 
+--- /proc/device-tree/usbdrd/usb@fcc00000
+  compatible   snps,dwc3 
+  status       okay 
+  phy-names    usb2-phy 
+  dr_mode      host 
+  reg          00000000 fcc00000 00000000 00400000 
+  interrupts   00000000 000000a9 00000004 
+--- /proc/device-tree/usbhost/usb@fd000000
+  compatible   snps,dwc3 
+  status       okay 
+  phy-names    usb2-phy usb3-phy 
+  dr_mode      host 
+  reg          00000000 fd000000 00000000 00400000 
+  interrupts   00000000 000000aa 00000004 
+--- /proc/device-tree/usb@fd800000
+  compatible   generic-ehci 
+  status       okay 
+  clock-names  usbhost arbiter pclk utmi 
+  phy-names    usb2-phy 
+  reg          00000000 fd800000 00000000 00040000 
+  interrupts   00000000 00000082 00000004 
+--- /proc/device-tree/usb@fd840000
+  compatible   generic-ohci 
+  status       okay 
+  clock-names  usbhost arbiter pclk utmi 
+  phy-names    usb2-phy 
+  reg          00000000 fd840000 00000000 00040000 
+  interrupts   00000000 00000083 00000004 
+--- /proc/device-tree/usb@fd880000
+  compatible   generic-ehci 
+  status       okay 
+  clock-names  usbhost arbiter pclk utmi 
+  phy-names    usb2-phy 
+  reg          00000000 fd880000 00000000 00040000 
+  interrupts   00000000 00000085 00000004 
+--- /proc/device-tree/usb@fd8c0000
+  compatible   generic-ohci 
+  status       okay 
+  clock-names  usbhost arbiter pclk utmi 
+  phy-names    usb2-phy 
+  reg          00000000 fd8c0000 00000000 00040000 
+  interrupts   00000000 00000086 00000004 
+--- /proc/device-tree/usb2-phy@fe8a0000
+  compatible   rockchip,rk3568-usb2phy 
+  status       okay 
+  clock-names  phyclk 
+  reg          00000000 fe8a0000 00000000 00010000 
+  interrupts   00000000 00000087 00000004 
+--- /proc/device-tree/usb2-phy@fe8b0000
+  compatible   rockchip,rk3568-usb2phy 
+  status       okay 
+  clock-names  phyclk 
+  reg          00000000 fe8b0000 00000000 00010000 
+  interrupts   00000000 00000088 00000004 
+
+### hub on bus 1 (единственное физически включённое устройство)
+
+Bus 001 Device 002: ID 1a40:0101 Terminus Technology Inc. Hub
+Negotiated speed: High Speed (480Mbps)
+Device Descriptor:
+  bLength                18
+  bDescriptorType         1
+  bcdUSB               2.00
+  bDeviceClass            9 Hub
+  bDeviceSubClass         0 [unknown]
+  bDeviceProtocol         1 Single TT
+  bMaxPacketSize0        64
+  idVendor           0x1a40 Terminus Technology Inc.
+  idProduct          0x0101 Hub
+  bcdDevice            1.11
+  iManufacturer           0 
+  iProduct                1 USB 2.0 Hub
+  iSerial                 0 
+  bNumConfigurations      1
+  Configuration Descriptor:
+    bLength                 9
+    bDescriptorType         2
+    wTotalLength       0x0019
+    bNumInterfaces          1
+    bConfigurationValue     1
+    iConfiguration          0 
+    bmAttributes         0xe0
+      Self Powered
+      Remote Wakeup
+    MaxPower              100mA
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        0
+      bAlternateSetting       0
+      bNumEndpoints           1
+      bInterfaceClass         9 Hub
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 Full speed (or root) hub
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x81  EP 1 IN
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0001  1x 1 bytes
+        bInterval              12
+Hub Descriptor:
+  bLength               9
+  bDescriptorType      41
+  nNbrPorts             4
+  wHubCharacteristic 0x0000
+    Ganged power switching
+    Ganged overcurrent protection
+    TT think time 8 FS bits
+  bPwrOn2PwrGood       50 * 2 milli seconds
+  bHubContrCurrent    100 milli Ampere
+  DeviceRemovable    0x00
+
+### dmesg
+[    9.713635] xhci-hcd xhci-hcd.0.auto: xHCI Host Controller
+[    9.713691] xhci-hcd xhci-hcd.0.auto: new USB bus registered, assigned bus number 1
+[    9.713880] xhci-hcd xhci-hcd.0.auto: USB3 root hub has no ports
+[    9.713902] xhci-hcd xhci-hcd.0.auto: hcc params 0x0220fe64 hci version 0x110 quirks 0x0000008022010010
+[    9.714006] xhci-hcd xhci-hcd.0.auto: irq 45, io mem 0xfcc00000
+[    9.714148] ehci-platform fd880000.usb: EHCI Host Controller
+[    9.714193] ohci-platform fd8c0000.usb: Generic Platform OHCI controller
+[    9.714197] ehci-platform fd880000.usb: new USB bus registered, assigned bus number 2
+[    9.714269] ohci-platform fd8c0000.usb: new USB bus registered, assigned bus number 3
+[    9.714410] ohci-platform fd840000.usb: Generic Platform OHCI controller
+[    9.714408] ehci-platform fd880000.usb: irq 48, io mem 0xfd880000
+[    9.714459] ohci-platform fd8c0000.usb: irq 50, io mem 0xfd8c0000
+[    9.714489] ehci-platform fd800000.usb: EHCI Host Controller
+[    9.714730] usb usb1: Product: xHCI Host Controller
+[    9.714744] usb usb1: Manufacturer: Linux 6.1.115-btt-rockchip64 xhci-hcd
+[    9.714756] usb usb1: SerialNumber: xhci-hcd.0.auto
+[    9.715865] hub 1-0:1.0: USB hub found
+[    9.715950] hub 1-0:1.0: 1 port detected
+[    9.716691] ohci-platform fd840000.usb: new USB bus registered, assigned bus number 4
+[    9.716724] ehci-platform fd800000.usb: new USB bus registered, assigned bus number 5
+[    9.716903] ohci-platform fd840000.usb: irq 49, io mem 0xfd840000
+[    9.716919] ehci-platform fd800000.usb: irq 47, io mem 0xfd800000
+[    9.716976] xhci-hcd xhci-hcd.1.auto: xHCI Host Controller
+[    9.717019] xhci-hcd xhci-hcd.1.auto: new USB bus registered, assigned bus number 6
+[    9.717191] xhci-hcd xhci-hcd.1.auto: hcc params 0x0220fe64 hci version 0x110 quirks 0x0002008002010010
+[    9.717275] xhci-hcd xhci-hcd.1.auto: irq 46, io mem 0xfd000000
+[    9.717558] xhci-hcd xhci-hcd.1.auto: xHCI Host Controller
+[    9.717589] xhci-hcd xhci-hcd.1.auto: new USB bus registered, assigned bus number 7
+[    9.717617] xhci-hcd xhci-hcd.1.auto: Host supports USB 3.0 SuperSpeed
+[    9.718047] usb usb6: Product: xHCI Host Controller
+[    9.718061] usb usb6: Manufacturer: Linux 6.1.115-btt-rockchip64 xhci-hcd
+[    9.718074] usb usb6: SerialNumber: xhci-hcd.1.auto
+[    9.718974] hub 6-0:1.0: USB hub found
+[    9.719058] hub 6-0:1.0: 1 port detected
+[    9.720250] usb usb7: Product: xHCI Host Controller
+[    9.720263] usb usb7: Manufacturer: Linux 6.1.115-btt-rockchip64 xhci-hcd
+[    9.720277] usb usb7: SerialNumber: xhci-hcd.1.auto
+[    9.721126] hub 7-0:1.0: USB hub found
+[    9.721206] hub 7-0:1.0: 1 port detected
+[    9.725295] ehci-platform fd880000.usb: USB 2.0 started, EHCI 1.00
+[    9.726183] usb usb2: Product: EHCI Host Controller
+[    9.726197] usb usb2: Manufacturer: Linux 6.1.115-btt-rockchip64 ehci_hcd
+[    9.727155] hub 2-0:1.0: USB hub found
+[    9.727277] hub 2-0:1.0: 1 port detected
+[    9.738602] ehci-platform fd800000.usb: USB 2.0 started, EHCI 1.00
+[    9.739163] usb usb5: Product: EHCI Host Controller
+[    9.739178] usb usb5: Manufacturer: Linux 6.1.115-btt-rockchip64 ehci_hcd
+[    9.740097] hub 5-0:1.0: USB hub found
+[    9.740181] hub 5-0:1.0: 1 port detected
+[    9.773638] usb usb3: Product: Generic Platform OHCI controller
+[    9.773652] usb usb3: Manufacturer: Linux 6.1.115-btt-rockchip64 ohci_hcd
+[    9.774646] hub 3-0:1.0: USB hub found
+[    9.774743] hub 3-0:1.0: 1 port detected
+[    9.776446] usb usb4: Product: Generic Platform OHCI controller
+[    9.776461] usb usb4: Manufacturer: Linux 6.1.115-btt-rockchip64 ohci_hcd
+[    9.777475] hub 4-0:1.0: USB hub found
+[    9.777570] hub 4-0:1.0: 1 port detected
+[    9.965370] usb 1-1: new high-speed USB device number 2 using xhci-hcd
+[   10.109441] usb 1-1: New USB device found, idVendor=1a40, idProduct=0101, bcdDevice= 1.11
+[   10.109465] usb 1-1: New USB device strings: Mfr=0, Product=1, SerialNumber=0
+[   10.109481] usb 1-1: Product: USB 2.0 Hub
+[   10.162891] hub 1-1:1.0: USB hub found
+[   10.163044] hub 1-1:1.0: 4 ports detected
+
+### clk_summary (такты USB, включённые вендорским ядром)
+    clk_usb3otg1_suspend             1       1        0        24000000    0          0     50000      Y      usbhost                         no_connection_id         
+    clk_usb3otg1_ref                 1       1        0        24000000    0          0     50000      Y      usbhost                         no_connection_id         
+    clk_usb3otg0_suspend             1       1        0        24000000    0          0     50000      Y      usbdrd                          no_connection_id         
+    clk_usb3otg0_ref                 1       1        0        24000000    0          0     50000      Y      usbdrd                          no_connection_id         
+                pclk_pipephy2        0       0        0        99000000    0          0     50000      N                  fe840000.phy                    apbclk                   
+                pclk_pipephy1        1       1        0        99000000    0          0     50000      Y                  fe830000.phy                    apbclk                   
+                pclk_pipephy0        0       0        0        99000000    0          0     50000      N                  deviceless                      no_connection_id         
+             hclk_usb                5       5        0        148500000   0          0     50000      Y               deviceless                      no_connection_id         
+                hclk_usb2host1_arb   2       2        0        148500000   0          0     50000      Y                  usb@fd8c0000                    no_connection_id         
+                                                                                                                          usb@fd880000                    no_connection_id         
+                hclk_usb2host1       2       2        0        148500000   0          0     50000      Y                  usb@fd8c0000                    no_connection_id         
+                                                                                                                          usb@fd880000                    no_connection_id         
+                hclk_usb2host0_arb   2       2        0        148500000   0          0     50000      Y                  usb@fd840000                    no_connection_id         
+                                                                                                                          usb@fd800000                    no_connection_id         
+                hclk_usb2host0       2       2        0        148500000   0          0     50000      Y                  usb@fd840000                    no_connection_id         
+                                                                                                                          usb@fd800000                    no_connection_id         
+             aclk_usb                2       2        0        297000000   0          0     50000      Y               deviceless                      no_connection_id         
+                pclk_usb             6       6        0        99000000    0          0     50000      Y                  usb@fd8c0000                    no_connection_id         
+                                                                                                                          usb@fd840000                    no_connection_id         
+                                                                                                                          usb@fd880000                    no_connection_id         
+                                                                                                                          usb@fd800000                    no_connection_id         
+             aclk_pipe               3       3        0        396000000   0          0     50000      Y               deviceless                      no_connection_id         
+                aclk_usb3otg1        1       1        0        396000000   0          0     50000      Y                  usbhost                         no_connection_id         
+                aclk_usb3otg0        1       1        0        396000000   0          0     50000      Y                  usbdrd                          no_connection_id         
+                pclk_pipe            3       4        0        99000000    0          0     50000      Y                  usbhost                         no_connection_id         
+                                                                                                                          usbdrd                          no_connection_id         
+                                                                                                                          fe840000.phy                    pipe_clk                 
+                                                                                                                          fe830000.phy                    pipe_clk                 
+    xin_osc0_usbphy1_g               1       1        0        24000000    0          0     50000      Y      deviceless                      no_connection_id         
+       clk_usbphy1_ref               2       2        0        24000000    0          0     50000      Y         usb2-phy@fe8b0000               phyclk                   
+                                                                                                                 usb2-phy@fe8b0000               no_connection_id         
+          clk_usbphy_480m            5       5        0        480000000   0          0     50000      Y            usb@fd8c0000                    no_connection_id         
+                                                                                                                    usb@fd840000                    no_connection_id         
+                                                                                                                    usb@fd880000                    no_connection_id         
+                                                                                                                    usb@fd800000                    no_connection_id         
+    xin_osc0_usbphy0_g               1       1        0        24000000    0          0     50000      Y      deviceless                      no_connection_id         
+       clk_usbphy0_ref               2       2        0        24000000    0          0     50000      Y         usb2-phy@fe8a0000               phyclk                   
+                                                                                                                 usb2-phy@fe8a0000               no_connection_id         
+          usb480m_phy                1       1        0        480000000   0          0     50000      Y            deviceless                      no_connection_id         
+             usb480m                 0       0        0        480000000   0          0     50000      Y               deviceless                      no_connection_id         

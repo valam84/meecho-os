@@ -72,7 +72,10 @@ if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho.go; then
 			setenv bootargs "bootramdisk=1 console=tty00"
 		fi
 
-		# Тот же переключатель файлом, что и на карте MEECHO.
+		# Тот же переключатель файлом, что и на карте MEECHO. SMP на
+		# плате проверен (2026-09-08, веха 8.0.3), поэтому файла тут
+		# по умолчанию нет; он нужен, чтобы получить ту же машину на
+		# одном ядре — единственный честный эталон для замера.
 		if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho/no_smp; then
 			setenv bootargs "${bootargs} no_smp=1"
 			echo "MEECHO: single CPU (meecho/no_smp present)"
@@ -89,8 +92,18 @@ if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho.go; then
 		# Сторож загрузки: ядро само сбросит машину через это число
 		# секунд. Плата стоит не здесь, и загрузка, не дошедшая до
 		# приглашения, иначе оставляет её мёртвой до человека.
+		#
+		# Три ступени, а не две. Пятнадцать минут - под прогон по
+		# расписанию, но мало под работу руками по ssh, а снятый
+		# сторож (no_bootwd) означает, что зависшую плату вернёт
+		# только человек у выключателя. Поэтому между ними есть час:
+		# сессии хватает, спасение остаётся. no_bootwd проверяется
+		# первым - он сильнее.
 		if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho/no_bootwd; then
 			echo "MEECHO: boot watchdog off (meecho/no_bootwd present)"
+		elif test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho/bootwd_long; then
+			setenv bootargs "${bootargs} bootwd=3600"
+			echo "MEECHO: boot watchdog 3600s (meecho/bootwd_long present)"
 		else
 			setenv bootargs "${bootargs} bootwd=900"
 		fi
@@ -101,6 +114,28 @@ if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho.go; then
 			echo "MEECHO: netprobe begin"
 			help
 			echo "MEECHO: netprobe end"
+		fi
+
+		# Разведка USB, тем же способом, что netprobe выше: у этой сборки
+		# U-Boot есть команды usb/usbboot, а значит и рабочая инициализация
+		# PHY, тактов и xHCI. Один прогон с этим флагом отвечает на вопрос,
+		# который иначе стоит целого этапа: какой физический разъём платы
+		# висит на каком контроллере (у SoC их шесть — два xHCI, два EHCI,
+		# два OHCI) и видно ли включённое устройство до всякого нашего кода.
+		#
+		# И второе, ради чего флаг останется в дереве: "usb start"
+		# оставляет контроллеры поднятыми, то есть загрузка с этим флагом
+		# отличается от обычной ровно тем, что PHY и такты настроил не наш
+		# драйвер. Дальше это разделяет два отказа, которые в журнале
+		# выглядят одинаково: «не работает наш PHY» и «не работает наш
+		# xHCI». По той же причине флага НЕ должно быть на обычном прогоне —
+		# иначе собственная инициализация драйвера не проверяется вовсе.
+		if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho/usbprobe; then
+			echo "MEECHO: usbprobe begin"
+			usb start
+			usb tree
+			usb info
+			echo "MEECHO: usbprobe end"
 		fi
 
 		# Ядро и архив: сначала по сети, потом с карты.

@@ -83,6 +83,18 @@ fi
 if test -z "${devnum}"; then setenv devnum 1; fi
 if test -z "${distro_bootpart}"; then setenv distro_bootpart 1; fi
 
+# Разведка USB — тот же флаг, что на вендорской карте (cb2-fixup.cmd), и с той
+# же оговоркой: "usb start" оставляет контроллеры поднятыми, поэтому загрузка с
+# этим флагом не проверяет нашу инициализацию PHY и тактов, а нарочно её
+# подменяет. Держать флаг на обычном прогоне нельзя.
+if test -e mmc ${devnum}:${distro_bootpart} meecho/usbprobe; then
+	echo "MEECHO: usbprobe begin"
+	usb start
+	usb tree
+	usb info
+	echo "MEECHO: usbprobe end"
+fi
+
 echo "MEECHO: loading from mmc ${devnum}:${distro_bootpart}"
 
 load mmc ${devnum}:${distro_bootpart} 0x40200000 meecho/kernel.bin

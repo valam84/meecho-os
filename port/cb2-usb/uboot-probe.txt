@@ -1,0 +1,55 @@
+Err:  7[r[999;999H[6n8** Booting bootflow 'mmc@fe2b0000.bootdev.part_1' with script
+Boot script loaded from mmc 1:1
+5985 bytes read in 3 ms (1.9 MiB/s)
+23060718 bytes read in 2113 ms (10.4 MiB/s)
+44610048 bytes read in 3681 ms (11.6 MiB/s)
+171618 bytes read in 24 ms (6.8 MiB/s)
+Working FDT set to 120001073 bytes read in 8 ms (130.9 KiB/s)
+Applying kernel provided 3570 bytes read in 9 ms (386.7 KiB/s)
+Applying kernel provided DT fixup script (rk3566-fixup.sc12854 bytes read in 5 ms (2.5 MiB/s)
+Applying user provided fix
+MEECHO: one-shot flag found, clearing it
+MEECHO: switching console to 115200
+## Switch baudrate to 115200 bps and press ENTER ...
+MEECHO: root on eMMC (meecho/root_emmc present)
+MEECHO: usbprobe begin
+starting USB...
+Failed to get PHY0 for usb@fd000000
+Bus usb@fd000000: Port not available.
+Bus usb@fd800000: Port not available.
+Bus usb@fd840000: Port not available.
+Bus usb@fd880000: Port not available.
+Bus usb@fd8c0000: Port not available.
+No USB controllers found
+       scanning usb for storage devices... 0 Storage Device(s) found
+USB device tree:
+MEECHO: usbprobe end
+MEECHO: loading from mmc 1:1
+128680 bytes read in 15 ms (8.2 MiB/s)
+11505664 bytes read in 952 ms (11.5 MiB/s)
+171618 bytes read in 25 ms (6.5 MiB/s)
+MEECHO: booting, archive af9000 bytes
+
+--- Что это значит (2026-09-10) -------------------------------------------
+Прогон board-cycle.sh -w sched-usbprobe.txt с флагом meecho/usbprobe.
+
+U-Boot этой сборки USB поднять НЕ МОЖЕТ: "Failed to get PHY0 for
+usb@fd000000" - драйвера usb2phy в нём нет, и без PHY ни один контроллер не
+объявляется портом. Итог "No USB controllers found" при наличии команд
+usb/usbboot/ums в списке.
+
+Отдельно: usb@fcc00000 (usbdrd - тот самый контроллер, в который физически
+включён хаб) в перечислении не участвует вовсе. Свою управляющую DT U-Boot
+несёт в себе, и в ней этого узла нет; ядру он передаёт другое дерево - то,
+что скрипт грузит с карты (rk3566-bigtreetech-cb2.dtb), и там оба xHCI есть.
+
+Следствия для этапа 10:
+  1. Замысел "поднять PHY загрузчиком и тем разделить два отказа" отменён:
+     разделять нечем. Такты, usb2phy и DWC3 - целиком наша работа, и первый
+     же прогон драйвера будет проверять всё сразу.
+  2. Эталон для PHY остаётся один - настроенное состояние GRF, снятое с
+     работающего вендорского Linux (reference-regs.txt). Драйвер должен
+     печатать свою таблицу регистров рядом с этими числами и помечать
+     расхождения, как это делает dwmac ("phy ext ... (reference ...)").
+  3. Загрузчик как источник рабочего USB не годится и для 8.1-подобных
+     затей: usbboot на этой плате не работает.

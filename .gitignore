@@ -84,3 +84,8 @@ port/scratch/
 # without it there is no userland.  They were silently left out of the first
 # published commit for exactly this reason.
 !port/toolchain/*.patch
+
+# Byte-compiled Python.  The stands under port/test are run as scripts, so
+# these are pure build products - and one of them was committed once.
+__pycache__/
+*.pyc

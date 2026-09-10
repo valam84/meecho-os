@@ -54,6 +54,41 @@ struct xhci_trb {
 	uint32_t control;
 };
 
+/*
+ * A ring of TRBs: one page, the last entry a Link back to the start.  The
+ * command ring and every transfer ring are the same shape, and share the
+ * code that walks them - which is not tidiness but insurance, since the
+ * wrap is where this driver's first real defect was.
+ */
+struct xhci_ring {
+	vir_bytes v;
+	phys_bytes p;
+	unsigned slots;
+	unsigned enq;			/* where the driver writes next */
+	unsigned cycle;			/* and with which cycle bit */
+};
+
+/*
+ * A device the controller has given a slot to.  One for now: the hub on
+ * the root port.  What hangs behind it is milestone 10.4's business, and
+ * it needs the hub driver rather than more of this file.
+ */
+struct xhci_device {
+	unsigned slot;			/* 0 when this entry is unused */
+	unsigned port;			/* the root hub port, counting from 0 */
+	unsigned speed;			/* the PORTSC speed identifier */
+	unsigned max_packet0;
+
+	vir_bytes in_ctx;		/* the input context for commands */
+	phys_bytes in_ctx_phys;
+	vir_bytes dev_ctx;		/* the context the controller keeps */
+	phys_bytes dev_ctx_phys;
+	struct xhci_ring ep0;		/* the control endpoint's ring */
+
+	vir_bytes buf;			/* one page for descriptors */
+	phys_bytes buf_phys;
+};
+
 /* Everything the device tree said about this controller. */
 struct xhci_devinfo {
 	phys_bytes base;		/* the controller: xHCI and DWC3 */
@@ -130,11 +165,7 @@ struct xhci {
 	phys_bytes spad_phys;
 	size_t spad_size;
 
-	vir_bytes cmd;			/* the command ring */
-	phys_bytes cmd_phys;
-	unsigned cmd_slots;
-	unsigned cmd_enq;		/* where the driver writes next */
-	unsigned cmd_cycle;		/* and with which cycle bit */
+	struct xhci_ring cmd;		/* the command ring */
 
 	vir_bytes erst;			/* the event ring segment table */
 	phys_bytes erst_phys;
@@ -143,6 +174,8 @@ struct xhci {
 	unsigned event_slots;
 	unsigned event_deq;		/* where the driver reads next */
 	unsigned event_cycle;		/* and which cycle bit means "mine" */
+
+	struct xhci_device dev[XHCI_MAX_PORTS];
 };
 
 extern struct xhci xhci;
@@ -160,14 +193,26 @@ int xhci_rk_dwc3_init(void);
 void xhci_rk_report(void);
 
 /* xhci_ring.c */
-int xhci_ring_alloc(void);
-void xhci_ring_free(void);
+int xhci_dma_alloc(void);
+void xhci_dma_free(void);
+void *xhci_alloc_dma(size_t size, phys_bytes *phys, const char *what);
+void xhci_cache(int op, void *addr, size_t len, const char *what);
+int xhci_ring_setup(struct xhci_ring *r, const char *what);
+phys_bytes xhci_ring_push(struct xhci_ring *r, uint32_t p0, uint32_t p1,
+	uint32_t status, uint32_t control);
+void xhci_ring_free(struct xhci_ring *r);
 int xhci_start(void);
+int xhci_cmd(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control,
+	struct xhci_trb *ev);
 int xhci_cmd_noop(void);
 int xhci_cmd_noop_quiet(void);
 int xhci_port_reset(unsigned port);
 int xhci_events_drain(unsigned usec, struct xhci_trb *want,
 	unsigned want_type);
+
+/* xhci_dev.c */
+int xhci_device_attach(unsigned port, struct xhci_device *dev);
+void xhci_device_free(struct xhci_device *dev);
 
 /* Register access; every block is reached the same way. */
 static inline uint32_t

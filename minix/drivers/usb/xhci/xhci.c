@@ -244,6 +244,34 @@ reset_ports(void)
 	}
 }
 
+/*
+ * Enumerate what is on the ports that came up enabled.
+ *
+ * One device per port and nothing behind it: what hangs off the hub is
+ * reached by talking to the hub, and that is the hub driver's business
+ * rather than this file's.  The usb_hub already in this tree does it, once
+ * there is a URB layer for it to speak through - milestone 10.4.
+ */
+static void
+attach_devices(void)
+{
+	unsigned p;
+	uint32_t v;
+
+	for (p = 0; p < xhci.nports && p < XHCI_MAX_PORTS; p++) {
+		v = xhci_rd(xhci.regs, xhci.caplength + XHCI_PORTSC(p));
+
+		if (!(v & XHCI_PORTSC_CCS) || !(v & XHCI_PORTSC_PED))
+			continue;
+
+		if (xhci_device_attach(p, &xhci.dev[p]) != OK) {
+			log_warn(&xhci_log, "port %u: could not be "
+			    "enumerated\n", p + 1);
+			xhci_device_free(&xhci.dev[p]);
+		}
+	}
+}
+
 static int
 xhci_init(int type, sef_init_info_t *info)
 {
@@ -289,7 +317,7 @@ xhci_init(int type, sef_init_info_t *info)
 	 * And the structures the controller and the driver share, after
 	 * which it can be started and asked to do something.
 	 */
-	if ((r = xhci_ring_alloc()) != OK)
+	if ((r = xhci_dma_alloc()) != OK)
 		return r;
 
 	if ((r = xhci_start()) != OK)
@@ -319,7 +347,7 @@ xhci_init(int type, sef_init_info_t *info)
 
 		log_info(&xhci_log, "%u no-op commands, %u failed; the ring "
 		    "wrapped %u time(s)\n", noops, bad,
-		    noops / (xhci.cmd_slots - 1));
+		    noops / (xhci.cmd.slots - 1));
 		if (bad != 0)
 			return EIO;
 	}
@@ -342,8 +370,11 @@ xhci_init(int type, sef_init_info_t *info)
 
 	read_ports();
 
-	log_info(&xhci_log, "up; enumeration and the URB layer are "
-	    "milestones 10.3 and 10.4\n");
+	/* And what is on the ports that came up. */
+	attach_devices();
+
+	log_info(&xhci_log, "up; the URB layer that serves usb_hub and "
+	    "usb_storage is milestone 10.4\n");
 
 	return OK;
 }

@@ -1,0 +1,75 @@
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+395(xhci_find):controller 0 of 2 at 0xfcc00000 (4194304 bytes), irq 201
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+398(xhci_find):cru 0xfdd20000, 1 reset line(s), first 148, pmu 0xfdd90000 domain 15
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+410(xhci_find):usb2phy0 at 0xfe8a0000, otg port, usbgrf 0xfdca0000, pmucru 0xfdd00000
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+218(xhci_rk_power_domain):power domain 15 is already on
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+339(xhci_rk_clocks_on):clocks on for controller 0, phy 0
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+467(xhci_rk_dwc3_init):dwc3 core 3.0a (GSNPSID 0x5533300a)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+513(xhci_rk_dwc3_init):dwc3 in host mode: GCTL 0x30c11004, GUSB2PHYCFG 0x00101408, GSTS 0x7e800001
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+100(read_capabilities):xhci 1.1, 64 slot(s), 2 port(s), 1 interrupter(s)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+112(read_capabilities):contexts 64 bytes, addressing 32-bit, 1 scratchpad buffer(s), page size 4 KiB
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+118(read_capabilities):caplength 32, dboff 0x480, rtsoff 0x440, xecp 0x880
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+150(read_protocols):usb 2.00 on port(s) 1..1
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+150(read_protocols):usb 3.00 on port(s) 2..2
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 1: 0x000206e1  device attached, not enabled, link state 7, full speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 2: 0x000002a0  empty, not enabled, link state 5, none speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+539(xhci_rk_report):glue registers, this driver against the board (port/cb2-usb/registers.md):
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GCTL             0x30c11004 (reference 0x30c11004)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GUSB2PHYCFG      0x00101408 (reference 0x00101408)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GSNPSID          0x5533300a (reference 0x5533300a)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  otg con0         0x00000c00 (reference 0x00000c00)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  con2             0x00000000 (reference 0x00000000)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  ls filter        0x00030100 (reference 0x00030100)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  bvalid filter    0x000f4240 (reference 0x000f4240)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  id filter        0x000f4240 (reference 0x000f4240)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  phy preemph      0x00000004 (reference 0x00000004)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  phy eye          0x00000061 (reference 0x00000061)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  mode con0        0x00004055 (reference 0x00004455)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  pipe gates       0x00000000 (reference 0x00000010)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+562(xhci_rk_report):  pmu status       0x0000007f (pd status; bit 8 set means PD_PIPE is off)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+566(xhci_rk_report):  phy role         0x00000c00 (role bits above phy_sus; this driver does not write them)
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+274(xhci_dma_alloc):dcbaa 0x7d789000 (65 entries), cmd 0x7d785000, event 0x7d783000, erst 0x7d784000, scratchpad 0x7d786000
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+462(xhci_start):running: USBSTS 0x00000010, CRCR not running, 64 slots enabled
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+539(xhci_events_drain):event: port 1 changed (completion 1)
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785000 completed 1, slot 0
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+656(xhci_cmd_noop):no-op command completed: the command ring, the doorbell and the event ring all work
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785010 completed 1, slot 0
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785020 completed 1, slot 0
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785030 completed 1, slot 0
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785040 completed 1, slot 0
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785050 completed 1, slot 0
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785060 completed 1, slot 0
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785070 completed 1, slot 0
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+348(xhci_init):8 no-op commands, 0 failed; the ring wrapped 0 time(s)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+713(xhci_port_reset):port 1 after reset: 0x00000e03  enabled, link state 0, speed id 3
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+539(xhci_events_drain):event: port 1 changed (completion 1)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 1: 0x00000e03  device attached, enabled, link state 0, high speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 2: 0x000002a0  empty, not enabled, link state 5, none speed
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785080 completed 1, slot 1
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+545(xhci_events_drain):event: command at 0x7d785090 completed 1, slot 1
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_dev.c+285(xhci_device_attach):port 1: slot 1, high speed, addressed
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+551(xhci_events_drain):event: transfer at 0x7d77f020, completion 1, 0 byte(s) short
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_dev.c+185(control_in):request 0x80 0x06: 18 of 18 byte(s)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_dev.c+307(xhci_device_attach):port 1: 1a40:0101 usb 2.00, class 9/0/1, ep0 64 bytes, 1 configuration(s)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+376(xhci_init):up; the URB layer that serves usb_hub and usb_storage is milestone 10.4
+
+--- Прогон 2026-09-10, веха 10.3 ---------------------------------------------
+Перечисление: слот, адрес и первый разговор.
+
+Критерий вехи - тот же дескриптор, что читает вендорский Linux на этом же
+устройстве. Сверка поле в поле (эталон - reference.txt, lsusb -v -s 1:2):
+
+  idVendor/idProduct   1a40:0101   = Terminus Technology, USB 2.0 Hub
+  bcdUSB               2.00        = 2.00
+  bDeviceClass         9           = 9 (Hub)
+  bDeviceSubClass      0           = 0
+  bDeviceProtocol      1           = 1 (Single TT)
+  bMaxPacketSize0      64          = 64
+  bNumConfigurations   1           = 1
+
+Восемнадцать байт из восемнадцати, ни одного короткого пакета, completion 1.
+То есть по шине прошёл настоящий обмен: три TRB на кольце конечной точки
+(setup, data, status), адрес устройству выдал контроллер командой Address
+Device, а дескриптор пришёл в память драйвера.
+
+Заодно подтвердилась правка из 10.2: событие теперь называет "port 1", а не
+"port 0" - номер порта лежит в первом слове события, а не во втором.

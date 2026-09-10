@@ -1,8 +1,7 @@
 /*
  * The structures the controller and the driver share: the device context
- * array, the command ring, the event ring and the scratchpad.  Milestone
- * 10.2, and the first part of this driver where memory has to mean the
- * same thing to two readers.
+ * array, the command ring, the event ring, the scratchpad - and the ring
+ * arithmetic that every ring in this driver uses, transfer rings included.
  *
  * Three properties of this part were read off the board before any of this
  * was written, and each of them shapes the code rather than decorating it:
@@ -12,9 +11,7 @@
  *              gigabytes of RAM, so it holds by construction - but it is
  *              checked, because "true by luck" and "true by construction"
  *              look identical right up to the machine where it is neither.
- *   CSZ = 1    contexts are 64 bytes.  Nothing here lays a context out yet
- *              (that is enumeration), but the device context array is
- *              sized in pointers and the number is worth having early.
+ *   CSZ = 1    contexts are 64 bytes.
  *   1 buffer   the controller asks for one page of scratchpad, and it will
  *              not run without it.
  *
@@ -23,29 +20,28 @@
  * the eMMC and the GMAC drivers hit - so every hand-over is explicit, with
  * sys_cachectl(2).  What that means here, direction by direction:
  *
- *   the command ring   written by the driver, read by the controller:
- *                      cleaned before the doorbell.  The controller never
- *                      writes it, so cleaning a cache line that also holds
- *                      the driver's own not-yet-issued entries is
- *                      harmless.
- *   the event ring     written by the controller, read by the driver:
- *                      invalidated before every read.  Not once per group,
- *                      before every read - a line that was read once while
- *                      the entry was still the controller's stays in the
- *                      cache for ever otherwise, and that exact mistake
- *                      cost this port a day on the GMAC's receive ring.
- *                      Invalidating is safe in this direction because the
- *                      driver has nothing of its own in those lines to
- *                      lose.
- *   the arrays and     written once by the driver: cleaned after writing.
- *   the scratchpad     The scratchpad needs more than that - see below.
+ *   rings the driver    written by the driver, read by the controller:
+ *   writes              cleaned before the doorbell.  The controller never
+ *                       writes them, so cleaning a cache line that also
+ *                       holds entries not yet issued is harmless.
+ *   the event ring      written by the controller, read by the driver:
+ *                       invalidated before every read.  Not once per
+ *                       group, before every read - a line read once while
+ *                       the entry was still the controller's stays in the
+ *                       cache for ever otherwise, and that exact mistake
+ *                       cost this port a day on the GMAC's receive ring.
+ *                       Invalidating is safe in this direction because the
+ *                       driver has nothing of its own in those lines to
+ *                       lose.
+ *   the arrays          written once by the driver: cleaned after writing.
  *
  * And one that is easy to miss: freshly allocated memory that the
  * controller is about to own has the driver's zeroes sitting dirty in the
  * cache.  If such a line is evicted later it lands on top of whatever the
  * controller has put there since.  So everything the controller writes -
- * the event ring and the scratchpad - is clean-invalidated after being
- * zeroed, which leaves nothing of the driver's behind to fall on it.
+ * the event ring, the scratchpad, a device context, a transfer buffer - is
+ * clean-invalidated after being zeroed, which leaves nothing of the
+ * driver's behind to fall on it.
  */
 
 #include <minix/drivers.h>
@@ -64,8 +60,8 @@
  * for the reason written there: a call that quietly does nothing looks
  * exactly like a call that worked, and the symptom turns up layers away.
  */
-static void
-cache_op(int op, void *addr, size_t len, const char *what)
+void
+xhci_cache(int op, void *addr, size_t len, const char *what)
 {
 	static int complained;
 	int r;
@@ -89,7 +85,7 @@ trb_phys(phys_bytes ring, unsigned i)
 	return ring + i * XHCI_TRB_SIZE;
 }
 
-/* The operational, runtime and doorbell blocks, all offsets from the base. */
+/* The operational and runtime blocks, both offsets from the same base. */
 static unsigned
 op(void)
 {
@@ -110,8 +106,8 @@ rt(void)
  * way is cheaper than four different alignments, and it is checked below
  * rather than asserted in a comment.
  */
-static void *
-alloc_dma(size_t size, phys_bytes *phys, const char *what)
+void *
+xhci_alloc_dma(size_t size, phys_bytes *phys, const char *what)
 {
 	void *v;
 
@@ -138,83 +134,163 @@ alloc_dma(size_t size, phys_bytes *phys, const char *what)
 	return v;
 }
 
+/*
+ * A ring: one page of entries, the last of which is a Link back to the
+ * beginning with the toggle-cycle bit set.  That is how a fixed number of
+ * entries becomes endless - the controller flips the cycle state it looks
+ * for every time it follows the link, so an entry the driver has not
+ * written yet never looks ready by accident.
+ *
+ * Command ring and transfer rings are the same shape and use the same
+ * code, which is not tidiness: the wrap is where this driver's first real
+ * defect was, and having one copy of it means it was fixed everywhere at
+ * once.
+ */
 int
-xhci_ring_alloc(void)
+xhci_ring_setup(struct xhci_ring *r, const char *what)
 {
-	size_t dcbaa_size = (xhci.nslots + 1) * sizeof(uint64_t);
+	struct xhci_trb *link;
+	void *v;
+
+	if ((v = xhci_alloc_dma(XHCI_PAGE, &r->p, what)) == NULL)
+		return ENOMEM;
+
+	r->v = (vir_bytes)v;
+	r->slots = XHCI_PAGE / XHCI_TRB_SIZE;
+	r->enq = 0;
+	r->cycle = 1;
+
+	link = trb_at(r->v, r->slots - 1);
+	link->p0 = (uint32_t)r->p;
+	link->p1 = 0;
+	link->status = 0;
+	link->control = XHCI_TRB_TYPE(XHCI_TRB_LINK) | XHCI_TRB_TC;
+
+	xhci_cache(CACHE_CLEAN, (void *)r->v, XHCI_PAGE, what);
+	return OK;
+}
+
+/*
+ * Put one entry on a ring.  Answers where it landed, because a completion
+ * event names the entry it belongs to by address and that is how a caller
+ * tells its own command from somebody else's.
+ */
+phys_bytes
+xhci_ring_push(struct xhci_ring *r, uint32_t p0, uint32_t p1, uint32_t status,
+	uint32_t control)
+{
+	struct xhci_trb *trb;
+	phys_bytes where;
+
+	/*
+	 * The last entry is the Link, and wrapping means handing it over.
+	 *
+	 * This is where the first version of this code was wrong, and the
+	 * way it was wrong is worth keeping: the Link was written once at
+	 * initialisation with its cycle bit clear, and the driver only
+	 * flipped its own cycle state.  But the Link is an entry like any
+	 * other, and the controller reads its cycle bit to decide whether
+	 * it is allowed to follow it.  Left clear while the controller
+	 * looks for a set bit, the ring simply ends there: everything up to
+	 * the Link works, and every command after the wrap gets no
+	 * completion at all.  Which is exactly what the board reported -
+	 * 255 commands through and the next 45 silent - and is why the
+	 * wrap is tested on hardware rather than reasoned about.
+	 *
+	 * So the Link is given the cycle state the controller is looking
+	 * for now, and only then does the driver flip its own.
+	 */
+	if (r->enq == r->slots - 1) {
+		struct xhci_trb *link = trb_at(r->v, r->slots - 1);
+
+		link->control = XHCI_TRB_TYPE(XHCI_TRB_LINK) | XHCI_TRB_TC |
+		    (r->cycle ? XHCI_TRB_C : 0);
+		xhci_cache(CACHE_CLEAN, link, XHCI_TRB_SIZE, "a link");
+
+		r->enq = 0;
+		r->cycle ^= 1;
+	}
+
+	trb = trb_at(r->v, r->enq);
+	where = trb_phys(r->p, r->enq);
+
+	trb->p0 = p0;
+	trb->p1 = p1;
+	trb->status = status;
+	trb->control = control | (r->cycle ? XHCI_TRB_C : 0);
+
+	xhci_cache(CACHE_CLEAN, trb, XHCI_TRB_SIZE, "a ring entry");
+
+	r->enq++;
+	return where;
+}
+
+void
+xhci_ring_free(struct xhci_ring *r)
+{
+	if (r->v != 0) {
+		free_contig((void *)r->v, XHCI_PAGE);
+		r->v = 0;
+	}
+}
+
+int
+xhci_dma_alloc(void)
+{
 	void *v;
 
 	/* The device context array, and the scratchpad that hangs off it. */
-	if ((v = alloc_dma(XHCI_PAGE, &xhci.dcbaa_phys, "the device context "
-	    "array")) == NULL)
+	if ((v = xhci_alloc_dma(XHCI_PAGE, &xhci.dcbaa_phys, "the device "
+	    "context array")) == NULL)
 		return ENOMEM;
 	xhci.dcbaa = (vir_bytes)v;
 
 	if (xhci.scratchpad_bufs != 0) {
-		if ((v = alloc_dma(XHCI_PAGE, &xhci.spad_arr_phys,
+		if ((v = xhci_alloc_dma(XHCI_PAGE, &xhci.spad_arr_phys,
 		    "the scratchpad array")) == NULL)
 			return ENOMEM;
 		xhci.spad_arr = (vir_bytes)v;
 
 		xhci.spad_size = (size_t)xhci.scratchpad_bufs * XHCI_PAGE;
-		if ((v = alloc_dma(xhci.spad_size, &xhci.spad_phys,
+		if ((v = xhci_alloc_dma(xhci.spad_size, &xhci.spad_phys,
 		    "the scratchpad")) == NULL)
 			return ENOMEM;
 		xhci.spad = (vir_bytes)v;
 	}
 
-	if ((v = alloc_dma(XHCI_PAGE, &xhci.cmd_phys, "the command ring"))
-	    == NULL)
+	if (xhci_ring_setup(&xhci.cmd, "the command ring") != OK)
 		return ENOMEM;
-	xhci.cmd = (vir_bytes)v;
 
-	if ((v = alloc_dma(XHCI_PAGE, &xhci.erst_phys, "the event ring "
+	if ((v = xhci_alloc_dma(XHCI_PAGE, &xhci.erst_phys, "the event ring "
 	    "segment table")) == NULL)
 		return ENOMEM;
 	xhci.erst = (vir_bytes)v;
 
-	if ((v = alloc_dma(XHCI_PAGE, &xhci.event_phys, "the event ring"))
-	    == NULL)
+	if ((v = xhci_alloc_dma(XHCI_PAGE, &xhci.event_phys, "the event "
+	    "ring")) == NULL)
 		return ENOMEM;
 	xhci.event = (vir_bytes)v;
 
 	log_debug(&xhci_log, "dcbaa 0x%lx (%u entries), cmd 0x%lx, "
 	    "event 0x%lx, erst 0x%lx, scratchpad 0x%lx\n",
 	    (unsigned long)xhci.dcbaa_phys, xhci.nslots + 1,
-	    (unsigned long)xhci.cmd_phys, (unsigned long)xhci.event_phys,
+	    (unsigned long)xhci.cmd.p, (unsigned long)xhci.event_phys,
 	    (unsigned long)xhci.erst_phys, (unsigned long)xhci.spad_phys);
 
-	(void)dcbaa_size;
 	return OK;
 }
 
-/*
- * Lay the structures out.  The command ring's last entry is a Link back to
- * its own beginning with the toggle-cycle bit set, which is how a ring of
- * a fixed number of entries becomes endless: the controller flips the
- * cycle state it is looking for every time it follows that link, so an
- * entry the driver has not written yet never looks ready by accident.
- */
+/* Lay out what is not a ring, and hand all of it over. */
 static void
-rings_init(void)
+structures_init(void)
 {
-	struct xhci_trb *link;
 	uint64_t *dcbaa, *spad;
 	uint32_t *erst;
 	unsigned i;
 
-	xhci.cmd_slots = XHCI_PAGE / XHCI_TRB_SIZE;
 	xhci.event_slots = XHCI_PAGE / XHCI_TRB_SIZE;
-	xhci.cmd_enq = 0;
-	xhci.cmd_cycle = 1;
 	xhci.event_deq = 0;
 	xhci.event_cycle = 1;
-
-	link = trb_at(xhci.cmd, xhci.cmd_slots - 1);
-	link->p0 = (uint32_t)xhci.cmd_phys;
-	link->p1 = 0;
-	link->status = 0;
-	link->control = XHCI_TRB_TYPE(XHCI_TRB_LINK) | XHCI_TRB_TC;
 
 	/* Slot 0 of the device context array points at the scratchpad. */
 	dcbaa = (uint64_t *)xhci.dcbaa;
@@ -232,21 +308,14 @@ rings_init(void)
 	erst[2] = xhci.event_slots;
 	erst[3] = 0;
 
-	/*
-	 * Hand them over.  The two the controller writes are
-	 * clean-invalidated rather than cleaned: that leaves none of the
-	 * driver's zeroes dirty in the cache to be evicted later on top of
-	 * what the controller has put there.
-	 */
-	cache_op(CACHE_CLEAN, (void *)xhci.dcbaa, XHCI_PAGE, "the dcbaa");
-	cache_op(CACHE_CLEAN, (void *)xhci.cmd, XHCI_PAGE, "the command ring");
-	cache_op(CACHE_CLEAN, (void *)xhci.erst, XHCI_PAGE, "the erst");
-	cache_op(CACHE_CLEAN_INVALIDATE, (void *)xhci.event, XHCI_PAGE,
+	xhci_cache(CACHE_CLEAN, (void *)xhci.dcbaa, XHCI_PAGE, "the dcbaa");
+	xhci_cache(CACHE_CLEAN, (void *)xhci.erst, XHCI_PAGE, "the erst");
+	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)xhci.event, XHCI_PAGE,
 	    "the event ring");
 	if (xhci.scratchpad_bufs != 0) {
-		cache_op(CACHE_CLEAN, (void *)xhci.spad_arr, XHCI_PAGE,
+		xhci_cache(CACHE_CLEAN, (void *)xhci.spad_arr, XHCI_PAGE,
 		    "the scratchpad array");
-		cache_op(CACHE_CLEAN_INVALIDATE, (void *)xhci.spad,
+		xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)xhci.spad,
 		    xhci.spad_size, "the scratchpad");
 	}
 }
@@ -255,11 +324,10 @@ rings_init(void)
  * Bring the controller from wherever it was to halted-and-reset.
  *
  * "Wherever it was" is not hypothetical here: this driver is started by
- * hand into a live system, and on this board the loader before it does not
- * touch USB at all - but a second start of the driver would find its own
- * previous state, and the vendor system leaves the part running when the
- * machine is warm-rebooted into MEECHO.  So the sequence is written to be
- * the same either way rather than assuming a fresh part.
+ * hand into a live system, so a second start finds its own previous state,
+ * and a warm reboot out of the vendor system leaves the part running.  So
+ * the sequence is written to be the same either way rather than assuming a
+ * fresh part.
  */
 static int
 halt_and_reset(void)
@@ -324,7 +392,7 @@ xhci_start(void)
 	if ((r = halt_and_reset()) != OK)
 		return r;
 
-	rings_init();
+	structures_init();
 
 	/*
 	 * How many device slots the driver will use.  Asking for all
@@ -341,7 +409,7 @@ xhci_start(void)
 	xhci_wr(xhci.regs, op() + XHCI_DCBAAP + 4, 0);
 
 	xhci_wr(xhci.regs, op() + XHCI_CRCR,
-	    (uint32_t)xhci.cmd_phys | XHCI_CRCR_RCS);
+	    (uint32_t)xhci.cmd.p | XHCI_CRCR_RCS);
 	xhci_wr(xhci.regs, op() + XHCI_CRCR + 4, 0);
 
 	/*
@@ -358,7 +426,7 @@ xhci_start(void)
 	xhci_wr(xhci.regs, rt() + XHCI_IR(0) + XHCI_IR_ERSTBA + 4, 0);
 
 	/*
-	 * No interrupt yet: this milestone reads the event ring by polling,
+	 * No interrupt yet: this driver reads the event ring by polling,
 	 * with a deadline, the way sdmmc's fallback path does.  The
 	 * interrupt is one line in the tree and a hook, and it is left for
 	 * the milestone that has something to do asynchronously - a driver
@@ -415,7 +483,7 @@ event_next(struct xhci_trb *out)
 {
 	struct xhci_trb *trb = trb_at(xhci.event, xhci.event_deq);
 
-	cache_op(CACHE_INVALIDATE, trb, XHCI_TRB_SIZE, "an event");
+	xhci_cache(CACHE_INVALIDATE, trb, XHCI_TRB_SIZE, "an event");
 
 	if (((trb->control & XHCI_TRB_C) != 0) != (xhci.event_cycle != 0))
 		return 0;
@@ -445,8 +513,13 @@ event_done(void)
 }
 
 /*
- * Drain the event ring for up to this many microseconds, handing each
- * event to the caller's business.  Returns how many were seen.
+ * Drain the event ring for up to this many microseconds, stopping early
+ * when an event of the wanted type turns up.  Returns how many were seen.
+ *
+ * Reporting every event at info level was right while there was one of
+ * them per milestone; it is not right now that a control transfer
+ * produces one each.  So the routine ones are logged at debug and only
+ * what nobody asked for is loud.
  */
 int
 xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
@@ -463,19 +536,22 @@ xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
 
 			switch (type) {
 			case XHCI_TRB_PORT_STATUS:
-				log_info(&xhci_log, "event: port %u changed "
+				log_debug(&xhci_log, "event: port %u changed "
 				    "(completion %u)\n",
 				    XHCI_EVENT_PORT_ID(ev.p0),
 				    XHCI_CC_OF(ev.status));
 				break;
 			case XHCI_TRB_CMD_COMPLETION:
-				log_info(&xhci_log, "event: command at 0x%08x "
-				    "completed %u\n", ev.p0,
-				    XHCI_CC_OF(ev.status));
+				log_debug(&xhci_log, "event: command at "
+				    "0x%08x completed %u, slot %u\n", ev.p0,
+				    XHCI_CC_OF(ev.status),
+				    XHCI_EVENT_SLOT_ID(ev.control));
 				break;
 			case XHCI_TRB_TRANSFER_EVENT:
-				log_info(&xhci_log, "event: transfer, "
-				    "completion %u\n", XHCI_CC_OF(ev.status));
+				log_debug(&xhci_log, "event: transfer at "
+				    "0x%08x, completion %u, %u byte(s) "
+				    "short\n", ev.p0, XHCI_CC_OF(ev.status),
+				    XHCI_EVENT_LENGTH(ev.status));
 				break;
 			default:
 				log_info(&xhci_log, "event: type %u, "
@@ -503,66 +579,64 @@ xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
 }
 
 /*
- * Put one command on the ring and ring the doorbell.
+ * Put one command on the ring, ring the doorbell and wait for the event
+ * that belongs to it.
  *
- * The cycle bit of the new entry is written last, and that is not style:
- * until it flips, the entry is not the controller's, and the clean that
- * carries it to memory carries the rest of the entry with it.  The order
- * within one cache line does not survive anyway - what makes this correct
- * is that the whole entry reaches memory in one maintenance operation,
- * after which the doorbell is what invites the controller to look.
+ * "Belongs to it" is checked by address: the completion event carries the
+ * address of the command it is about, and this driver has one thread and
+ * one command outstanding, but checking the address costs a comparison and
+ * turns a whole class of confusion into an error message.
  */
-static int
-cmd_submit(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control)
+int
+xhci_cmd(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control,
+	struct xhci_trb *ev)
 {
-	struct xhci_trb *trb;
+	struct xhci_trb got;
+	phys_bytes where;
+	unsigned cc;
 
-	/*
-	 * The last entry is the Link, and wrapping means handing it over.
-	 *
-	 * This is where the first version of this code was wrong, and the
-	 * way it was wrong is worth keeping: the Link was written once at
-	 * initialisation with its cycle bit clear, and the driver only
-	 * flipped its own cycle state.  But the Link is an entry like any
-	 * other, and the controller reads its cycle bit to decide whether
-	 * it is allowed to follow it.  Left clear while the controller
-	 * looks for a set bit, the ring simply ends there: everything up to
-	 * the Link works, and every command after the wrap gets no
-	 * completion at all.  Which is exactly what the board reported -
-	 * 255 commands through and the next 45 silent - and is why the
-	 * wrap is tested on hardware rather than reasoned about.
-	 *
-	 * So the Link is given the cycle state the controller is looking
-	 * for now, and only then does the driver flip its own.
-	 */
-	if (xhci.cmd_enq == xhci.cmd_slots - 1) {
-		struct xhci_trb *link = trb_at(xhci.cmd, xhci.cmd_slots - 1);
+	memset(&got, 0, sizeof(got));
 
-		link->control = XHCI_TRB_TYPE(XHCI_TRB_LINK) | XHCI_TRB_TC |
-		    (xhci.cmd_cycle ? XHCI_TRB_C : 0);
-		cache_op(CACHE_CLEAN, link, XHCI_TRB_SIZE, "the link");
-
-		xhci.cmd_enq = 0;
-		xhci.cmd_cycle ^= 1;
-	}
-
-	trb = trb_at(xhci.cmd, xhci.cmd_enq);
-	trb->p0 = p0;
-	trb->p1 = p1;
-	trb->status = status;
-	trb->control = control | (xhci.cmd_cycle ? XHCI_TRB_C : 0);
-
-	cache_op(CACHE_CLEAN, trb, XHCI_TRB_SIZE, "a command");
-
-	xhci.cmd_enq++;
+	where = xhci_ring_push(&xhci.cmd, p0, p1, status, control);
 
 	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(XHCI_DB_CMD), 0);
+
+	if (xhci_events_drain(200000, &got, XHCI_TRB_CMD_COMPLETION) == 0 ||
+	    XHCI_TRB_TYPE_OF(got.control) != XHCI_TRB_CMD_COMPLETION) {
+		log_warn(&xhci_log, "no completion for the command at 0x%lx "
+		    "(type %u); USBSTS 0x%08x, CRCR 0x%08x\n",
+		    (unsigned long)where, XHCI_TRB_TYPE_OF(control),
+		    xhci_rd(xhci.regs, op() + XHCI_USBSTS),
+		    xhci_rd(xhci.regs, op() + XHCI_CRCR));
+		return EIO;
+	}
+
+	if (got.p0 != (uint32_t)where)
+		log_warn(&xhci_log, "the completion names the command at "
+		    "0x%08x, not the one at 0x%lx\n", got.p0,
+		    (unsigned long)where);
+
+	if (ev != NULL)
+		*ev = got;
+
+	cc = XHCI_CC_OF(got.status);
+	if (cc != XHCI_CC_SUCCESS) {
+		log_warn(&xhci_log, "the command of type %u completed with "
+		    "%u, not success\n", XHCI_TRB_TYPE_OF(control), cc);
+		return EIO;
+	}
 
 	return OK;
 }
 
+int
+xhci_cmd_noop_quiet(void)
+{
+	return xhci_cmd(0, 0, 0, XHCI_TRB_TYPE(XHCI_TRB_NOOP_CMD), NULL);
+}
+
 /*
- * The proof of this milestone: a command that does nothing.
+ * The proof of milestone 10.2: a command that does nothing.
  *
  * No Op Command exists for exactly this - it asks the controller to fetch
  * a command, understand it and report completion, and nothing else.  A
@@ -571,35 +645,6 @@ cmd_submit(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control)
  * event ring segment table is readable, the event landed in memory and the
  * driver's cache maintenance let it be seen.  Six things, one number.
  */
-int
-xhci_cmd_noop_quiet(void)
-{
-	struct xhci_trb ev;
-	unsigned cc;
-
-	memset(&ev, 0, sizeof(ev));
-
-	cmd_submit(0, 0, 0, XHCI_TRB_TYPE(XHCI_TRB_NOOP_CMD));
-
-	if (xhci_events_drain(100000, &ev, XHCI_TRB_CMD_COMPLETION) == 0 ||
-	    XHCI_TRB_TYPE_OF(ev.control) != XHCI_TRB_CMD_COMPLETION) {
-		log_warn(&xhci_log, "no completion event for the no-op "
-		    "command at ring slot %u; USBSTS 0x%08x, CRCR 0x%08x\n",
-		    xhci.cmd_enq, xhci_rd(xhci.regs, op() + XHCI_USBSTS),
-		    xhci_rd(xhci.regs, op() + XHCI_CRCR));
-		return EIO;
-	}
-
-	cc = XHCI_CC_OF(ev.status);
-	if (cc != XHCI_CC_SUCCESS) {
-		log_warn(&xhci_log, "the no-op command at ring slot %u "
-		    "completed with %u, not success\n", xhci.cmd_enq, cc);
-		return EIO;
-	}
-
-	return OK;
-}
-
 int
 xhci_cmd_noop(void)
 {
@@ -673,7 +718,7 @@ xhci_port_reset(unsigned port)
 }
 
 void
-xhci_ring_free(void)
+xhci_dma_free(void)
 {
 	if (xhci.dcbaa != 0)
 		free_contig((void *)xhci.dcbaa, XHCI_PAGE);
@@ -681,10 +726,9 @@ xhci_ring_free(void)
 		free_contig((void *)xhci.spad_arr, XHCI_PAGE);
 	if (xhci.spad != 0)
 		free_contig((void *)xhci.spad, xhci.spad_size);
-	if (xhci.cmd != 0)
-		free_contig((void *)xhci.cmd, XHCI_PAGE);
 	if (xhci.erst != 0)
 		free_contig((void *)xhci.erst, XHCI_PAGE);
 	if (xhci.event != 0)
 		free_contig((void *)xhci.event, XHCI_PAGE);
+	xhci_ring_free(&xhci.cmd);
 }

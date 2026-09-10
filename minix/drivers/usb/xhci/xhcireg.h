@@ -193,6 +193,101 @@
 #define XHCI_PLS_RXDETECT	5
 #define XHCI_PLS_POLLING	7
 
+/*
+ * What a command completion or transfer event says about itself, besides
+ * its completion code: which slot it is about, and how much of the
+ * transfer did not happen.
+ */
+#define XHCI_EVENT_SLOT_ID(c)	(((c) >> 24) & 0xff)
+#define XHCI_EVENT_EP_ID(c)	(((c) >> 16) & 0x1f)
+#define XHCI_EVENT_LENGTH(s)	((s) & 0xffffff)
+
+/*===========================================================================*
+ *    xHCI: the TRBs a control transfer is made of                           *
+ *===========================================================================*/
+#define XHCI_TRB_NORMAL		1
+#define XHCI_TRB_SETUP		2
+#define XHCI_TRB_DATA		3
+#define XHCI_TRB_STATUS		4
+
+#define XHCI_TRB_IOC		(1u << 5)	/* interrupt on completion */
+#define XHCI_TRB_IDT		(1u << 6)	/* immediate data, setup */
+#define XHCI_TRB_DIR_IN		(1u << 16)	/* on data and status */
+#define XHCI_TRB_TRT_NONE	(0u << 16)	/* on setup: no data stage */
+#define XHCI_TRB_TRT_OUT	(2u << 16)
+#define XHCI_TRB_TRT_IN		(3u << 16)
+
+/*===========================================================================*
+ *    xHCI: slot and endpoint contexts                                       *
+ *===========================================================================*/
+/*
+ * A context is 32 or 64 bytes depending on CSZ, which on this part is 64.
+ * Everything below counts in words within a context, and the stride
+ * between contexts comes from xhci.context_size - reading a 64-byte
+ * layout as 32 does not fail, it reads the next endpoint's fields.
+ */
+#define XHCI_CTX_WORDS		8		/* words this code writes */
+
+/* Slot context, word 0: route string, speed, number of contexts. */
+#define XHCI_SLOT_ROUTE(r)	((r) & 0xfffff)
+#define XHCI_SLOT_SPEED(s)	(((s) & 0xf) << 20)
+#define XHCI_SLOT_ENTRIES(n)	(((n) & 0x1f) << 27)
+/* Slot context, word 1: which root hub port this device hangs off. */
+#define XHCI_SLOT_RHPORT(p)	(((p) & 0xff) << 16)
+
+/* Endpoint context, word 1: error count, type, maximum packet size. */
+#define XHCI_EP_CERR(n)		(((n) & 0x3) << 1)
+#define XHCI_EP_TYPE(t)		(((t) & 0x7) << 3)
+#define XHCI_EP_MAXBURST(n)	(((n) & 0xff) << 8)
+#define XHCI_EP_MAXPACKET(n)	(((n) & 0xffff) << 16)
+
+#define XHCI_EP_TYPE_CONTROL	4
+#define XHCI_EP_TYPE_BULK_IN	6
+#define XHCI_EP_TYPE_INTR_IN	7
+
+/* Endpoint context, word 2: where its transfer ring starts, and its cycle. */
+#define XHCI_EP_DCS		(1u << 0)
+/* Endpoint context, word 4: how long an average transfer is. */
+#define XHCI_EP_AVG_TRB(n)	((n) & 0xffff)
+
+/* Input control context: which contexts of the input this command means. */
+#define XHCI_INPUT_ADD_SLOT	(1u << 0)
+#define XHCI_INPUT_ADD_EP0	(1u << 1)
+
+/* The doorbell target that means "the control endpoint of this slot". */
+#define XHCI_DB_EP0		1
+
+/* Address Device, control word: the slot, and whether to skip SET_ADDRESS. */
+#define XHCI_TRB_SLOT_ID(s)	(((s) & 0xffu) << 24)
+#define XHCI_TRB_BSR		(1u << 9)
+
+/*===========================================================================*
+ *    USB itself: the few requests enumeration needs                         *
+ *===========================================================================*/
+#define USB_REQ_DIR_IN		0x80
+#define USB_REQ_GET_DESCRIPTOR	6
+#define USB_DESC_DEVICE		1
+#define USB_DESC_CONFIG		2
+#define USB_DESC_STRING		3
+
+/* The device descriptor, as it arrives on the wire: little-endian, packed. */
+struct usb_device_descriptor {
+	uint8_t bLength;
+	uint8_t bDescriptorType;
+	uint16_t bcdUSB;
+	uint8_t bDeviceClass;
+	uint8_t bDeviceSubClass;
+	uint8_t bDeviceProtocol;
+	uint8_t bMaxPacketSize0;
+	uint16_t idVendor;
+	uint16_t idProduct;
+	uint16_t bcdDevice;
+	uint8_t iManufacturer;
+	uint8_t iProduct;
+	uint8_t iSerialNumber;
+	uint8_t bNumConfigurations;
+} __attribute__((packed));
+
 /*===========================================================================*
  *    DWC3: the glue layer that stands in front of the xHCI                  *
  *===========================================================================*/

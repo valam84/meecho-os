@@ -96,6 +96,59 @@ static char uds_ctlbuf[UDS_CTL_MAX];
 static int uds_ctlfds[UDS_CTL_MAX / sizeof(int)];
 
 /*
+ * MEECHO, temporary: a ring of the last few operations that change a receive
+ * buffer, printed when uds_fetch_hdr() is about to read a header that cannot
+ * be right.  The assertions there fire under load on this port, and on their
+ * own they say nothing about how the buffer got into that state.  Remove once
+ * that is understood.
+ */
+#define UDS_PROBE	1
+#if UDS_PROBE
+#define UDS_PROBE_NR	40
+static struct uds_probe_ent {
+	char pe_op;
+	int pe_id;
+	unsigned short pe_tail, pe_len, pe_last;
+	size_t pe_a, pe_b, pe_c;
+} uds_probe_ring[UDS_PROBE_NR];
+static unsigned int uds_probe_at;
+
+static void
+uds_probe(char op, struct udssock * uds, size_t a, size_t b, size_t c)
+{
+	struct uds_probe_ent *e;
+
+	e = &uds_probe_ring[uds_probe_at++ % UDS_PROBE_NR];
+	e->pe_op = op;
+	e->pe_id = (int)uds_get_id(uds);
+	e->pe_tail = uds->uds_tail;
+	e->pe_len = uds->uds_len;
+	e->pe_last = uds->uds_last;
+	e->pe_a = a;
+	e->pe_b = b;
+	e->pe_c = c;
+}
+
+static void
+uds_probe_dump(void)
+{
+	struct uds_probe_ent *e;
+	unsigned int i, n;
+
+	n = uds_probe_at;
+	for (i = (n >= UDS_PROBE_NR) ? n - UDS_PROBE_NR : 0; i < n; i++) {
+		e = &uds_probe_ring[i % UDS_PROBE_NR];
+		printf("UDS probe %c sock=%d tail=%u len=%u last=%u "
+		    "a=%u b=%u c=%u\n", e->pe_op, e->pe_id, e->pe_tail,
+		    e->pe_len, e->pe_last, (unsigned int)e->pe_a,
+		    (unsigned int)e->pe_b, (unsigned int)e->pe_c);
+	}
+}
+#else
+#define uds_probe(op, uds, a, b, c)	((void)0)
+#endif /* UDS_PROBE */
+
+/*
  * Initialize the input/output part of the UDS service.
  */
 void
@@ -274,12 +327,30 @@ uds_fetch_hdr(struct udssock * uds, size_t off, size_t * seglen,
 	size_t * datalen, unsigned int * segflags)
 {
 	unsigned char hdr[UDS_HDRLEN];
+#if UDS_PROBE
+	size_t at = off;
+#endif
 
 	off = uds_fetch(uds, off, hdr, sizeof(hdr));
 
 	*seglen = ((size_t)hdr[0] << 8) | (size_t)hdr[1];
 	*datalen = ((size_t)hdr[2] << 8) | (size_t)hdr[3];
 	*segflags = hdr[4];
+
+#if UDS_PROBE
+	if (*seglen < UDS_HDRLEN || *seglen > uds->uds_len ||
+	    *datalen > *seglen - UDS_HDRLEN ||
+	    (*segflags == 0 && *datalen != *seglen - UDS_HDRLEN) ||
+	    (*segflags & ~(UDS_HAS_FDS | UDS_HAS_CRED | UDS_HAS_PATH))) {
+		printf("UDS BAD HDR sock=%d type=%d at=%u tail=%u len=%u "
+		    "last=%u raw=%02x%02x%02x%02x%02x seglen=%u datalen=%u "
+		    "flags=%x\n", (int)uds_get_id(uds), uds_get_type(uds),
+		    (unsigned int)at, uds->uds_tail, uds->uds_len,
+		    uds->uds_last, hdr[0], hdr[1], hdr[2], hdr[3], hdr[4],
+		    (unsigned int)*seglen, (unsigned int)*datalen, *segflags);
+		uds_probe_dump();
+	}
+#endif
 
 	assert(*seglen >= UDS_HDRLEN);
 	assert(*seglen <= uds->uds_len);
@@ -736,6 +807,8 @@ uds_send_data(struct udssock * uds, struct udssock * peer,
 			return r;
 	}
 
+	uds_probe(merge ? 'm' : 'n', peer, pos, datalen, seglen);
+
 	*mergep = merge;
 	*datalenp = datalen;
 	*segflagsp = segflags;
@@ -952,6 +1025,8 @@ uds_send_advance(struct udssock * uds, struct udssock * peer, size_t datalen,
 		peer->uds_len += seglen;
 		assert(peer->uds_len <= UDS_BUF);
 	}
+
+	uds_probe('S', peer, seglen, datalen, merge);
 
 	/* Now that there are new data, wake up the receiver side. */
 	sockevent_raise(&peer->uds_sock, SEV_RECV);
@@ -1659,6 +1734,8 @@ uds_recv_advance(struct udssock * uds, size_t seglen, size_t datalen,
 	 * this means we should never block the current receive operation
 	 * waiting for more data.  Otherwise, we may block on MSG_WAITALL.
 	 */
+	uds_probe('R', uds, seglen, datalen, reslen);
+
 	if (uds->uds_len > 0)
 		*may_block = FALSE;
 

@@ -173,8 +173,7 @@ These are known unknowns, not tasks with hidden answers.
 
 Stage 9 was the last stage the plan had, and 10 is not written yet. What is
 open and named, in no particular order: 9.4 — the SD card controller, moving
-the userland onto shared libraries now that dynamic linking works (and the
-`test2` corruption that turning the suite dynamic uncovered), the bounce
+the userland onto shared libraries now that dynamic linking works, the bounce
 buffer that still cuts every request into 32 KiB pieces, and two defects in
 `servers/sched/schedule.c` found while closing the occupancy question —
 `pick_cpu()` overwrites the scheduler's idea of a process's core on a quantum

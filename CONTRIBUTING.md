@@ -42,9 +42,8 @@ If you only want to look at a running system first, take a release and run it �
   of 2026-09-10 — a program with a `PT_INTERP` starts through `ld.elf_so`, and
   `dlopen` works — but `LDSTATIC` in `share/mk/bsd.own.mk` is still `-static`,
   so every program in the system carries its own copy of libc. What is left is
-  TLS (the branches in `ld.elf_so` are fenced off, as on arm), `MKPICINSTALL`,
-  and one open defect: `test2` corrupts a vectorised loop when linked
-  dynamically, cause not established — see `port/test/dyn/README.md`.
+  TLS (the branches in `ld.elf_so` are fenced off, as on arm) and
+  `MKPICINSTALL`.
 - **Raise the 4 GB physical memory ceiling.** It comes from the free-page bitmap
   in `servers/vm/alloc.c` and `VM_MAX_PHYS_MEM` beside it. The kernel does not
   need the limit at all.

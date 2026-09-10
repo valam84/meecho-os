@@ -316,8 +316,14 @@ static int search_dir_v4(struct inode *ldir_ptr, const char *string,
 	namelen = strlen(string);
 	if (namelen == 0)
 		return(ENOENT);
+	/* ENAMETOOLONG for a lookup too, not just for a create: POSIX ties
+	 * the error to the name being longer than NAME_MAX, not to what the
+	 * caller meant to do with it.  V3 has no such case -- it truncates
+	 * instead -- so this is a V4 question, and answering ENOENT told
+	 * callers the name was absent when it was in fact unrepresentable.
+	 */
 	if (namelen > MFS4_NAME_MAX)
-		return(flag == ENTER ? ENAMETOOLONG : ENOENT);
+		return(ENAMETOOLONG);
 	need = MFS4_DIRENT_LEN(namelen);
   }
 

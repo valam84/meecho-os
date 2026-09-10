@@ -11,6 +11,7 @@
     0                       просто подождать
     3 root                  подождать 3 с и послать строку с CR
     2 <CR>                  подождать 2 с и послать голый CR
+    1 <CTRL-C>              подождать 1 с и послать Ctrl-C
     120 WAIT login:         ждать появления текста, но не дольше 120 с
     0 BAUD 115200           сменить скорость порта на лету
 
@@ -69,6 +70,11 @@ class Console:
     def cr(self):
         os.write(self.fd, b"\r")
 
+    def intr(self):
+        # Ctrl-C: консоль иногда застаёт шелл занятым, и
+        # единственная альтернатива - человек у питания.
+        os.write(self.fd, bytes([3]))
+
     def baud(self, b):
         # Порт настраивается на лету: U-Boot умеет менять скорость посреди
         # загрузки, и терминал обязан пойти за ним.
@@ -119,6 +125,8 @@ def run_schedule(con, lines):
             print("=== скорость %s" % cmd[5:], file=sys.stderr)
         elif cmd == "<CR>":
             con.cr()
+        elif cmd == "<CTRL-C>":
+            con.intr()
         elif cmd:
             print(">>> " + cmd, file=sys.stderr)
             con.send(cmd)

@@ -284,6 +284,79 @@ wr(unsigned off, uint32_t v)
 #define OPR	MODEL_CAPLENGTH
 #define RTR	MODEL_RTSOFF
 
+/*
+ * Two registers are write-one-to-clear, and on real hardware that is how
+ * the driver says "I have seen this": the interrupt-pending flag and the
+ * event-interrupt flag.  Both are level-driven, so a model that let a
+ * write set them instead of clearing them would report an interrupt that
+ * never goes away - which is not a harmless inaccuracy but the live-lock
+ * this port already met once on the UART.
+ *
+ * The model keeps its own copy of each and reconciles at the top of every
+ * step, which is the same trick the port register uses and comes with the
+ * same limitation: two writes with no wait between them collapse into one.
+ */
+static uint32_t iman_shadow, usbsts_shadow;
+
+static unsigned event_deq_index(void);
+
+static void
+sts_set(uint32_t bits)
+{
+	usbsts_shadow |= bits;
+	wr(OPR + XHCI_USBSTS, usbsts_shadow);
+}
+
+static void
+sts_clr(uint32_t bits)
+{
+	usbsts_shadow &= ~bits;
+	wr(OPR + XHCI_USBSTS, usbsts_shadow);
+}
+
+static void
+acknowledgements(void)
+{
+	uint32_t w;
+
+	/*
+	 * The interrupt-pending flag is worked out rather than remembered,
+	 * and that is the one place this model departs from the letter of
+	 * the specification on purpose.
+	 *
+	 * On the part, the flag is set when an event is written and cleared
+	 * by the driver writing a one to it.  The model cannot see that
+	 * write: the driver writes IMAN with both the pending flag and the
+	 * enable bit set, and once the enable bit is already on, the value
+	 * written is bit for bit the value that was there - a real
+	 * acknowledgement that is invisible to anything polling the
+	 * register.  Modelled that way, the flag stuck, the driver was
+	 * woken sixty-five times with nothing to read, and it concluded its
+	 * interrupt line was useless.  That is a defect in the model, and
+	 * it imitated a defect this driver really had, which is exactly how
+	 * a stand wastes a day.
+	 *
+	 * So pending means what it is for: there is an event on the ring
+	 * the driver has not read.  A wake-up with nothing behind it then
+	 * means something is genuinely wrong, which is the property worth
+	 * having.
+	 */
+	if (event_base != 0 && event_deq_index() != event_enq)
+		iman_shadow |= XHCI_IMAN_IP;
+	else
+		iman_shadow &= ~(uint32_t)XHCI_IMAN_IP;
+
+	w = rd(RTR + XHCI_IR(0) + XHCI_IR_IMAN);
+	iman_shadow = (iman_shadow & ~(uint32_t)XHCI_IMAN_IE) |
+	    (w & XHCI_IMAN_IE);
+	wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN, iman_shadow);
+
+	w = rd(OPR + XHCI_USBSTS);
+	if (w != usbsts_shadow)
+		sts_clr(w & (XHCI_USBSTS_EINT | XHCI_USBSTS_PCD |
+		    XHCI_USBSTS_HSE));
+}
+
 void
 model_control_handler(model_control_fn fn)
 {
@@ -325,7 +398,9 @@ model_reset(unsigned ports, unsigned nsl)
 	wr(XHCI_RTSOFF, MODEL_RTSOFF);
 
 	wr(OPR + XHCI_PAGESIZE, 1);
-	wr(OPR + XHCI_USBSTS, XHCI_USBSTS_HCH);
+	iman_shadow = 0;
+	usbsts_shadow = 0;
+	sts_set(XHCI_USBSTS_HCH);
 
 	for (i = 0; i < MODEL_MAX_SLOTS; i++)
 		wr(MODEL_DBOFF + XHCI_DB(i), DB_IDLE);
@@ -391,9 +466,10 @@ event_push(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control)
 
 	model_stats.events++;
 
-	wr(OPR + XHCI_USBSTS, rd(OPR + XHCI_USBSTS) | XHCI_USBSTS_EINT);
-	wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN,
-	    rd(RTR + XHCI_IR(0) + XHCI_IR_IMAN) | XHCI_IMAN_IP);
+	sts_set(XHCI_USBSTS_EINT);
+	iman_shadow |= XHCI_IMAN_IP;
+	wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN, iman_shadow);
+	model_stats.interrupts++;
 }
 
 /*---------------------------------------------------------------------------*
@@ -903,6 +979,18 @@ model_ep_taken(unsigned slot, unsigned dci, void *out, size_t max)
 	return n;
 }
 
+int
+model_event_pending(phys_bytes deq, unsigned cycle)
+{
+	uint8_t *dev = model_dev_ptr(deq, XHCI_TRB_SIZE);
+	uint32_t control;
+
+	if (dev == NULL)
+		return 0;
+	memcpy(&control, dev + 12, 4);
+	return ((control & XHCI_TRB_C) != 0) == (cycle != 0);
+}
+
 static void
 start(void)
 {
@@ -917,7 +1005,7 @@ start(void)
 	erst = model_dev_ptr(erstba, 16);
 	if (erst == NULL) {
 		complain("the event ring segment table is not in memory");
-		wr(OPR + XHCI_USBSTS, rd(OPR + XHCI_USBSTS) | XHCI_USBSTS_HSE);
+		sts_set(XHCI_USBSTS_HSE);
 		return;
 	}
 	memcpy(&event_base, erst, 4);
@@ -929,13 +1017,12 @@ start(void)
 	if (event_slots == 0 ||
 	    model_dev_ptr(event_base, event_slots * XHCI_TRB_SIZE) == NULL) {
 		complain("the event ring segment is not in memory");
-		wr(OPR + XHCI_USBSTS, rd(OPR + XHCI_USBSTS) | XHCI_USBSTS_HSE);
+		sts_set(XHCI_USBSTS_HSE);
 		return;
 	}
 
 	halted = 0;
-	wr(OPR + XHCI_USBSTS,
-	    rd(OPR + XHCI_USBSTS) & ~(uint32_t)XHCI_USBSTS_HCH);
+	sts_clr(XHCI_USBSTS_HCH);
 	wr(OPR + XHCI_CRCR, XHCI_CRCR_CRR);
 }
 
@@ -958,7 +1045,10 @@ model_step(void)
 		event_base = 0;
 		halted = 1;
 		wr(OPR + XHCI_USBCMD, cmd & ~(uint32_t)XHCI_USBCMD_HCRST);
-		wr(OPR + XHCI_USBSTS, XHCI_USBSTS_HCH);
+		iman_shadow = 0;
+		wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN, 0);
+		usbsts_shadow = 0;
+		sts_set(XHCI_USBSTS_HCH);
 		wr(OPR + XHCI_CONFIG, 0);
 
 		/*
@@ -982,10 +1072,10 @@ model_step(void)
 	}
 	if (!(cmd & XHCI_USBCMD_RS) && !halted) {
 		halted = 1;
-		wr(OPR + XHCI_USBSTS,
-		    rd(OPR + XHCI_USBSTS) | XHCI_USBSTS_HCH);
+		sts_set(XHCI_USBSTS_HCH);
 	}
 
+	acknowledgements();
 	ports();
 
 	if (halted)

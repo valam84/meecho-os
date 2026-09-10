@@ -60,17 +60,42 @@
  * for the reason written there: a call that quietly does nothing looks
  * exactly like a call that worked, and the symptom turns up layers away.
  */
+/*
+ * How much of a transfer is spent where.  Measured rather than reasoned
+ * about: the first attempt to explain 648 KB/s produced three plausible
+ * stories, and the way to choose between them is a counter.
+ */
+unsigned long xhci_t_cache, xhci_n_cache;
+unsigned long xhci_t_poll, xhci_n_poll;
+unsigned long xhci_t_setup, xhci_t_wire, xhci_n_wire;
+unsigned long xhci_t_small, xhci_n_small;
+
+static unsigned long
+elapsed(u64_t t)
+{
+	u64_t n;
+
+	read_frclock_64(&n);
+	return (unsigned long)frclock_64_to_micros(delta_frclock_64(t, n));
+}
+
 void
 xhci_cache(int op, void *addr, size_t len, const char *what)
 {
 	static int complained;
+	u64_t t;
 	int r;
+
+	read_frclock_64(&t);
+	xhci_n_cache++;
 
 	if ((r = sys_cachectl(op, addr, len)) != OK && !complained) {
 		log_warn(&xhci_log, "cache maintenance refused for %s: %d; "
 		    "nothing below this will work\n", what, r);
 		complained = 1;
 	}
+
+	xhci_t_cache += elapsed(t);
 }
 
 static struct xhci_trb *
@@ -223,6 +248,12 @@ xhci_ring_push(struct xhci_ring *r, uint32_t p0, uint32_t p1, uint32_t status,
 
 	r->enq++;
 	return where;
+}
+
+void
+xhci_doorbell(struct xhci_device *dev, unsigned target)
+{
+	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(dev->slot), target);
 }
 
 void
@@ -513,6 +544,129 @@ event_done(void)
 }
 
 /*
+ * Wait for the controller to say something, and answer how long that took.
+ *
+ * This is where the driver stopped being slow.  The first version spun:
+ * look at the ring, wait a hundred microseconds, look again.  On the board
+ * that cost thirteen and a half milliseconds per transfer - the same for a
+ * thirty-one byte command as for thirty-two kilobytes of data, which is
+ * what gave it away, since a fixed cost cannot be the wire.  It was the
+ * scheduler: a driver that busy-waits burns its quantum, and then nobody
+ * looks at the event ring until it is given another one.  The transfer had
+ * been finished for milliseconds.
+ *
+ * So the wait is a real wait: the line is armed, the driver blocks, and
+ * the kernel wakes it when the controller raises the interrupt.  The
+ * alarm is the deadline; a request from a client that arrives meanwhile is
+ * put aside rather than answered, because this driver is inside one
+ * transfer and cannot start another.
+ *
+ * Every way this can fail ends in polling rather than in hanging, and each
+ * is noticed once: the kernel refusing the line, the line interrupting
+ * with nothing to show, and the deadline passing with no interrupt at all.
+ */
+/*
+ * How many interrupts in a row have arrived with nothing on the ring.
+ *
+ * Counting every interrupt here was this driver's own mistake and cost a
+ * board run: the line was declared useless after sixty-five perfectly good
+ * interrupts, and every transfer went back to polling - which looked
+ * exactly like the interrupt not working at all, because the timings did
+ * not move.  Only an interrupt that produced nothing is spurious, so the
+ * count is cleared where events are actually taken off the ring.
+ */
+static unsigned spurious;
+unsigned long xhci_n_irq, xhci_n_alarm;
+
+static unsigned
+wait_for_event(unsigned usec)
+{
+	u64_t t_start;
+	message m;
+	int ipc_status;
+
+	read_frclock_64(&t_start);
+
+	if (!xhci.irq_ok || xhci.irq_dead || spurious > 64) {
+		if (spurious == 65) {
+			log_warn(&xhci_log, "line %d interrupted %u times "
+			    "with nothing on the ring; polling from now on\n",
+			    xhci.irq_line, spurious);
+			xhci.irq_dead = 1;
+			spurious++;
+		}
+		micro_delay(100);
+		return elapsed(t_start);
+	}
+
+	/*
+	 * Acknowledge what has already been signalled before arming the
+	 * line again.  Both flags are write-one-to-clear and both are
+	 * level-driven: left standing, they make the next enable produce an
+	 * interrupt immediately and for ever - the live-lock this port has
+	 * already met once on the UART.
+	 */
+	xhci_wr(xhci.regs, rt() + XHCI_IR(0) + XHCI_IR_IMAN,
+	    xhci_rd(xhci.regs, rt() + XHCI_IR(0) + XHCI_IR_IMAN) |
+	    XHCI_IMAN_IP | XHCI_IMAN_IE);
+	xhci_wr(xhci.regs, op() + XHCI_USBSTS, XHCI_USBSTS_EINT);
+
+    if (sys_irqenable(&xhci.irq_hook) != OK) {
+		log_warn(&xhci_log, "cannot enable line %d; polling from now "
+		    "on\n", xhci.irq_line);
+		xhci.irq_dead = 1;
+		micro_delay(100);
+		return elapsed(t_start);
+	}
+
+	sys_setalarm(micros_to_ticks(usec), 0);
+
+	for (;;) {
+		if (sef_receive_status(ANY, &m, &ipc_status) != OK) {
+			micro_delay(100);
+			break;
+		}
+
+		if (is_ipc_notify(ipc_status)) {
+			if (_ENDPOINT_P(m.m_source) == HARDWARE) {
+				spurious++;
+				xhci_n_irq++;
+				(void)sys_irqenable(&xhci.irq_hook);
+				break;
+			}
+			if (_ENDPOINT_P(m.m_source) == CLOCK) {
+				xhci_n_alarm++;
+				break;
+			}
+			continue;
+		}
+
+		/* Somebody else's request: it waits until this one is done. */
+		xhci_defer(&m, ipc_status);
+	}
+
+	sys_setalarm(0, 0);
+	/*
+	 * The line is left ON.  Switching it off here is what the first
+	 * version did, and it broke the other half of the driver: the
+	 * asynchronous path waits for an interrupt from a line this one had
+	 * quietly disabled on its way out, so transfers finished, events
+	 * landed on the ring, and nothing ever woke anybody.  Both paths
+	 * now leave it armed, and the kernel disables it only for the
+	 * moment between delivering an interrupt and being told to enable
+	 * it again.
+	 */
+
+	/*
+	 * How long this took is not counted in microseconds of delay any
+	 * more - the caller only needs to know the deadline is nearer, and
+	 * a wait that returned because the controller spoke has cost almost
+	 * nothing.
+	 */
+	return elapsed(t_start);
+}
+
+/*
  * Drain the event ring for up to this many microseconds, stopping early
  * when an event of the wanted type turns up.  Returns how many were seen.
  *
@@ -531,8 +685,10 @@ xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
 	for (;;) {
 		while (event_next(&ev)) {
 			unsigned type = XHCI_TRB_TYPE_OF(ev.control);
+			int claimed = 0;
 
 			seen++;
+			spurious = 0;
 
 			switch (type) {
 			case XHCI_TRB_PORT_STATUS:
@@ -552,6 +708,34 @@ xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
 				    "0x%08x, completion %u, %u byte(s) "
 				    "short\n", ev.p0, XHCI_CC_OF(ev.status),
 				    XHCI_EVENT_LENGTH(ev.status));
+
+				/*
+				 * A client's transfer finishes here, and
+				 * finishing it is all that happens: the
+				 * request was answered when it was
+				 * submitted.  If nobody claims the event it
+				 * belongs to a transfer this driver is
+				 * waiting for itself, and it falls through
+				 * to the wanted-event logic below.
+				 *
+				 * It is claimed, not skipped, and the
+				 * difference is the whole defect this
+				 * routine had.  A "continue" here leaves
+				 * the loop before event_done(), so the
+				 * controller is never told how far the
+				 * driver has read.  Two hundred and
+				 * fifty-five unacknowledged events later
+				 * the ring is full and the controller stops
+				 * writing events at all - for every client,
+				 * not only the one whose events were
+				 * skipped.  On the board that read as both
+				 * clients stopping at once with "IMAN
+				 * pending 0, USBSTS event 0": no events, no
+				 * interrupt, nothing to complain about.
+				 * The events had been taken; only the
+				 * acknowledgement was missing.
+				 */
+				claimed = xhci_urb_transfer_event(&ev);
 				break;
 			default:
 				log_info(&xhci_log, "event: type %u, "
@@ -568,7 +752,8 @@ xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
 			 * the status stage, which carries nothing.  Keeping
 			 * the last would report every short read as full.
 			 */
-			if (want != NULL && type == want_type && !got_wanted) {
+			if (!claimed && want != NULL && type == want_type &&
+			    !got_wanted) {
 				*want = ev;
 				got_wanted = 1;
 			}
@@ -579,8 +764,14 @@ xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
 		if (got_wanted || waited >= usec)
 			break;
 
-		micro_delay(100);
-		waited += 100;
+		{
+			u64_t t;
+
+			read_frclock_64(&t);
+			waited += wait_for_event(usec - waited);
+			xhci_t_poll += elapsed(t);
+			xhci_n_poll++;
+		}
 	}
 
 	return seen;

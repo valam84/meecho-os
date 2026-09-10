@@ -92,6 +92,7 @@ struct search {
 
 	phys_bytes pmu_base;
 	size_t pmu_size;
+
 };
 
 static int

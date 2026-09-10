@@ -26,6 +26,7 @@
 #include <minix/drivers.h>
 #include <minix/ds.h>
 #include <minix/sysutil.h>
+#include <sys/mman.h>
 
 #include "xhci.h"
 #include "xhcireg.h"
@@ -40,6 +41,62 @@ struct log xhci_log = {
 
 static int instance;
 static unsigned noops = 1;		/* how many no-op commands to issue */
+
+/*
+ * Requests that arrived while the driver was inside a transfer.
+ *
+ * A transfer waits for an interrupt, and while it waits the driver is in a
+ * receive - so a client's next request arrives there rather than in the
+ * main loop.  It cannot be answered on the spot: this driver runs one
+ * transfer at a time, and starting a second from inside the first is how
+ * rings get two writers.  So it is put aside and answered when the current
+ * one is done, which is what a queue this shallow is for: with one thread
+ * per client driver, only as many requests can be outstanding as there are
+ * clients.
+ */
+#define XHCI_MAX_DEFER	8
+
+static struct {
+	message m;
+	int ipc_status;
+} deferred[XHCI_MAX_DEFER];
+
+static unsigned ndeferred;
+
+void
+xhci_defer(message *m, int ipc_status)
+{
+	if (ndeferred >= XHCI_MAX_DEFER) {
+		log_warn(&xhci_log, "no room to put aside a request from %d; "
+		    "it is dropped\n", m->m_source);
+		return;
+	}
+
+	deferred[ndeferred].m = *m;
+	deferred[ndeferred].ipc_status = ipc_status;
+	ndeferred++;
+}
+
+static void
+run_deferred(void)
+{
+	message m;
+	unsigned i;
+
+	/*
+	 * Taken one at a time from the front, and the queue is re-read
+	 * every time round: answering one of these can put another aside.
+	 */
+	while (ndeferred > 0 && !xhci_urb_busy()) {
+		m = deferred[0].m;
+
+		for (i = 1; i < ndeferred; i++)
+			deferred[i - 1] = deferred[i];
+		ndeferred--;
+
+		xhci_urb_message(&m);
+	}
+}
 
 /*
  * The speed identifiers the specification gives by default; a controller
@@ -278,6 +335,75 @@ attach_devices(void)
 	return found;
 }
 
+/*
+ * Ask the kernel for the line the device tree named.
+ *
+ * A failure here is not fatal: every wait in this driver falls back to
+ * polling, which is slow but correct, and a machine whose tree names no
+ * line at all is served that way from the start.  What is not acceptable
+ * is being quiet about it, since the difference is a factor of twenty in
+ * throughput and would otherwise be discovered as "USB is slow here".
+ */
+static void
+arm_interrupt(void)
+{
+	int r;
+
+	xhci.irq_line = xhci.info.irq;
+
+	if (xhci.irq_line < 0) {
+		log_warn(&xhci_log, "the tree names no interrupt; every "
+		    "transfer will poll\n");
+		return;
+	}
+
+	/*
+	 * The hook identifier is not the line number: it is the bit this
+	 * driver's interrupts will be reported in, so it has to fit in the
+	 * notification word - the kernel refuses anything above 63.  Every
+	 * driver in this tree passes the line number instead, which works
+	 * only as long as the line is a small number; sdmmc's is 51 and
+	 * gets away with it, this one is 201 and does not.  One is used
+	 * here because this driver takes one line.
+	 */
+	xhci.irq_hook = 1;
+	if ((r = sys_irqsetpolicy(xhci.irq_line, 0, &xhci.irq_hook)) != OK) {
+		log_warn(&xhci_log, "cannot take line %d (%d); every "
+		    "transfer will poll\n", xhci.irq_line, r);
+		return;
+	}
+
+	xhci.irq_ok = 1;
+
+	/*
+	 * Let the controller raise it.  Two switches, and both are needed:
+	 * the interrupter's own enable and the one in the command register
+	 * that lets any interrupter through at all.
+	 */
+	xhci_wr(xhci.regs, xhci.rtsoff + XHCI_IR(0) + XHCI_IR_IMAN,
+	    XHCI_IMAN_IE);
+	xhci_wr(xhci.regs, xhci.caplength + XHCI_USBCMD,
+	    xhci_rd(xhci.regs, xhci.caplength + XHCI_USBCMD) |
+	    XHCI_USBCMD_INTE);
+
+	/*
+	 * And switch it on.  Registering a hook does not enable the line
+	 * - that is a second call, and forgetting it is invisible: the
+	 * controller finishes its transfers, the events land on the ring,
+	 * and nothing ever wakes the driver to look at them.  Which is
+	 * what the board reported, in those words.
+	 */
+	if ((r = sys_irqenable(&xhci.irq_hook)) != OK) {
+		log_warn(&xhci_log, "cannot switch line %d on (%d)\n",
+		    xhci.irq_line, r);
+		xhci.irq_dead = 1;
+		return;
+	}
+
+	log_info(&xhci_log, "interrupt line %d\n", xhci.irq_line);
+}
+
+
 static int
 xhci_init(int type, sef_init_info_t *info)
 {
@@ -332,6 +458,14 @@ xhci_init(int type, sef_init_info_t *info)
 
 	if ((r = xhci_cmd_noop()) != OK)
 		return r;
+
+	/*
+	 * And the interrupt, now that there is something to be interrupted
+	 * about.  It is asked for after the controller runs rather than
+	 * before, so that a line raised by whatever state the part was left
+	 * in does not arrive before this driver can make sense of it.
+	 */
+	arm_interrupt();
 
 	/*
 	 * And, when asked, enough of them to go round the ring.
@@ -409,6 +543,14 @@ main(int argc, char *argv[])
 	if (env_parse("noops", "d", 0, &v, 1, 100000) == EP_SET)
 		noops = (unsigned)v;
 
+	/*
+	 * Where the time of a transfer goes, printed every so many
+	 * requests.  Off by default: a driver that prints during a
+	 * measurement is measuring its own printing.
+	 */
+	if (env_parse("urbstats", "d", 0, &v, 0, 100000) == EP_SET)
+		xhci_urb_stats((unsigned)v);
+
 	xhci_startup();
 
 	/*
@@ -424,8 +566,42 @@ main(int argc, char *argv[])
 			panic("sef_receive failed: %d", r);
 
 		if (is_ipc_notify(ipc_status)) {
-			if (_ENDPOINT_P(m.m_source) == HARDWARE)
-				log_debug(&xhci_log, "interrupt\n");
+			/*
+			 * The controller has something to say: take
+			 * everything off the event ring, which is what
+			 * finishes any outstanding client transfer, and
+			 * then let the line raise again.
+			 */
+			if (_ENDPOINT_P(m.m_source) == HARDWARE) {
+				xhci_n_irq++;
+				/*
+				 * Acknowledge at the controller before
+				 * letting the line raise again.  Both flags
+				 * are write-one-to-clear and level-driven:
+				 * left standing they make the next enable
+				 * interrupt at once and for ever - the
+				 * live-lock this port met on the UART.
+				 */
+				xhci_wr(xhci.regs, xhci.rtsoff + XHCI_IR(0) +
+				    XHCI_IR_IMAN, XHCI_IMAN_IP | XHCI_IMAN_IE);
+				xhci_wr(xhci.regs, xhci.caplength +
+				    XHCI_USBSTS, XHCI_USBSTS_EINT);
+
+				(void)xhci_events_drain(0, NULL, 0);
+				if (xhci.irq_ok && !xhci.irq_dead)
+					(void)sys_irqenable(&xhci.irq_hook);
+				run_deferred();
+				continue;
+			}
+
+			/* The deadline of an outstanding transfer. */
+			if (_ENDPOINT_P(m.m_source) == CLOCK) {
+				xhci_n_alarm++;
+				xhci_urb_tick();
+				run_deferred();
+				continue;
+			}
+
 			continue;
 		}
 
@@ -433,9 +609,10 @@ main(int argc, char *argv[])
 		 * Everything else is a driver talking the URB protocol -
 		 * the one usb_hub and usb_storage already speak.
 		 */
-		if (m.m_type >= USB_RQ_INIT && m.m_type <= USB_REPLY)
+		if (m.m_type >= USB_RQ_INIT && m.m_type <= USB_REPLY) {
 			xhci_urb_message(&m);
-		else
+			run_deferred();
+		} else
 			log_debug(&xhci_log, "unexpected message 0x%x from "
 			    "%d\n", m.m_type, m.m_source);
 	}

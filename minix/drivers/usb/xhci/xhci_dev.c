@@ -128,6 +128,43 @@ build_input_context(struct xhci_device *dev)
  * directions are fixed - IN data, OUT status - and a request with no data
  * is not needed until something is configured, which is 10.4.
  */
+/*
+ * Put a control transfer on the endpoint's ring and ring the doorbell,
+ * without waiting.  Answers the address of the status-stage TRB, which is
+ * the one the completion event will name.
+ */
+phys_bytes
+xhci_control_start(struct xhci_device *dev, uint8_t request_type,
+	uint8_t request, uint16_t value, uint16_t index, uint16_t length)
+{
+	int dir_in = (request_type & USB_REQ_DIR_IN) != 0;
+
+	if (length > XHCI_PAGE)
+		return 0;
+
+	if (dir_in)
+		memset((void *)dev->buf, 0, length);
+	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)dev->buf, XHCI_PAGE,
+	    "a transfer buffer");
+
+	xhci_ring_push(&dev->ep0,
+	    (uint32_t)request_type | ((uint32_t)request << 8) |
+	    ((uint32_t)value << 16),
+	    (uint32_t)index | ((uint32_t)length << 16),
+	    8, XHCI_TRB_TYPE(XHCI_TRB_SETUP) | XHCI_TRB_IDT |
+	    (length == 0 ? XHCI_TRB_TRT_NONE :
+	    (dir_in ? XHCI_TRB_TRT_IN : XHCI_TRB_TRT_OUT)));
+
+	if (length != 0)
+		xhci_ring_push(&dev->ep0, (uint32_t)dev->buf_phys, 0, length,
+		    XHCI_TRB_TYPE(XHCI_TRB_DATA) | XHCI_TRB_ISP |
+		    (dir_in ? XHCI_TRB_DIR_IN : 0));
+
+	return xhci_ring_push(&dev->ep0, 0, 0, 0,
+	    XHCI_TRB_TYPE(XHCI_TRB_STATUS) | XHCI_TRB_IOC |
+	    (length != 0 && dir_in ? 0 : XHCI_TRB_DIR_IN));
+}
+
 int
 xhci_control(struct xhci_device *dev, uint8_t request_type, uint8_t request,
 	uint16_t value, uint16_t index, uint16_t length, unsigned *actual)
@@ -362,6 +399,51 @@ xhci_device_ep(struct xhci_device *dev, unsigned num, int dir_in)
  * a driver that assumes none works until the allocator hands it the wrong
  * page.  So the range is split at the boundary and the pieces are chained.
  */
+/*
+ * Put a transfer on an endpoint's ring and ring the doorbell, without
+ * waiting for it.  Answers the address of the last TRB, which is what the
+ * completion event will name - that is how the answer is matched to the
+ * question when several are outstanding.
+ */
+phys_bytes
+xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length)
+{
+	phys_bytes phys = dev->buf_phys, last = 0;
+	size_t left = length;
+
+	if (length > XHCI_DEV_BUF)
+		return 0;
+
+	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)dev->buf, XHCI_DEV_BUF,
+	    "a transfer buffer");
+
+	do {
+		size_t chunk = 0x10000 - (phys & 0xffff);
+		uint32_t control = XHCI_TRB_TYPE(XHCI_TRB_NORMAL);
+
+		if (chunk > left)
+			chunk = left;
+		left -= chunk;
+
+		if (left != 0)
+			control |= XHCI_TRB_CH;
+		else
+			control |= XHCI_TRB_IOC;
+
+		if (ep->dir_in)
+			control |= XHCI_TRB_ISP;
+
+		last = xhci_ring_push(&ep->ring, (uint32_t)phys, 0,
+		    (uint32_t)chunk, control);
+
+		phys += chunk;
+	} while (left != 0);
+
+	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(dev->slot), ep->dci);
+
+	return last;
+}
+
 int
 xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	unsigned *actual)
@@ -370,6 +452,9 @@ xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	phys_bytes phys = dev->buf_phys;
 	size_t left = length;
 	unsigned cc, residue;
+	u64_t t_enter, t_ring;
+
+	read_frclock_64(&t_enter);
 
 	if (actual != NULL)
 		*actual = 0;
@@ -412,6 +497,10 @@ xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 		phys += chunk;
 	} while (left != 0);
 
+	read_frclock_64(&t_ring);
+	xhci_t_setup += (unsigned long)frclock_64_to_micros(
+	    delta_frclock_64(t_enter, t_ring));
+
 	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(dev->slot), ep->dci);
 
 	memset(&ev, 0, sizeof(ev));
@@ -420,6 +509,28 @@ xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 		log_warn(&xhci_log, "no event for a %u-byte transfer on "
 		    "endpoint %u\n", (unsigned)length, ep->num);
 		return EIO;
+	}
+
+	{
+		u64_t t_done;
+		unsigned long us;
+
+		read_frclock_64(&t_done);
+		us = (unsigned long)frclock_64_to_micros(
+		    delta_frclock_64(t_ring, t_done));
+
+		/*
+		 * Split by size: a transfer of a few dozen bytes and one of
+		 * thirty-two kilobytes cost the same if the cost is a fixed
+		 * overhead, and differ by fifty if it is the data.
+		 */
+		if (length <= 512) {
+			xhci_t_small += us;
+			xhci_n_small++;
+		} else {
+			xhci_t_wire += us;
+			xhci_n_wire++;
+		}
 	}
 
 	cc = XHCI_CC_OF(ev.status);

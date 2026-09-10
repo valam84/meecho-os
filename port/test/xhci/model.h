@@ -88,6 +88,7 @@ struct model_stats {
 	unsigned transfers;		/* transfer descriptors completed */
 	unsigned events;		/* events written */
 	unsigned doorbells;
+	unsigned interrupts;		/* times the line was raised */
 	unsigned cycle_stops;		/* times a ring ran out of work */
 	unsigned link_follows;
 	unsigned toggles;
@@ -103,6 +104,15 @@ struct model_stats {
 };
 
 extern struct model_stats model_stats;
+
+/*
+ * Is there an event on the ring the driver has not read yet?  Asked by the
+ * stand when the controller raises its line, so that a wake-up with
+ * nothing behind it can be told from a real one - the driver counts those
+ * and gives up on the line after sixty-five, and getting that count wrong
+ * has already cost this port one board run.
+ */
+int model_event_pending(phys_bytes deq, unsigned cycle);
 
 const char *model_complaint(void);	/* NULL when nothing went wrong */
 void model_complain_reset(void);

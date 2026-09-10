@@ -181,7 +181,16 @@ struct xhci {
 	vir_bytes phy;
 	vir_bytes usbgrf;
 
+	/*
+	 * The interrupt, and what is known about whether it works.  Kept
+	 * the way sdmmc keeps it, and for the reason written there: a line
+	 * that misbehaves is a thing to notice once and route around, not
+	 * to rediscover on every transfer.
+	 */
+	int irq_line;
 	int irq_hook;
+	int irq_ok;			/* the kernel armed it */
+	int irq_dead;			/* ...and it then proved useless */
 
 	/* What the controller said about itself, read once at init. */
 	unsigned caplength;		/* where the operational block is */
@@ -246,6 +255,11 @@ int xhci_dma_alloc(void);
 void xhci_dma_free(void);
 void *xhci_alloc_dma(size_t size, phys_bytes *phys, const char *what);
 void xhci_cache(int op, void *addr, size_t len, const char *what);
+extern unsigned long xhci_t_cache, xhci_n_cache;
+extern unsigned long xhci_t_poll, xhci_n_poll;
+extern unsigned long xhci_t_setup, xhci_t_wire, xhci_n_wire;
+extern unsigned long xhci_t_small, xhci_n_small;
+extern unsigned long xhci_n_irq, xhci_n_alarm;
 int xhci_ring_setup(struct xhci_ring *r, const char *what);
 phys_bytes xhci_ring_push(struct xhci_ring *r, uint32_t p0, uint32_t p1,
 	uint32_t status, uint32_t control);
@@ -271,10 +285,22 @@ struct xhci_ep *xhci_device_ep(struct xhci_device *dev, unsigned num,
 	int dir_in);
 int xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	unsigned *actual);
+phys_bytes xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep,
+	size_t length);
+phys_bytes xhci_control_start(struct xhci_device *dev, uint8_t request_type,
+	uint8_t request, uint16_t value, uint16_t index, uint16_t length);
+void xhci_doorbell(struct xhci_device *dev, unsigned target);
 
 /* xhci_urb.c */
 void xhci_urb_message(message *m);
 void xhci_urb_announce(struct xhci_device *dev);
+void xhci_urb_stats(unsigned every);
+int xhci_urb_transfer_event(const struct xhci_trb *ev);
+int xhci_urb_busy(void);
+void xhci_urb_tick(void);
+
+/* xhci.c */
+void xhci_defer(message *m, int ipc_status);
 struct xhci_device *xhci_device_by_id(unsigned id);
 
 /* Register access; every block is reached the same way. */

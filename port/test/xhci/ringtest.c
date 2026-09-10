@@ -116,9 +116,13 @@ sys_cachectl(int op, void *addr, size_t len)
  * reason the controller gets to finish anything before the driver gives
  * up, and a path that never waits is a path that never hears.
  */
+static unsigned long fr_now;		/* the free-running clock, in us */
+static unsigned n_hw, n_clock;		/* how the waits ended */
+
 int
 micro_delay(u32_t usec)
 {
+	fr_now += usec;
 	model_step();
 	return OK;
 }
@@ -196,6 +200,13 @@ bring_up(unsigned ports)
 
 	xhci.regs = model_reset(ports, MODEL_MAX_SLOTS - 1);
 	caps_read();
+
+	/*
+	 * The line is armed.  A stand that left it unarmed would test the
+	 * fallback and call it the driver.
+	 */
+	xhci.irq_ok = 1;
+	xhci.irq_dead = 0;
 
 	if (xhci_dma_alloc() != OK)
 		return EIO;
@@ -688,6 +699,8 @@ test_doorbell(void)
 	    "and the doorbell is what makes it happen");
 }
 
+#include "async.inc"
+
 /*===========================================================================*
  *    main                                                                   *
  *===========================================================================*/
@@ -706,6 +719,7 @@ main(int argc, char **argv)
 	test_short_control();
 	test_two_devices();
 	test_doorbell();
+	test_outstanding();
 
 	printf("\n%u checks, %u failure(s)\n", checks, failures);
 	return failures != 0 ? 1 : 0;

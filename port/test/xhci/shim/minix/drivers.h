@@ -22,7 +22,7 @@
  * protocol is the layer above the rings and belongs to a different kind
  * of check.
  */
-typedef struct { long m_type; long payload[15]; } message;
+typedef struct { int m_source; long m_type; long payload[14]; } message;
 
 typedef unsigned long vir_bytes;
 typedef unsigned long phys_bytes;
@@ -53,5 +53,35 @@ void free_contig(void *addr, size_t size);
  * on the board where the same loop is what lets the controller run.
  */
 int micro_delay(u32_t usec);
+
+
+/*===========================================================================*
+ *    what the interrupt-driven wait needs                                   *
+ *===========================================================================*/
+/*
+ * The driver stopped polling for events and started waiting for the
+ * interrupt, so the stand has to be able to be the kernel for it: deliver
+ * a notification when the modelled controller raises its line, and an
+ * alarm when the deadline passes.  Without this the stand could only ever
+ * test the path the driver no longer takes.
+ */
+typedef int endpoint_t;
+
+#define ANY		((endpoint_t)-1)
+#define HARDWARE	((endpoint_t)-4)
+#define CLOCK		((endpoint_t)-5)
+
+#define _ENDPOINT_P(e)		(e)
+#define is_ipc_notify(status)	((status) == 1)
+
+int sef_receive_status(endpoint_t src, message *m, int *status);
+int sys_setalarm(long ticks, int abs);
+int sys_irqenable(int *hook);
+long micros_to_ticks(unsigned long usec);
+
+/* The free-running clock the driver measures itself with. */
+void read_frclock_64(u64_t *t);
+u64_t delta_frclock_64(u64_t base, u64_t now);
+u64_t frclock_64_to_micros(u64_t delta);
 
 #endif /* _SHIM_MINIX_DRIVERS_H */

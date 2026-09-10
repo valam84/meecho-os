@@ -74,6 +74,14 @@ port/cb2-gmac/ref/*.c
 port/cb2-gmac/ref/*.h
 port/cb2-gmac/ref/*.dts
 
+# The same beside the USB driver, and for the same reason: Linux sources of
+# the exact version the board runs, kept for register numbers only.
+# port/cb2-usb/ref/README.md says where they come from.
+port/cb2-usb/ref/*.c
+port/cb2-usb/ref/*.h
+port/cb2-usb/ref/*.dts
+port/cb2-usb/ref/*.dtsi
+
 # Scratch space and run logs that nothing cites.
 port/scratch/
 

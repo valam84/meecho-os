@@ -1,0 +1,240 @@
+#ifndef _XHCIREG_H
+#define _XHCIREG_H
+
+/*
+ * Three register files, and it matters which is which.
+ *
+ *   the controller's own space:  xHCI from +0x0000, DWC3 from +0xc100
+ *   the Rockchip glue:           CRU, PMUCRU, PMU - clocks, resets, power
+ *   the PHY:                     analogue at its node's address, logical
+ *                                in a separate syscon it points at
+ *
+ * The xHCI half is from the specification (xHCI 1.1, publicly published).
+ * The DWC3 offsets are the ones every DWC3 driver uses - the global block
+ * begins at +0xc100 - and the glue is from the vendor kernel of the exact
+ * version running on the board (6.1.115); what was taken is register
+ * numbers and field widths, which are facts about the silicon.  The
+ * arithmetic worked out for this board, and the values read back off it,
+ * are in port/cb2-usb/registers.md.
+ */
+
+/*===========================================================================*
+ *    xHCI: capability registers                                             *
+ *===========================================================================*/
+#define XHCI_CAPLENGTH		0x00	/* 7:0 length, 31:16 HCIVERSION */
+#define XHCI_HCSPARAMS1		0x04
+#define XHCI_HCSPARAMS2		0x08
+#define XHCI_HCSPARAMS3		0x0c
+#define XHCI_HCCPARAMS1		0x10
+#define XHCI_DBOFF		0x14
+#define XHCI_RTSOFF		0x18
+#define XHCI_HCCPARAMS2		0x1c
+
+#define XHCI_HCS1_MAXSLOTS(v)	((v) & 0xff)
+#define XHCI_HCS1_MAXINTRS(v)	(((v) >> 8) & 0x7ff)
+#define XHCI_HCS1_MAXPORTS(v)	(((v) >> 24) & 0xff)
+
+/*
+ * The scratchpad the controller wants for itself is one number in two
+ * fields, high bits and low bits far apart in the same register, and the
+ * controller will not run without the buffers it asks for.
+ */
+#define XHCI_HCS2_IST(v)	((v) & 0xf)
+#define XHCI_HCS2_ERST_MAX(v)	(((v) >> 4) & 0xf)
+#define XHCI_HCS2_SPR(v)	(((v) >> 26) & 1)
+#define XHCI_HCS2_MAX_SCRATCHPAD(v) \
+    ((((v) >> 27) & 0x1f) | ((((v) >> 21) & 0x1f) << 5))
+
+#define XHCI_HCC1_AC64(v)	((v) & 1)		/* 64-bit addressing */
+#define XHCI_HCC1_CSZ(v)	(((v) >> 2) & 1)	/* context 64 bytes */
+#define XHCI_HCC1_PPC(v)	(((v) >> 3) & 1)	/* port power control */
+#define XHCI_HCC1_MAXPSA(v)	(((v) >> 12) & 0xf)
+#define XHCI_HCC1_XECP(v)	((((v) >> 16) & 0xffff) * 4)
+
+/*===========================================================================*
+ *    xHCI: operational registers, at +CAPLENGTH                             *
+ *===========================================================================*/
+#define XHCI_USBCMD		0x00
+#define XHCI_USBSTS		0x04
+#define XHCI_PAGESIZE		0x08
+#define XHCI_DNCTRL		0x14
+#define XHCI_CRCR		0x18
+#define XHCI_DCBAAP		0x30
+#define XHCI_CONFIG		0x38
+#define XHCI_PORTSC(n)		(0x400 + (n) * 0x10)	/* n from 0 */
+
+#define XHCI_USBCMD_RS		(1 << 0)		/* run/stop */
+#define XHCI_USBCMD_HCRST	(1 << 1)
+#define XHCI_USBCMD_INTE	(1 << 2)
+#define XHCI_USBCMD_HSEE	(1 << 3)
+
+#define XHCI_USBSTS_HCH		(1 << 0)		/* halted */
+#define XHCI_USBSTS_HSE		(1 << 2)
+#define XHCI_USBSTS_EINT	(1 << 3)
+#define XHCI_USBSTS_PCD		(1 << 4)
+#define XHCI_USBSTS_CNR		(1 << 11)		/* not ready */
+
+#define XHCI_PORTSC_CCS		(1 << 0)		/* device attached */
+#define XHCI_PORTSC_PED		(1 << 1)		/* port enabled */
+#define XHCI_PORTSC_PR		(1 << 4)		/* reset in progress */
+#define XHCI_PORTSC_PLS(v)	(((v) >> 5) & 0xf)
+#define XHCI_PORTSC_PP		(1 << 9)		/* port power */
+#define XHCI_PORTSC_SPEED(v)	(((v) >> 10) & 0xf)
+#define XHCI_PORTSC_CSC		(1 << 17)		/* connect changed */
+
+/* Extended capabilities: the map of port to protocol lives only here. */
+#define XHCI_ECP_ID(v)		((v) & 0xff)
+#define XHCI_ECP_NEXT(v)	((((v) >> 8) & 0xff) * 4)
+#define XHCI_ECP_ID_LEGACY	1
+#define XHCI_ECP_ID_PROTOCOL	2
+#define XHCI_ECP_PROTO_MINOR(v)	(((v) >> 16) & 0xff)
+#define XHCI_ECP_PROTO_MAJOR(v)	(((v) >> 24) & 0xff)
+#define XHCI_ECP_PORT_OFF(v)	((v) & 0xff)
+#define XHCI_ECP_PORT_COUNT(v)	(((v) >> 8) & 0xff)
+
+/*===========================================================================*
+ *    DWC3: the glue layer that stands in front of the xHCI                  *
+ *===========================================================================*/
+#define DWC3_GSBUSCFG0		0xc100
+#define DWC3_GSBUSCFG1		0xc104
+#define DWC3_GCTL		0xc110
+#define DWC3_GSTS		0xc118
+#define DWC3_GSNPSID		0xc120
+#define DWC3_GGPIO		0xc124
+#define DWC3_GUID		0xc128
+#define DWC3_GUCTL		0xc12c
+#define DWC3_GHWPARAMS0		0xc140
+#define DWC3_GHWPARAMS1		0xc144
+#define DWC3_GUSB2PHYCFG0	0xc200
+#define DWC3_GUSB3PIPECTL0	0xc2c0
+#define DWC3_GFLADJ		0xc600
+
+#define DWC3_GSNPSID_MASK	0xffff0000
+#define DWC3_GSNPSID_DWC3	0x55330000
+
+#define DWC3_GCTL_CORESOFTRESET	(1 << 11)
+#define DWC3_GCTL_PRTCAPDIR_SHIFT 12
+#define DWC3_GCTL_PRTCAPDIR_MASK 0x3
+#define DWC3_GCTL_PRTCAPDIR_HOST 1
+#define DWC3_GCTL_PRTCAPDIR_DEVICE 2
+#define DWC3_GCTL_SCALEDOWN_MASK (0x3 << 4)
+#define DWC3_GCTL_DISSCRAMBLE	(1 << 3)
+#define DWC3_GCTL_U2EXIT_LFPS	(1 << 2)
+
+#define DWC3_GUSB2PHYCFG_PHYSOFTRST (1u << 31)
+#define DWC3_GUSB2PHYCFG_SUSPHY	(1 << 6)
+#define DWC3_GUSB2PHYCFG_ENBLSLPM (1 << 8)
+#define DWC3_GUSB2PHYCFG_PHYIF	(1 << 3)	/* 1: UTMI+ 16 bit */
+#define DWC3_GUSB2PHYCFG_U2FREECLK_EXISTS (1 << 30)
+
+#define DWC3_GUSB3PIPECTL_PHYSOFTRST (1u << 31)
+
+/*===========================================================================*
+ *    Rockchip: clocks and resets (CRU)                                      *
+ *===========================================================================*/
+#define RK3568_CRU_MODE_CON0	0x00c0
+#define RK3568_CRU_CLKSEL_CON(x) (0x0100 + (x) * 4)
+#define RK3568_CRU_CLKGATE_CON(x) (0x0300 + (x) * 4)
+#define RK3568_CRU_SOFTRST_CON(x) (0x0400 + (x) * 4)
+#define RK_SOFTRST_PER_REG	16
+
+/*
+ * The 480 MHz clock USB 2.0 runs on is generated by the PHY, and the CRU
+ * has to be told to look at it rather than at the crystal.  This is the
+ * one write in the whole sequence that cannot be worked out from any
+ * controller register: nothing reflects it, and with the crystal selected
+ * the controller comes up and sees no device at all.
+ */
+#define RK3568_MODE_USB480M_SHIFT 14
+#define RK3568_MODE_USB480M_MASK 0x3
+#define RK3568_MODE_USB480M_PHY	1
+
+/* The PD_PIPE clocks, which are what both xHCIs run on. */
+#define RK3568_CLKGATE_PIPE	10
+#define RK3568_GATE_ACLK_PIPE	(1 << 0)
+#define RK3568_GATE_PCLK_PIPE	(1 << 1)
+#define RK3568_GATE_ACLK_USB3OTG0 (1 << 8)
+#define RK3568_GATE_CLK_USB3OTG0_REF (1 << 9)
+#define RK3568_GATE_CLK_USB3OTG0_SUSPEND (1 << 10)
+#define RK3568_GATE_ACLK_USB3OTG1 (1 << 12)
+#define RK3568_GATE_CLK_USB3OTG1_REF (1 << 13)
+#define RK3568_GATE_CLK_USB3OTG1_SUSPEND (1 << 14)
+
+/* Where the suspend clock comes from: clear means the 24 MHz crystal. */
+#define RK3568_CLKSEL_PIPE	29
+#define RK3568_USB3OTG0_SUSPEND_SRC_BIT 8
+#define RK3568_USB3OTG1_SUSPEND_SRC_BIT 9
+
+/*===========================================================================*
+ *    Rockchip: the PMU's own clock controller (PMUCRU)                      *
+ *===========================================================================*/
+#define RK3568_PMUCRU_CLKSEL_CON(x) (0x0100 + (x) * 4)
+#define RK3568_PMUCRU_CLKGATE_CON(x) (0x0180 + (x) * 4)
+
+#define RK3568_PMU_CLKGATE_USB	2
+#define RK3568_PMU_GATE_CLK_REF24M (1 << 0)
+#define RK3568_PMU_GATE_XIN_USBPHY0 (1 << 1)
+#define RK3568_PMU_GATE_XIN_USBPHY1 (1 << 2)
+
+#define RK3568_PMU_CLKSEL_USBPHY 8	/* bit 0 phy0, bit 1 phy1 */
+
+/*===========================================================================*
+ *    Rockchip: the power domain (PMU)                                       *
+ *===========================================================================*/
+#define RK3568_PMU_PWR_CON	0x00a0
+#define RK3568_PMU_PWR_STATUS	0x0098
+#define RK3568_PMU_IDLE_REQ	0x0050
+#define RK3568_PMU_IDLE_ACK	0x0060
+#define RK3568_PMU_IDLE_ST	0x0068
+
+/*===========================================================================*
+ *    Rockchip: the PHY, logical half (the "usbgrf" syscon)                  *
+ *===========================================================================*/
+#define RK_USBGRF_OTG_CON0	0x0000
+#define RK_USBGRF_HOST_CON0	0x0004
+#define RK_USBGRF_CON2		0x0008
+#define RK_USBGRF_CON3		0x000c
+#define RK_USBGRF_LS_FILTER_CON	0x0040
+#define RK_USBGRF_BVALID_FILTER	0x0048
+#define RK_USBGRF_ID_FILTER	0x004c
+#define RK_USBGRF_DET_EN	0x0080
+#define RK_USBGRF_DET_ST	0x0084
+#define RK_USBGRF_DET_CLR	0x0088
+#define RK_USBGRF_STATUS	0x00c0
+
+/* phy_sus, bits 8:0 of the port's CON0. */
+#define RK_PHY_SUS_MASK		0x1ff
+#define RK_PHY_SUS_ON		0x000	/* the port runs */
+#define RK_PHY_SUS_CTRL		0x1d2	/* suspend controlled by the host */
+#define RK_PHY_SUS_OFF		0x1d1	/* the port is suspended */
+
+#define RK_USBGRF_CLKOUT_CTL_BIT 4	/* 0: the 480 MHz output is on */
+
+/* What the vendor writes into the filters: 10 ms at a 100 MHz pclk. */
+#define RK_FILTER_COUNTER	0x000f4240
+#define RK_LS_FILTER_VALUE	0x00030100
+#define RK_LS_FILTER_MASK	0x000fffff
+
+/*===========================================================================*
+ *    Rockchip: the PHY, analogue half (the node's own address)              *
+ *===========================================================================*/
+#define RK_PHY_PORT_STRIDE	0x0400		/* OTG at 0, host at 0x400 */
+#define RK_PHY_REG_PREEMPHASIS	0x0000		/* bits 2:0 */
+#define RK_PHY_PREEMPHASIS_VAL	0x4
+#define RK_PHY_REG_EYE		0x0030		/* bit 2, bits 6:4 */
+#define RK_PHY_EYE_DIFFRCV_BIT	(1 << 2)
+#define RK_PHY_EYE_HEIGHT_SHIFT	4
+#define RK_PHY_EYE_HEIGHT_MASK	0x7
+#define RK_PHY_EYE_HEIGHT_437MV	0x6
+
+/*
+ * Which of the SoC's two USB2 PHYs this is.  The vendor driver keys the
+ * extra tuning off the PHY's own address, and so does this: it is a fact
+ * about the part, in the same category as the register offsets above, and
+ * not a board identifier.  Only PHY0 serves the two xHCIs, so in practice
+ * this driver never reaches the other one.
+ */
+#define RK3568_USB2PHY0_BASE	0xfe8a0000
+#define RK3568_USB2PHY1_BASE	0xfe8b0000
+
+#endif /* _XHCIREG_H */

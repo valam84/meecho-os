@@ -24,6 +24,7 @@
  *
  *   xhci_find.c  the device tree: what this machine has and where
  *   xhci_rk.c    the glue: power domain, clocks, resets, PHY, DWC3
+ *   xhci_ring.c  the structures the controller and the driver share
  *   xhci.c       the controller and the driver's own life
  *
  * The glue is in no Synopsys or xHCI document and was read out of a
@@ -32,6 +33,26 @@
  */
 
 #define XHCI_MAX_RESETS		4
+#define XHCI_MAX_PORTS		8
+
+/*
+ * The page the controller counts in.  PAGESIZE in its own register says 4
+ * KiB on this part, and every array and ring below is allocated one page:
+ * that satisfies the 64-byte alignment and the 64 KiB boundary rule at
+ * once, since a page-aligned 4 KiB page can straddle neither.
+ */
+#define XHCI_PAGE		4096
+
+/*
+ * A transfer request block: four words, and the last one carries both the
+ * type and the cycle bit that says whose turn it is.
+ */
+struct xhci_trb {
+	uint32_t p0;
+	uint32_t p1;
+	uint32_t status;
+	uint32_t control;
+};
 
 /* Everything the device tree said about this controller. */
 struct xhci_devinfo {
@@ -79,7 +100,9 @@ struct xhci {
 	int irq_hook;
 
 	/* What the controller said about itself, read once at init. */
-	unsigned caplength;
+	unsigned caplength;		/* where the operational block is */
+	unsigned rtsoff;		/* and the runtime one */
+	unsigned dboff;			/* and the doorbells */
 	unsigned hciversion;
 	unsigned nslots;
 	unsigned nports;
@@ -89,6 +112,37 @@ struct xhci {
 	int ac64;			/* 64-bit addressing; 0 on this part */
 	unsigned xecp;			/* extended capabilities, byte offset */
 	uint32_t dwc3_id;		/* GSNPSID */
+
+	/*
+	 * Which USB version each port speaks, from the extended
+	 * capabilities - the only place the tree or the registers state it.
+	 * Zero means the capability named no protocol for that port, and a
+	 * port nobody claims is one this driver leaves alone.
+	 */
+	unsigned char port_major[XHCI_MAX_PORTS];
+
+	/* The structures shared with the controller (xhci_ring.c). */
+	vir_bytes dcbaa;		/* device context base address array */
+	phys_bytes dcbaa_phys;
+	vir_bytes spad_arr;		/* scratchpad buffer array */
+	phys_bytes spad_arr_phys;
+	vir_bytes spad;			/* and the scratchpad itself */
+	phys_bytes spad_phys;
+	size_t spad_size;
+
+	vir_bytes cmd;			/* the command ring */
+	phys_bytes cmd_phys;
+	unsigned cmd_slots;
+	unsigned cmd_enq;		/* where the driver writes next */
+	unsigned cmd_cycle;		/* and with which cycle bit */
+
+	vir_bytes erst;			/* the event ring segment table */
+	phys_bytes erst_phys;
+	vir_bytes event;		/* and its one segment */
+	phys_bytes event_phys;
+	unsigned event_slots;
+	unsigned event_deq;		/* where the driver reads next */
+	unsigned event_cycle;		/* and which cycle bit means "mine" */
 };
 
 extern struct xhci xhci;
@@ -104,6 +158,16 @@ void xhci_rk_clocks_on(void);
 void xhci_rk_phy_init(void);
 int xhci_rk_dwc3_init(void);
 void xhci_rk_report(void);
+
+/* xhci_ring.c */
+int xhci_ring_alloc(void);
+void xhci_ring_free(void);
+int xhci_start(void);
+int xhci_cmd_noop(void);
+int xhci_cmd_noop_quiet(void);
+int xhci_port_reset(unsigned port);
+int xhci_events_drain(unsigned usec, struct xhci_trb *want,
+	unsigned want_type);
 
 /* Register access; every block is reached the same way. */
 static inline uint32_t

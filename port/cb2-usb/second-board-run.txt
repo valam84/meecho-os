@@ -1,0 +1,139 @@
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+395(xhci_find):controller 0 of 2 at 0xfcc00000 (4194304 bytes), irq 201
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+398(xhci_find):cru 0xfdd20000, 1 reset line(s), first 148, pmu 0xfdd90000 domain 15
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+410(xhci_find):usb2phy0 at 0xfe8a0000, otg port, usbgrf 0xfdca0000, pmucru 0xfdd00000
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+218(xhci_rk_power_domain):power domain 15 is already on
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+339(xhci_rk_clocks_on):clocks on for controller 0, phy 0
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+467(xhci_rk_dwc3_init):dwc3 core 3.0a (GSNPSID 0x5533300a)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+513(xhci_rk_dwc3_init):dwc3 in host mode: GCTL 0x30c11004, GUSB2PHYCFG 0x00101408, GSTS 0x7e800001
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+100(read_capabilities):xhci 1.1, 64 slot(s), 2 port(s), 1 interrupter(s)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+112(read_capabilities):contexts 64 bytes, addressing 32-bit, 1 scratchpad buffer(s), page size 4 KiB
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+118(read_capabilities):caplength 32, dboff 0x480, rtsoff 0x440, xecp 0x880
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+150(read_protocols):usb 2.00 on port(s) 1..1
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+150(read_protocols):usb 3.00 on port(s) 2..2
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 1: 0x000206e1  device attached, not enabled, link state 7, full speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 2: 0x000002a0  empty, not enabled, link state 5, none speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+539(xhci_rk_report):glue registers, this driver against the board (port/cb2-usb/registers.md):
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GCTL             0x30c11004 (reference 0x30c11004)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GUSB2PHYCFG      0x00101408 (reference 0x00101408)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GSNPSID          0x5533300a (reference 0x5533300a)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  otg con0         0x00000c00 (reference 0x00000c00)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  con2             0x00000000 (reference 0x00000000)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  ls filter        0x00030100 (reference 0x00030100)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  bvalid filter    0x000f4240 (reference 0x000f4240)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  id filter        0x000f4240 (reference 0x000f4240)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  phy preemph      0x00000004 (reference 0x00000004)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  phy eye          0x00000061 (reference 0x00000061)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  mode con0        0x00004055 (reference 0x00004455)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  pipe gates       0x00000000 (reference 0x00000010)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+562(xhci_rk_report):  pmu status       0x0000007f (pd status; bit 8 set means PD_PIPE is off)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+566(xhci_rk_report):  phy role         0x00000c00 (role bits above phy_sus; this driver does not write them)
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+181(xhci_ring_alloc):dcbaa 0x7d6e4000 (65 entries), cmd 0x7d6e0000, event 0x7d6de000, erst 0x7d6df000, scratchpad 0x7d6e2000
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+394(xhci_start):running: USBSTS 0x00000010, CRCR not running, 64 slots enabled
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+466(xhci_events_drain):event: port 0 changed (completion 1)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+592(xhci_cmd_noop):no-op command completed: the command ring, the doorbell and the event ring all work
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 1; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 2; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 3; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 4; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 5; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 6; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 7; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 8; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 9; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 10; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 11; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 12; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 13; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 14; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 15; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 16; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 17; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 18; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 19; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 20; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 21; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 22; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 23; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 24; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 25; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 26; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 27; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 28; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 29; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 30; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 31; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 32; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 33; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 34; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 35; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 36; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 37; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 38; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 39; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 40; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 41; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 42; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 43; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 44; USBSTS 0x00000010, CRCR 0x00000008
+xhci(warn):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+567(xhci_cmd_noop_quiet):no completion event for the no-op command at ring slot 45; USBSTS 0x00000010, CRCR 0x00000008
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+320(xhci_init):300 no-op commands, 45 failed; the ring wrapped 1 time(s)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+395(xhci_find):controller 0 of 2 at 0xfcc00000 (4194304 bytes), irq 201
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+398(xhci_find):cru 0xfdd20000, 1 reset line(s), first 148, pmu 0xfdd90000 domain 15
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_find.c+410(xhci_find):usb2phy0 at 0xfe8a0000, otg port, usbgrf 0xfdca0000, pmucru 0xfdd00000
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+218(xhci_rk_power_domain):power domain 15 is already on
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+339(xhci_rk_clocks_on):clocks on for controller 0, phy 0
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+467(xhci_rk_dwc3_init):dwc3 core 3.0a (GSNPSID 0x5533300a)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+513(xhci_rk_dwc3_init):dwc3 in host mode: GCTL 0x30c11004, GUSB2PHYCFG 0x00101408, GSTS 0x7e800001
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+100(read_capabilities):xhci 1.1, 64 slot(s), 2 port(s), 1 interrupter(s)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+112(read_capabilities):contexts 64 bytes, addressing 32-bit, 1 scratchpad buffer(s), page size 4 KiB
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+118(read_capabilities):caplength 32, dboff 0x480, rtsoff 0x440, xecp 0x880
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+150(read_protocols):usb 2.00 on port(s) 1..1
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+150(read_protocols):usb 3.00 on port(s) 2..2
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 1: 0x000206e1  device attached, not enabled, link state 7, full speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 2: 0x000002a0  empty, not enabled, link state 5, none speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+539(xhci_rk_report):glue registers, this driver against the board (port/cb2-usb/registers.md):
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GCTL             0x30c11004 (reference 0x30c11004)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GUSB2PHYCFG      0x00101408 (reference 0x00101408)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  GSNPSID          0x5533300a (reference 0x5533300a)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  otg con0         0x00000c00 (reference 0x00000c00)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  con2             0x00000000 (reference 0x00000000)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  ls filter        0x00030100 (reference 0x00030100)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  bvalid filter    0x000f4240 (reference 0x000f4240)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  id filter        0x000f4240 (reference 0x000f4240)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  phy preemph      0x00000004 (reference 0x00000004)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  phy eye          0x00000061 (reference 0x00000061)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  mode con0        0x00004055 (reference 0x00004455)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+556(xhci_rk_report):  pipe gates       0x00000000 (reference 0x00000010)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+562(xhci_rk_report):  pmu status       0x0000007f (pd status; bit 8 set means PD_PIPE is off)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_rk.c+566(xhci_rk_report):  phy role         0x00000c00 (role bits above phy_sus; this driver does not write them)
+xhci(debug):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+181(xhci_ring_alloc):dcbaa 0x7d500000 (65 entries), cmd 0x7d4fc000, event 0x7d4fa000, erst 0x7d4fb000, scratchpad 0x7d4fd000
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+394(xhci_start):running: USBSTS 0x00000010, CRCR not running, 64 slots enabled
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+466(xhci_events_drain):event: port 0 changed (completion 1)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+611(xhci_cmd_noop):no-op command completed: the command ring, the doorbell and the event ring all work
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+320(xhci_init):300 no-op commands, 0 failed; the ring wrapped 1 time(s)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+668(xhci_port_reset):port 1 after reset: 0x00000e03  enabled, link state 0, speed id 3
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci_ring.c+466(xhci_events_drain):event: port 0 changed (completion 1)
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 1: 0x00000e03  device attached, enabled, link state 0, high speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+196(read_ports):port 2: 0x000002a0  empty, not enabled, link state 5, none speed
+xhci(info):/home/minix/minix-src/minix/drivers/usb/xhci/xhci.c+345(xhci_init):up; enumeration and the URB layer are milestones 10.3 and 10.4
+
+--- Прогон 2026-09-10, веха 10.2 ---------------------------------------------
+Кольца, запуск контроллера, сброс порта. Печать 300 событий завершения команд
+из журнала вырезана - осталось по одной строке на смысл.
+
+Критерий вехи: сброшенный порт даёт то же, что снято с вендорской системы, -
+PORTSC1 = 0x00000e03 (присоединён, включён, U0, high speed). Совпало точно.
+
+Прогон был не первый, а второй за то же окно: первый нашёл дефект, ради
+которого проверка на переворот кольца и написана. 300 команд no-op, 255 из
+которых помещаются в кольцо: первые 255 прошли, следующие 45 не получили
+завершения вовсе.
+
+  xhci: no completion event for the no-op command at ring slot 22 ... 45
+  xhci: 300 no-op commands, 45 failed; the ring wrapped 1 time(s)
+
+Причина - бит цикла у самого Link-TRB. Он записан один раз при инициализации
+с нулевым битом, а контроллер читает этот бит, чтобы решить, можно ли по
+ссылке идти. Кольцо на этом просто кончается. После правки:
+
+  xhci: 300 no-op commands, 0 failed; the ring wrapped 1 time(s)

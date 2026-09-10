@@ -14,10 +14,13 @@
  * nothing reflects - has no separate test on this hardware, exactly as the
  * GMAC's PHY identifier had none.
  *
- * What is deliberately not here yet: the rings, the contexts and the
- * command interface (milestone 10.2), enumeration (10.3), and the URB
- * layer that will let the existing usb_hub and usb_storage drivers work
- * against this (10.4).  See port/docs/10-usb-plan.md.
+ * With milestone 10.2 it also starts the controller: the structures in
+ * xhci_ring.c are handed over, the command ring is exercised with a command
+ * that does nothing, and the ports that can be accounted for are reset.
+ *
+ * What is deliberately not here yet: enumeration (10.3) and the URB layer
+ * that will let the existing usb_hub and usb_storage drivers work against
+ * this (10.4).  See port/docs/10-usb-plan.md.
  */
 
 #include <minix/drivers.h>
@@ -36,6 +39,7 @@ struct log xhci_log = {
 };
 
 static int instance;
+static unsigned noops = 1;		/* how many no-op commands to issue */
 
 /*
  * The speed identifiers the specification gives by default; a controller
@@ -84,6 +88,15 @@ read_capabilities(void)
 	xhci.context_size = XHCI_HCC1_CSZ(hcc1) ? 64 : 32;
 	xhci.xecp = XHCI_HCC1_XECP(hcc1);
 
+	/*
+	 * Where the other three register blocks are.  Every one of them is
+	 * an offset from the same base and every one is stated by the part
+	 * rather than fixed by the specification, so they are read once
+	 * here and used from the state everywhere else.
+	 */
+	xhci.rtsoff = xhci_rd(xhci.regs, XHCI_RTSOFF) & ~0x1fu;
+	xhci.dboff = xhci_rd(xhci.regs, XHCI_DBOFF) & ~0x3u;
+
 	log_info(&xhci_log, "xhci %x.%x, %u slot(s), %u port(s), "
 	    "%u interrupter(s)\n", xhci.hciversion >> 8,
 	    (xhci.hciversion >> 4) & 0xf, xhci.nslots, xhci.nports,
@@ -126,17 +139,33 @@ read_protocols(void)
 		if (XHCI_ECP_ID(v) == XHCI_ECP_ID_PROTOCOL) {
 			uint32_t ports = xhci_rd(xhci.regs, off + 8);
 			unsigned count = XHCI_ECP_PORT_COUNT(ports);
+			unsigned first = XHCI_ECP_PORT_OFF(ports);
+			unsigned major = XHCI_ECP_PROTO_MAJOR(v);
+			unsigned i;
 
 			if (count == 0)
 				log_debug(&xhci_log, "usb %u.%02u: no ports\n",
-				    XHCI_ECP_PROTO_MAJOR(v),
-				    XHCI_ECP_PROTO_MINOR(v));
+				    major, XHCI_ECP_PROTO_MINOR(v));
 			else
 				log_info(&xhci_log, "usb %u.%02u on port(s) "
-				    "%u..%u\n", XHCI_ECP_PROTO_MAJOR(v),
-				    XHCI_ECP_PROTO_MINOR(v),
-				    XHCI_ECP_PORT_OFF(ports),
-				    XHCI_ECP_PORT_OFF(ports) + count - 1);
+				    "%u..%u\n", major,
+				    XHCI_ECP_PROTO_MINOR(v), first,
+				    first + count - 1);
+
+			/*
+			 * Remember which port speaks what.  This is the only
+			 * place it is written down, and this driver needs it
+			 * for a reason particular to this board: the
+			 * controller announces a SuperSpeed port that has no
+			 * USB3 PHY behind it - the vendor system announces
+			 * one port here, not two - so a port is driven only
+			 * when the driver can say what it is.
+			 */
+			for (i = 0; i < count; i++)
+				if (first + i >= 1 &&
+				    first + i <= XHCI_MAX_PORTS)
+					xhci.port_major[first + i - 1] =
+					    (unsigned char)major;
 		}
 
 		if (XHCI_ECP_NEXT(v) == 0)
@@ -170,6 +199,48 @@ read_ports(void)
 		    (v & XHCI_PORTSC_PED) ? "enabled" : "not enabled",
 		    XHCI_PORTSC_PLS(v), speed_name(XHCI_PORTSC_SPEED(v)),
 		    (v & XHCI_PORTSC_PP) ? "" : ", no port power");
+	}
+}
+
+/*
+ * Reset the ports that have something attached and that this driver can
+ * account for.
+ *
+ * "Can account for" is doing real work here.  On this board the
+ * controller announces two ports where the vendor system announces one:
+ * the second is SuperSpeed, and no USB3 PHY is wired to this controller
+ * at all - the device tree gives it only a usb2-phy.  Something in the
+ * DWC3 setup that this driver does not do hides that port under Linux.
+ * Until that is understood, a port whose protocol nobody claimed, and a
+ * SuperSpeed port on a controller with no SuperSpeed PHY, are left alone:
+ * the cost of leaving one alone is a port that does nothing, and the cost
+ * of driving one that is not there is a reset that never completes.
+ */
+static void
+reset_ports(void)
+{
+	unsigned p;
+	uint32_t v;
+
+	for (p = 0; p < xhci.nports && p < XHCI_MAX_PORTS; p++) {
+		v = xhci_rd(xhci.regs, xhci.caplength + XHCI_PORTSC(p));
+
+		if (!(v & XHCI_PORTSC_CCS))
+			continue;
+
+		if (xhci.port_major[p] == 0) {
+			log_info(&xhci_log, "port %u: no protocol named for "
+			    "it; left alone\n", p + 1);
+			continue;
+		}
+		if (xhci.port_major[p] != 2) {
+			log_info(&xhci_log, "port %u: usb %u, which this "
+			    "controller has no PHY for; left alone\n", p + 1,
+			    xhci.port_major[p]);
+			continue;
+		}
+
+		(void)xhci_port_reset(p);
 	}
 }
 
@@ -214,8 +285,65 @@ xhci_init(int type, sef_init_info_t *info)
 	read_ports();
 	xhci_rk_report();
 
-	log_info(&xhci_log, "up; rings, enumeration and the URB layer are "
-	    "milestones 10.2 to 10.4\n");
+	/*
+	 * And the structures the controller and the driver share, after
+	 * which it can be started and asked to do something.
+	 */
+	if ((r = xhci_ring_alloc()) != OK)
+		return r;
+
+	if ((r = xhci_start()) != OK)
+		return r;
+
+	if ((r = xhci_cmd_noop()) != OK)
+		return r;
+
+	/*
+	 * And, when asked, enough of them to go round the ring.
+	 *
+	 * One no-op proves the ring is where the controller thinks it is.
+	 * It does not prove the arithmetic: the ring holds 256 entries, the
+	 * last of which is a Link the driver never writes, and wrapping
+	 * means starting again at the beginning with the cycle bit flipped.
+	 * Get that wrong and the failure is not the next command but the
+	 * two-hundred-and-fifty-seventh, which is exactly the kind of thing
+	 * that ships.  So the wrap is tested on the hardware rather than
+	 * against a model of it: noops=300 walks past the link twice.
+	 */
+	if (noops > 1) {
+		unsigned i, bad = 0;
+
+		for (i = 1; i < noops; i++)
+			if (xhci_cmd_noop_quiet() != OK)
+				bad++;
+
+		log_info(&xhci_log, "%u no-op commands, %u failed; the ring "
+		    "wrapped %u time(s)\n", noops, bad,
+		    noops / (xhci.cmd_slots - 1));
+		if (bad != 0)
+			return EIO;
+	}
+
+	/*
+	 * Now the ports.  Only the ones whose protocol the extended
+	 * capabilities named, and only USB 2 for now: this controller
+	 * announces a SuperSpeed port with no USB3 PHY behind it, and
+	 * resetting a port that has no PHY is asking the hardware a
+	 * question about wiring that does not exist.
+	 */
+	reset_ports();
+
+	/*
+	 * Whatever the resets stirred up.  A port coming up is an event,
+	 * and reading them here proves the ring keeps working after the
+	 * first one rather than only once.
+	 */
+	(void)xhci_events_drain(50000, NULL, 0);
+
+	read_ports();
+
+	log_info(&xhci_log, "up; enumeration and the URB layer are "
+	    "milestones 10.3 and 10.4\n");
 
 	return OK;
 }
@@ -240,6 +368,8 @@ main(int argc, char *argv[])
 		xhci_log.log_level = (int)v;
 	if (env_parse("instance", "d", 0, &v, 0, 3) == EP_SET)
 		instance = (int)v;
+	if (env_parse("noops", "d", 0, &v, 1, 100000) == EP_SET)
+		noops = (unsigned)v;
 
 	xhci_startup();
 

@@ -80,7 +80,6 @@
 #define XHCI_PORTSC_PLS(v)	(((v) >> 5) & 0xf)
 #define XHCI_PORTSC_PP		(1 << 9)		/* port power */
 #define XHCI_PORTSC_SPEED(v)	(((v) >> 10) & 0xf)
-#define XHCI_PORTSC_CSC		(1 << 17)		/* connect changed */
 
 /* Extended capabilities: the map of port to protocol lives only here. */
 #define XHCI_ECP_ID(v)		((v) & 0xff)
@@ -91,6 +90,108 @@
 #define XHCI_ECP_PROTO_MAJOR(v)	(((v) >> 24) & 0xff)
 #define XHCI_ECP_PORT_OFF(v)	((v) & 0xff)
 #define XHCI_ECP_PORT_COUNT(v)	(((v) >> 8) & 0xff)
+
+/*===========================================================================*
+ *    xHCI: runtime registers, at +RTSOFF                                    *
+ *===========================================================================*/
+#define XHCI_MFINDEX		0x00
+#define XHCI_IR(n)		(0x20 + (n) * 0x20)	/* interrupter n */
+#define XHCI_IR_IMAN		0x00
+#define XHCI_IR_IMOD		0x04
+#define XHCI_IR_ERSTSZ		0x08
+#define XHCI_IR_ERSTBA		0x10
+#define XHCI_IR_ERDP		0x18
+
+#define XHCI_IMAN_IP		(1 << 0)	/* interrupt pending, w1c */
+#define XHCI_IMAN_IE		(1 << 1)	/* interrupt enable */
+
+/*
+ * The dequeue pointer carries two things in its low bits: which segment of
+ * the event ring the driver is in, and a write-one-to-clear flag saying it
+ * has finished handling what it read.  Writing the pointer without the flag
+ * leaves the controller believing the handler is still busy.
+ */
+#define XHCI_ERDP_DESI_MASK	0x7
+#define XHCI_ERDP_EHB		(1 << 3)	/* event handler busy, w1c */
+
+/*===========================================================================*
+ *    xHCI: doorbells, at +DBOFF                                             *
+ *===========================================================================*/
+#define XHCI_DB(slot)		((slot) * 4)
+#define XHCI_DB_CMD		0		/* slot 0 is the command ring */
+
+/*===========================================================================*
+ *    xHCI: transfer request blocks                                          *
+ *===========================================================================*/
+#define XHCI_TRB_SIZE		16
+
+#define XHCI_TRB_C		(1u << 0)	/* cycle bit */
+#define XHCI_TRB_TC		(1u << 1)	/* toggle cycle, on a link */
+#define XHCI_TRB_TYPE_SHIFT	10
+#define XHCI_TRB_TYPE(t)	((uint32_t)(t) << XHCI_TRB_TYPE_SHIFT)
+#define XHCI_TRB_TYPE_OF(c)	(((c) >> XHCI_TRB_TYPE_SHIFT) & 0x3f)
+
+/* The types this milestone uses; the rest arrive with enumeration. */
+#define XHCI_TRB_LINK		6
+#define XHCI_TRB_ENABLE_SLOT	9
+#define XHCI_TRB_ADDRESS_DEVICE	11
+#define XHCI_TRB_NOOP_CMD	23
+#define XHCI_TRB_TRANSFER_EVENT	32
+#define XHCI_TRB_CMD_COMPLETION	33
+#define XHCI_TRB_PORT_STATUS	34
+
+/* Completion codes, of which only the first means anything went right. */
+#define XHCI_CC_OF(status)	(((status) >> 24) & 0xff)
+#define XHCI_CC_SUCCESS		1
+#define XHCI_CC_TRB_ERROR	5
+#define XHCI_CC_PARAMETER_ERROR	17
+
+/*
+ * The port a Port Status Change Event is about.  It is in the FIRST word of
+ * the event, not the second: the first version of this driver read the
+ * second and reported "port 0 changed" for a change on port 1.  Harmless
+ * there because only the message used it, and exactly the kind of thing
+ * that is not harmless once something acts on the number.
+ */
+#define XHCI_EVENT_PORT_ID(p0)	(((p0) >> 24) & 0xff)
+
+/*===========================================================================*
+ *    xHCI: the operational registers this milestone writes                  *
+ *===========================================================================*/
+#define XHCI_CRCR_RCS		(1u << 0)	/* ring cycle state */
+#define XHCI_CRCR_CS		(1u << 1)	/* command stop */
+#define XHCI_CRCR_CA		(1u << 2)	/* command abort */
+#define XHCI_CRCR_CRR		(1u << 3)	/* command ring running */
+
+#define XHCI_CONFIG_MAXSLOTS_MASK 0xff
+
+/*
+ * PORTSC is a minefield: seven of its bits are write-one-to-clear status,
+ * and one - port enabled - is write-one-to-DISABLE.  So every write to it
+ * goes through a mask that clears all eight, or the act of asking for a
+ * port reset turns the port off and acknowledges changes nobody has looked
+ * at yet.
+ */
+#define XHCI_PORTSC_PED_W1C	(1u << 1)
+#define XHCI_PORTSC_WPR		(1u << 31)	/* warm reset, USB3 only */
+#define XHCI_PORTSC_CSC		(1u << 17)
+#define XHCI_PORTSC_PEC		(1u << 18)
+#define XHCI_PORTSC_WRC		(1u << 19)
+#define XHCI_PORTSC_OCC		(1u << 20)
+#define XHCI_PORTSC_PRC		(1u << 21)
+#define XHCI_PORTSC_PLC		(1u << 22)
+#define XHCI_PORTSC_CEC		(1u << 23)
+#define XHCI_PORTSC_CHANGES	(XHCI_PORTSC_CSC | XHCI_PORTSC_PEC | \
+    XHCI_PORTSC_WRC | XHCI_PORTSC_OCC | XHCI_PORTSC_PRC | \
+    XHCI_PORTSC_PLC | XHCI_PORTSC_CEC)
+#define XHCI_PORTSC_KEEP(v) \
+    ((v) & ~(XHCI_PORTSC_CHANGES | XHCI_PORTSC_PED_W1C | XHCI_PORTSC_PR))
+
+/* Link states worth naming. */
+#define XHCI_PLS_U0		0
+#define XHCI_PLS_DISABLED	4
+#define XHCI_PLS_RXDETECT	5
+#define XHCI_PLS_POLLING	7
 
 /*===========================================================================*
  *    DWC3: the glue layer that stands in front of the xHCI                  *

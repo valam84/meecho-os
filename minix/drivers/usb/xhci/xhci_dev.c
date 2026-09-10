@@ -114,24 +114,31 @@ build_input_context(struct xhci_device *dev)
  * directions are fixed - IN data, OUT status - and a request with no data
  * is not needed until something is configured, which is 10.4.
  */
-static int
-control_in(struct xhci_device *dev, uint8_t request_type, uint8_t request,
-	uint16_t value, uint16_t index, uint16_t length)
+int
+xhci_control(struct xhci_device *dev, uint8_t request_type, uint8_t request,
+	uint16_t value, uint16_t index, uint16_t length, unsigned *actual)
 {
 	struct xhci_trb ev;
 	unsigned cc, residue;
+	int dir_in = (request_type & USB_REQ_DIR_IN) != 0;
 
 	if (length > XHCI_PAGE)
 		return EINVAL;
 
+	if (actual != NULL)
+		*actual = 0;
+
 	/*
-	 * The buffer is about to be written by the controller, so the
-	 * driver's zeroes must not be left dirty in the cache to fall on
-	 * top of what arrives.
+	 * The buffer is about to be handed to the controller either way.
+	 * On the way in, the driver's zeroes must not be left dirty in the
+	 * cache to fall on top of what arrives; on the way out, what the
+	 * caller put there has to reach memory before the controller reads
+	 * it.  Clean-invalidate does for both.
 	 */
-	memset((void *)dev->buf, 0, length);
+	if (dir_in)
+		memset((void *)dev->buf, 0, length);
 	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)dev->buf, XHCI_PAGE,
-	    "a descriptor buffer");
+	    "a transfer buffer");
 
 	/* Setup stage: the eight bytes of the request, carried in the TRB. */
 	xhci_ring_push(&dev->ep0,
@@ -139,20 +146,22 @@ control_in(struct xhci_device *dev, uint8_t request_type, uint8_t request,
 	    ((uint32_t)value << 16),
 	    (uint32_t)index | ((uint32_t)length << 16),
 	    8, XHCI_TRB_TYPE(XHCI_TRB_SETUP) | XHCI_TRB_IDT |
-	    (length != 0 ? XHCI_TRB_TRT_IN : XHCI_TRB_TRT_NONE));
+	    (length == 0 ? XHCI_TRB_TRT_NONE :
+	    (dir_in ? XHCI_TRB_TRT_IN : XHCI_TRB_TRT_OUT)));
 
 	/* Data stage, when there is data. */
 	if (length != 0)
 		xhci_ring_push(&dev->ep0, (uint32_t)dev->buf_phys, 0, length,
-		    XHCI_TRB_TYPE(XHCI_TRB_DATA) | XHCI_TRB_DIR_IN);
+		    XHCI_TRB_TYPE(XHCI_TRB_DATA) |
+		    (dir_in ? XHCI_TRB_DIR_IN : 0));
 
 	/*
 	 * Status stage, which goes the other way from the data and is the
-	 * one that asks for the event.
+	 * one that asks for the event.  With no data at all it goes in.
 	 */
 	xhci_ring_push(&dev->ep0, 0, 0, 0,
 	    XHCI_TRB_TYPE(XHCI_TRB_STATUS) | XHCI_TRB_IOC |
-	    (length != 0 ? 0 : XHCI_TRB_DIR_IN));
+	    (length != 0 && dir_in ? 0 : XHCI_TRB_DIR_IN));
 
 	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(dev->slot), XHCI_DB_EP0);
 
@@ -179,11 +188,81 @@ control_in(struct xhci_device *dev, uint8_t request_type, uint8_t request,
 	}
 
 	/* Now the buffer is the controller's writing, so read it fresh. */
-	xhci_cache(CACHE_INVALIDATE, (void *)dev->buf, XHCI_PAGE,
-	    "a descriptor buffer");
+	if (dir_in)
+		xhci_cache(CACHE_INVALIDATE, (void *)dev->buf, XHCI_PAGE,
+		    "a transfer buffer");
+
+	if (actual != NULL)
+		*actual = length - residue;
 
 	log_debug(&xhci_log, "request 0x%02x 0x%02x: %u of %u byte(s)\n",
 	    request_type, request, length - residue, length);
+
+	return OK;
+}
+
+/*
+ * The device's one configuration, and switching it on.
+ *
+ * A device that has been addressed and no more can answer questions about
+ * itself and nothing else: class requests - which is all a hub driver ever
+ * makes - are answered only once it is configured.  So enumeration is not
+ * finished until this has run, and the interface numbers it collects are
+ * what the client drivers are told about the device.
+ */
+static int
+configure(struct xhci_device *dev)
+{
+	uint8_t *cfg;
+	unsigned total, off, actual;
+	int r;
+
+	/*
+	 * Nine bytes first, because the configuration descriptor's own
+	 * first field says how long the whole thing is - interfaces,
+	 * endpoints and all - and asking for a fixed guess would either
+	 * truncate it or ask a device for more than it has.
+	 */
+	if ((r = xhci_control(dev, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
+	    USB_DESC_CONFIG << 8, 0, 9, &actual)) != OK)
+		return r;
+
+	cfg = (uint8_t *)dev->buf;
+	if (actual < 9 || cfg[1] != USB_DESC_CONFIG)
+		return EIO;
+
+	total = cfg[2] | ((unsigned)cfg[3] << 8);
+	if (total > XHCI_PAGE)
+		total = XHCI_PAGE;
+
+	if ((r = xhci_control(dev, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
+	    USB_DESC_CONFIG << 8, 0, (uint16_t)total, &actual)) != OK)
+		return r;
+
+	cfg = (uint8_t *)dev->buf;
+	dev->config = cfg[5];			/* bConfigurationValue */
+	dev->interfaces = 0;
+
+	/*
+	 * Walk the descriptors that follow, which are a chain of
+	 * length-and-type records, and note which interface numbers are
+	 * there.  That set is what the client drivers are handed; the old
+	 * stack computed the same thing the same way.
+	 */
+	for (off = 0; off + 2 <= actual && cfg[off] != 0; off += cfg[off]) {
+		if (cfg[off + 1] == 4 && off + 3 <= actual)	/* interface */
+			dev->interfaces |= 1U << (cfg[off + 2] & 0x1f);
+	}
+
+	if ((r = xhci_control(dev, 0, 9 /* SET_CONFIGURATION */, dev->config,
+	    0, 0, NULL)) != OK) {
+		log_warn(&xhci_log, "port %u would not take configuration "
+		    "%u\n", dev->port + 1, dev->config);
+		return r;
+	}
+
+	log_info(&xhci_log, "port %u: configuration %u set, interfaces "
+	    "0x%x\n", dev->port + 1, dev->config, dev->interfaces);
 
 	return OK;
 }
@@ -291,8 +370,8 @@ xhci_device_attach(unsigned port, struct xhci_device *dev)
 	 * answering something, and the length it reports is checked rather
 	 * than assumed.
 	 */
-	if ((r = control_in(dev, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
-	    USB_DESC_DEVICE << 8, 0, 18)) != OK)
+	if ((r = xhci_control(dev, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
+	    USB_DESC_DEVICE << 8, 0, 18, NULL)) != OK)
 		return r;
 
 	desc = (struct usb_device_descriptor *)dev->buf;
@@ -322,6 +401,12 @@ xhci_device_attach(unsigned port, struct xhci_device *dev)
 		log_warn(&xhci_log, "port %u wants %u-byte control packets, "
 		    "not %u; not changed yet\n", port + 1,
 		    desc->bMaxPacketSize0, dev->max_packet0);
+
+	dev->class = desc->bDeviceClass;
+
+	/* And the configuration, without which class requests are refused. */
+	if ((r = configure(dev)) != OK)
+		return r;
 
 	return OK;
 }

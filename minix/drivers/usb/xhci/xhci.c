@@ -252,10 +252,10 @@ reset_ports(void)
  * rather than this file's.  The usb_hub already in this tree does it, once
  * there is a URB layer for it to speak through - milestone 10.4.
  */
-static void
+static unsigned
 attach_devices(void)
 {
-	unsigned p;
+	unsigned p, found = 0;
 	uint32_t v;
 
 	for (p = 0; p < xhci.nports && p < XHCI_MAX_PORTS; p++) {
@@ -268,14 +268,21 @@ attach_devices(void)
 			log_warn(&xhci_log, "port %u: could not be "
 			    "enumerated\n", p + 1);
 			xhci_device_free(&xhci.dev[p]);
+			continue;
 		}
+
+		xhci_urb_announce(&xhci.dev[p]);
+		found++;
 	}
+
+	return found;
 }
 
 static int
 xhci_init(int type, sef_init_info_t *info)
 {
 	int r;
+	unsigned devices;
 
 	(void)type;
 	(void)info;
@@ -371,10 +378,10 @@ xhci_init(int type, sef_init_info_t *info)
 	read_ports();
 
 	/* And what is on the ports that came up. */
-	attach_devices();
+	devices = attach_devices();
 
-	log_info(&xhci_log, "up; the URB layer that serves usb_hub and "
-	    "usb_storage is milestone 10.4\n");
+	log_info(&xhci_log, "up; %u device(s) enumerated, waiting for "
+	    "drivers\n", devices);
 
 	return OK;
 }
@@ -422,8 +429,15 @@ main(int argc, char *argv[])
 			continue;
 		}
 
-		log_debug(&xhci_log, "unexpected message 0x%x from %d\n",
-		    m.m_type, m.m_source);
+		/*
+		 * Everything else is a driver talking the URB protocol -
+		 * the one usb_hub and usb_storage already speak.
+		 */
+		if (m.m_type >= USB_RQ_INIT && m.m_type <= USB_REPLY)
+			xhci_urb_message(&m);
+		else
+			log_debug(&xhci_log, "unexpected message 0x%x from "
+			    "%d\n", m.m_type, m.m_source);
 	}
 
 	return 0;

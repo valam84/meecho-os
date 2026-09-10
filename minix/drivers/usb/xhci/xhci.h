@@ -78,6 +78,10 @@ struct xhci_device {
 	unsigned port;			/* the root hub port, counting from 0 */
 	unsigned speed;			/* the PORTSC speed identifier */
 	unsigned max_packet0;
+	unsigned config;		/* the configuration that was set */
+	unsigned interfaces;		/* a bit per interface number it has */
+	unsigned class;			/* what the device says it is */
+	int announced;			/* the drivers have been told about it */
 
 	vir_bytes in_ctx;		/* the input context for commands */
 	phys_bytes in_ctx_phys;
@@ -213,6 +217,14 @@ int xhci_events_drain(unsigned usec, struct xhci_trb *want,
 /* xhci_dev.c */
 int xhci_device_attach(unsigned port, struct xhci_device *dev);
 void xhci_device_free(struct xhci_device *dev);
+int xhci_control(struct xhci_device *dev, uint8_t request_type,
+	uint8_t request, uint16_t value, uint16_t index, uint16_t length,
+	unsigned *actual);
+
+/* xhci_urb.c */
+void xhci_urb_message(message *m);
+void xhci_urb_announce(struct xhci_device *dev);
+struct xhci_device *xhci_device_by_id(unsigned id);
 
 /* Register access; every block is reached the same way. */
 static inline uint32_t

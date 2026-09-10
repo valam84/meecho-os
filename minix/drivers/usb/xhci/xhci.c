@@ -40,6 +40,7 @@ struct log xhci_log = {
 };
 
 static int instance;
+static int use_irq = 1;		/* "irq=0" falls back to polling */
 static unsigned noops = 1;		/* how many no-op commands to issue */
 
 /*
@@ -349,6 +350,12 @@ arm_interrupt(void)
 {
 	int r;
 
+	if (!use_irq) {
+		log_info(&xhci_log, "asked not to use the interrupt; every "
+		    "wait will poll\n");
+		return;
+	}
+
 	xhci.irq_line = xhci.info.irq;
 
 	if (xhci.irq_line < 0) {
@@ -403,6 +410,31 @@ arm_interrupt(void)
 	log_info(&xhci_log, "interrupt line %d\n", xhci.irq_line);
 }
 
+
+/*
+ * Being taken down.
+ *
+ * A driver of a bus-mastering device cannot simply exit: the part holds
+ * physical addresses of this process's memory in its own registers and
+ * keeps writing to them.  So the controller is stopped and reset first,
+ * and only then is anything given back.  See xhci_halt().
+ */
+static void
+xhci_signal(int signo)
+{
+	if (signo != SIGTERM)
+		return;
+
+	log_info(&xhci_log, "going down; stopping the controller first\n");
+
+	if (xhci.irq_ok)
+		(void)sys_irqdisable(&xhci.irq_hook);
+
+	xhci_halt();
+	xhci_dma_free();
+
+	exit(0);
+}
 
 static int
 xhci_init(int type, sef_init_info_t *info)
@@ -524,6 +556,7 @@ static void
 xhci_startup(void)
 {
 	sef_setcb_init_fresh(xhci_init);
+	sef_setcb_signal_handler(xhci_signal);
 	sef_startup();
 }
 
@@ -550,6 +583,21 @@ main(int argc, char *argv[])
 	 */
 	if (env_parse("urbstats", "d", 0, &v, 0, 100000) == EP_SET)
 		xhci_urb_stats((unsigned)v);
+
+	/*
+	 * Whether to use the interrupt at all.
+	 *
+	 * "irq=0" makes every wait poll, which is the path milestone 10.5
+	 * was measured on and the one known to read a flash drive
+	 * correctly.  It is here so that the two can be compared on the
+	 * same boot with the same device - a comparison that is otherwise
+	 * impossible, because everything else that differs between two
+	 * board runs differs at once.  Any claim about what the interrupt
+	 * is worth has to be an A against a B, not a number against a
+	 * memory.
+	 */
+	if (env_parse("irq", "d", 0, &v, 0, 1) == EP_SET)
+		use_irq = (int)v;
 
 	xhci_startup();
 

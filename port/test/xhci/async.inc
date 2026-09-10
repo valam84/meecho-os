@@ -12,6 +12,8 @@
  * part of the same fixture and shares its state.
  */
 
+#define SETTLE_STEPS	64
+
 static long alarm_ticks;
 static unsigned n_spurious;
 static unsigned irq_enables, deferred;
@@ -47,10 +49,37 @@ sys_setalarm(long ticks, int abs)
 	return OK;
 }
 
+/*
+ * Arming the line, and the worst legal moment for the controller to have
+ * spoken.
+ *
+ * The driver acknowledges the controller's interrupt flags with two
+ * register writes and then calls this.  A step of the controller BEFORE
+ * the acknowledgement takes effect is the interleaving in which an event
+ * lands just too early: the flag it raised is cleared by an
+ * acknowledgement meant for something the driver has already read, and
+ * the line will not be raised again until the NEXT event.  It is one
+ * legal ordering out of several, and it is the one worth testing, because
+ * a driver that survives it survives the others.
+ */
 int
 sys_irqenable(int *hook)
 {
+	unsigned was = model_stats.events, i;
+
 	irq_enables++;
+
+	/*
+	 * Let the controller finish whatever it has, and only then let the
+	 * acknowledgement take effect.  No tuning of how long a transfer
+	 * takes is needed to arrange this, and none should be: the driver
+	 * has just decided to sleep, and this is the one interleaving in
+	 * which that decision is wrong.
+	 */
+	for (i = 0; i < SETTLE_STEPS && model_stats.events == was; i++)
+		model_step();
+
+	model_ack_interrupt();
 	return OK;
 }
 
@@ -63,8 +92,6 @@ sys_irqenable(int *hook)
  * that was asked for, because that is what the driver believes happened
  * and what its own deadline arithmetic is entitled to assume.
  */
-#define SETTLE_STEPS	64
-
 int
 sef_receive_status(endpoint_t src, message *m, int *status)
 {
@@ -117,6 +144,7 @@ xhci_defer(message *m, int ipc_status)
 
 static phys_bytes claim_addr[MAX_OUTSTANDING];
 static int claim_seen[MAX_OUTSTANDING];
+static unsigned long claim_at[MAX_OUTSTANDING];	/* when it was delivered */
 static unsigned nclaims;
 static unsigned claims_matched, claims_repeated;
 
@@ -140,6 +168,7 @@ xhci_urb_transfer_event(const struct xhci_trb *ev)
 			return 1;
 		}
 		claim_seen[i] = 1;
+		claim_at[i] = fr_now;
 		claims_matched++;
 		return 1;
 	}
@@ -172,6 +201,7 @@ test_outstanding(void)
 	static uint8_t a[64], b[64];
 	struct xhci_ep *ina, *inb;
 	unsigned round, i;
+	unsigned long t0, worst = 0;
 	uint32_t erdp, want;
 
 	section("two transfers outstanding at once");
@@ -194,6 +224,7 @@ test_outstanding(void)
 	}
 
 	claims_matched = claims_repeated = 0;
+	n_hw = n_clock = 0;
 
 	for (round = 0; round < 200; round++) {
 		claims_reset();
@@ -207,6 +238,7 @@ test_outstanding(void)
 		 * synchronous path, and the only way the driver can be
 		 * faster than one transfer per scheduler quantum.
 		 */
+		t0 = fr_now;
 		claim_addr[0] = xhci_transfer_start(&dev0, ina, sizeof(a));
 		claim_addr[1] = xhci_transfer_start(&dev1, inb, sizeof(b));
 		nclaims = 2;
@@ -218,6 +250,10 @@ test_outstanding(void)
 
 		if (!claim_seen[0] || !claim_seen[1])
 			break;
+
+		for (i = 0; i < 2; i++)
+			if (claim_at[i] - t0 > worst)
+				worst = claim_at[i] - t0;
 
 		/*
 		 * What the controller wrote is not visible until it is asked
@@ -256,6 +292,27 @@ test_outstanding(void)
 
 	check(model_stats.event_ring_full == 0,
 	    "the event ring never filled");
+
+	/*
+	 * And they were delivered promptly rather than eventually.
+	 *
+	 * This is the check that says the interrupt is load-bearing rather
+	 * than decorative, and it is the only one that can catch the lost
+	 * wake-up.  A driver that acknowledges the controller's interrupt
+	 * flag and then goes to sleep without looking at the ring once more
+	 * sleeps through an event that is already lying there, and wakes on
+	 * its own deadline instead.  Nothing fails: the transfer completes,
+	 * late.  So there is no wrong answer to catch and no error to
+	 * count - only the delay, which is why it is measured.
+	 *
+	 * On the board the deadline is five seconds rather than two
+	 * milliseconds, and there the same defect reads as a stall:
+	 * "the transfer had finished and nobody was told: the event was on
+	 * the ring, the interrupt was not."
+	 */
+	check(worst < 1000, "the slowest event reached its client in %lu us "
+	    "(the deadline it must not have waited for is %u us)", worst,
+	    2000);
 	check(model_complaint() == NULL, "the model saw nothing wrong: %s",
 	    model_complaint() ? model_complaint() : "nothing");
 

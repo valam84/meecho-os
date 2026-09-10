@@ -89,6 +89,7 @@ struct model_stats {
 	unsigned events;		/* events written */
 	unsigned doorbells;
 	unsigned interrupts;		/* times the line was raised */
+	unsigned events_unannounced;	/* written while the handler was busy */
 	unsigned cycle_stops;		/* times a ring ran out of work */
 	unsigned link_follows;
 	unsigned toggles;
@@ -113,6 +114,13 @@ extern struct model_stats model_stats;
  * has already cost this port one board run.
  */
 int model_event_pending(phys_bytes deq, unsigned cycle);
+
+/*
+ * The driver has acknowledged the interrupt and re-armed the line.  Called
+ * from the stand's sys_irqenable(), because the register write that does
+ * the acknowledging cannot be seen by a model that polls registers.
+ */
+void model_ack_interrupt(void);
 
 const char *model_complaint(void);	/* NULL when nothing went wrong */
 void model_complain_reset(void);

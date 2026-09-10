@@ -265,6 +265,7 @@ phys_bytes xhci_ring_push(struct xhci_ring *r, uint32_t p0, uint32_t p1,
 	uint32_t status, uint32_t control);
 void xhci_ring_free(struct xhci_ring *r);
 int xhci_start(void);
+void xhci_halt(void);
 int xhci_cmd(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control,
 	struct xhci_trb *ev);
 int xhci_cmd_noop(void);

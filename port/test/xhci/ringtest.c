@@ -103,10 +103,22 @@ free_contig(void *addr, size_t size)
 	model_mem_free(addr, size);
 }
 
+/*
+ * Cache maintenance, and one step of the controller after it.
+ *
+ * The step is the important half.  Without it the modelled controller only
+ * ever runs while the driver is asleep, so no race between the two can
+ * exist, and the stand cannot show a defect that lives in the gap between
+ * the driver looking at the ring and the driver going to sleep.  A real
+ * controller runs whether or not anybody is looking; putting a step here
+ * - after the copy, so that what it produces lands where the driver has
+ * just finished reading - is the cheapest honest way to say so.
+ */
 int
 sys_cachectl(int op, void *addr, size_t len)
 {
 	model_cache(op, addr, len);
+	model_step();
 	return OK;
 }
 
@@ -661,7 +673,7 @@ static void
 test_doorbell(void)
 {
 	struct xhci_ep *in;
-	unsigned before;
+	unsigned before, i;
 	uint8_t bytes[64];
 
 	memset(bytes, 0x77, sizeof(bytes));
@@ -693,7 +705,8 @@ test_doorbell(void)
 	    "an entry nobody rang for produces no event");
 
 	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(dev0.slot), in->dci);
-	micro_delay(100);
+	for (i = 0; i < 8; i++)
+		micro_delay(100);
 
 	check(model_stats.events == before + 1,
 	    "and the doorbell is what makes it happen");

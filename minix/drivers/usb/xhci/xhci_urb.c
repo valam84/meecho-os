@@ -514,24 +514,35 @@ xhci_urb_tick(void)
 	 */
 	(void)xhci_events_drain(0, NULL, 0);
 	if (!out.busy) {
-		log_warn(&xhci_log, "so far: %lu interrupt(s), %lu alarm(s)\n",
-		    xhci_n_irq, xhci_n_alarm);
+		/*
+		 * The transfer worked and the interrupt did not: a
+		 * different fault entirely, and one worth saying out loud.
+		 * But the transfer is FINISHED - the drain above answered
+		 * the client - so this returns rather than falling through
+		 * to finish() a second time.  Doing that failed a request
+		 * that had already succeeded, which is where the board's
+		 * "Input/output error" came from.
+		 */
 		log_warn(&xhci_log, "the transfer had finished and nobody "
 		    "was told: the event was on the ring, the interrupt was "
-		    "not\n");
-		/* and fall through to the register dump below */
+		    "not (%lu interrupt(s), %lu alarm(s), ERDP 0x%08x)\n",
+		    xhci_n_irq, xhci_n_alarm,
+		    xhci_rd(xhci.regs, xhci.rtsoff + XHCI_IR(0) +
+		    XHCI_IR_ERDP));
+		return;
 	}
 
 	iman = xhci_rd(xhci.regs, xhci.rtsoff + XHCI_IR(0) + XHCI_IR_IMAN);
 	usbsts = xhci_rd(xhci.regs, xhci.caplength + XHCI_USBSTS);
 
-	log_warn(&xhci_log, "so far: %lu interrupt(s), %lu alarm(s)\n",
-	    xhci_n_irq, xhci_n_alarm);
 	log_warn(&xhci_log, "a %u-byte transfer for %d did not complete "
 	    "in time; IMAN 0x%08x (pending %d, enabled %d), USBSTS "
-	    "0x%08x (event %d), line %d\n", out.length, out.client,
+	    "0x%08x (event %d), ERDP 0x%08x, driver at %u cycle %u, "
+	    "%lu interrupt(s), %lu alarm(s)\n", out.length, out.client,
 	    iman, !!(iman & XHCI_IMAN_IP), !!(iman & XHCI_IMAN_IE),
-	    usbsts, !!(usbsts & XHCI_USBSTS_EINT), xhci.irq_line);
+	    usbsts, !!(usbsts & XHCI_USBSTS_EINT),
+	    xhci_rd(xhci.regs, xhci.rtsoff + XHCI_IR(0) + XHCI_IR_ERDP),
+	    xhci.event_deq, xhci.event_cycle, xhci_n_irq, xhci_n_alarm);
 
 	finish(0, EIO);
 }

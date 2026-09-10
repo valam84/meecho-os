@@ -225,9 +225,21 @@ model_cache(int op, void *addr, size_t len)
  *===========================================================================*/
 #define DB_IDLE		0xffffffffu
 
+/*
+ * How many steps a transfer takes before its event appears.
+ *
+ * Not decoration.  With a controller that finishes within the same call
+ * that started the transfer, the driver never has to wait at all, and
+ * every defect that lives in the waiting - the lost wake-up above all -
+ * is unreachable.  A real transfer takes microseconds to milliseconds and
+ * the driver goes to sleep in between; the model has to make it do that.
+ */
+#define MODEL_LATENCY	2
+
 struct mep {
 	int valid;
 	int active;			/* the doorbell has been rung */
+	unsigned busy;			/* steps still to go */
 	phys_bytes ptr;			/* where the controller reads next */
 	unsigned ccs;			/* and the cycle bit it looks for */
 	int dir_in;
@@ -257,6 +269,7 @@ static int halted = 1;
 static phys_bytes cmd_ptr;
 static unsigned cmd_ccs;
 static int cmd_active;
+static unsigned cmd_busy;
 
 static phys_bytes event_base;
 static unsigned event_slots, event_enq, event_ccs;
@@ -298,7 +311,41 @@ wr(unsigned off, uint32_t v)
  */
 static uint32_t iman_shadow, usbsts_shadow;
 
+/*
+ * Event handler busy, and it is the whole reason interrupts stop.
+ *
+ * The part sets this flag when it raises the line and will not raise it
+ * again while it stands.  The driver clears it by writing the dequeue
+ * pointer register with bit 3 set - which it does when it takes an event
+ * off the ring.  A driver that is woken, finds the ring empty and goes
+ * back to sleep never writes that register, the flag stays set, and the
+ * controller is silent from then on however much it has to say.
+ *
+ * The model can see this write even though it only polls registers,
+ * because the flag never stands in the model's own copy: a write with the
+ * bit set always differs from what the model last put there.
+ */
+static int ehb;
+static uint32_t erdp_shadow;
+
 static unsigned event_deq_index(void);
+static void sts_clr(uint32_t bits);
+
+/*
+ * The driver has acknowledged the interrupt and asked for the line again.
+ *
+ * The stand calls this from sys_irqenable(), which is the one point in
+ * the sequence it can see: the register write that clears the flag is
+ * invisible to anything polling, but the call that follows it is not.
+ */
+void
+model_ack_interrupt(void)
+{
+	/* The busy flag is NOT cleared here: it is a separate write. */
+	iman_shadow &= ~(uint32_t)XHCI_IMAN_IP;
+	wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN, iman_shadow);
+	sts_clr(XHCI_USBSTS_EINT);
+}
 
 static void
 sts_set(uint32_t bits)
@@ -320,36 +367,34 @@ acknowledgements(void)
 	uint32_t w;
 
 	/*
-	 * The interrupt-pending flag is worked out rather than remembered,
-	 * and that is the one place this model departs from the letter of
-	 * the specification on purpose.
+	 * The interrupt-pending flag is remembered, and cleared only where
+	 * the driver really clears it - see model_ack_interrupt().
 	 *
-	 * On the part, the flag is set when an event is written and cleared
-	 * by the driver writing a one to it.  The model cannot see that
-	 * write: the driver writes IMAN with both the pending flag and the
-	 * enable bit set, and once the enable bit is already on, the value
-	 * written is bit for bit the value that was there - a real
-	 * acknowledgement that is invisible to anything polling the
-	 * register.  Modelled that way, the flag stuck, the driver was
-	 * woken sixty-five times with nothing to read, and it concluded its
-	 * interrupt line was useless.  That is a defect in the model, and
-	 * it imitated a defect this driver really had, which is exactly how
-	 * a stand wastes a day.
+	 * Deriving it instead ("pending means there is an unread event")
+	 * was tried, because the model cannot see the driver's own
+	 * acknowledgement: that write puts back the value already in the
+	 * register.  It made the stand pass and hid a real defect.  On the
+	 * part, clearing the flag while events are still on the ring does
+	 * NOT re-raise the line: the controller asserts again only for the
+	 * next event.  A driver that acknowledges and then sleeps without
+	 * looking at the ring once more sleeps through an event that is
+	 * already lying there.  That is what the board did, and a model
+	 * that re-derives the flag can never show it.
 	 *
-	 * So pending means what it is for: there is an event on the ring
-	 * the driver has not read.  A wake-up with nothing behind it then
-	 * means something is genuinely wrong, which is the property worth
-	 * having.
+	 * The enable bit is the driver's, and is taken as written.
 	 */
-	if (event_base != 0 && event_deq_index() != event_enq)
-		iman_shadow |= XHCI_IMAN_IP;
-	else
-		iman_shadow &= ~(uint32_t)XHCI_IMAN_IP;
-
 	w = rd(RTR + XHCI_IR(0) + XHCI_IR_IMAN);
 	iman_shadow = (iman_shadow & ~(uint32_t)XHCI_IMAN_IE) |
 	    (w & XHCI_IMAN_IE);
 	wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN, iman_shadow);
+
+	w = rd(RTR + XHCI_IR(0) + XHCI_IR_ERDP);
+	if (w != erdp_shadow) {
+		if (w & XHCI_ERDP_EHB)
+			ehb = 0;
+		erdp_shadow = w & ~(uint32_t)XHCI_ERDP_EHB;
+		wr(RTR + XHCI_IR(0) + XHCI_IR_ERDP, erdp_shadow);
+	}
 
 	w = rd(OPR + XHCI_USBSTS);
 	if (w != usbsts_shadow)
@@ -467,6 +512,17 @@ event_push(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control)
 	model_stats.events++;
 
 	sts_set(XHCI_USBSTS_EINT);
+
+	if (ehb) {
+		/*
+		 * The driver has not said it finished handling the last
+		 * one, so this event gets no interrupt of its own.
+		 */
+		model_stats.events_unannounced++;
+		return;
+	}
+
+	ehb = 1;
 	iman_shadow |= XHCI_IMAN_IP;
 	wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN, iman_shadow);
 	model_stats.interrupts++;
@@ -567,6 +623,11 @@ static void
 command_run(void)
 {
 	struct xhci_trb trb;
+
+	if (cmd_busy != 0) {
+		cmd_busy--;
+		return;
+	}
 
 	while (cmd_active) {
 		unsigned type, slot, cc = XHCI_CC_SUCCESS, ev_slot = 0;
@@ -723,6 +784,11 @@ endpoint_run(unsigned slot, unsigned dci)
 	struct mep *ep = &slots[slot].ep[dci];
 	struct xhci_trb trb;
 
+	if (ep->busy != 0) {
+		ep->busy--;
+		return;
+	}
+
 	while (ep->active) {
 		unsigned type, len;
 		phys_bytes where = ep->ptr;
@@ -850,6 +916,7 @@ doorbells(void)
 
 		if (i == 0) {
 			cmd_active = 1;
+			cmd_busy = MODEL_LATENCY;
 			continue;
 		}
 
@@ -859,6 +926,7 @@ doorbells(void)
 			continue;
 		}
 		slots[i].ep[v].active = 1;
+		slots[i].ep[v].busy = MODEL_LATENCY;
 	}
 }
 
@@ -1013,6 +1081,9 @@ start(void)
 	event_slots &= 0xffff;
 	event_enq = 0;
 	event_ccs = 1;
+	ehb = 0;
+	erdp_shadow = rd(RTR + XHCI_IR(0) + XHCI_IR_ERDP) &
+	    ~(uint32_t)XHCI_ERDP_EHB;
 
 	if (event_slots == 0 ||
 	    model_dev_ptr(event_base, event_slots * XHCI_TRB_SIZE) == NULL) {

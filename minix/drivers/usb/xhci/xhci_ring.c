@@ -535,6 +535,23 @@ event_next(struct xhci_trb *out)
  * the pointer, so it has to be written along with it - a pointer written
  * without it leaves the controller believing the handler never finished.
  */
+/*
+ * Is there an event waiting, without taking it?
+ *
+ * Needed because the driver is about to go to sleep, and between the last
+ * look at the ring and that sleep it acknowledges the controller's
+ * interrupt flags.  See wait_for_event().
+ */
+static int
+event_waiting(void)
+{
+	struct xhci_trb *trb = trb_at(xhci.event, xhci.event_deq);
+
+	xhci_cache(CACHE_INVALIDATE, trb, XHCI_TRB_SIZE, "an event");
+
+	return ((trb->control & XHCI_TRB_C) != 0) == (xhci.event_cycle != 0);
+}
+
 static void
 event_done(void)
 {
@@ -611,13 +628,35 @@ wait_for_event(unsigned usec)
 	    XHCI_IMAN_IP | XHCI_IMAN_IE);
 	xhci_wr(xhci.regs, op() + XHCI_USBSTS, XHCI_USBSTS_EINT);
 
-    if (sys_irqenable(&xhci.irq_hook) != OK) {
+	if (sys_irqenable(&xhci.irq_hook) != OK) {
 		log_warn(&xhci_log, "cannot enable line %d; polling from now "
 		    "on\n", xhci.irq_line);
 		xhci.irq_dead = 1;
 		micro_delay(100);
 		return elapsed(t_start);
 	}
+
+	/*
+	 * One more look at the ring before going to sleep, and this is not
+	 * belt and braces - it is the whole correctness of the wait.
+	 *
+	 * The caller looked at the ring, saw nothing, and called this.
+	 * Between those two moments the controller can finish a transfer,
+	 * write its event and raise the line.  The acknowledgement above
+	 * then clears the assertion for an event nobody has read, the
+	 * kernel has nothing to deliver, and the driver sleeps until the
+	 * deadline over an event that is already lying there.  On the board
+	 * that read as "the transfer had finished and nobody was told: the
+	 * event was on the ring, the interrupt was not", once per second,
+	 * with the transfer that lost the race stalling for its full
+	 * timeout.
+	 *
+	 * Looking after arming closes the window: an event that arrived
+	 * before the acknowledgement is seen here, and one that arrives
+	 * after it raises a line that is now armed.
+	 */
+	if (event_waiting())
+		return elapsed(t_start);
 
 	sys_setalarm(micros_to_ticks(usec), 0);
 
@@ -914,6 +953,69 @@ xhci_port_reset(unsigned port)
 	    XHCI_PORTSC_SPEED(v));
 
 	return OK;
+}
+
+/*
+ * Stop the controller, and do it before anything is given back.
+ *
+ * Without this the driver could be taken down and the part carried on:
+ * the device context array, the command ring and the event ring are
+ * physical addresses it holds in its own registers, and it goes on
+ * reading and WRITING them after the process that allocated them is gone
+ * and VM has handed those pages to somebody else.  That is not a leak, it
+ * is a device writing into another process's memory at a time nothing can
+ * be traced back to this driver.
+ *
+ * It also explains what could not be explained on the board: after
+ * several stop-and-start cycles the same binary read thirty-two megabytes
+ * cleanly one time and answered "Input/output error" the next.  A
+ * measurement taken across a restart was not a measurement of anything.
+ *
+ * The sequence is the one the specification gives for going quiet, and it
+ * is the same one start-up uses to find the part in a known state: stop,
+ * wait for halted, then reset - which is what clears the registers
+ * pointing at memory this driver is about to hand back.
+ */
+void
+xhci_halt(void)
+{
+	unsigned spins;
+	uint32_t v;
+
+	if (xhci.regs == 0)
+		return;
+
+	v = xhci_rd(xhci.regs, op() + XHCI_USBCMD);
+	if (v & XHCI_USBCMD_RS) {
+		xhci_wr(xhci.regs, op() + XHCI_USBCMD, v & ~XHCI_USBCMD_RS);
+
+		for (spins = 0; spins < 2000; spins++) {
+			if (xhci_rd(xhci.regs, op() + XHCI_USBSTS) &
+			    XHCI_USBSTS_HCH)
+				break;
+			micro_delay(100);
+		}
+	}
+
+	/*
+	 * And reset, which is what actually drops DCBAAP, CRCR and the
+	 * event ring segment table.  A halted controller still holds them.
+	 */
+	xhci_wr(xhci.regs, op() + XHCI_USBCMD, XHCI_USBCMD_HCRST);
+
+	for (spins = 0; spins < 5000; spins++) {
+		if (!(xhci_rd(xhci.regs, op() + XHCI_USBCMD) &
+		    XHCI_USBCMD_HCRST))
+			break;
+		micro_delay(100);
+	}
+
+	/* Nothing left to interrupt about. */
+	xhci_wr(xhci.regs, rt() + XHCI_IR(0) + XHCI_IR_IMAN, 0);
+
+	log_info(&xhci_log, "halted: USBCMD 0x%08x, USBSTS 0x%08x\n",
+	    xhci_rd(xhci.regs, op() + XHCI_USBCMD),
+	    xhci_rd(xhci.regs, op() + XHCI_USBSTS));
 }
 
 void

@@ -100,8 +100,14 @@ mut_ack() {
 	changed xhci_ring.c ack
 }
 
+mut_wake() {
+	perl -0pi -e 's/\tif \(event_waiting\(\)\)\n\t\treturn elapsed\(t_start\);\n//' \
+	    "$WORK/src/xhci_ring.c"
+	changed xhci_ring.c wake
+}
+
 bad=0
-for m in link first isp doorbell ack; do
+for m in link first isp doorbell ack wake; do
 	run_one "$m" "mut_$m" || bad=$((bad + 1))
 done
 

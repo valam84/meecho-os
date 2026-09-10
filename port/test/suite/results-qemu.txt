@@ -1,0 +1,117 @@
+Родной набор тестов MINIX (minix/tests) на MEECHO/aarch64.
+QEMU virt, одно ядро, корень на диске. Стенд - qemu-tests.py.
+
+Две колонки: первый прогон (2026-09-09, до правок) и последний
+(2026-09-10, после трёх правок в setjmp/longjmp и двух в mfs).
+
+первый:    FAIL 19, HANG 9, MISSING 4, PASS 66, TIMEOUT-SHELLDIED 3
+последний: FAIL 12, HANG 5, MISSING 4, PASS 72, TIMEOUT 8
+
+PASS     тест сказал ok
+FAIL     тест сказал not ok
+TIMEOUT  не ответил за отведённое время, система при этом жива
+HANG     не ответил и унёс с собой систему; гость перезапускался
+MISSING  не собран для этой архитектуры
+
+тест     было       стало      чем кончился последний прогон
+1        PASS       PASS       
+2        PASS       PASS       
+3        PASS       PASS       
+4        PASS       PASS       
+5        PASS       PASS       
+6        PASS       PASS       
+7        PASS       PASS       
+8        PASS       PASS       
+9        FAIL       PASS       
+10       PASS       PASS       
+11       PASS       PASS       
+12       PASS       PASS       
+13       PASS       PASS       
+14       PASS       PASS       
+15       PASS       PASS       
+16       PASS       PASS       
+17       PASS       PASS       
+18       TIMEOUT-SHELLDIED TIMEOUT    echo RE''ADY
+19       PASS       PASS       
+20       PASS       PASS       
+21       PASS       PASS       
+22       PASS       PASS       
+23       PASS       PASS       
+24       PASS       PASS       
+25       FAIL       PASS       
+26       PASS       PASS       
+27       PASS       PASS       
+28       FAIL       PASS       
+29       PASS       PASS       
+30       FAIL       PASS       
+31       FAIL       FAIL       Test 31
+32       PASS       PASS       
+33       FAIL       PASS       
+34       FAIL       PASS       
+35       FAIL       PASS       
+36       PASS       PASS       
+37       FAIL       PASS       
+38       PASS       PASS       
+39       PASS       PASS       
+40       PASS       PASS       
+41       PASS       PASS       
+42       FAIL       FAIL       Test 42 Attach type 0,
+43       TIMEOUT-SHELLDIED TIMEOUT    echo RE''ADY
+44       PASS       PASS       
+45       PASS       PASS       
+46       PASS       PASS       
+47       MISSING    MISSING    
+48       FAIL       FAIL       Test 48 error 1: getaddrinfo(NULL, "echo", NULL); result: "9/0x9"; expected: "1/
+49       PASS       PASS       
+50       TIMEOUT-SHELLDIED TIMEOUT    echo RE''ADY
+51       MISSING    MISSING    
+52       PASS       PASS       
+53       FAIL       FAIL       Test 53 error line 189; i=0x0000000000000000; j=0x0000000000000000; k=0x00000000
+54       PASS       PASS       
+55       FAIL       FAIL       Test 55
+56       PASS       PASS       
+57       MISSING    MISSING    
+58       PASS       PASS       
+59       PASS       PASS       
+60       PASS       PASS       
+61       PASS       PASS       
+62       PASS       PASS       
+63       MISSING    MISSING    
+64       HANG       HANG       kernel panic: pagefault in VM
+65       PASS       PASS       
+66       FAIL       FAIL       Test 66 a, b = -10, 7: 1 != 6
+67       PASS       PASS       
+68       PASS       PASS       
+69       PASS       PASS       
+70       HANG       TIMEOUT    echo RE''ADY
+71       HANG       TIMEOUT    echo RE''ADY
+72       PASS       PASS       
+73       HANG       HANG       kernel panic: pagefault in VM
+74       HANG       TIMEOUT    VM: pagefault: SIGSEGV 65552 bad addr 0x0; err 0x6 nopage read
+75       PASS       HANG       cd /usr/tests/minix-posix
+76       FAIL       FAIL       VM: pagefault: SIGSEGV 32846 bad addr 0x10dfff224; err 0x45 nopage write
+77       HANG       HANG       Test 77
+78       PASS       PASS       
+79       HANG       TIMEOUT    echo RE''ADY
+80       PASS       PASS       
+81       PASS       PASS       
+82       PASS       PASS       
+83       PASS       PASS       
+84       PASS       PASS       
+85       PASS       PASS       
+86       PASS       PASS       
+87       PASS       PASS       
+88       PASS       PASS       
+89       PASS       PASS       
+90       FAIL       FAIL       Test 90
+91       FAIL       FAIL       Test 91
+92       HANG       FAIL       Test 92
+93       PASS       PASS       
+94       PASS       FAIL       Test 94
+sh1      PASS       PASS       
+sh2      PASS       PASS       
+interp   PASS       PASS       
+mfs      HANG       TIMEOUT    echo RE''ADY
+isofs    FAIL       HANG       kernel panic: pagefault in VM
+vnd      FAIL       FAIL       Test VND vndconfig: not found
+rmib     PASS       PASS       

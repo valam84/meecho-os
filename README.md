@@ -151,6 +151,9 @@ build the system:
 - Why `select(2)` reported an empty pipe as readable, why it only broke the
   *second* ssh login, and why raising the log level "fixed" it.
 - Why a `#!` script crashed depending on the length of the environment.
+- Why every `longjmp(3)` returned to address zero, why the check meant to
+  catch exactly that rejected valid buffers instead, and why all of it
+  surfaced the first evening the test suite was ever run.
 - Why the reference for a driver is the vendor kernel *that is on the board*,
   not the newest code for the same chip.
 
@@ -171,6 +174,7 @@ that is a reasonable request and it will be answered.
 | `minix/fs/mfs/`, `minix/lib/libminixfs/` | MFS V3 and V4, the journal |
 | `port/` | the scripts that build, run and debug all of this |
 | `port/test/` | host-side test benches: cache maintenance, the card layer, pin arithmetic, uds |
+| `minix/tests/` | the MINIX test suite, 112 programs; `port/test/suite/` runs it on QEMU |
 | `docs/meecho/` | this documentation |
 | `PLAN.md`, `port/PORTING-LOG.md` | the roadmap and the log (Russian) |
 

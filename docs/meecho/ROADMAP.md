@@ -1,7 +1,7 @@
 # Roadmap
 
 The full plan, with the reasoning for each decision, is [`PLAN.md`](../../PLAN.md)
-(Russian). This is the summary and the state as of **2026-09-09**.
+(Russian). This is the summary and the state as of **2026-09-10**.
 
 ## Done
 
@@ -88,6 +88,48 @@ driver. A file beside `sdmmc_sdhci.c` behind the same host table.
 still cut into 32 KiB pieces — that is `SDMMC_CHUNK_SECTORS`, the size of the
 bounce buffer, not a limit of the controller, and each piece still costs two
 grant copies.
+
+## The test suite, run for the first time
+
+The MINIX suite in `minix/tests` had never been built on this port. It builds
+now — 112 programs — and `port/test/suite/qemu-tests.py` runs it on QEMU, each
+test with its own deadline so one hang cannot eat the rest. Getting it to
+build took five changes: 26 duplicate tentative definitions (`-fno-common`),
+a library that was never installed, three places that only knew about i386 and
+arm, and turning off dynamic linking for the suite, since `exec` has no
+`PT_INTERP` path and all 112 programs would have died before `main()`.
+
+The first run: **66 passed, 19 failed, 12 hung, 4 not built**. Five fixes
+later: **72 passed, 12 failed, 13 hung**, with a written cause for each one
+that is left. The full table, both runs side by side, is
+`port/test/suite/results-qemu.txt`.
+
+What it found in one evening, after months in which nothing had looked here:
+
+- **Three defects in `setjmp`/`longjmp`**, all in code taken from NetBSD in
+  2014 and, by the look of it, never executed. Every `longjmp(3)` returned to
+  `TPIDR_EL0` — address zero in a static binary — because both implementations
+  reuse the register holding the saved return address for the TLS pointer. The
+  check meant to catch a corrupt buffer rejected valid ones instead: AAPCS64
+  makes a zero frame pointer the legal end of the frame chain, which is what
+  `main()` has under `-fomit-frame-pointer`. And `__siglongjmp14` tested the
+  magic bit the wrong way round, so each half of `sigsetjmp` met the other's
+  magic. The shell died on every `^C` from this.
+- **MFS never said whether it truncates long names.** V3 does, V4 refuses
+  with `ENAMETOOLONG`, and `statvfs` reported neither, so eight tests checked
+  the wrong branch. Two lines closed all eight.
+- **A kernel panic on out of memory.** `test64` exists to check that the
+  system responds sanely when memory runs out; it answers
+  `kernel panic: pagefault in VM` and reboots. Open.
+- **`mfs` dereferences NULL** in `lmfs_bflush()` from `lmfs_journal_commit()`,
+  found by a cache test — a defect in the journal of milestone 7.4.
+
+One number is about the tooling rather than the system: in the first run nine
+hung tests took the whole machine down with them, and after the `longjmp` fix
+the same tests hang while the system stays up and answers. They were being
+killed by the `^C` the harness sent to interrupt them. The instrument was
+damaging what it measured, and that was only visible once the damage was
+fixed.
 
 ## Open questions, honestly labelled
 

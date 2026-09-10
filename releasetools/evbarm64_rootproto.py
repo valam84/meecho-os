@@ -20,12 +20,14 @@ DESTDIR добавляются каталоги userland. Там, где имя 
 """
 
 import os
+import re
 import stat
 import sys
 
-# Что берётся из DESTDIR. usr/lib и usr/include не берутся: всё слинковано
-# статически, а заголовки и архивы библиотек на плате не нужны никому, кроме
-# компилятора, которого там нет.
+# Что берётся из DESTDIR. usr/include не берётся: заголовки на плате не нужны
+# никому, кроме компилятора, которого там нет. usr/lib берётся не целиком, а
+# по фильтру SHLIB_RE (см. ниже): архивы .a - тоже материал компилятора, а
+# разделяемые объекты - то, без чего динамический двоичный файл не запустится.
 #
 # usr/tests - родной набор тестов MINIX; на диске он есть, а в ramdisk его
 # нет и быть не может: 32 МБ.
@@ -38,6 +40,10 @@ import sys
 # добавляются только те, которых там нет. minix-service ищет описание службы
 # в /etc/system.conf.d/<метка>, поэтому каталог идёт следом за самими
 # двоичными файлами.
+#
+# usr/libexec несёт ld.elf_so - интерпретатор, имя которого записано в
+# PT_INTERP каждого динамического двоичного файла. Без него exec отказывает
+# ещё до первой инструкции программы.
 DEFAULT_SUBDIRS = [
     "bin",
     "service",
@@ -45,12 +51,19 @@ DEFAULT_SUBDIRS = [
     "sbin",
     "usr/bin",
     "usr/sbin",
+    "usr/lib",
     "libexec",
     "usr/libexec",
     "usr/man",
     "usr/share",
     "usr/tests",
 ]
+
+# Из каталогов библиотек берутся только разделяемые объекты и ссылки на них:
+# libfoo.so, libfoo.so.1, libfoo.so.1.2. Всё прочее там - libfoo.a, libfoo_p.a,
+# libfoo_pic.a и .o - нужно компилятору, а не машине, и весит вчетверо больше.
+SHLIB_RE = re.compile(r"\.so(\.[0-9]+)*$")
+FILTERED_SUBDIRS = {"usr/lib": SHLIB_RE, "lib": SHLIB_RE}
 
 
 class Node(object):
@@ -139,12 +152,18 @@ def mode_of(st):
     return "%03o" % (st.st_mode & 0o777)
 
 
-def add_tree(parent, src):
-    """Добавить содержимое каталога src под узел parent."""
+def add_tree(parent, src, keep=None):
+    """Добавить содержимое каталога src под узел parent.
+
+    keep - регулярное выражение: если задано, берутся только имена файлов и
+    ссылок, которым оно соответствует. Подкаталоги фильтруются тем же.
+    """
     for name in sorted(os.listdir(src)):
         path = os.path.join(src, name)
         st = os.lstat(path)
         if stat.S_ISLNK(st.st_mode):
+            if keep is not None and not keep.search(name):
+                continue
             parent.add(name, Node("s--%s 0 0 %s"
                                   % (mode_of(st), os.readlink(path))))
         elif stat.S_ISDIR(st.st_mode):
@@ -155,8 +174,10 @@ def add_tree(parent, src):
                 sub.line = "d--%s 0 0" % mode_of(st)
                 sub.kids = {}
                 parent.add(name, sub)
-            add_tree(sub, path)
+            add_tree(sub, path, keep)
         elif stat.S_ISREG(st.st_mode):
+            if keep is not None and not keep.search(name):
+                continue
             if name in parent.kids:
                 continue                         # ramdisk уже сказал своё
             parent.add(name, Node("---%s 0 0 %s" % (mode_of(st), path)))
@@ -206,7 +227,7 @@ def main(argv):
         if not os.path.isdir(src):
             sys.stderr.write("нет %s, пропущено\n" % src)
             continue
-        add_tree(descend(root, sub), src)
+        add_tree(descend(root, sub), src, FILTERED_SUBDIRS.get(sub))
 
     out = sys.stdout
     out.write("\n".join(header) + "\n")

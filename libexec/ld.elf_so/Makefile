@@ -99,7 +99,9 @@ CPPFLAGS+=	-I${.CURDIR} -I.
 CPPFLAGS+=	-DRTLD_LOADER
 CPPFLAGS+=	-D_RTLD_SOURCE
 CPPFLAGS+=	-DCOMBRELOC
-#CPPFLAGS+=	-DDEBUG
+#CPPFLAGS+=	-DDEBUG		# MINIX: -DRTLD_DEBUG needs this one too - dbg()
+				# is a no-op without it, and the "debug" flag
+				# it tests is only defined under -DDEBUG.
 #CPPFLAGS+=	-DRTLD_DEBUG
 #CPPFLAGS+=	-DRTLD_DEBUG_RELOC
 .if !empty(LDELFSO_MACHINE_ARCH:Mearm*)

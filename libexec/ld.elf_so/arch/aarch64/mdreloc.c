@@ -54,24 +54,41 @@ _rtld_setup_pltgot(const Obj_Entry *obj)
 void
 _rtld_relocate_nonplt_self(Elf_Dyn *dynp, Elf_Addr relocbase)
 {
-	const Elf_Rel *rel = 0, *rellim;
-	Elf_Addr relsz = 0;
+	/*
+	 * AArch64 uses RELA and only RELA: the psABI has no REL form, and
+	 * the linker never emits DT_REL for this machine.  The version this
+	 * file was imported with looked for DT_REL/DT_RELSZ, found neither,
+	 * and left rel == NULL with relsz == 0 - so self-relocation was a
+	 * loop that never ran.  Nothing complained: the linker had already
+	 * filled every RELATIVE slot with its link-time value, so ld.elf_so
+	 * ran on with a GOT that pointed at address zero plus a few, and
+	 * died on the first dereference (&_DYNAMIC, in _rtld_init).
+	 */
+	const Elf_Rela *rela = NULL, *relalim;
+	Elf_Addr relasz = 0;
 	Elf_Addr *where;
 
 	for (; dynp->d_tag != DT_NULL; dynp++) {
 		switch (dynp->d_tag) {
-		case DT_REL:
-			rel = (const Elf_Rel *)(relocbase + dynp->d_un.d_ptr);
+		case DT_RELA:
+			rela = (const Elf_Rela *)(relocbase + dynp->d_un.d_ptr);
 			break;
-		case DT_RELSZ:
-			relsz = dynp->d_un.d_val;
+		case DT_RELASZ:
+			relasz = dynp->d_un.d_val;
 			break;
 		}
 	}
-	rellim = (const Elf_Rel *)((const uint8_t *)rel + relsz);
-	for (; rel < rellim; rel++) {
-		where = (Elf_Addr *)(relocbase + rel->r_offset);
-		*where += (Elf_Addr)relocbase;
+	relalim = (const Elf_Rela *)((const uint8_t *)rela + relasz);
+	for (; rela < relalim; rela++) {
+		/*
+		 * Only R_AARCH64_RELATIVE can appear here: everything else
+		 * needs a symbol table this code cannot use yet.  Take the
+		 * addend from the relocation rather than from the slot -
+		 * that is what RELA means, and it is also what makes this
+		 * idempotent if it ever runs twice.
+		 */
+		where = (Elf_Addr *)(relocbase + rela->r_offset);
+		*where = (Elf_Addr)relocbase + rela->r_addend;
 	}
 }
 
@@ -193,12 +210,26 @@ _rtld_relocate_plt_lazy(const Obj_Entry *obj)
 	if (!obj->relocbase)
 		return 0;
 
-	for (const Elf_Rel *rel = obj->pltrel; rel < obj->pltrellim; rel++) {
-		Elf_Addr *where = (Elf_Addr *)(obj->relocbase + rel->r_offset);
+	/*
+	 * DT_PLTREL is DT_RELA on this machine, so headers.c fills in
+	 * pltrela/pltrelalim and leaves pltrel/pltrellim NULL.  Walking
+	 * pltrel here visited nothing: every .got.plt slot kept its
+	 * link-time value, which is the address of PLT0.  The first lazy
+	 * call then branched to PLT0 at its unrelocated address - low
+	 * memory, nothing mapped - and the process died there.
+	 */
+	for (const Elf_Rela *rela = obj->pltrela; rela < obj->pltrelalim;
+	    rela++) {
+		Elf_Addr *where = (Elf_Addr *)(obj->relocbase + rela->r_offset);
 
-		assert(ELF_R_TYPE(rel->r_info) == R_TYPE(JUMP_SLOT));
+		assert(ELF_R_TYPE(rela->r_info) == R_TYPE(JUMP_SLOT));
 
-		/* Just relocate the GOT slots pointing into the PLT */
+		/*
+		 * Just relocate the GOT slots pointing into the PLT.  The
+		 * slot already holds &PLT0 as the linker left it, so this
+		 * adds the load bias rather than using the (always zero)
+		 * addend.
+		 */
 		*where += (Elf_Addr)obj->relocbase;
 		rdbg(("fixup !main in %s --> %p", obj->path, (void *)*where));
 	}
@@ -207,14 +238,14 @@ _rtld_relocate_plt_lazy(const Obj_Entry *obj)
 }
 
 static int
-_rtld_relocate_plt_object(const Obj_Entry *obj, const Elf_Rel *rel,
+_rtld_relocate_plt_object(const Obj_Entry *obj, const Elf_Rela *rela,
 	Elf_Addr *tp)
 {
-	Elf_Addr *where = (Elf_Addr *)(obj->relocbase + rel->r_offset);
+	Elf_Addr *where = (Elf_Addr *)(obj->relocbase + rela->r_offset);
 	Elf_Addr new_value;
 	const Elf_Sym  *def;
 	const Obj_Entry *defobj;
-	unsigned long info = rel->r_info;
+	unsigned long info = rela->r_info;
 
 	assert(ELF_R_TYPE(info) == R_TYPE(JUMP_SLOT));
 
@@ -244,11 +275,11 @@ _rtld_relocate_plt_object(const Obj_Entry *obj, const Elf_Rel *rel,
 caddr_t
 _rtld_bind(const Obj_Entry *obj, Elf_Word reloff)
 {
-	const Elf_Rel *rel = obj->pltrel + reloff;
+	const Elf_Rela *rela = obj->pltrela + reloff;
 	Elf_Addr new_value = 0;	/* XXX gcc */
 
 	_rtld_shared_enter();
-	int err = _rtld_relocate_plt_object(obj, rel, &new_value);
+	int err = _rtld_relocate_plt_object(obj, rela, &new_value);
 	if (err)
 		_rtld_die();
 	_rtld_shared_exit();
@@ -258,11 +289,11 @@ _rtld_bind(const Obj_Entry *obj, Elf_Word reloff)
 int
 _rtld_relocate_plt_objects(const Obj_Entry *obj)
 {
-	const Elf_Rel *rel;
+	const Elf_Rela *rela;
 	int err = 0;
-	
-	for (rel = obj->pltrel; rel < obj->pltrellim; rel++) {
-		err = _rtld_relocate_plt_object(obj, rel, NULL);
+
+	for (rela = obj->pltrela; rela < obj->pltrelalim; rela++) {
+		err = _rtld_relocate_plt_object(obj, rela, NULL);
 		if (err)
 			break;
 	}

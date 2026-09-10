@@ -69,35 +69,59 @@ ENTRY_NP(_rtld_start)
 END(_rtld_start)
 
 /*
- * Upon entry from plt0 entry:
- * X17 = &PLTGOT[n]
- * X16 = &PLTGOT[2]
+ * Upon entry from the PLT0 entry that ld(1) generates:
+ *
+ *	X16		= &PLTGOT[2]
+ *	X17		= &_rtld_bind_start - PLT0 loaded it from PLTGOT[2]
+ *	[SP, #0]	= &PLTGOT[n], the slot to bind: PLT0 pushed the X16
+ *			  that the PLTn entry had set up
+ *	[SP, #8]	= the caller's X30, also pushed by PLT0
+ *	X30		= the caller's return address, still live
+ *
+ * The version this file was imported with expected &PLTGOT[n] in X17 and
+ * left PLT0's sixteen bytes on the stack.  Neither holds for the PLT that
+ * ld(1) emits on AArch64: X17 is the resolver's own address, so the
+ * relocation index came out as the difference of two unrelated addresses,
+ * and the bound function was entered with a stack two words short.
+ *
+ * The floating point argument registers are saved as well.  A lazily bound
+ * call is meant to be invisible to the caller, the callee may take its
+ * arguments in V0..V7, and the resolver is ordinary C that may use them.
  */
 ENTRY_NP(_rtld_bind_start)
-	sub	sp, sp, #96		/* reserve stack space */
+	sub	sp, sp, #224		/* reserve stack space */
 	stp	x29, x30, [sp, #80]	/* save FP & LR */
 	add	x29, sp, #80		/* get new FP */
-	str	x24, [sp, #64]		/* save caller-saved register */
+	str	x24, [sp, #64]		/* save callee-saved register */
 	stp	x6, x7, [sp, #48]	/* save arguments */
 	stp	x4, x5, [sp, #32]	/* save arguments */
 	stp	x2, x3, [sp, #16]	/* save arguments */
 	stp	x0, x1, [sp, #0]	/* save arguments */
+	stp	q0, q1, [sp, #96]	/* save FP arguments */
+	stp	q2, q3, [sp, #128]
+	stp	q4, q5, [sp, #160]
+	stp	q6, q7, [sp, #192]
 
-	sub	x16, x16, #16		/* adjust to &PLTGOT[0] */
+	ldr	x17, [sp, #224]		/* &PLTGOT[n], as PLT0 pushed it */
 	mov	x24, x17		/* preserve across _rtld_bind */
-	sub	x1, x17, x16		/* x1 = &PLTGOT[N] - &PLTGOT[2] */
-	lsr	x1, x1, #3		/* x1 = N - 2 */
-	ldr	x0, [x16, #8]		/* get obj ptr from &PLTGOT[1] */
+	sub	x1, x17, x16		/* x1 = &PLTGOT[n] - &PLTGOT[2] */
+	lsr	x1, x1, #3		/* x1 = n - 2 */
+	sub	x1, x1, #1		/* .rela.plt index: slots start at 3 */
+	ldur	x0, [x16, #-8]		/* get obj ptr from &PLTGOT[1] */
 	bl	_rtld_bind
-	str	x0, [x24]		/* save address in PLTGOT[N] */
+	str	x0, [x24]		/* save address in PLTGOT[n] */
 	mov	x17, x0			/* save address */
 
 	ldp	x0, x1, [sp, #0]	/* restore arguments */
 	ldp	x2, x3, [sp, #16]	/* restore arguments */
 	ldp	x4, x5, [sp, #32]	/* restore arguments */
 	ldp	x6, x7, [sp, #48]	/* restore arguments */
-	ldr	x24, [sp, #64]		/* save caller-saved register */
+	ldr	x24, [sp, #64]		/* restore callee-saved register */
 	ldp	x29, x30, [sp, #80]	/* restore FP & LR */
-	add	sp, sp, #96		/* reclaim stack */
+	ldp	q0, q1, [sp, #96]	/* restore FP arguments */
+	ldp	q2, q3, [sp, #128]
+	ldp	q4, q5, [sp, #160]
+	ldp	q6, q7, [sp, #192]
+	add	sp, sp, #240		/* reclaim our frame and PLT0's */
 	br	x17			/* call bound function */
 END(_rtld_bind_start)

@@ -18,6 +18,25 @@
 #include <minix/endpoint.h>
 #include <minix/u64.h>
 
+/*
+ * Whether this architecture keeps the FP register file in an area of its own
+ * that p_seg.fpu_state points at, and how big that area is.
+ *
+ * i386 and aarch64 both do; earm has no such area and needs none of the lines
+ * that follow. The struct copy below hands the child the parent's pointer
+ * along with everything else, so the pointer has to be put back and the
+ * contents copied instead. Miss that and the two share one save area for as
+ * long as the child does not exec - exec calls arch_proc_init(), and that
+ * calls arch_proc_reset(), which hands the slot its own area back - and the
+ * lazy FP switch then loads each of them with whatever the other left behind.
+ * Discussed in PORTING-LOG.md, "Один регистр SIMD".
+ */
+#if defined(__i386__)
+#define FPU_SAVE_AREA_SIZE	FPU_XFP_SIZE
+#elif defined(__aarch64__)
+#define FPU_SAVE_AREA_SIZE	FPU_STATE_SIZE
+#endif
+
 #if USE_FORK
 
 /*===========================================================================*
@@ -29,7 +48,7 @@ int do_fork(struct proc * caller, message * m_ptr)
  * m_lsys_krn_sys_fork.endpt has forked.
  * The child is m_lsys_krn_sys_fork.slot.
  */
-#if defined(__i386__)
+#ifdef FPU_SAVE_AREA_SIZE
   char *old_fpu_save_area_p;
 #endif
   register struct proc *rpc;		/* child process pointer */
@@ -57,14 +76,14 @@ int do_fork(struct proc * caller, message * m_ptr)
   save_fpu(rpp);
   /* Copy parent 'proc' struct to child. And reinitialize some fields. */
   gen = _ENDPOINT_G(rpc->p_endpoint);
-#if defined(__i386__)
+#ifdef FPU_SAVE_AREA_SIZE
   old_fpu_save_area_p = rpc->p_seg.fpu_state;
 #endif
   *rpc = *rpp;				/* copy 'proc' struct */
-#if defined(__i386__)
+#ifdef FPU_SAVE_AREA_SIZE
   rpc->p_seg.fpu_state = old_fpu_save_area_p;
   if(proc_used_fpu(rpp))
-	memcpy(rpc->p_seg.fpu_state, rpp->p_seg.fpu_state, FPU_XFP_SIZE);
+	memcpy(rpc->p_seg.fpu_state, rpp->p_seg.fpu_state, FPU_SAVE_AREA_SIZE);
 #endif
   if(++gen >= _ENDPOINT_MAX_GENERATION)	/* increase generation */
 	gen = 1;			/* generation number wraparound */

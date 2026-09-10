@@ -897,6 +897,39 @@ hub_handle_connection(int port_num, hub_port_status * status)
 		return EXIT_FAILURE;
 	}
 
+	/*
+	 * A port that has just finished reset is not usable yet: the
+	 * specification gives the hub a recovery time (TRSTRCY, 10 ms)
+	 * before the port is enabled, and the reset-complete bit is set at
+	 * the start of it rather than at the end.  Reading the status once
+	 * more straight away therefore catches the port reset-complete and
+	 * not yet enabled, and this driver called that "unexpectedly
+	 * unavailable" and gave up on the port for good.
+	 *
+	 * It was not seen until now because it needs a controller quick
+	 * enough to get the answer back inside that window: on the board
+	 * the same build failed every time with logging off and worked
+	 * every time with logging on, which is what a race looks like when
+	 * the only thing that changed was how long a printf takes.
+	 */
+	reset_tries = 0;
+	while (status->PORT_CONNECTION && !status->PORT_ENABLE) {
+		if (reset_tries >= USB_HUB_MAX_TRIES) {
+			HUB_MSG("Port%d did not enable after reset", port_num);
+			return EXIT_FAILURE;
+		}
+
+		if (nanosleep(&wait_time, NULL))
+			HUB_MSG("Calling nanosleep() failed");
+
+		if (hub_get_port_status(port_num, status)) {
+			HUB_MSG("Reading port%d status failed", port_num);
+			return EXIT_FAILURE;
+		}
+
+		reset_tries++;
+	}
+
 	/* Should never happen */
 	if (!status->PORT_CONNECTION || !status->PORT_ENABLE) {
 		HUB_MSG("Port%d unexpectedly unavailable", port_num);

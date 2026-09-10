@@ -106,12 +106,26 @@ that is left. The full table, both runs side by side, is
 `port/test/suite/results-qemu.txt`.
 
 The suite is linked dynamically again as of 2026-09-10, so every program in
-it now exercises the loader as well: **73 passed, 9 failed, 5 hung, 11 timed
-out, 3 not built** — `port/test/suite/results-qemu-dynamic.txt`. It found
-something on the first run, too: `test2` corrupts its own data in a
-vectorised loop when linked dynamically and not when linked statically. The
-cause is not established; what is ruled out and what to try next is in
-`port/test/dyn/README.md`.
+it now exercises the loader as well: **74 passed, 8 failed, 4 hung, 12 timed
+out, 3 not built** — `port/test/suite/results-qemu-dynamic.txt`.
+
+It found a kernel defect on the first run, and the defect had nothing to do
+with the loader: `test2` corrupted a vectorised loop because `do_fork()`
+restored `p_seg.fpu_state` only under `#if defined(__i386__)`, so on aarch64
+a child was handed **its parent's FP save area** and kept it until it
+exec'd. The lazy FP switch then gave each of the two whatever the other had
+left behind. What made it look like a linking problem is that the child of
+`test2` ran `ld.elf_so`, whose SIMD `strlen` decided which register went
+missing — `LD_BIND_NOW=1` and `-fno-tree-vectorize` both hid the symptom and
+said nothing about the cause. The probe that settles it is deliberately
+linked statically: `port/test/dyn/fpfork.c`. Reasoning in
+`port/PORTING-LOG.md`, "Один регистр SIMD".
+
+Fixing it also uncovered a hang that had been out of reach: `test90`, the
+in-depth UNIX domain socket tests, used to abort early with `ECONNRESET`
+because its peers were dying of the corruption. They no longer die, the test
+goes further, and it now hangs — but only when `test89` has run before it.
+That is a separate defect and it is open.
 
 What it found in one evening, after months in which nothing had looked here:
 

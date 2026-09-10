@@ -1,0 +1,150 @@
+ 
+=== Эталон: флешка на плате, снят с вендорского Linux 2026-09-10 ===
+Linux bigtreetech-cb2 6.1.115-btt-rockchip64 #1 SMP PREEMPT Mon Jun 29 19:45:03 CST 2026 aarch64 GNU/Linux
+
+### lsusb -t
+/:  Bus 001.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 480M
+    |__ Port 001: Dev 002, If 0, Class=Hub, Driver=hub/4p, 480M
+        |__ Port 004: Dev 003, If 0, Class=Mass Storage, Driver=usb-storage, 480M
+/:  Bus 002.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 5000M
+/:  Bus 003.Port 001: Dev 001, Class=root_hub, Driver=ehci-platform/1p, 480M
+/:  Bus 004.Port 001: Dev 001, Class=root_hub, Driver=ohci-platform/1p, 12M
+/:  Bus 005.Port 001: Dev 001, Class=root_hub, Driver=ehci-platform/1p, 480M
+/:  Bus 006.Port 001: Dev 001, Class=root_hub, Driver=ohci-platform/1p, 12M
+/:  Bus 007.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 480M
+/:  Bus 008.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 5000M
+
+### контроллер -> шина
+  usb1: xhci-hcd.0.auto ver= 2.00 speed=480
+  usb2: xhci-hcd.0.auto ver= 3.00 speed=5000
+  usb3: fd800000.usb ver= 2.00 speed=480
+  usb4: fd840000.usb ver= 1.10 speed=12
+  usb5: fd880000.usb ver= 2.00 speed=480
+  usb6: fd8c0000.usb ver= 1.10 speed=12
+  usb7: xhci-hcd.1.auto ver= 2.00 speed=480
+  usb8: xhci-hcd.1.auto ver= 3.00 speed=5000
+
+### где именно флешка
+  путь: 1-1.4  (шина 1, порт 4 хаба)
+
+### дескрипторы
+
+Bus 001 Device 003: ID 8564:1000 Transcend Information, Inc. JetFlash
+Negotiated speed: High Speed (480Mbps)
+Device Descriptor:
+  bLength                18
+  bDescriptorType         1
+  bcdUSB               2.00
+  bDeviceClass            0 [unknown]
+  bDeviceSubClass         0 [unknown]
+  bDeviceProtocol         0 
+  bMaxPacketSize0        64
+  idVendor           0x8564 Transcend Information, Inc.
+  idProduct          0x1000 JetFlash
+  bcdDevice            1.00
+  iManufacturer           1 JetFlash
+  iProduct                2 Mass Storage Device
+  iSerial                 3 DRXX4SL4
+  bNumConfigurations      1
+  Configuration Descriptor:
+    bLength                 9
+    bDescriptorType         2
+    wTotalLength       0x0020
+    bNumInterfaces          1
+    bConfigurationValue     1
+    iConfiguration          0 
+    bmAttributes         0x80
+      (Bus Powered)
+    MaxPower              200mA
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        0
+      bAlternateSetting       0
+      bNumEndpoints           2
+      bInterfaceClass         8 Mass Storage
+      bInterfaceSubClass      6 SCSI
+      bInterfaceProtocol     80 Bulk-Only
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x01  EP 1 OUT
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x82  EP 2 IN
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+Device Qualifier (for other device speed):
+  bLength                10
+  bDescriptorType         6
+  bcdUSB               2.00
+  bDeviceClass            0 [unknown]
+  bDeviceSubClass         0 [unknown]
+  bDeviceProtocol         0 
+  bMaxPacketSize0        64
+  bNumConfigurations      1
+Device Status:     0x0000
+  (Bus Powered)
+
+### dmesg про неё
+[    7.563596] Kernel command line: root=UUID=b4e30710-be59-4ffe-9d89-a89490c89aae rootwait rootfstype=ext4 splash=verbose console=ttyS2,1500000 console=tty1 consoleblank=0 loglevel=1 ubootpart=42f94570-01 usb-storage.quirks=0x2537:0x1066:u,0x2537:0x1068:u cma=256M  cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory
+[    9.727859] usbcore: registered new interface driver usb-storage
+[  889.327318] usb 1-1.4: new high-speed USB device number 3 using xhci-hcd
+[  889.749298] usb 1-1.4: New USB device found, idVendor=8564, idProduct=1000, bcdDevice= 1.00
+[  889.749388] usb 1-1.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[  889.749423] usb 1-1.4: Product: Mass Storage Device
+[  889.749450] usb 1-1.4: Manufacturer: JetFlash
+[  889.749477] usb 1-1.4: SerialNumber: DRXX4SL4
+[  889.775661] usb-storage 1-1.4:1.0: USB Mass Storage device detected
+[  889.778760] scsi host0: usb-storage 1-1.4:1.0
+[  890.797986] sd 0:0:0:0: Attached scsi generic sg0 type 0
+[  890.800943] sd 0:0:0:0: [sda] 15679488 512-byte logical blocks: (8.03 GB/7.48 GiB)
+[  890.802031] sd 0:0:0:0: [sda] Write Protect is off
+[  890.802072] sd 0:0:0:0: [sda] Mode Sense: 23 00 00 00
+[  890.803063] sd 0:0:0:0: [sda] Write cache: disabled, read cache: enabled, doesn't support DPO or FUA
+[  890.811452]  sda: sda1
+[  890.812782] sd 0:0:0:0: [sda] Attached SCSI removable disk
+
+### содержимое для сверки
+  size_sectors=15679488
+  md5_first_mib=9acade1a02a1c3a62ed1fcd8bb0f2d0a
+  md5_lba2048_2048=1e0ec414eb10832e78fb8a304e1b5681
+Disk identifier: 0x00000000
+
+Device     Boot Start      End  Sectors  Size Id Type
+/dev/sda1        2048 15679487 15677440  7.5G  7 HPFS/NTFS/exFAT
+
+--- Что из этого следует (2026-09-10) ------------------------------------
+Флешка воткнута в разъём на плате-носителе и оказалась по адресу 1-1.4:
+шина 1 (наш контроллер usbdrd @ fcc00000), ЗА ХАБОМ, на его четвёртом порту.
+
+Значит четыре разъёма USB-A носителя - это нисходящие порты того самого
+хаба Terminus, который всё это время висел на корневом порту. Хаб не воткнут
+человеком, он на плате: носитель BTT PI4B сделан под модуль формата CM4, у
+которого наружу выведен один порт USB 2.0, а разъёмов на нём четыре -
+между ними обязан стоять хаб. Страница носителя это подтверждает:
+"USB 2.0 x4", USB3 нет вовсе.
+
+Отсюда цена вехи 10.5: устройство приходит НЕ на корневой порт. Драйверу
+нужен route string в контексте слота (какой порт какого хаба), а событие о
+появлении устройства приходит не из PORTSC, а от драйвера хаба - он сам
+сбрасывает свой порт и шлёт USB_RQ_SEND_INFO со скоростью и номером порта.
+Этот путь в usb_hub уже написан; на нашей стороне он пока отвечает "OK" и
+ничего не делает.
+
+Само устройство простое, и это хорошая новость: класс 8 (Mass Storage),
+подкласс 6 (SCSI), протокол 0x50 (bulk-only), ровно две конечные точки -
+EP1 OUT и EP2 IN, обе bulk по 512 байт. То есть после route string нужен
+ровно один новый вид обмена.

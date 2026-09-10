@@ -81,9 +81,23 @@ build_input_context(struct xhci_device *dev)
 	 * is 1.
 	 */
 	w = ctx_word(dev->in_ctx, IN_SLOT, 0);
-	w[0] = XHCI_SLOT_ROUTE(0) | XHCI_SLOT_SPEED(dev->speed) |
+	w[0] = XHCI_SLOT_ROUTE(dev->route) | XHCI_SLOT_SPEED(dev->speed) |
 	    XHCI_SLOT_ENTRIES(1);
 	w[1] = XHCI_SLOT_RHPORT(dev->port + 1);
+
+	/*
+	 * A low- or full-speed device behind a high-speed hub does not
+	 * talk to the controller directly: the hub translates for it, and
+	 * the controller has to be told which hub and which of its ports
+	 * is doing the translating.  Getting this wrong for a slow device
+	 * is not a slow device, it is one that never answers.  The flash
+	 * drive this was first run against is high speed and needs none of
+	 * it - which is exactly why it is written now, while the case that
+	 * needs it is still hypothetical and cheap to reason about.
+	 */
+	if (dev->parent_slot != 0 && dev->speed != 3 && dev->speed < 4)
+		w[2] = XHCI_SLOT_TT_SLOT(dev->parent_slot) |
+		    XHCI_SLOT_TT_PORT(dev->parent_port);
 
 	/*
 	 * The control endpoint.  Three errors before it gives up, the type
@@ -149,10 +163,23 @@ xhci_control(struct xhci_device *dev, uint8_t request_type, uint8_t request,
 	    (length == 0 ? XHCI_TRB_TRT_NONE :
 	    (dir_in ? XHCI_TRB_TRT_IN : XHCI_TRB_TRT_OUT)));
 
-	/* Data stage, when there is data. */
+	/*
+	 * Data stage, when there is data - and it asks to be told about a
+	 * short packet.
+	 *
+	 * Without that bit a device that answers with less than was asked
+	 * for produces no event of its own: the transfer runs on to the
+	 * status stage, whose event says nothing was left over, and the
+	 * driver reports the full length as transferred.  Which is exactly
+	 * what happened on the board - the mass storage driver asked for
+	 * 128 bytes of a 32-byte configuration descriptor, was told it got
+	 * 128, and refused the device as having an invalid descriptor.
+	 * Asking a device for more than it has is not an error case, it is
+	 * how descriptors are read.
+	 */
 	if (length != 0)
 		xhci_ring_push(&dev->ep0, (uint32_t)dev->buf_phys, 0, length,
-		    XHCI_TRB_TYPE(XHCI_TRB_DATA) |
+		    XHCI_TRB_TYPE(XHCI_TRB_DATA) | XHCI_TRB_ISP |
 		    (dir_in ? XHCI_TRB_DIR_IN : 0));
 
 	/*
@@ -202,6 +229,219 @@ xhci_control(struct xhci_device *dev, uint8_t request_type, uint8_t request,
 }
 
 /*
+ * One endpoint out of a descriptor, and the ring it will be driven from.
+ *
+ * Only bulk and interrupt endpoints are taken.  Isochronous ones need a
+ * schedule this driver does not keep, and saying so here is better than
+ * configuring one and failing at the first transfer.
+ */
+static void
+add_endpoint(struct xhci_device *dev, const uint8_t *d)
+{
+	unsigned num = d[2] & 0x0f;
+	int dir_in = (d[2] & 0x80) != 0;
+	unsigned attr = d[3] & 0x3;
+	struct xhci_ep *ep;
+
+	if (dev->neps >= XHCI_MAX_EPS || num == 0)
+		return;
+
+	if (attr == 1) {
+		log_info(&xhci_log, "port %u: endpoint %u is isochronous and "
+		    "is left alone\n", dev->port + 1, num);
+		return;
+	}
+
+	ep = &dev->ep[dev->neps];
+	memset(ep, 0, sizeof(*ep));
+
+	ep->num = num;
+	ep->dir_in = dir_in;
+	ep->dci = num * 2 + (dir_in ? 1 : 0);
+	ep->max_packet = d[4] | ((unsigned)d[5] << 8);
+	ep->interval = d[6];
+
+	if (attr == 2)
+		ep->type = dir_in ? XHCI_EP_TYPE_BULK_IN : XHCI_EP_TYPE_BULK_OUT;
+	else
+		ep->type = dir_in ? XHCI_EP_TYPE_INTR_IN : XHCI_EP_TYPE_INTR_OUT;
+
+	if (xhci_ring_setup(&ep->ring, "a transfer ring") != OK)
+		return;
+
+	dev->neps++;
+
+	log_info(&xhci_log, "port %u: endpoint %u %s, %s, %u bytes "
+	    "(context %u)\n", dev->port + 1, num, dir_in ? "in" : "out",
+	    attr == 2 ? "bulk" : "interrupt", ep->max_packet, ep->dci);
+}
+
+/*
+ * Tell the controller about all of them at once.
+ *
+ * One Configure Endpoint command carries an input context with a bit set
+ * per endpoint being added, plus the slot context, whose "context
+ * entries" field has to name the highest one used - the controller reads
+ * exactly that many and no more, so an endpoint beyond it is configured
+ * and then invisible.
+ */
+static int
+configure_endpoints(struct xhci_device *dev)
+{
+	unsigned i, add = XHCI_INPUT_ADD_SLOT, last = 1;
+	uint32_t *w;
+	int r;
+
+	memset((void *)dev->in_ctx, 0, XHCI_PAGE);
+
+	for (i = 0; i < dev->neps; i++) {
+		struct xhci_ep *ep = &dev->ep[i];
+
+		add |= 1U << ep->dci;
+		if (ep->dci > last)
+			last = ep->dci;
+
+		w = ctx_word(dev->in_ctx, ep->dci + 1, 0);
+		w[0] = (ep->type == XHCI_EP_TYPE_INTR_IN ||
+		    ep->type == XHCI_EP_TYPE_INTR_OUT) ?
+		    XHCI_EP_INTERVAL(ep->interval) : 0;
+		w[1] = XHCI_EP_CERR(3) | XHCI_EP_TYPE(ep->type) |
+		    XHCI_EP_MAXPACKET(ep->max_packet);
+		w[2] = (uint32_t)ep->ring.p | XHCI_EP_DCS;
+		w[3] = 0;
+		w[4] = XHCI_EP_AVG_TRB(ep->max_packet);
+	}
+
+	*ctx_word(dev->in_ctx, IN_CTRL, 0) = 0;
+	*ctx_word(dev->in_ctx, IN_CTRL, 1) = add;
+
+	/* The slot context again, with the endpoint count it now has. */
+	w = ctx_word(dev->in_ctx, IN_SLOT, 0);
+	w[0] = XHCI_SLOT_ROUTE(dev->route) | XHCI_SLOT_SPEED(dev->speed) |
+	    XHCI_SLOT_ENTRIES(last);
+	w[1] = XHCI_SLOT_RHPORT(dev->port + 1);
+	if (dev->parent_slot != 0 && dev->speed != 3 && dev->speed < 4)
+		w[2] = XHCI_SLOT_TT_SLOT(dev->parent_slot) |
+		    XHCI_SLOT_TT_PORT(dev->parent_port);
+
+	xhci_cache(CACHE_CLEAN, (void *)dev->in_ctx, XHCI_PAGE,
+	    "an input context");
+
+	if ((r = xhci_cmd((uint32_t)dev->in_ctx_phys, 0, 0,
+	    XHCI_TRB_TYPE(XHCI_TRB_CONFIGURE_EP) |
+	    XHCI_TRB_SLOT_ID(dev->slot), NULL)) != OK) {
+		log_warn(&xhci_log, "port %u: the controller would not "
+		    "configure %u endpoint(s)\n", dev->port + 1, dev->neps);
+		return r;
+	}
+
+	log_info(&xhci_log, "port %u: %u endpoint(s) configured, contexts "
+	    "up to %u\n", dev->port + 1, dev->neps, last);
+	return OK;
+}
+
+struct xhci_ep *
+xhci_device_ep(struct xhci_device *dev, unsigned num, int dir_in)
+{
+	unsigned i;
+
+	for (i = 0; i < dev->neps; i++)
+		if (dev->ep[i].num == num && dev->ep[i].dir_in == !!dir_in)
+			return &dev->ep[i];
+	return NULL;
+}
+
+/*
+ * A transfer on an endpoint that is not the control one: one or more
+ * Normal TRBs and one event at the end.
+ *
+ * More than one because of a rule that is easy to miss and impossible to
+ * see the effect of by reading: a transfer TRB's buffer may not cross a
+ * 64 KiB boundary.  The buffer here is one allocation of that size, so it
+ * crosses at most one such boundary, but "at most one" is not "none", and
+ * a driver that assumes none works until the allocator hands it the wrong
+ * page.  So the range is split at the boundary and the pieces are chained.
+ */
+int
+xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
+	unsigned *actual)
+{
+	struct xhci_trb ev;
+	phys_bytes phys = dev->buf_phys;
+	size_t left = length;
+	unsigned cc, residue;
+
+	if (actual != NULL)
+		*actual = 0;
+	if (length > XHCI_DEV_BUF)
+		return EINVAL;
+
+	/*
+	 * Hand the buffer over.  Clean-invalidate covers both directions:
+	 * what the caller wrote has to reach memory before the controller
+	 * reads it, and none of the driver's lines may be left dirty over
+	 * what the controller is about to write.
+	 */
+	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)dev->buf, XHCI_DEV_BUF,
+	    "a transfer buffer");
+
+	do {
+		size_t chunk = 0x10000 - (phys & 0xffff);
+		uint32_t control = XHCI_TRB_TYPE(XHCI_TRB_NORMAL);
+
+		if (chunk > left)
+			chunk = left;
+		left -= chunk;
+
+		/*
+		 * Every piece but the last is chained to the next; the last
+		 * one asks for the event.  A chained TRB is not a transfer
+		 * of its own - the controller reports the lot once.
+		 */
+		if (left != 0)
+			control |= XHCI_TRB_CH;
+		else
+			control |= XHCI_TRB_IOC;
+
+		if (ep->dir_in)
+			control |= XHCI_TRB_ISP;
+
+		xhci_ring_push(&ep->ring, (uint32_t)phys, 0,
+		    (uint32_t)chunk, control);
+
+		phys += chunk;
+	} while (left != 0);
+
+	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(dev->slot), ep->dci);
+
+	memset(&ev, 0, sizeof(ev));
+	if (xhci_events_drain(5000000, &ev, XHCI_TRB_TRANSFER_EVENT) == 0 ||
+	    XHCI_TRB_TYPE_OF(ev.control) != XHCI_TRB_TRANSFER_EVENT) {
+		log_warn(&xhci_log, "no event for a %u-byte transfer on "
+		    "endpoint %u\n", (unsigned)length, ep->num);
+		return EIO;
+	}
+
+	cc = XHCI_CC_OF(ev.status);
+	residue = XHCI_EVENT_LENGTH(ev.status);
+
+	if (cc != XHCI_CC_SUCCESS && cc != 13 /* short packet */) {
+		log_warn(&xhci_log, "a %u-byte transfer on endpoint %u "
+		    "completed with %u\n", (unsigned)length, ep->num, cc);
+		return EIO;
+	}
+
+	if (ep->dir_in)
+		xhci_cache(CACHE_INVALIDATE, (void *)dev->buf, XHCI_DEV_BUF,
+		    "a transfer buffer");
+
+	if (actual != NULL)
+		*actual = (unsigned)length - residue;
+
+	return OK;
+}
+
+/*
  * The device's one configuration, and switching it on.
  *
  * A device that has been addressed and no more can answer questions about
@@ -242,17 +482,37 @@ configure(struct xhci_device *dev)
 	cfg = (uint8_t *)dev->buf;
 	dev->config = cfg[5];			/* bConfigurationValue */
 	dev->interfaces = 0;
+	dev->neps = 0;
 
 	/*
 	 * Walk the descriptors that follow, which are a chain of
-	 * length-and-type records, and note which interface numbers are
-	 * there.  That set is what the client drivers are handed; the old
-	 * stack computed the same thing the same way.
+	 * length-and-type records: note which interface numbers are there
+	 * - that set is what the client drivers are handed - and collect
+	 * the endpoints, which is what the controller has to be told about
+	 * before anything can be sent to them.
 	 */
 	for (off = 0; off + 2 <= actual && cfg[off] != 0; off += cfg[off]) {
-		if (cfg[off + 1] == 4 && off + 3 <= actual)	/* interface */
+		if (cfg[off + 1] == 4 && off + 6 <= actual) {	/* interface */
 			dev->interfaces |= 1U << (cfg[off + 2] & 0x1f);
+
+			/*
+			 * And what the interface says it is.  A device may
+			 * leave its own class field zero and declare itself
+			 * here instead - the flash drive does exactly that,
+			 * class 0 in the device descriptor and class 8 in
+			 * the interface - so a driver is chosen by looking
+			 * at both.
+			 */
+			if (dev->iface_class == 0)
+				dev->iface_class = cfg[off + 5];
+		}
+
+		if (cfg[off + 1] == 5 && off + 7 <= actual)	/* endpoint */
+			add_endpoint(dev, cfg + off);
 	}
+
+	if (dev->neps != 0 && (r = configure_endpoints(dev)) != OK)
+		return r;
 
 	if ((r = xhci_control(dev, 0, 9 /* SET_CONFIGURATION */, dev->config,
 	    0, 0, NULL)) != OK) {
@@ -283,21 +543,24 @@ speed_word(unsigned psiv)
  * Give the device on this port a slot, an address and a first
  * conversation.
  */
-int
-xhci_device_attach(unsigned port, struct xhci_device *dev)
+static int
+device_attach(struct xhci_device *dev, unsigned port, unsigned speed,
+	unsigned route, unsigned tier, unsigned parent_slot,
+	unsigned parent_port)
 {
 	struct usb_device_descriptor *desc;
 	struct xhci_trb ev;
 	uint64_t *dcbaa;
-	uint32_t portsc;
 	void *v;
 	int r;
 
 	memset(dev, 0, sizeof(*dev));
 	dev->port = port;
-
-	portsc = xhci_rd(xhci.regs, xhci.caplength + XHCI_PORTSC(port));
-	dev->speed = XHCI_PORTSC_SPEED(portsc);
+	dev->speed = speed;
+	dev->route = route;
+	dev->tier = tier;
+	dev->parent_slot = parent_slot;
+	dev->parent_port = parent_port;
 
 	/*
 	 * The control endpoint's packet size before anything has been
@@ -317,7 +580,7 @@ xhci_device_attach(unsigned port, struct xhci_device *dev)
 		return ENOMEM;
 	dev->dev_ctx = (vir_bytes)v;
 
-	if ((v = xhci_alloc_dma(XHCI_PAGE, &dev->buf_phys, "a descriptor "
+	if ((v = xhci_alloc_dma(XHCI_DEV_BUF, &dev->buf_phys, "a transfer "
 	    "buffer")) == NULL)
 		return ENOMEM;
 	dev->buf = (vir_bytes)v;
@@ -361,8 +624,9 @@ xhci_device_attach(unsigned port, struct xhci_device *dev)
 		return r;
 	}
 
-	log_info(&xhci_log, "port %u: slot %u, %s speed, addressed\n",
-	    port + 1, dev->slot, speed_word(dev->speed));
+	log_info(&xhci_log, "root port %u route 0x%x: slot %u, %s speed, "
+	    "addressed\n", dev->port + 1, dev->route, dev->slot,
+	    speed_word(dev->speed));
 
 	/*
 	 * And the first question anybody asks a USB device.  Eighteen bytes
@@ -411,15 +675,64 @@ xhci_device_attach(unsigned port, struct xhci_device *dev)
 	return OK;
 }
 
+/*
+ * A device on a root port: the speed comes from the port's own register,
+ * and there is no hub above it, so no route and no translator.
+ */
+int
+xhci_device_attach(unsigned port, struct xhci_device *dev)
+{
+	uint32_t portsc = xhci_rd(xhci.regs, xhci.caplength +
+	    XHCI_PORTSC(port));
+
+	return device_attach(dev, port, XHCI_PORTSC_SPEED(portsc), 0, 0, 0, 0);
+}
+
 void
 xhci_device_free(struct xhci_device *dev)
 {
+	unsigned i;
+
 	if (dev->in_ctx != 0)
 		free_contig((void *)dev->in_ctx, XHCI_PAGE);
 	if (dev->dev_ctx != 0)
 		free_contig((void *)dev->dev_ctx, XHCI_PAGE);
 	if (dev->buf != 0)
-		free_contig((void *)dev->buf, XHCI_PAGE);
+		free_contig((void *)dev->buf, XHCI_DEV_BUF);
 	xhci_ring_free(&dev->ep0);
+	for (i = 0; i < dev->neps; i++)
+		xhci_ring_free(&dev->ep[i].ring);
 	memset(dev, 0, sizeof(*dev));
+}
+
+/*
+ * The same device, arriving the other way: behind a hub.
+ *
+ * Nothing found it by looking at a register.  The hub driver polls its own
+ * ports over the wire, resets the one that has something on it, and tells
+ * this driver the port number and the speed - so this is the entry point
+ * that a hub's news arrives at, and the only difference from a device on a
+ * root port is two fields.
+ *
+ * The route string is the first: four bits per tier, saying which port to
+ * take at each hub on the way down.  The controller walks it; the driver
+ * never addresses anything.  The second is the root hub port, which stays
+ * that of the hub at the top - the whole chain hangs off it.
+ */
+int
+xhci_device_attach_hub(struct xhci_device *hub, unsigned hubport,
+	unsigned speed, struct xhci_device *dev)
+{
+	unsigned route;
+
+	if (hub->tier >= 5) {
+		log_warn(&xhci_log, "a hub five tiers down; USB does not go "
+		    "that deep\n");
+		return EINVAL;
+	}
+
+	route = hub->route | ((hubport & 0xf) << (4 * hub->tier));
+
+	return device_attach(dev, hub->port, speed, route, hub->tier + 1,
+	    hub->slot, hubport);
 }

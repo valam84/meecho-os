@@ -37,6 +37,7 @@
 
 #include <minix/drivers.h>
 #include <minix/com.h>
+#include <minix/ds.h>
 #include <minix/ipc.h>
 #include <minix/safecopies.h>
 #include <minix/syslib.h>
@@ -68,7 +69,7 @@ static unsigned next_urb_id = 1;
  * device id out of the middle of a pointer, which is the sort of thing
  * that looks like a broken device rather than a broken driver.
  */
-static char urbmem[sizeof(struct usb_urb) + XHCI_PAGE]
+static char urbmem[sizeof(struct usb_urb) + XHCI_DEV_BUF]
     __attribute__((aligned(8)));
 
 #define URB_SKIP	offsetof(struct usb_urb, dev_id)
@@ -115,13 +116,42 @@ client_add(endpoint_t ep, const char *name)
 	}
 
 	clients[nclients].ep = ep;
-	strncpy(clients[nclients].name, name,
-	    sizeof(clients[0].name) - 1);
+
+	/*
+	 * The name a client gives is not its own: every driver built on
+	 * this system's client library calls itself "dde".  What tells
+	 * them apart is the label they run under, which the directory
+	 * service knows - so that is what is asked for, and the name from
+	 * the message is kept only for when the answer does not come.
+	 */
+	if (ds_retrieve_label_name(clients[nclients].name, ep) != OK)
+		strncpy(clients[nclients].name, name,
+		    sizeof(clients[0].name) - 1);
 	clients[nclients].name[sizeof(clients[0].name) - 1] = '\0';
 	nclients++;
 
 	log_info(&xhci_log, "driver \"%s\" at %d is listening\n",
 	    clients[nclients - 1].name, ep);
+}
+
+/*
+ * Which driver handles this device.
+ *
+ * This is the job devman does in the system this stack came from: it reads
+ * config files that match a device's class against a driver's binary.
+ * There is no devman here yet, so the matching is a table of two lines -
+ * and it has to exist rather than announcing to everybody, because a
+ * driver told about a device it does not handle does not politely decline.
+ * The hub driver panics on the second device it is offered.
+ */
+static const char *
+driver_for(struct xhci_device *dev)
+{
+	if (dev->class == 9)
+		return "usb_hub";
+	if (dev->class == 8 || dev->iface_class == 8)
+		return "usb_storage";
+	return NULL;
 }
 
 /*
@@ -134,6 +164,7 @@ client_add(endpoint_t ep, const char *name)
 void
 xhci_urb_announce(struct xhci_device *dev)
 {
+	const char *want;
 	message m;
 	unsigned i;
 
@@ -144,26 +175,65 @@ xhci_urb_announce(struct xhci_device *dev)
 		return;
 	}
 
+	if ((want = driver_for(dev)) == NULL) {
+		log_info(&xhci_log, "device %u is class %u/%u, which no "
+		    "driver here handles\n", dev->slot, dev->class,
+		    dev->iface_class);
+		return;
+	}
+
 	memset(&m, 0, sizeof(m));
 	m.m_type = USB_ANNOUCE_DEV;
 	m.USB_DEV_ID = (long)dev->slot;
 	m.USB_INTERFACES = (long)dev->interfaces;
 
 	for (i = 0; i < nclients; i++) {
-		log_info(&xhci_log, "announcing device %u (interfaces 0x%x) "
-		    "to \"%s\"\n", dev->slot, dev->interfaces,
-		    clients[i].name);
+		if (strcmp(clients[i].name, want) != 0)
+			continue;
+
+		log_info(&xhci_log, "announcing device %u (class %u/%u, "
+		    "interfaces 0x%x) to \"%s\"\n", dev->slot, dev->class,
+		    dev->iface_class, dev->interfaces, clients[i].name);
+
 		if (asynsend3(clients[i].ep, &m, AMF_NOREPLY) != OK)
 			log_warn(&xhci_log, "the announcement to %d did not "
 			    "go\n", clients[i].ep);
+		else
+			dev->announced = 1;
 	}
 
-	dev->announced = 1;
+	if (!dev->announced)
+		log_info(&xhci_log, "device %u wants \"%s\", which is not "
+		    "running; it will be announced when it starts\n",
+		    dev->slot, want);
 }
 
 /*
- * Run one URB.  Control transfers only at this milestone; the rest say so
- * rather than failing in a way the client has to guess about.
+ * Which way a transfer goes.
+ *
+ * This deserves its own function and this comment, because the tree says
+ * it twice and says it differently.  <minix/usb.h>, the header of the very
+ * structure being read here, declares USB_IN as 0 and USB_OUT as 1.
+ * <ddekit/usb.h>, which every client of this protocol actually uses,
+ * declares DDEKIT_USB_IN as 1 and DDEKIT_USB_OUT as 0 - and the client
+ * library copies the field across without translating it.  So the value
+ * that travels means the opposite of what the header next to it says.
+ *
+ * The board said so plainly: the mass storage driver's first transfer went
+ * to endpoint 1, which on that device is an OUT endpoint, and arrived here
+ * asking for endpoint 1 IN.  Reading it the way the sender writes it is
+ * the only choice that works; naming the confusion is the least this can
+ * do about it.
+ */
+static int
+urb_dir_in(const struct usb_urb *urb)
+{
+	return urb->direction == 1;
+}
+
+/*
+ * Run one URB.  Control and bulk; interrupt endpoints go the same way as
+ * bulk, and isochronous ones say what they are and are refused.
  */
 static int
 urb_run(struct usb_urb *urb)
@@ -180,12 +250,49 @@ urb_run(struct usb_urb *urb)
 		return ENODEV;
 	}
 
+	/*
+	 * Anything that is not a control transfer goes to an endpoint of
+	 * its own, which the device told us about when it was configured.
+	 * An endpoint nobody configured is an error worth naming: it means
+	 * the client is talking about a different device than it thinks.
+	 */
+	if (urb->type == USB_TRANSFER_BLK || urb->type == USB_TRANSFER_INT) {
+		struct xhci_ep *ep;
+		unsigned len = (unsigned)urb->size;
+		int dir_in = urb_dir_in(urb);
+
+		ep = xhci_device_ep(dev, (unsigned)urb->endpoint, dir_in);
+		if (ep == NULL) {
+			log_warn(&xhci_log, "device %d has no endpoint %d "
+			    "%s\n", urb->dev_id, urb->endpoint,
+			    dir_in ? "in" : "out");
+			return ENODEV;
+		}
+
+		if (len > XHCI_DEV_BUF)
+			return EINVAL;
+
+		if (!ep->dir_in && len != 0)
+			memcpy((void *)dev->buf, urb->buffer, len);
+
+		r = xhci_transfer(dev, ep, len, &actual);
+		if (r != OK) {
+			urb->status = r;
+			urb->actual_length = 0;
+			return r;
+		}
+
+		if (ep->dir_in && actual != 0)
+			memcpy(urb->buffer, (void *)dev->buf, actual);
+
+		urb->status = 0;
+		urb->actual_length = actual;
+		return OK;
+	}
+
 	if (urb->type != USB_TRANSFER_CTL) {
-		log_warn(&xhci_log, "a %s transfer was asked for, and only "
-		    "control transfers are implemented so far\n",
-		    urb->type == USB_TRANSFER_BLK ? "bulk" :
-		    urb->type == USB_TRANSFER_INT ? "interrupt" :
-		    "isochronous");
+		log_warn(&xhci_log, "an isochronous transfer was asked for, "
+		    "and this driver keeps no schedule for one\n");
 		return ENOSYS;
 	}
 
@@ -277,6 +384,87 @@ send_urb(message *m)
 		    id);
 }
 
+/*
+ * The hub driver saying that something appeared on one of its ports.
+ *
+ * This is the only way a device behind a hub is ever found: the root
+ * ports have registers a driver can read, and everything below them is
+ * reached by asking the hub over the wire.  The hub driver does that
+ * polling, resets the port itself, and sends this - the speed it saw and
+ * the port it saw it on.
+ *
+ * Which hub it means is not in the message: the client library drops the
+ * device when it sends this, so the hub is identified by who is talking.
+ * With one hub driver that is exact.  With two it would not be, and the
+ * answer then is the same as for announcements - a matchmaker that knows
+ * which driver holds which device, which this driver does not have yet.
+ */
+static void
+hub_news(message *m)
+{
+	struct xhci_device *hub = NULL, *dev = NULL;
+	unsigned port = (unsigned)m->USB_INFO_VALUE;
+	unsigned type = (unsigned)m->USB_INFO_TYPE;
+	unsigned speed, i;
+
+	/* The hub this driver was told about: the one of class 9. */
+	for (i = 0; i < XHCI_MAX_PORTS; i++)
+		if (xhci.dev[i].slot != 0 && xhci.dev[i].class == 9)
+			hub = &xhci.dev[i];
+
+	if (hub == NULL) {
+		log_warn(&xhci_log, "news about hub port %u, and no hub is "
+		    "known\n", port);
+		return;
+	}
+
+	/*
+	 * The speeds the hub driver reports are its own three constants,
+	 * in the order low, full, high; the fourth is a disconnection.
+	 * They are turned into the identifiers the controller uses, which
+	 * happen to run in a different order - low is 2 and full is 1 -
+	 * and a table of three is clearer than arithmetic that happens to
+	 * work.
+	 */
+	switch (type) {
+	case 0:	speed = 2; break;		/* low */
+	case 1:	speed = 1; break;		/* full */
+	case 2:	speed = 3; break;		/* high */
+	default:
+		log_info(&xhci_log, "hub port %u: device gone\n", port);
+		for (i = 0; i < XHCI_MAX_PORTS; i++)
+			if (xhci.dev[i].slot != 0 &&
+			    xhci.dev[i].parent_slot == hub->slot &&
+			    xhci.dev[i].parent_port == port)
+				xhci_device_free(&xhci.dev[i]);
+		return;
+	}
+
+	/* A free slot in this driver's own table. */
+	for (i = 0; i < XHCI_MAX_PORTS; i++)
+		if (xhci.dev[i].slot == 0) {
+			dev = &xhci.dev[i];
+			break;
+		}
+
+	if (dev == NULL) {
+		log_warn(&xhci_log, "no room for another device\n");
+		return;
+	}
+
+	log_info(&xhci_log, "hub port %u: a device at %s speed\n", port,
+	    type == 0 ? "low" : type == 1 ? "full" : "high");
+
+	if (xhci_device_attach_hub(hub, port, speed, dev) != OK) {
+		log_warn(&xhci_log, "hub port %u: could not be enumerated\n",
+		    port);
+		xhci_device_free(dev);
+		return;
+	}
+
+	xhci_urb_announce(dev);
+}
+
 void
 xhci_urb_message(message *m)
 {
@@ -293,7 +481,7 @@ xhci_urb_message(message *m)
 		 * drivers are started by hand or by rc afterwards.
 		 */
 		for (i = 0; i < XHCI_MAX_PORTS; i++)
-			if (xhci.dev[i].slot != 0)
+			if (xhci.dev[i].slot != 0 && !xhci.dev[i].announced)
 				xhci_urb_announce(&xhci.dev[i]);
 		break;
 
@@ -321,6 +509,7 @@ xhci_urb_message(message *m)
 		break;
 
 	case USB_RQ_SEND_INFO:
+		hub_news(m);
 		reply(m->m_source, 0, 0);
 		break;
 

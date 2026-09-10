@@ -1,0 +1,19 @@
+# Веха 10.2: кольца, запуск контроллера и сброс порта. То же окно, что у
+# 10.1: MEECHO с корнем на eMMC, драйвер кладётся по ssh в живую систему и
+# поднимается вручную, а печатает он на консоль, поэтому консоль держится
+# открытой всё окно.
+120 WAIT switching console to 115200
+1 BAUD 115200
+2 <CR>
+1 <CR>
+420 WAIT login:
+2 root
+60 WAIT they are.
+2 export TERM=vt100 PAGER=cat
+3 uname -s; cat /proc/uptime; ifconfig | grep 'inet '; printf 'd%s\n' 1
+40 WAIT d1
+900 WAIT ---hold-open---
+3 printf 'd%s\n' 2
+40 WAIT d2
+2 /sbin/reboot
+20

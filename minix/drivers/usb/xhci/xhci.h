@@ -69,9 +69,39 @@ struct xhci_ring {
 };
 
 /*
- * A device the controller has given a slot to.  One for now: the hub on
- * the root port.  What hangs behind it is milestone 10.4's business, and
- * it needs the hub driver rather than more of this file.
+ * One endpoint of a device, and the ring the driver hands it work on.
+ *
+ * The controller numbers endpoints differently from USB itself: what USB
+ * calls endpoint N in a direction is "device context index" 2N (out) or
+ * 2N+1 (in), with the control endpoint at 1.  That number is the index
+ * into the device context, the doorbell to ring, and the bit to set when
+ * asking for the endpoint to be configured - so it is worked out once and
+ * kept, rather than recomputed at three sites that could disagree.
+ */
+struct xhci_ep {
+	unsigned dci;			/* 0 when this entry is unused */
+	unsigned num;			/* the number USB gives it */
+	int dir_in;
+	unsigned type;			/* the xHCI endpoint type */
+	unsigned max_packet;
+	unsigned interval;
+	struct xhci_ring ring;
+};
+
+#define XHCI_MAX_EPS		8
+
+/*
+ * The buffer a device's transfers go through.  Mass storage asks for
+ * thirty-two kilobytes at a time (sixty-four sectors), so anything
+ * smaller would make every read two transfers instead of one.
+ */
+#define XHCI_DEV_BUF		(64 * 1024)
+
+/*
+ * A device the controller has given a slot to - on a root port, or behind
+ * a hub.  The difference is written in two fields: the route string, which
+ * says which port of which hub to walk, and the transaction translator,
+ * which a slow device behind a fast hub is reached through.
  */
 struct xhci_device {
 	unsigned slot;			/* 0 when this entry is unused */
@@ -81,6 +111,7 @@ struct xhci_device {
 	unsigned config;		/* the configuration that was set */
 	unsigned interfaces;		/* a bit per interface number it has */
 	unsigned class;			/* what the device says it is */
+	unsigned iface_class;		/* and what its first interface says */
 	int announced;			/* the drivers have been told about it */
 
 	vir_bytes in_ctx;		/* the input context for commands */
@@ -89,8 +120,22 @@ struct xhci_device {
 	phys_bytes dev_ctx_phys;
 	struct xhci_ring ep0;		/* the control endpoint's ring */
 
-	vir_bytes buf;			/* one page for descriptors */
+	vir_bytes buf;			/* the transfer buffer */
 	phys_bytes buf_phys;
+
+	/*
+	 * Where this device hangs.  A device on a root port has route 0 and
+	 * tier 0; one behind a hub carries that hub's route plus its own
+	 * port number, four bits per tier, which is how the controller
+	 * finds it without the driver addressing anything.
+	 */
+	unsigned route;
+	unsigned tier;
+	unsigned parent_slot;		/* the hub, for a slow device */
+	unsigned parent_port;
+
+	struct xhci_ep ep[XHCI_MAX_EPS];
+	unsigned neps;
 };
 
 /* Everything the device tree said about this controller. */
@@ -219,6 +264,12 @@ int xhci_device_attach(unsigned port, struct xhci_device *dev);
 void xhci_device_free(struct xhci_device *dev);
 int xhci_control(struct xhci_device *dev, uint8_t request_type,
 	uint8_t request, uint16_t value, uint16_t index, uint16_t length,
+	unsigned *actual);
+int xhci_device_attach_hub(struct xhci_device *hub, unsigned hubport,
+	unsigned speed, struct xhci_device *dev);
+struct xhci_ep *xhci_device_ep(struct xhci_device *dev, unsigned num,
+	int dir_in);
+int xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	unsigned *actual);
 
 /* xhci_urb.c */

@@ -560,7 +560,15 @@ xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
 				break;
 			}
 
-			if (want != NULL && type == want_type) {
+			/*
+			 * The FIRST event of the wanted kind is kept, not
+			 * the last.  A control transfer whose device
+			 * answered short produces two - one for the data,
+			 * which carries how much was left over, and one for
+			 * the status stage, which carries nothing.  Keeping
+			 * the last would report every short read as full.
+			 */
+			if (want != NULL && type == want_type && !got_wanted) {
 				*want = ev;
 				got_wanted = 1;
 			}

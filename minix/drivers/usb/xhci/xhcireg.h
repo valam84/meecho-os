@@ -135,6 +135,7 @@
 #define XHCI_TRB_LINK		6
 #define XHCI_TRB_ENABLE_SLOT	9
 #define XHCI_TRB_ADDRESS_DEVICE	11
+#define XHCI_TRB_CONFIGURE_EP	12
 #define XHCI_TRB_NOOP_CMD	23
 #define XHCI_TRB_TRANSFER_EVENT	32
 #define XHCI_TRB_CMD_COMPLETION	33
@@ -210,6 +211,8 @@
 #define XHCI_TRB_DATA		3
 #define XHCI_TRB_STATUS		4
 
+#define XHCI_TRB_ISP		(1u << 2)	/* interrupt on short packet */
+#define XHCI_TRB_CH		(1u << 4)	/* chained to the next TRB */
 #define XHCI_TRB_IOC		(1u << 5)	/* interrupt on completion */
 #define XHCI_TRB_IDT		(1u << 6)	/* immediate data, setup */
 #define XHCI_TRB_DIR_IN		(1u << 16)	/* on data and status */
@@ -234,6 +237,13 @@
 #define XHCI_SLOT_ENTRIES(n)	(((n) & 0x1f) << 27)
 /* Slot context, word 1: which root hub port this device hangs off. */
 #define XHCI_SLOT_RHPORT(p)	(((p) & 0xff) << 16)
+/*
+ * Slot context, word 2: the transaction translator, through which a low-
+ * or full-speed device behind a high-speed hub is reached.  Which hub,
+ * and which of its ports.
+ */
+#define XHCI_SLOT_TT_SLOT(s)	((s) & 0xff)
+#define XHCI_SLOT_TT_PORT(p)	(((p) & 0xff) << 8)
 
 /* Endpoint context, word 1: error count, type, maximum packet size. */
 #define XHCI_EP_CERR(n)		(((n) & 0x3) << 1)
@@ -241,9 +251,14 @@
 #define XHCI_EP_MAXBURST(n)	(((n) & 0xff) << 8)
 #define XHCI_EP_MAXPACKET(n)	(((n) & 0xffff) << 16)
 
+#define XHCI_EP_TYPE_BULK_OUT	2
+#define XHCI_EP_TYPE_INTR_OUT	3
 #define XHCI_EP_TYPE_CONTROL	4
 #define XHCI_EP_TYPE_BULK_IN	6
 #define XHCI_EP_TYPE_INTR_IN	7
+
+/* Endpoint context, word 0: how often an interrupt endpoint is polled. */
+#define XHCI_EP_INTERVAL(n)	(((n) & 0xff) << 16)
 
 /* Endpoint context, word 2: where its transfer ring starts, and its cycle. */
 #define XHCI_EP_DCS		(1u << 0)

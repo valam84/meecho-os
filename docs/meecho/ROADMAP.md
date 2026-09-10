@@ -96,13 +96,22 @@ now — 112 programs — and `port/test/suite/qemu-tests.py` runs it on QEMU, ea
 test with its own deadline so one hang cannot eat the rest. Getting it to
 build took five changes: 26 duplicate tentative definitions (`-fno-common`),
 a library that was never installed, three places that only knew about i386 and
-arm, and turning off dynamic linking for the suite, since `exec` has no
-`PT_INTERP` path and all 112 programs would have died before `main()`.
+arm, and turning off dynamic linking for the suite, since a dynamic binary
+died before `main()` and all 112 programs would have shown the same one
+failure.
 
 The first run: **66 passed, 19 failed, 12 hung, 4 not built**. Five fixes
 later: **72 passed, 12 failed, 13 hung**, with a written cause for each one
 that is left. The full table, both runs side by side, is
 `port/test/suite/results-qemu.txt`.
+
+The suite is linked dynamically again as of 2026-09-10, so every program in
+it now exercises the loader as well: **73 passed, 9 failed, 5 hung, 11 timed
+out, 3 not built** — `port/test/suite/results-qemu-dynamic.txt`. It found
+something on the first run, too: `test2` corrupts its own data in a
+vectorised loop when linked dynamically and not when linked statically. The
+cause is not established; what is ruled out and what to try next is in
+`port/test/dyn/README.md`.
 
 What it found in one evening, after months in which nothing had looked here:
 
@@ -163,9 +172,10 @@ These are known unknowns, not tasks with hidden answers.
 ## What comes next
 
 Stage 9 was the last stage the plan had, and 10 is not written yet. What is
-open and named, in no particular order: 9.4 — the SD card controller, dynamic
-linking (`ld.elf_so` links; `exec` has no `PT_INTERP` path), the bounce buffer
-that still cuts every request into 32 KiB pieces, and two defects in
+open and named, in no particular order: 9.4 — the SD card controller, moving
+the userland onto shared libraries now that dynamic linking works (and the
+`test2` corruption that turning the suite dynamic uncovered), the bounce
+buffer that still cuts every request into 32 KiB pieces, and two defects in
 `servers/sched/schedule.c` found while closing the occupancy question —
 `pick_cpu()` overwrites the scheduler's idea of a process's core on a quantum
 expiry that never moves it, so `do_stop_scheduling()` later decrements the
@@ -178,7 +188,7 @@ unsigned counter.
 |---|---|
 | POSIX-compatible NetBSD userland, or a minimal one of our own | after stage 5 — still open |
 | IPC model: as it is, a fastpath, or capabilities | **settled 2026-09-09: as it is** — see below |
-| Dynamic linking | `ld.elf_so` links; `exec` needs a `PT_INTERP` path |
+| Dynamic linking | **done 2026-09-10** — a program starts through `ld.elf_so`, `dlopen` works; the userland is still linked statically |
 
 **The IPC model stays as it is, and that is a measurement rather than an
 opinion.** The kernel can now count what it does — `KTRACE` in

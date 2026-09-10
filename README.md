@@ -107,8 +107,12 @@ Known gaps, stated plainly:
   pieces, which is the size of the bounce buffer rather than a limit of the
   controller.
 - **No USB, no display, no audio.** The board's console is a serial port.
-- **Everything is statically linked.** `ld.elf_so` links for aarch64 now, but
-  `exec` has no `PT_INTERP` path yet.
+- ~~**Everything is statically linked.**~~ Dynamic linking works as of
+  2026-09-10: a program with a `PT_INTERP` starts through `ld.elf_so`, both
+  lazily bound and under `LD_BIND_NOW`, and `dlopen` works. `exec` had the
+  `PT_INTERP` path all along — what was broken were three places in the
+  AArch64 loader that had never run once. The system itself is still linked
+  statically; moving the userland onto shared libraries is separate work.
 - **No SD-card controller driver.** The card slot is a DesignWare mobile
   storage host — different registers from the eMMC's SDHCI, different file.
 

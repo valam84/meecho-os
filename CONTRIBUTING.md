@@ -38,9 +38,13 @@ If you only want to look at a running system first, take a release and run it �
   2026, `less` from 458 to 643, `bzip2` from 1.0.6 to 1.0.8.
 ### Medium
 
-- **`PT_INTERP` in `exec`, and dynamic linking.** `ld.elf_so` links for aarch64
-  now — a first — but nothing has run it, because `exec` has no interpreter
-  path. Everything in the system is statically linked today.
+- **Move the userland onto shared libraries.** Dynamic linking itself works as
+  of 2026-09-10 — a program with a `PT_INTERP` starts through `ld.elf_so`, and
+  `dlopen` works — but `LDSTATIC` in `share/mk/bsd.own.mk` is still `-static`,
+  so every program in the system carries its own copy of libc. What is left is
+  TLS (the branches in `ld.elf_so` are fenced off, as on arm), `MKPICINSTALL`,
+  and one open defect: `test2` corrupts a vectorised loop when linked
+  dynamically, cause not established — see `port/test/dyn/README.md`.
 - **Raise the 4 GB physical memory ceiling.** It comes from the free-page bitmap
   in `servers/vm/alloc.c` and `VM_MAX_PHYS_MEM` beside it. The kernel does not
   need the limit at all.

@@ -780,9 +780,15 @@ mass_storage_try_first_open()
 	if (SECTOR_SIZE != blen)
 		panic("Invalid block size used by USB device!");
 
-	/* Get information about capacity from reply */
+	/* Get information about capacity from reply.
+	 *
+	 * READ CAPACITY answers the LAST block's address, so the size is one
+	 * block more than llba * blen; and the product is 64-bit, because
+	 * both factors are 32-bit and an 8 GB drive already overflows it -
+	 * on the board a 7.5 GiB flash drive read as 3.7 GB, and every
+	 * transfer past that point came back empty. */
 	driver_state.cur_drive->disk.dv_base = 0;
-	driver_state.cur_drive->disk.dv_size = llba * blen;
+	driver_state.cur_drive->disk.dv_size = ((u64_t)llba + 1) * blen;
 
 	return EXIT_SUCCESS;
 }

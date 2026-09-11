@@ -252,6 +252,7 @@ struct mep {
 
 	/* The transfer descriptor being assembled. */
 	unsigned td_len, td_done;
+	unsigned trb_len, trb_done;	/* of the entry being run */
 	int td_short;
 };
 
@@ -327,6 +328,7 @@ static uint32_t iman_shadow, usbsts_shadow;
  */
 static int ehb;
 static uint32_t erdp_shadow;
+static int irq_pending;			/* an event written, its line not yet raised */
 
 static unsigned event_deq_index(void);
 static void sts_clr(uint32_t bits);
@@ -513,15 +515,47 @@ event_push(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control)
 
 	sts_set(XHCI_USBSTS_EINT);
 
+	/*
+	 * The interrupt follows the event, it does not accompany it.  The
+	 * write of the TRB and the assertion of the line are two things
+	 * the controller does one after the other, and a driver that is
+	 * polling the ring can take the event in between - after which the
+	 * line is raised, and the busy flag set, for an event that is
+	 * already gone.  Raised three steps from now rather than here, so
+	 * that the stand can be that driver: one step for it to see the
+	 * event, one for it to write the dequeue pointer, one for that
+	 * write to land before the line does.  Nothing in the specification
+	 * says the line comes sooner, and the board says it does not.
+	 */
+	irq_pending = 3;
+}
+
+/*
+ * The controller raising its line for what it has written - or not, when
+ * the driver has not yet said it finished with the last one.
+ */
+static void
+irq_raise(void)
+{
+	if (irq_pending == 0)
+		return;
+	if (irq_pending > 1) {
+		irq_pending--;
+		return;
+	}
+
+	/*
+	 * The driver has not said it finished handling the last one, so
+	 * the line stays down: the event waits for the dequeue pointer
+	 * write that clears the busy flag, and a driver that never makes
+	 * it waits for ever.
+	 */
 	if (ehb) {
-		/*
-		 * The driver has not said it finished handling the last
-		 * one, so this event gets no interrupt of its own.
-		 */
 		model_stats.events_unannounced++;
 		return;
 	}
 
+	irq_pending = 0;
 	ehb = 1;
 	iman_shadow |= XHCI_IMAN_IP;
 	wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN, iman_shadow);
@@ -725,16 +759,34 @@ command_run(void)
 /*---------------------------------------------------------------------------*
  *    transfers                                                               *
  *---------------------------------------------------------------------------*/
+/*
+ * A transfer event, and the one number in it that is easy to model
+ * wrongly: the length field is the residue of the TRB the event names,
+ * not of the descriptor.  The specification says so (6.4.2.1, "the
+ * residual number of bytes not transferred for the TRB"), and the
+ * distinction only shows on a descriptor of several entries - which is
+ * exactly what a bulk transfer whose buffer crosses 64 KiB is.  The
+ * first version of this model reported the descriptor's residue, which
+ * agrees with a driver that adds up nothing and disagrees with the
+ * controller.
+ */
+static void
+trb_event(struct mep *ep, unsigned slot, unsigned dci, phys_bytes where,
+	unsigned cc, unsigned residue)
+{
+	event_push((uint32_t)where, 0, (cc << 24) | (residue & 0xffffff),
+	    XHCI_TRB_TYPE(XHCI_TRB_TRANSFER_EVENT) | XHCI_TRB_SLOT_ID(slot) |
+	    ((dci & 0x1f) << 16));
+}
+
 static void
 td_event(struct mep *ep, unsigned slot, unsigned dci, phys_bytes where,
 	unsigned cc)
 {
-	unsigned residue = ep->td_len > ep->td_done ?
-	    ep->td_len - ep->td_done : 0;
+	unsigned residue = ep->trb_len > ep->trb_done ?
+	    ep->trb_len - ep->trb_done : 0;
 
-	event_push((uint32_t)where, 0, (cc << 24) | (residue & 0xffffff),
-	    XHCI_TRB_TYPE(XHCI_TRB_TRANSFER_EVENT) | XHCI_TRB_SLOT_ID(slot) |
-	    ((dci & 0x1f) << 16));
+	trb_event(ep, slot, dci, where, cc, residue);
 
 	model_stats.transfers++;
 	ep->td_len = ep->td_done = 0;
@@ -748,6 +800,8 @@ move_bytes(struct mep *ep, phys_bytes buf, unsigned len, int dir_in)
 	unsigned n;
 
 	ep->td_len += len;
+	ep->trb_len = len;
+	ep->trb_done = 0;
 
 	if (len == 0)
 		return;
@@ -766,6 +820,7 @@ move_bytes(struct mep *ep, phys_bytes buf, unsigned len, int dir_in)
 		memcpy(dev, ep->supply + ep->supply_pos, n);
 		ep->supply_pos += n;
 		ep->td_done += n;
+		ep->trb_done = n;
 		if (n < len)
 			ep->td_short = 1;
 	} else {
@@ -775,6 +830,7 @@ move_bytes(struct mep *ep, phys_bytes buf, unsigned len, int dir_in)
 		memcpy(ep->sink + ep->sink_len, dev, n);
 		ep->sink_len += n;
 		ep->td_done += len;
+		ep->trb_done = len;
 	}
 }
 
@@ -812,6 +868,7 @@ endpoint_run(unsigned slot, unsigned dci)
 		}
 
 		len = trb.status & 0x1ffff;
+		ep->trb_len = ep->trb_done = 0;	/* until move_bytes() says */
 
 		switch (type) {
 		case XHCI_TRB_SETUP: {
@@ -869,6 +926,8 @@ endpoint_run(unsigned slot, unsigned dci)
 		 * refused a flash drive for an invalid descriptor length.
 		 */
 		if (ep->td_short) {
+			int chained = (trb.control & XHCI_TRB_CH) != 0;
+
 			if (trb.control & XHCI_TRB_ISP)
 				td_event(ep, slot, dci, where,
 				    13 /* short packet */);
@@ -877,8 +936,20 @@ endpoint_run(unsigned slot, unsigned dci)
 				ep->td_short = 0;
 			}
 
-			/* What is left of the descriptor is skipped. */
-			while (trb.control & XHCI_TRB_CH) {
+			/*
+			 * What is left of the descriptor is skipped - retired
+			 * without a transfer - and if the last of it asked
+			 * for an event, it gets one: Short Packet, with the
+			 * whole of that entry reported as not transferred
+			 * (4.10.1.1).  So a short answer to a chained
+			 * descriptor is two events, and the second says
+			 * nothing true about the descriptor as a whole.
+			 * A driver that believes it reports a short read
+			 * as an empty one.
+			 */
+			while (chained) {
+				phys_bytes here = ep->ptr;
+
 				if (!trb_fetch(ep->ptr, ep->ccs, &trb))
 					break;
 				if (XHCI_TRB_TYPE_OF(trb.control) ==
@@ -889,6 +960,11 @@ endpoint_run(unsigned slot, unsigned dci)
 					continue;
 				}
 				ep->ptr += XHCI_TRB_SIZE;
+				chained = (trb.control & XHCI_TRB_CH) != 0;
+				if (!chained && (trb.control & XHCI_TRB_IOC))
+					trb_event(ep, slot, dci, here,
+					    13 /* short packet */,
+					    trb.status & 0x1ffff);
 			}
 			continue;
 		}
@@ -1117,6 +1193,7 @@ model_step(void)
 		halted = 1;
 		wr(OPR + XHCI_USBCMD, cmd & ~(uint32_t)XHCI_USBCMD_HCRST);
 		iman_shadow = 0;
+		irq_pending = 0;
 		wr(RTR + XHCI_IR(0) + XHCI_IR_IMAN, 0);
 		usbsts_shadow = 0;
 		sts_set(XHCI_USBSTS_HCH);
@@ -1148,6 +1225,7 @@ model_step(void)
 
 	acknowledgements();
 	ports();
+	irq_raise();
 
 	if (halted)
 		return;

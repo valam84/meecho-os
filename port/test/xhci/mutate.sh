@@ -24,6 +24,18 @@
 #            event_done().  The ring fills and the controller stops
 #            writing events for everybody, which is what both clients
 #            stalling on the board looked like.
+#   wake     acknowledging the line and sleeping without one more look
+#            at the ring - an event that landed in between is slept
+#            through until the deadline
+#   td       matching a client's event against the last TRB of the
+#            descriptor alone, so that a short answer is reported as a
+#            full one - the same mistake as "first", made again in the
+#            asynchronous path.  "Invalid descriptor length" and a
+#            first open failing with EIO on every bring-up
+#   ehb      an interrupt handler that never says it has finished when
+#            it found nothing: the controller keeps its busy flag and
+#            raises nothing more.  "the transfer had finished and nobody
+#            was told", twice per bring-up, after every polled sequence
 #
 #   sh mutate.sh
 
@@ -106,8 +118,40 @@ mut_wake() {
 	changed xhci_ring.c wake
 }
 
+#
+# td: the asynchronous path's own version of "first" - matching an event
+#     against the last TRB of the descriptor alone, so that the event on a
+#     short data stage, the one carrying how much arrived, is not
+#     recognised and the status stage's "nothing left over" is believed.
+#     The board: "Invalid descriptor length", and a first open that
+#     failed with EIO on every bring-up.
+#
+mut_td() {
+	perl -0pi -e 's/\t\tif \(\(uint32_t\)td->trb\[i\] == ev->p0\)\n\t\t\tbreak;/\t\tif (i == td->n - 1 \&\& (uint32_t)td->trb[i] == ev->p0)\n\t\t\tbreak;/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c td
+}
+
+#
+# ehb: the interrupt handler that does not say it has finished.  The
+#      controller sets Event Handler Busy when it raises the line and
+#      clears it only on a write of the dequeue pointer; a driver that
+#      polls can take an event before the line is raised for it, then
+#      wake to an empty ring and go back to sleep without that write -
+#      after which the controller writes events and raises nothing.
+#      The board: "the transfer had finished and nobody was told", twice
+#      per bring-up, each time the first transfer after enumeration.
+#
+mut_ehb() {
+	perl -0pi -e 's/\t\(void\)xhci_events_drain\(0, NULL, 0\);\n\txhci_event_handled\(\);\n/\t(void)xhci_events_drain(0, NULL, 0);\n/' \
+	    "$WORK/src/xhci_ring.c"
+	perl -0pi -e 's/\t\t\t\txhci_irq_ack\(\);\n\t\t\t\txhci_event_handled\(\);\n/\t\t\t\txhci_irq_ack();\n/' \
+	    "$WORK/src/xhci_ring.c"
+	changed xhci_ring.c ehb
+}
+
 bad=0
-for m in link first isp doorbell ack wake; do
+for m in link first isp doorbell ack wake td ehb; do
 	run_one "$m" "mut_$m" || bad=$((bad + 1))
 done
 

@@ -92,7 +92,8 @@ static struct {
 	struct xhci_ep *ep;		/* NULL for a control transfer */
 	unsigned length;
 	int dir_in;
-	phys_bytes trb;			/* what the event will name */
+	phys_bytes trb;			/* the TD's last TRB, for the log */
+	struct xhci_td td;		/* every TRB an event may name */
 } out;
 
 int
@@ -461,36 +462,46 @@ finish(unsigned actual, int status)
  *
  * "Somebody else's" is not hypothetical - enumeration runs control
  * transfers of its own and waits for them - so the event is matched by the
- * address of the TRB it names, which is what that field is for.
+ * address of the TRB it names, against every TRB of the outstanding TD
+ * and not only its last.  The difference is every short answer: a device
+ * that gives less than was asked reports it on the TRB the short packet
+ * landed in, and the event on the last TRB then says nothing was left
+ * over.  Matching on the last TRB alone told the mass storage driver it
+ * had 128 bytes of a 32-byte descriptor, and its first open failed on
+ * every bring-up.  The arithmetic is xhci_td_event()'s, where the stand
+ * can reach it.
  */
 int
 xhci_urb_transfer_event(const struct xhci_trb *ev)
 {
-	unsigned cc, residue, actual;
+	unsigned cc, actual;
+	int r;
 
 	log_debug(&xhci_log, "event at 0x%08x, waiting for 0x%08x "
 	    "(busy %d)\n", ev->p0, (uint32_t)out.trb, out.busy);
 
-	if (!out.busy || ev->p0 != (uint32_t)out.trb)
+	if (!out.busy)
 		return 0;
 
-	cc = XHCI_CC_OF(ev->status);
-	residue = XHCI_EVENT_LENGTH(ev->status);
-	actual = residue <= out.length ? out.length - residue : 0;
+	r = xhci_td_event(&out.td, ev, &actual, &cc);
+	if (r == 0)
+		return 0;
+	if (r == 1)
+		return 1;		/* ours, and more of it is coming */
 
 	if (out.dir_in)
 		xhci_cache(CACHE_INVALIDATE, (void *)out.dev->buf,
 		    out.ep != NULL ? XHCI_DEV_BUF : XHCI_PAGE,
 		    "a transfer buffer");
 
-	if (cc != XHCI_CC_SUCCESS && cc != 13 /* short packet */) {
+	if (cc != XHCI_CC_SUCCESS && cc != XHCI_CC_SHORT_PACKET) {
 		log_warn(&xhci_log, "a %u-byte transfer for %d completed "
 		    "with %u\n", out.length, out.client, cc);
 		finish(0, EIO);
 	} else
 		finish(actual, OK);
 
-	sys_setalarm(0, 0);
+	xhci_alarm(0, NULL);
 	return 1;
 }
 
@@ -639,7 +650,7 @@ send_urb(message *m)
 		out.ep = ep;
 		out.dir_in = ep->dir_in;
 		out.length = length;
-		out.trb = xhci_transfer_start(dev, ep, length);
+		out.trb = xhci_transfer_start(dev, ep, length, &out.td);
 		break;
 
 	case USB_TRANSFER_CTL:
@@ -662,7 +673,7 @@ send_urb(message *m)
 		out.length = length;
 		out.trb = xhci_control_start(dev, req->bRequestType,
 		    req->bRequest, req->wValue, req->wIndex,
-		    (uint16_t)length);
+		    (uint16_t)length, &out.td);
 		if (out.trb != 0)
 			xhci_doorbell(dev, XHCI_DB_EP0);
 		break;
@@ -686,9 +697,30 @@ send_urb(message *m)
 	 * not take the driver with it.  Five seconds is far longer than any
 	 * of these take and short enough that a hung device is noticed.
 	 */
-	sys_setalarm(micros_to_ticks(5000000), 0);
+	xhci_alarm(5000000, "a client's transfer");
 
 	accept(m->m_source, id);
+
+	/*
+	 * Without the interrupt there is nobody to wake this driver when
+	 * the transfer is done: the main loop sleeps in a receive that only
+	 * the line or the deadline ends, and the first A/B run of "irq=0"
+	 * showed exactly that - every transfer completing on its five-second
+	 * deadline, the hub never getting as far as the flash drive.  So the
+	 * polled variant waits here, the way the synchronous driver of
+	 * milestone 10.5 did: looking at the ring and burning its quantum in
+	 * between.  That is the A this driver's B is measured against, and
+	 * nothing more.
+	 */
+	if (!xhci.irq_ok || xhci.irq_dead) {
+		u64_t t = now();
+
+		while (out.busy && since(t) < 5000000) {
+			(void)xhci_events_drain(0, NULL, 0);
+			if (out.busy)
+				micro_delay(100);
+		}
+	}
 }
 
 /*

@@ -730,9 +730,11 @@ main(int argc, char **argv)
 	test_enumeration();
 	test_transfers();
 	test_short_control();
+	test_td_matching();
 	test_two_devices();
 	test_doorbell();
 	test_outstanding();
+	test_interrupt_after_poll();
 
 	printf("\n%u checks, %u failure(s)\n", checks, failures);
 	return failures != 0 ? 1 : 0;

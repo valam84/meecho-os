@@ -273,6 +273,11 @@ int xhci_cmd_noop_quiet(void);
 int xhci_port_reset(unsigned port);
 int xhci_events_drain(unsigned usec, struct xhci_trb *want,
 	unsigned want_type);
+void xhci_alarm(unsigned usec, const char *site);
+int xhci_alarm_fired(const char *where);
+void xhci_irq_ack(void);
+void xhci_event_handled(void);
+void xhci_interrupt(void);
 
 /* xhci_dev.c */
 int xhci_device_attach(unsigned port, struct xhci_device *dev);
@@ -286,10 +291,33 @@ struct xhci_ep *xhci_device_ep(struct xhci_device *dev, unsigned num,
 	int dir_in);
 int xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	unsigned *actual);
+/*
+ * A transfer descriptor, as the party waiting for its event needs to see
+ * it: which TRBs it was made of and how much data each carried.  The
+ * event that says how much arrived may name any of them - see
+ * xhci_td_event() - so a waiter that knows only the last TRB is wrong
+ * about every short answer.  Three is what a control transfer takes;
+ * a bulk transfer takes one, or two when its buffer crosses 64 KiB.
+ */
+#define XHCI_TD_MAX_TRBS	3
+
+struct xhci_td {
+	unsigned n;
+	phys_bytes trb[XHCI_TD_MAX_TRBS];
+	unsigned off[XHCI_TD_MAX_TRBS];	/* data bytes before this TRB */
+	unsigned len[XHCI_TD_MAX_TRBS];	/* data bytes in it; 0 = no data */
+	unsigned length;		/* what was asked for */
+	unsigned actual;		/* what has been accounted for */
+	int short_seen;			/* and the answer is now final */
+};
+
 phys_bytes xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep,
-	size_t length);
+	size_t length, struct xhci_td *td);
 phys_bytes xhci_control_start(struct xhci_device *dev, uint8_t request_type,
-	uint8_t request, uint16_t value, uint16_t index, uint16_t length);
+	uint8_t request, uint16_t value, uint16_t index, uint16_t length,
+	struct xhci_td *td);
+int xhci_td_event(struct xhci_td *td, const struct xhci_trb *ev,
+	unsigned *actual, unsigned *cc);
 void xhci_doorbell(struct xhci_device *dev, unsigned target);
 
 /* xhci_urb.c */

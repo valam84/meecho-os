@@ -145,6 +145,7 @@
 #define XHCI_CC_OF(status)	(((status) >> 24) & 0xff)
 #define XHCI_CC_SUCCESS		1
 #define XHCI_CC_TRB_ERROR	5
+#define XHCI_CC_SHORT_PACKET	13
 #define XHCI_CC_PARAMETER_ERROR	17
 
 /*

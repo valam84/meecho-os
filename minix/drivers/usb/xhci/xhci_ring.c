@@ -595,6 +595,146 @@ event_done(void)
 static unsigned spurious;
 unsigned long xhci_n_irq, xhci_n_alarm;
 
+/*
+ * Every alarm this driver sets goes through here, and so does every
+ * clock notification it receives - so that a notification can be asked
+ * who ordered it.
+ *
+ * A clock notification carries nothing: not which alarm it is for, nor
+ * whether that alarm still stands.  The kernel marks it pending when the
+ * alarm expires and delivers it at the driver's next receive, and
+ * cancelling the alarm in between does not take the mark back.  So a
+ * notification can arrive for an alarm that was cancelled, or long
+ * before the alarm that is currently set is due, and the driver would
+ * then act on a deadline that has not passed.  On the board that read as
+ * "the transfer had finished and nobody was told", twice per bring-up at
+ * the same two moments - which is not what a lost interrupt looks like,
+ * it is what a stale clock looks like.  This makes the difference
+ * visible instead of inferred.
+ */
+static u64_t alarm_at;
+static unsigned alarm_for;		/* microseconds asked for; 0: none */
+static const char *alarm_site, *alarm_last_site;
+
+void
+xhci_alarm(unsigned usec, const char *site)
+{
+	if (usec == 0) {
+		sys_setalarm(0, 0);
+		if (alarm_site != NULL)
+			alarm_last_site = alarm_site;
+		alarm_site = NULL;
+		alarm_for = 0;
+		return;
+	}
+
+	read_frclock_64(&alarm_at);
+	alarm_for = usec;
+	alarm_site = site;
+	sys_setalarm(micros_to_ticks(usec), 0);
+}
+
+/*
+ * Answers whether the alarm that is set was due: 0 when this
+ * notification cannot be for it - none is set, or it is not nearly due
+ * - and says so.
+ */
+int
+xhci_alarm_fired(const char *where)
+{
+	unsigned long since = elapsed(alarm_at);
+
+	if (alarm_for == 0) {
+		log_warn(&xhci_log, "a clock notification in %s with no alarm "
+		    "set; the last one, %s, was cancelled %lu us ago\n", where,
+		    alarm_last_site != NULL ? alarm_last_site : "none",
+		    since);
+		return 0;
+	}
+
+	/* A tick early is the granularity of the clock, not a stale one. */
+	if (since + 20000 < alarm_for) {
+		log_warn(&xhci_log, "a clock notification in %s %lu us into "
+		    "an alarm set for %u us by %s; the last one, %s, was "
+		    "cancelled\n", where, since, alarm_for, alarm_site,
+		    alarm_last_site != NULL ? alarm_last_site : "none");
+		return 0;
+	}
+
+	return 1;
+}
+
+/*
+ * Acknowledge the interrupt at the controller.  Both flags are
+ * write-one-to-clear and level-driven: left standing they make the next
+ * enable interrupt at once and for ever - the live-lock this port met on
+ * the UART.
+ */
+void
+xhci_irq_ack(void)
+{
+	xhci_wr(xhci.regs, rt() + XHCI_IR(0) + XHCI_IR_IMAN,
+	    xhci_rd(xhci.regs, rt() + XHCI_IR(0) + XHCI_IR_IMAN) |
+	    XHCI_IMAN_IP | XHCI_IMAN_IE);
+	xhci_wr(xhci.regs, op() + XHCI_USBSTS, XHCI_USBSTS_EINT);
+}
+
+/*
+ * Tell the controller the handler has finished - whether or not it took
+ * anything off the ring.
+ *
+ * This is the dequeue pointer write with the Event Handler Busy flag,
+ * the same write event_done() makes for every event taken; the point of
+ * making it here as well is the interrupt that had nothing behind it.
+ * The controller sets the busy flag when it raises the line, and it will
+ * not raise the line again while the flag stands; the flag is cleared
+ * only by this write.  Now consider a driver that polls the ring - the
+ * synchronous path does, for every command and every control transfer
+ * of enumeration.  It can take an event in the moment between the
+ * controller writing it and the controller raising the line for it, and
+ * write the dequeue pointer then; the line is raised afterwards, for an
+ * event that is already gone, and the busy flag with it.  The driver
+ * wakes, finds nothing, acknowledges the line and goes back to sleep
+ * without touching the dequeue pointer.  From that moment the controller
+ * writes events and says nothing about them: the next transfer finishes
+ * on its deadline, five seconds later, and the alarm's drain - which
+ * does write the dequeue pointer - is what wakes the controller up
+ * again.
+ *
+ * On the board that was "the transfer had finished and nobody was told:
+ * the event was on the ring, the interrupt was not", twice per
+ * bring-up, each time the first client transfer after a polled
+ * enumeration.  It was first tried a day earlier and taken out again,
+ * because it was judged by reads that came back "Input/output error" -
+ * which the deadline handler was producing on its own at the time, by
+ * failing a request its drain had just completed.  A guess judged by a
+ * symptom with another cause.  This time the stand shows the stall and
+ * shows this write ending it, and the alarm count on the board says the
+ * same.
+ */
+void
+xhci_event_handled(void)
+{
+	event_done();
+}
+
+/*
+ * The controller has something to say: what the main loop does on the
+ * interrupt.  One place, so that the stand can do exactly what the
+ * driver does, and so that the synchronous wait and the main loop cannot
+ * drift apart in how they answer the line.
+ */
+void
+xhci_interrupt(void)
+{
+	xhci_n_irq++;
+	xhci_irq_ack();
+	(void)xhci_events_drain(0, NULL, 0);
+	xhci_event_handled();
+	if (xhci.irq_ok && !xhci.irq_dead)
+		(void)sys_irqenable(&xhci.irq_hook);
+}
+
 static unsigned
 wait_for_event(unsigned usec)
 {
@@ -618,15 +758,9 @@ wait_for_event(unsigned usec)
 
 	/*
 	 * Acknowledge what has already been signalled before arming the
-	 * line again.  Both flags are write-one-to-clear and both are
-	 * level-driven: left standing, they make the next enable produce an
-	 * interrupt immediately and for ever - the live-lock this port has
-	 * already met once on the UART.
+	 * line again; see xhci_irq_ack() for why it cannot be left.
 	 */
-	xhci_wr(xhci.regs, rt() + XHCI_IR(0) + XHCI_IR_IMAN,
-	    xhci_rd(xhci.regs, rt() + XHCI_IR(0) + XHCI_IR_IMAN) |
-	    XHCI_IMAN_IP | XHCI_IMAN_IE);
-	xhci_wr(xhci.regs, op() + XHCI_USBSTS, XHCI_USBSTS_EINT);
+	xhci_irq_ack();
 
 	if (sys_irqenable(&xhci.irq_hook) != OK) {
 		log_warn(&xhci_log, "cannot enable line %d; polling from now "
@@ -658,7 +792,7 @@ wait_for_event(unsigned usec)
 	if (event_waiting())
 		return elapsed(t_start);
 
-	sys_setalarm(micros_to_ticks(usec), 0);
+	xhci_alarm(usec, "a wait for the controller");
 
 	for (;;) {
 		if (sef_receive_status(ANY, &m, &ipc_status) != OK) {
@@ -670,11 +804,22 @@ wait_for_event(unsigned usec)
 			if (_ENDPOINT_P(m.m_source) == HARDWARE) {
 				spurious++;
 				xhci_n_irq++;
+				/*
+				 * Acknowledged here, at the controller, and
+				 * not only at the next wait: the line is
+				 * level-driven, and re-enabling it with the
+				 * flags still standing is one more interrupt
+				 * for nothing.  And the busy flag goes with
+				 * it - see xhci_event_handled().
+				 */
+				xhci_irq_ack();
+				xhci_event_handled();
 				(void)sys_irqenable(&xhci.irq_hook);
 				break;
 			}
 			if (_ENDPOINT_P(m.m_source) == CLOCK) {
 				xhci_n_alarm++;
+				xhci_alarm_fired("a wait for the controller");
 				break;
 			}
 			continue;
@@ -684,7 +829,7 @@ wait_for_event(unsigned usec)
 		xhci_defer(&m, ipc_status);
 	}
 
-	sys_setalarm(0, 0);
+	xhci_alarm(0, NULL);
 	/*
 	 * The line is left ON.  Switching it off here is what the first
 	 * version did, and it broke the other half of the driver: the

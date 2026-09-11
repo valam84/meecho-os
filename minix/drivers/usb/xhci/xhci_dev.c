@@ -129,15 +129,117 @@ build_input_context(struct xhci_device *dev)
  * is not needed until something is configured, which is 10.4.
  */
 /*
- * Put a control transfer on the endpoint's ring and ring the doorbell,
- * without waiting.  Answers the address of the status-stage TRB, which is
- * the one the completion event will name.
+ * The transfer descriptor as the party waiting for it needs to see it.
+ *
+ * A TD is one to three TRBs, and the controller reports on it by naming a
+ * TRB - not necessarily the last one.  The last, the one with IOC, is
+ * named when the TD is through.  But a device that answers with less
+ * than was asked for produces an event on the TRB the short packet
+ * landed in, and THAT event is the one that carries how much arrived;
+ * the event on the last TRB then says nothing was left over, because
+ * nothing was asked of it.  A waiter that recognises only the last TRB
+ * therefore sees every short answer as a full one.
+ *
+ * The synchronous path knew this and kept the first event of the wanted
+ * kind.  The asynchronous path matched on the status TRB alone, and on
+ * the board the mass storage driver asked for 128 bytes of a 32-byte
+ * configuration descriptor, was told it got 128, said "Invalid
+ * descriptor length", and failed its first open - quietly, with EIO,
+ * on every bring-up.  The stand had a mutation for exactly this defect
+ * and caught it in the synchronous path, where the defect no longer
+ * was.  So the matching now lives here, in a file the stand builds,
+ * and is written down once for both paths.
+ */
+static void
+td_reset(struct xhci_td *td, unsigned length)
+{
+	if (td == NULL)
+		return;
+	memset(td, 0, sizeof(*td));
+	td->length = length;
+	td->actual = length;
+}
+
+static void
+td_add(struct xhci_td *td, phys_bytes trb, unsigned off, unsigned len)
+{
+	if (td == NULL || td->n >= XHCI_TD_MAX_TRBS)
+		return;
+	td->trb[td->n] = trb;
+	td->off[td->n] = off;
+	td->len[td->n] = len;
+	td->n++;
+}
+
+/*
+ * An event against a TD.  Answers 0 when the event names none of the
+ * TD's TRBs, 1 when it does and the TD is still running, 2 when the TD
+ * is done - after which *actual and *cc say how it went.
+ *
+ * Done means: the event names the TD's last TRB, or it carries a
+ * completion code that is neither success nor short packet, since an
+ * endpoint that halted on the data stage will never reach the status
+ * stage and no further event is coming.
+ */
+int
+xhci_td_event(struct xhci_td *td, const struct xhci_trb *ev,
+	unsigned *actual, unsigned *cc)
+{
+	unsigned i, residue, code;
+
+	if (td == NULL || td->n == 0)
+		return 0;
+
+	for (i = 0; i < td->n; i++)
+		if ((uint32_t)td->trb[i] == ev->p0)
+			break;
+	if (i == td->n)
+		return 0;
+
+	code = XHCI_CC_OF(ev->status);
+	residue = XHCI_EVENT_LENGTH(ev->status);
+
+	/*
+	 * A TRB that carried data says how much of it arrived.  Once a
+	 * short packet has been reported the answer is fixed: the TRBs
+	 * after it are retired without transferring, and their events
+	 * report their whole length as left over, which is true of them
+	 * and false of the TD.
+	 */
+	if (td->len[i] != 0 && !td->short_seen) {
+		if (residue > td->len[i])
+			residue = td->len[i];
+		td->actual = td->off[i] + td->len[i] - residue;
+	}
+	if (code == XHCI_CC_SHORT_PACKET)
+		td->short_seen = 1;
+
+	if (i != td->n - 1 && (code == XHCI_CC_SUCCESS ||
+	    code == XHCI_CC_SHORT_PACKET))
+		return 1;
+
+	if (actual != NULL)
+		*actual = td->actual;
+	if (cc != NULL)
+		*cc = code;
+	return 2;
+}
+
+/*
+ * Put a control transfer on the endpoint's ring, without waiting.
+ * Answers the address of the status-stage TRB - the one the completion
+ * event names when the TD runs to its end - and, when asked, fills in the
+ * TD so that the event on a short data stage is recognised too.
  */
 phys_bytes
 xhci_control_start(struct xhci_device *dev, uint8_t request_type,
-	uint8_t request, uint16_t value, uint16_t index, uint16_t length)
+	uint8_t request, uint16_t value, uint16_t index, uint16_t length,
+	struct xhci_td *td)
 {
 	int dir_in = (request_type & USB_REQ_DIR_IN) != 0;
+	phys_bytes where;
+
+	td_reset(td, length);
 
 	if (length > XHCI_PAGE)
 		return 0;
@@ -147,22 +249,28 @@ xhci_control_start(struct xhci_device *dev, uint8_t request_type,
 	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)dev->buf, XHCI_PAGE,
 	    "a transfer buffer");
 
-	xhci_ring_push(&dev->ep0,
+	where = xhci_ring_push(&dev->ep0,
 	    (uint32_t)request_type | ((uint32_t)request << 8) |
 	    ((uint32_t)value << 16),
 	    (uint32_t)index | ((uint32_t)length << 16),
 	    8, XHCI_TRB_TYPE(XHCI_TRB_SETUP) | XHCI_TRB_IDT |
 	    (length == 0 ? XHCI_TRB_TRT_NONE :
 	    (dir_in ? XHCI_TRB_TRT_IN : XHCI_TRB_TRT_OUT)));
+	td_add(td, where, 0, 0);
 
-	if (length != 0)
-		xhci_ring_push(&dev->ep0, (uint32_t)dev->buf_phys, 0, length,
-		    XHCI_TRB_TYPE(XHCI_TRB_DATA) | XHCI_TRB_ISP |
+	if (length != 0) {
+		where = xhci_ring_push(&dev->ep0, (uint32_t)dev->buf_phys, 0,
+		    length, XHCI_TRB_TYPE(XHCI_TRB_DATA) | XHCI_TRB_ISP |
 		    (dir_in ? XHCI_TRB_DIR_IN : 0));
+		td_add(td, where, 0, length);
+	}
 
-	return xhci_ring_push(&dev->ep0, 0, 0, 0,
+	where = xhci_ring_push(&dev->ep0, 0, 0, 0,
 	    XHCI_TRB_TYPE(XHCI_TRB_STATUS) | XHCI_TRB_IOC |
 	    (length != 0 && dir_in ? 0 : XHCI_TRB_DIR_IN));
+	td_add(td, where, length, 0);
+
+	return where;
 }
 
 int
@@ -406,10 +514,13 @@ xhci_device_ep(struct xhci_device *dev, unsigned num, int dir_in)
  * question when several are outstanding.
  */
 phys_bytes
-xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length)
+xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
+	struct xhci_td *td)
 {
 	phys_bytes phys = dev->buf_phys, last = 0;
-	size_t left = length;
+	size_t left = length, done = 0;
+
+	td_reset(td, length);
 
 	if (length > XHCI_DEV_BUF)
 		return 0;
@@ -435,8 +546,10 @@ xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length)
 
 		last = xhci_ring_push(&ep->ring, (uint32_t)phys, 0,
 		    (uint32_t)chunk, control);
+		td_add(td, last, done, chunk);
 
 		phys += chunk;
+		done += chunk;
 	} while (left != 0);
 
 	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(dev->slot), ep->dci);

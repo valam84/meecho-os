@@ -621,23 +621,13 @@ main(int argc, char *argv[])
 			 * then let the line raise again.
 			 */
 			if (_ENDPOINT_P(m.m_source) == HARDWARE) {
-				xhci_n_irq++;
 				/*
-				 * Acknowledge at the controller before
-				 * letting the line raise again.  Both flags
-				 * are write-one-to-clear and level-driven:
-				 * left standing they make the next enable
-				 * interrupt at once and for ever - the
-				 * live-lock this port met on the UART.
+				 * Acknowledge, drain, say the handler is
+				 * done, re-enable: xhci_interrupt() is that
+				 * sequence, kept in one place so that the
+				 * stand runs the same one.
 				 */
-				xhci_wr(xhci.regs, xhci.rtsoff + XHCI_IR(0) +
-				    XHCI_IR_IMAN, XHCI_IMAN_IP | XHCI_IMAN_IE);
-				xhci_wr(xhci.regs, xhci.caplength +
-				    XHCI_USBSTS, XHCI_USBSTS_EINT);
-
-				(void)xhci_events_drain(0, NULL, 0);
-				if (xhci.irq_ok && !xhci.irq_dead)
-					(void)sys_irqenable(&xhci.irq_hook);
+				xhci_interrupt();
 				run_deferred();
 				continue;
 			}
@@ -645,6 +635,7 @@ main(int argc, char *argv[])
 			/* The deadline of an outstanding transfer. */
 			if (_ENDPOINT_P(m.m_source) == CLOCK) {
 				xhci_n_alarm++;
+				(void)xhci_alarm_fired("the main loop");
 				xhci_urb_tick();
 				run_deferred();
 				continue;

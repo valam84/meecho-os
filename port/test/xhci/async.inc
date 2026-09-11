@@ -155,10 +155,28 @@ claims_reset(void)
 	nclaims = 0;
 }
 
+/*
+ * The URB layer's own matching, when a test asks for it: the outstanding
+ * TD is handed to xhci_td_event() exactly as xhci_urb.c hands its own,
+ * and what comes back is kept for the test to look at.
+ */
+static struct xhci_td *td_watch;
+static int td_state;			/* what xhci_td_event() last said */
+static unsigned td_actual, td_cc;
+
 int
 xhci_urb_transfer_event(const struct xhci_trb *ev)
 {
 	unsigned i;
+
+	if (td_watch != NULL) {
+		int r = xhci_td_event(td_watch, ev, &td_actual, &td_cc);
+
+		if (r != 0)
+			td_state = r;
+		if (r != 0)
+			return 1;
+	}
 
 	for (i = 0; i < nclaims; i++) {
 		if ((uint32_t)claim_addr[i] != ev->p0)
@@ -239,8 +257,8 @@ test_outstanding(void)
 		 * faster than one transfer per scheduler quantum.
 		 */
 		t0 = fr_now;
-		claim_addr[0] = xhci_transfer_start(&dev0, ina, sizeof(a));
-		claim_addr[1] = xhci_transfer_start(&dev1, inb, sizeof(b));
+		claim_addr[0] = xhci_transfer_start(&dev0, ina, sizeof(a), NULL);
+		claim_addr[1] = xhci_transfer_start(&dev1, inb, sizeof(b), NULL);
 		nclaims = 2;
 
 		if (claim_addr[0] == 0 || claim_addr[1] == 0)
@@ -318,4 +336,277 @@ test_outstanding(void)
 
 	/* And it happened on the interrupt, not on a poll loop. */
 	check(irq_enables > 0, "the line was armed %u time(s)", irq_enables);
+}
+
+/*===========================================================================*
+ *    the interrupt after a polled transfer                                  *
+ *===========================================================================*/
+/*
+ * The stall the board reported twice per bring-up, at the same two
+ * moments: "the transfer had finished and nobody was told: the event
+ * was on the ring, the interrupt was not".  Each time it was the first
+ * client transfer after the driver had run a polled sequence of its own
+ * - enumerating the device behind the hub, or reading the descriptors
+ * the storage driver asked for.
+ *
+ * What a polled sequence leaves behind.  The synchronous path looks at
+ * the ring before it sleeps, and can take an event in the moment between
+ * the controller writing it and the controller raising the line for it.
+ * The line is then raised for an event that is already gone, and with
+ * it the Event Handler Busy flag, which the controller clears only when
+ * the driver writes the dequeue pointer.  The driver wakes, finds
+ * nothing, and goes back to sleep without writing it - and from then on
+ * the controller writes events and raises nothing, until something
+ * (the deadline) drains the ring and writes the pointer.
+ *
+ * So this test is the main loop: after every polled control transfer, one
+ * asynchronous transfer that is waited for the way xhci.c waits - in a
+ * receive, with no look at the ring - and it must be woken by the line,
+ * not by the alarm.  The model raises its line two steps after the
+ * event, which is the ordering that opens the window.
+ */
+static void
+test_interrupt_after_poll(void)
+{
+	static uint8_t a[64];
+	struct xhci_ep *in;
+	struct xhci_td td;
+	message m;
+	unsigned round, i, actual;
+	unsigned woken_by_line = 0, woken_by_alarm = 0;
+	int ipc_status;
+
+	section("the interrupt after a polled transfer");
+
+	check(bring_up(1) == OK, "the controller starts");
+	model_control_handler(device_control);
+	model_attach(0, 3);
+	xhci_port_reset(0);
+	check(xhci_device_attach(0, &dev0) == OK, "a device enumerates");
+	in = xhci_device_ep(&dev0, 1, 1);
+
+	for (i = 0; i < sizeof(a); i++)
+		a[i] = (uint8_t)(0xc0 + (i & 0xf));
+
+	for (round = 0; round < 50; round++) {
+		/* What enumeration does: a control transfer, polled. */
+		if (xhci_control(&dev0, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
+		    USB_DESC_DEVICE << 8, 0, 18, &actual) != OK || actual != 18)
+			break;
+
+		/* What a client does: a transfer nobody polls for. */
+		model_ep_supply(dev0.slot, in->dci, a, sizeof(a));
+		if (xhci_transfer_start(&dev0, in, sizeof(a), &td) == 0)
+			break;
+
+		/*
+		 * And the main loop: sleep until the line or the deadline,
+		 * then do what the driver does on the interrupt.
+		 */
+		td_watch = &td;
+		td_state = 0;
+		for (i = 0; i < 8 && td_state != 2; i++) {
+			sys_setalarm(micros_to_ticks(5000), 0);
+			if (sef_receive_status(ANY, &m, &ipc_status) != OK)
+				break;
+			if (m.m_source == HARDWARE) {
+				woken_by_line++;
+				xhci_interrupt();
+			} else {
+				woken_by_alarm++;
+				xhci_events_drain(0, NULL, 0);
+			}
+		}
+		td_watch = NULL;
+
+		if (td_state != 2 || td_actual != sizeof(a))
+			break;
+	}
+
+	check(round == 50, "%u of 50 transfers after a polled one completed",
+	    round);
+	check(woken_by_alarm == 0, "every one of them woke the driver by the "
+	    "line: %u by the line, %u by the alarm", woken_by_line,
+	    woken_by_alarm);
+	check(model_complaint() == NULL, "the model saw nothing wrong: %s",
+	    model_complaint() ? model_complaint() : "nothing");
+}
+
+/*===========================================================================*
+ *    matching an event to the request it belongs to                         *
+ *===========================================================================*/
+/*
+ * The defect the stand did not catch, and why.
+ *
+ * The mutation "first" - keeping the last event of the wanted kind rather
+ * than the first - was written for the synchronous path and caught there.
+ * The asynchronous path then made the same mistake in different words:
+ * it matched an event against the status TRB alone, so the event on a
+ * short data stage, the one that says how much arrived, went unrecognised
+ * and the status stage's "nothing left over" was believed.  On the board
+ * the mass storage driver asked for 128 bytes of a 32-byte configuration
+ * descriptor, was told it got 128, said "Invalid descriptor length", and
+ * failed its first open with EIO on every bring-up - quietly, because the
+ * failure is inside somebody else's driver.
+ *
+ * So the matching is now one function, xhci_td_event(), and this drives
+ * it the way xhci_urb.c does: the TD is filled in by the start call,
+ * every event off the ring is offered to it, and the answer it gives is
+ * what the client would have been told.
+ */
+static void
+td_wait(struct xhci_td *td)
+{
+	unsigned i;
+
+	td_watch = td;
+	td_state = 0;
+	td_actual = td_cc = 0;
+	for (i = 0; i < 16 && td_state != 2; i++)
+		xhci_events_drain(2000, NULL, 0);
+	td_watch = NULL;
+}
+
+static void
+test_td_matching(void)
+{
+	static uint8_t pattern[64 * 1024];
+	struct xhci_ep *in;
+	struct xhci_td td;
+	unsigned i;
+
+	section("matching an event to the request it belongs to");
+
+	check(bring_up(1) == OK, "the controller starts");
+	model_control_handler(device_control);
+	model_attach(0, 3);
+	xhci_port_reset(0);
+
+	/*
+	 * One page taken out of the model's memory before the device gets
+	 * its buffer, so that the buffer does NOT sit on a 64 KiB boundary
+	 * and the chained case below is reached rather than skipped.  The
+	 * allocator on the board is not obliged to align it either way.
+	 */
+	{
+		phys_bytes junk;
+
+		check(model_mem_alloc(XHCI_PAGE, &junk) != NULL,
+		    "a page is taken so the buffer will straddle 64 KiB");
+	}
+
+	check(xhci_device_attach(0, &dev0) == OK, "a device enumerates");
+	in = xhci_device_ep(&dev0, 1, 1);
+
+	for (i = 0; i < sizeof(pattern); i++)
+		pattern[i] = (uint8_t)(i * 3 + (i >> 9));
+
+	/*
+	 * The control request the board failed on: 128 bytes asked of a
+	 * 32-byte descriptor.  Three TRBs, two events, and the answer is
+	 * in the first of them.
+	 */
+	check(xhci_control_start(&dev0, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
+	    USB_DESC_CONFIG << 8, 0, 128, &td) != 0,
+	    "a control read of 128 bytes is put on the ring");
+	check(td.n == 3, "as a descriptor of %u TRBs", td.n);
+	xhci_doorbell(&dev0, XHCI_DB_EP0);
+	td_wait(&td);
+	check(td_state == 2, "and it completes");
+	check(td_actual == 32,
+	    "with %u bytes, not the 128 asked for", td_actual);
+	check(td_cc == XHCI_CC_SUCCESS,
+	    "and the status stage itself completed (code %u)", td_cc);
+	xhci_cache(CACHE_INVALIDATE, (void *)dev0.buf, XHCI_PAGE, "a buffer");
+	check(memcmp((void *)dev0.buf, config_desc, 32) == 0,
+	    "and the bytes are the descriptor");
+
+	/* The same request answered in full: one event, full length. */
+	check(xhci_control_start(&dev0, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
+	    USB_DESC_DEVICE << 8, 0, 18, &td) != 0,
+	    "a control read of exactly 18 bytes is put on the ring");
+	xhci_doorbell(&dev0, XHCI_DB_EP0);
+	td_wait(&td);
+	check(td_state == 2 && td_actual == 18 && td_cc == XHCI_CC_SUCCESS,
+	    "and answers %u bytes, success", td_actual);
+
+	/* A request with no data at all: two TRBs, and nothing to count. */
+	check(xhci_control_start(&dev0, 0, 9 /* SET_CONFIGURATION */, 1, 0,
+	    0, &td) != 0, "a request without data is put on the ring");
+	check(td.n == 2, "as a descriptor of %u TRBs", td.n);
+	xhci_doorbell(&dev0, XHCI_DB_EP0);
+	td_wait(&td);
+	check(td_state == 2 && td_actual == 0 && td_cc == XHCI_CC_SUCCESS,
+	    "and completes with nothing transferred");
+
+	/* A bulk read the device answers short: what an INQUIRY looks like. */
+	model_ep_supply(dev0.slot, in->dci, pattern, 36);
+	check(xhci_transfer_start(&dev0, in, 4096, &td) != 0,
+	    "a bulk read of 4096 bytes is put on the ring");
+	check(td.n == 1, "as a descriptor of %u TRB", td.n);
+	td_wait(&td);
+	check(td_state == 2 && td_actual == 36,
+	    "and answers %u bytes, not 4096", td_actual);
+
+	/* And one answered in full. */
+	model_ep_supply(dev0.slot, in->dci, pattern, 4096);
+	check(xhci_transfer_start(&dev0, in, 4096, &td) != 0,
+	    "a bulk read of 4096 bytes is put on the ring");
+	td_wait(&td);
+	check(td_state == 2 && td_actual == 4096 && td_cc == XHCI_CC_SUCCESS,
+	    "and answers %u bytes", td_actual);
+
+	/*
+	 * The whole buffer, which crosses a 64 KiB boundary unless the
+	 * allocator happened to align it: two chained TRBs, and a short
+	 * answer inside the FIRST of them.  The controller then reports
+	 * twice - once for the entry the short packet landed in, once for
+	 * the last entry, whose event says its whole length was left over.
+	 * The second event is true of that entry and false of the
+	 * descriptor; a driver that takes it at its word reports a 100-byte
+	 * read as an empty one.
+	 */
+	model_ep_supply(dev0.slot, in->dci, pattern, 100);
+	check(xhci_transfer_start(&dev0, in, XHCI_DEV_BUF, &td) != 0,
+	    "a bulk read of the whole buffer is put on the ring");
+	check(td.n == 2, "as a descriptor of %u TRBs", td.n);
+	if (td.n == 2) {
+		check(td.off[1] == td.len[0] &&
+		    td.len[0] + td.len[1] == XHCI_DEV_BUF,
+		    "as two chained TRBs of %u and %u bytes", td.len[0],
+		    td.len[1]);
+		td_wait(&td);
+		check(td_state == 2 && td_actual == 100,
+		    "and a short answer in the first reports %u bytes",
+		    td_actual);
+		check(model_stats.event_ring_full == 0 &&
+		    model_complaint() == NULL, "the model saw nothing wrong: %s",
+		    model_complaint() ? model_complaint() : "nothing");
+
+		/* And a short answer that falls in the SECOND entry. */
+		model_ep_supply(dev0.slot, in->dci, pattern, td.len[0] + 100);
+		check(xhci_transfer_start(&dev0, in, XHCI_DEV_BUF, &td) != 0,
+		    "the same read again");
+		td_wait(&td);
+		check(td_state == 2 && td_actual == td.len[0] + 100,
+		    "and a short answer in the second reports %u bytes",
+		    td_actual);
+
+		/* And the whole of it. */
+		model_ep_supply(dev0.slot, in->dci, pattern, XHCI_DEV_BUF);
+		check(xhci_transfer_start(&dev0, in, XHCI_DEV_BUF, &td) != 0,
+		    "and once more");
+		td_wait(&td);
+		check(td_state == 2 && td_actual == XHCI_DEV_BUF,
+		    "and a full answer reports %u bytes", td_actual);
+		xhci_cache(CACHE_INVALIDATE, (void *)dev0.buf, XHCI_DEV_BUF,
+		    "a buffer");
+		check(memcmp((void *)dev0.buf, pattern, XHCI_DEV_BUF) == 0,
+		    "and the bytes are the device's");
+	} else {
+		td_wait(&td);
+		check(td_state == 2 && td_actual == 100,
+		    "and a short answer reports %u bytes (the buffer did "
+		    "not cross 64 KiB, so this is one TRB)", td_actual);
+	}
 }

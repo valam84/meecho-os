@@ -55,6 +55,21 @@ static void hub_task(void *);
 /* How long to wait between retries, in case of reset error (in nanoseconds) */
 #define USB_HUB_RESET_DELAY 200000000 /* 200ms */
 
+/* How long a connection must hold still before it is reset (USB 2.0,
+ * 7.1.7.3: TATTDB), in what steps it is watched, and when to give up. */
+#define USB_HUB_DEBOUNCE_STEP 25	/* ms */
+#define USB_HUB_DEBOUNCE_STABLE 100	/* ms */
+#define USB_HUB_DEBOUNCE_LIMIT 1500	/* ms */
+
+/* A third answer from hub_handle_connection(): the device is no longer
+ * there, which is a disconnection and not a bad port. */
+#define HUB_CONN_GONE 2
+
+/* How many times a port is reset before it is given up on.  Five is what
+ * Linux allows (PORT_RESET_TRIES); on the board three were once not
+ * enough for a flash drive that dropped off the bus on every reset. */
+#define USB_HUB_RESET_ROUNDS 5
+
 /* Hub descriptor type */
 #define USB_HUB_DESCRIPTOR_TYPE 0x29
 
@@ -733,11 +748,13 @@ hub_handle_change(int port_num, hub_port_status * status)
 				 * 1
 				 */
 				/* Make hub disconnect and connect again */
-				if (hub_handle_disconnection(port_num) ||
-					hub_handle_connection(port_num, status))
+				if (hub_handle_disconnection(port_num))
 					return HUB_CHANGE_STATUS_ERR;
-				else
-					return HUB_CHANGE_CONN;
+				switch (hub_handle_connection(port_num, status)) {
+				case EXIT_SUCCESS:	return HUB_CHANGE_CONN;
+				case HUB_CONN_GONE:	return HUB_CHANGE_DISCONN;
+				default:		return HUB_CHANGE_STATUS_ERR;
+				}
 
 			} else {
 
@@ -758,10 +775,11 @@ hub_handle_change(int port_num, hub_port_status * status)
 				 * 3
 				 */
 				/* Handle connection */
-				if (hub_handle_connection(port_num, status))
-					return HUB_CHANGE_STATUS_ERR;
-				else
-					return HUB_CHANGE_CONN;
+				switch (hub_handle_connection(port_num, status)) {
+				case EXIT_SUCCESS:	return HUB_CHANGE_CONN;
+				case HUB_CONN_GONE:	return HUB_CHANGE_DISCONN;
+				default:		return HUB_CHANGE_STATUS_ERR;
+				}
 
 			} else {
 
@@ -822,11 +840,70 @@ hub_handle_change(int port_num, hub_port_status * status)
 /*===========================================================================*
  *    hub_handle_connection                                                  *
  *===========================================================================*/
+/*
+ * Wait for a connection to hold still before doing anything about it.
+ *
+ * USB 2.0 asks for it (7.1.7.3, TATTDB: a hundred milliseconds with no
+ * connection change), and this driver skipped it: it saw a port with a
+ * device on it and reset the port in the same breath.  A device that is
+ * still settling - one that has just had its power cycled, or one that
+ * was in the middle of something when the whole hub was reset underneath
+ * it, which is what a restart of the host driver does to it - then
+ * disconnects and reconnects during the reset, the port comes out of the
+ * reset not enabled, and the driver blocks the port until the hub is
+ * detached.  On the board the hub is soldered on.
+ *
+ * Every connection change seen here is cleared, so that the reset that
+ * follows starts from a quiet port; if the device is not there any more
+ * at the end, that is not an error but a disconnection.
+ */
+static int
+hub_port_debounce(int port_num, hub_port_status * status)
+{
+	struct timespec step;
+	int stable = 0, waited = 0;
+
+	step.tv_sec = 0;
+	step.tv_nsec = USB_HUB_DEBOUNCE_STEP * 1000000L;
+
+	while (waited < USB_HUB_DEBOUNCE_LIMIT) {
+		if (nanosleep(&step, NULL))
+			HUB_MSG("Calling nanosleep() failed");
+		waited += USB_HUB_DEBOUNCE_STEP;
+
+		if (hub_get_port_status(port_num, status)) {
+			HUB_MSG("Reading port%d status failed", port_num);
+			return EXIT_FAILURE;
+		}
+
+		if (status->C_PORT_CONNECTION) {
+			if (hub_port_feature(port_num, CLEAR_FEATURE,
+						C_PORT_CONNECTION)) {
+				HUB_MSG("Clearing port%d change bit failed",
+					port_num);
+				return EXIT_FAILURE;
+			}
+			HUB_MSG("Port%d connection changed while settling "
+				"(status %08X)", port_num, *(uint32_t *)status);
+			stable = 0;
+			continue;
+		}
+
+		stable += USB_HUB_DEBOUNCE_STEP;
+		if (stable >= USB_HUB_DEBOUNCE_STABLE)
+			return status->PORT_CONNECTION ? EXIT_SUCCESS :
+				HUB_CONN_GONE;
+	}
+
+	HUB_MSG("Port%d connection did not settle", port_num);
+	return EXIT_FAILURE;
+}
+
 static int
 hub_handle_connection(int port_num, hub_port_status * status)
 {
 	struct timespec wait_time;
-	int reset_tries;
+	int reset_tries, reset_rounds, r;
 	long port_speed;
 
 	HUB_DEBUG_DUMP;
@@ -839,6 +916,27 @@ hub_handle_connection(int port_num, hub_port_status * status)
 		return EXIT_FAILURE;
 	}
 
+	/* Let the connection settle before resetting it */
+	if ((r = hub_port_debounce(port_num, status)) != EXIT_SUCCESS) {
+		if (r == HUB_CONN_GONE)
+			HUB_MSG("Port%d: device gone before reset", port_num);
+		return r;
+	}
+
+	wait_time.tv_sec = 0;
+	wait_time.tv_nsec = USB_HUB_RESET_DELAY;
+
+	/*
+	 * The reset, and again if the device moved during it.
+	 *
+	 * A connection change reported after the reset means the device
+	 * dropped off the bus and came back while being reset; the port is
+	 * then not enabled and nothing below can proceed.  The specification
+	 * treats that as a reset that did not take, to be repeated, not as
+	 * a bad port.  The old code called the port unusable for ever.
+	 */
+	for (reset_rounds = 0; ; reset_rounds++) {
+
 	/* Start reset signaling for this port */
 	if (hub_port_feature(port_num, SET_FEATURE, PORT_RESET)) {
 		HUB_MSG("Resetting port%d failed", port_num);
@@ -846,8 +944,7 @@ hub_handle_connection(int port_num, hub_port_status * status)
 	}
 
 	reset_tries = 0;
-	wait_time.tv_sec = 0;
-	wait_time.tv_nsec = USB_HUB_RESET_DELAY;
+	status->C_PORT_RESET = 0;
 
 	/* Wait for reset completion */
 	while (!status->C_PORT_RESET) {
@@ -896,6 +993,36 @@ hub_handle_connection(int port_num, hub_port_status * status)
 		HUB_MSG("Clearing port%d reset bit failed", port_num);
 		return EXIT_FAILURE;
 	}
+
+	/* Nothing moved: the reset took. */
+	if (!status->C_PORT_CONNECTION)
+		break;
+
+	/*
+	 * The device dropped off and came back while being reset - the
+	 * board showed it as "01 01 11 00": reset complete, connection
+	 * changed, port not enabled.  Clear the change and try again, or
+	 * give up if it keeps happening or the device is gone.
+	 */
+	if (hub_port_feature(port_num, CLEAR_FEATURE, C_PORT_CONNECTION)) {
+		HUB_MSG("Clearing port%d change bit failed", port_num);
+		return EXIT_FAILURE;
+	}
+	if (!status->PORT_CONNECTION) {
+		HUB_MSG("Port%d: device gone during reset", port_num);
+		return HUB_CONN_GONE;
+	}
+	if (reset_rounds + 1 >= USB_HUB_RESET_ROUNDS) {
+		HUB_MSG("Port%d: connection kept changing during reset",
+			port_num);
+		return EXIT_FAILURE;
+	}
+	HUB_MSG("Port%d: connection changed during reset (status %08X); "
+		"resetting again", port_num, *(uint32_t *)status);
+	if (nanosleep(&wait_time, NULL))
+		HUB_MSG("Calling nanosleep() failed");
+
+	}	/* for (reset_rounds) */
 
 	/*
 	 * A port that has just finished reset is not usable yet: the

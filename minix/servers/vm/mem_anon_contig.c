@@ -80,7 +80,7 @@ static int anon_contig_new(struct vir_region *region)
 	phys_bytes new_pages, new_page_cl, cur_ph;
 	phys_bytes p, pages;
 
-        allocflags = vrallocflags(region->flags);
+        allocflags = vrallocflags(region);
 
 	pages = region->length/VM_PAGE_SIZE;
 

@@ -90,7 +90,7 @@ static int mappedfile_pagefault(struct vmproc *vmp, struct vir_region *region,
 	u32_t allocflags;
 	int procfd = region->param.file.fdref->fd;
 
-	allocflags = vrallocflags(region->flags);
+	allocflags = vrallocflags(region);
 
 	assert(ph->ph->refcount > 0);
 	assert(region->param.file.inited);

@@ -70,7 +70,7 @@ static int anon_pagefault(struct vmproc *vmp, struct vir_region *region,
 	phys_bytes new_page, new_page_cl;
 	u32_t allocflags;
 
-	allocflags = vrallocflags(region->flags);
+	allocflags = vrallocflags(region);
 
 	assert(ph->ph->refcount > 0);
 

@@ -168,7 +168,8 @@ void map_printmap(struct vmproc *vmp);
 int map_writept(struct vmproc *vmp);
 void printregionstats(struct vmproc *vmp);
 void map_setparent(struct vmproc *vmp);
-u32_t vrallocflags(u32_t flags);
+u32_t vrallocflags(struct vir_region *region);
+int acl_is_system(struct vmproc *vmp);
 int map_free(struct vir_region *region);
 struct phys_region *physblock_get(struct vir_region *region, vir_bytes offset);
 void physblock_set(struct vir_region *region, vir_bytes offset,

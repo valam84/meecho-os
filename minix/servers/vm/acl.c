@@ -127,3 +127,20 @@ acl_clear(struct vmproc *vmp)
 		vmp->vm_acl = NO_ACL;
 	}
 }
+
+/*
+ * Whether a process is a system process, for the memory reserve (alloc.c).
+ *
+ * The ACL is the one record VM has of what RS decided: a user process
+ * shares USER_ACL - init gets it from RS, and its descendants inherit it
+ * in acl_fork() - while a system process has an entry of its own. NO_ACL
+ * is what a process has before RS has spoken for it: VM and RS themselves,
+ * the boot image at startup, a service RS has forked and not yet
+ * privileged. All of those are the system's, and a wrong answer there
+ * would refuse memory to the very processes the reserve exists for.
+ */
+int
+acl_is_system(struct vmproc *vmp)
+{
+	return vmp->vm_acl != USER_ACL;
+}

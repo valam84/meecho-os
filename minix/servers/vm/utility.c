@@ -394,7 +394,7 @@ int _brk(void *addr)
 
 	for(v = roundup(prevbrk, VM_PAGE_SIZE); v < target;
 		v += VM_PAGE_SIZE) {
-		phys_bytes mem, newpage = alloc_mem(1, 0);
+		phys_bytes mem, newpage = alloc_mem(1, PAF_RESERVE);
 		if(newpage == NO_MEM) return -1;
 		mem = CLICK2ABS(newpage);
 		if(pt_writemap(vmprocess, &vmprocess->vm_pt,

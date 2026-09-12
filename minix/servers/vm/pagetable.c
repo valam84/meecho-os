@@ -414,7 +414,7 @@ void *vm_allocpages(phys_bytes *phys, int reason, int pages)
 	/* Allocate page of memory for use by VM. As VM
 	 * is trusted, we don't have to pre-clear it.
 	 */
-	if((newpage = alloc_mem(pages, mem_flags)) == NO_MEM) {
+	if((newpage = alloc_mem(pages, mem_flags | PAF_RESERVE)) == NO_MEM) {
 		level--;
 		printf("VM: vm_allocpage: alloc_mem failed\n");
 		return NULL;

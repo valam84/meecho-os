@@ -642,8 +642,15 @@ struct vir_region *map_lookup(struct vmproc *vmp,
 	return NULL;
 }
 
-u32_t vrallocflags(u32_t flags)
+/*
+ * How the pages of a region are to be allocated. Takes the region and not
+ * just its flags because one of the answers is about the owner: the pages
+ * of a system process may come out of the reserve (alloc.c), a user
+ * process's may not.
+ */
+u32_t vrallocflags(struct vir_region *region)
 {
+	u32_t flags = region->flags;
 	u32_t allocflags = 0;
 
 	if(flags & VR_PHYS64K)
@@ -654,6 +661,8 @@ u32_t vrallocflags(u32_t flags)
 		allocflags |= PAF_LOWER1MB;
 	if(!(flags & VR_UNINITIALIZED))
 		allocflags |= PAF_CLEAR;
+	if(region->parent && acl_is_system(region->parent))
+		allocflags |= PAF_RESERVE;
 
 	return allocflags;
 }

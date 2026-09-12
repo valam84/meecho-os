@@ -140,7 +140,7 @@ int mem_cow(struct vir_region *region,
 
         if(new_page == MAP_NONE) {
                 u32_t allocflags;
-                allocflags = vrallocflags(region->flags);
+                allocflags = vrallocflags(region);
 
                 if((new_page_cl = alloc_mem(1, allocflags)) == NO_MEM)
                         return ENOMEM;

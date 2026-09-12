@@ -1,4 +1,4 @@
-.\" $NetBSD: pkg_info.1,v 1.2 2015/04/28 09:48:30 prlw1 Exp $
+.\" $NetBSD: pkg_info.1,v 1.5 2026/02/28 10:40:55 bsiegert Exp $
 .\"
 .\" FreeBSD install - a package for the installation and maintenance
 .\" of non-core utilities.
@@ -17,7 +17,7 @@
 .\"
 .\"     @(#)pkg_info.1
 .\"
-.Dd December 14, 2012
+.Dd January 11, 2015
 .Dt PKG_INFO 1
 .Os
 .Sh NAME
@@ -226,7 +226,7 @@ The filename is resolved to a package name using the package database.
 The filename must be absolute, as in the output of
 .Dl pkg_info -aF .
 For example,
-.Dl pkg_info -eF /path/to/file
+.Dl pkg_info -Fe /path/to/file
 can be used to display the package the given file belongs to, and
 .Dl pkg_info -LF /path/to/file
 can be used to display all files belonging to the package the given
@@ -245,33 +245,33 @@ In addition,
 style {,} alternates have been implemented.
 Package version numbers can also be matched in a relational manner
 using the
-.Dq \*[Ge] ,
-.Dq \*[Le] ,
-.Dq \*[Gt] ,
+.Dq >= ,
+.Dq <= ,
+.Dq > ,
 and
-.Dq \*[Lt]
+.Dq < 
 operators.
 For example,
-.Dl pkg_info -e 'name\*[Ge]1.3'
+.Dl pkg_info -e 'name>=1.3'
 will match versions 1.3 and later of the
 .Dq name
 package.
 (Make sure to use shell quoting.)
 Additionally, ranges can be defined, by giving both a lower bound
 .Po with
-.Dq \*[Gt]
+.Dq >
 or
-.Dq \*[Ge]
+.Dq >=
 .Pc
 as well as an upper bound
 .Po with
-.Dq \*[Lt]
+.Dq <
 or
-. Dq \*[Le]
+. Dq <=
 .Pc .
 The lower bound has to come first.
 For example,
-.Dl pkg_info -e 'name\*[Ge]1.3\*[Lt]2.0'
+.Dl pkg_info -e 'name>=1.3<2.0'
 will match versions 1.3 (inclusive) to 2.0 (exclusive) of package
 .Dq name .
 .Pp

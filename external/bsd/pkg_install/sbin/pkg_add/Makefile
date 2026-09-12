@@ -1,17 +1,13 @@
-# $NetBSD: Makefile,v 1.2 2009/02/02 20:47:21 joerg Exp $
+# $NetBSD: Makefile,v 1.4 2024/06/11 10:18:11 wiz Exp $
 # Original from FreeBSD, no rcs id.
 
 PROG= pkg_add
-SRCS= main.c perform.c
+SRCS= main.c parse_cross.c perform.c
 
 .include <bsd.init.mk>
 
 .PATH:	${DIST}/add
 
-CPPFLAGS+=	-DMACHINE_ARCH=\"${MACHINE_ARCH}\"
-
-# GCC 7+: a getopt case that falls through on purpose, without the
-# comment the compiler looks for.  Imported code, one diagnostic.
-COPTS.main.c+=	${CC_WNO_IMPLICIT_FALLTHROUGH}
+CPPFLAGS+=	-DPKGSRC_MACHINE_ARCH=\"${MACHINE_ARCH}\"
 
 .include <bsd.prog.mk>

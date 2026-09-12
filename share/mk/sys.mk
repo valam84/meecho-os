@@ -98,6 +98,9 @@ OBJCFLAGS?=	${CFLAGS}
 COMPILE.m?=	${OBJC} ${OBJCFLAGS} ${CPPFLAGS} -c
 LINK.m?=	${OBJC} ${OBJCFLAGS} ${CPPFLAGS} ${LDFLAGS}
 
+# From NetBSD-current sys.mk: makefiles imported from there use .
+MV?=		mv -f
+
 CPP?=		cpp
 CPPFLAGS?=
 

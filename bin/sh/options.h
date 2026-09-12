@@ -103,9 +103,11 @@ DEF_OPT( "fork",	'F' )	/* use fork(2) instead of vfork(2) */
 #define	usefork optlist[19].val
 DEF_OPT( "nopriv",	'p' )	/* preserve privs even if set{u,g}id */
 #define pflag optlist[20].val
+DEF_OPT( "pipefail",	0 )	/* pipeline status: rightmost failure */
+#define	pipefail optlist[21].val
 #ifdef DEBUG
 DEF_OPT( "debug",	0 )	/* enable debug prints */
-#define	debug optlist[21].val
+#define	debug optlist[22].val
 #endif
 
 #ifdef DEFINE_OPTIONS

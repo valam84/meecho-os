@@ -311,6 +311,10 @@ Make an interactive shell always print the new directory name when
 changed by the
 .Ic cd
 command.
+.It "\ \ " Em pipefail
+Make the exit status of a pipeline the status of its rightmost command
+that exited with a non-zero status, or zero if every command succeeded.
+Without this option a pipeline's status is that of its last command.
 .It "\ \ " Em tabcomplete
 Enables completion in the command line editor.
 Typing a tab character will extend the current input word to match a

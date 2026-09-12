@@ -84,13 +84,21 @@ BITCODE_LD_FLAGS_2ND?=${BITCODE_LD_FLAGS_1ST}
 .if !empty(MACHINE_ARCH:Maarch64)
 CONFIG_SMP?=		1
 CONFIG_MAX_CPUS?=	8
-# The libcrypto in this tree is OpenSSL 1.0.1p: EOL since 2016 and never
-# built for aarch64.  OpenSSH already takes its no-libcrypto branch (see
-# crypto/external/bsd/openssh/Makefile.inc); this says the same thing to
-# everyone else that asks -- libfetch, pkg_install -- so that they build
-# their plain-HTTP, no-signature variants instead of failing on a library
-# that does not exist.  Importing a current OpenSSL is a separate decision.
-MKCRYPTO:=		no
+.endif
+
+#
+# What OpenSSL is used?  The tree carries OpenSSL 3.5 from NetBSD-current
+# under crypto/external/apache2/openssl; the 1.0.1p that MINIX shipped is
+# gone.  The number is the API generation the reachover Makefiles were
+# written for, and the consumers (OpenSSH, libfetch, pkg_install) look at
+# it too.
+#
+HAVE_OPENSSL?=	35
+
+.if ${HAVE_OPENSSL} == 35
+EXTERNAL_OPENSSL_SUBDIR=apache2/openssl
+.else
+EXTERNAL_OPENSSL_SUBDIR=/does/not/exist
 .endif
 
 .ifdef CONFIG_SMP

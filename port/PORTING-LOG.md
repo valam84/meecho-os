@@ -12554,3 +12554,161 @@ lua` без версии. **На плате не проверено**: коре�
   QEMU следующая загрузка нашла корень грязным (`the block bitmap
   disagrees with the inodes in 1 place(s)`, починено `fsck`). Один раз;
   журнал должен был этого не допустить.
+
+## OpenSSL 3.5: импорт, и дефект libc, который он вытащил на свет
+
+Решение принято в тот же день, что и первая половина пакетов: без
+libcrypto у системы нет HTTPS, нет подписей пакетов и половины OpenSSH.
+Заметка про `MKCRYPTO=no` прожила часы — и хорошо: она успела сказать
+всем потребителям одно и то же, и теперь они получают обратное тем же
+переключателем.
+
+### Откуда и что взято
+
+NetBSD-current держит **OpenSSL 3.5.7** в `crypto/external/apache2/openssl`
+(3.0 у них уже второй по счёту, `HAVE_OPENSSL` по умолчанию 35), с
+полным reachover: `.inc` на каждый каталог, сгенерированные заголовки,
+ассемблер под aarch64 — `aesv8-armx.S`, `ghashv8-armx.S`, `sha*-armv8.S`,
+`armv8-mont.S`, `vpaes`, `keccak1600`. Взято целиком тем же способом, что
+OpenSSH: `git archive origin/trunk` из partial clone `~/netbsd-src`.
+OpenSSL 1.0.1p из дерева убран (`git rm`), в `bsd.own.mk` — `HAVE_OPENSSL`
+и `EXTERNAL_OPENSSL_SUBDIR`, как у NetBSD; пять Makefile, называвших
+`crypto/external/bsd/openssl/lib` буквально, переведены на переменную.
+
+Что понадобилось сверх копирования — пять вещей, и каждая говорит о
+дереве, а не об OpenSSL:
+
+- **Нет потоков — и это конфигурация, а не дыра.** У процесса нет
+  потоков ядра, libc не ставит `pthread.h`, а её `__libc_*` заглушки не
+  те имена, что зовёт `threads_pthread.c`. В `configuration.h` под
+  `__minix` снят `OPENSSL_THREADS` и вслед за ним, как это делает
+  `Configure`, `THREAD_POOL` и `DEFAULT_THREAD_POOL`; `thread.inc` под
+  `__MINIX` собирает то, что `build.info` собирает для no-thread-pool
+  (`internal.c` — сам пул — вон; `arch.c` и `thread_none.c` остаются,
+  их mutex и condvar нужны QUIC в libssl). Там же снята **защищённая
+  память** (`no-secure-memory`): ей нужны `mlock` и `mprotect`, которых
+  у VM нет.
+- **Проход зависимостей идёт до сборки**, и `.d` для `asn1_item_list.c`
+  падал на `openssl/x509_acert.h`, которого ещё не было: заголовки из
+  `.h.in` делает `gen`, а у NetBSD-current `bsd.dep.mk` устроен иначе.
+  `DPSRCS+= ${GENH}` в двух Makefile.
+- **Заголовки OpenSSL ставятся в `DESTDIR` раньше компиляции** — `make
+  includes` в `lib/libcrypto` отдельным шагом; `install` каталога этого
+  не делает (то же потом всплыло у `libnetpgpverify`).
+- **`sys/netinet/in.h`: `#define ipi_spec_dst ipi_addr`** — совместимость
+  с Solaris/Linux, которую NetBSD добавил ради `bss_dgram.c`; взято
+  оттуда же.
+- **`uint64_t` как макрос.** `safe_muldiv_uint64_t` в QUIC собирался в
+  `safe_muldiv___uint64_t`, потому что `sys/stdint.h` 2013 года защищал
+  типы через `#define uint64_t __uint64_t`. NetBSD в 2018 перешёл на
+  `_BSD_UINT64_T_` — перенесено в четыре заголовка (`stdint.h`,
+  `types.h`, `netinet/in.h`, `unistd.h`), сорок четыре строки. Но
+  собираться это начало не сразу: **`include-fixed/sys/types.h`**
+  тулчейна — та самая ловушка fixincludes из CLAUDE.md, которую считали
+  вычищенной; `sys/` там был не пуст. Убран в `fixinclude-removed/`.
+
+Дальше два звена, без которых OpenSSL в системе — библиотека без дела:
+`sendmmsg`/`recvmmsg` в libc (`bss_dgram.c` выбирает их, потому что
+`sys/socket.h` их объявляет; сделаны циклом над `sendmsg`/`recvmsg`, как
+`ppoll` над `select`, с оговоркой про таймаут в комментарии), и **тишина
+на SIGILL в ядре**: `armcap.c` находит расширения процессора, исполняя их
+и ловя сигнал, — семь ловушек на Cortex-A72 — а `trap.c` печатал `KERNEL:
+unhandled exception` на каждую. Теперь `ESR_EC_UNKNOWN` и `ESR_EC_MSR_MRS`
+из user-режима — SIGILL без слов; печать осталась для тех кодов, которых
+быть не должно.
+
+### Энтропия на эмуляторе: virtio-rng
+
+Первый прогон: `openssl rand` — `entropy source strength too weak`. На
+QEMU пул `random` не сеется никогда (та же история, что была на плате до
+TRNG), а `/dev/urandom` у этого драйвера — тот же minor и тот же EAGAIN.
+То есть TLS нельзя было бы проверить на эмуляторе в принципе. У QEMU есть
+`virtio-rng`; в службу `random` добавлен второй аппаратный источник —
+`virtio_rng.c` с тем же контрактом, что `trng.c`: одна очередь, буфер на
+запись, опрос по таймеру службы, первая порция до первого читателя.
+`random.conf` получил права virtio (по PCI и по дереву), `ramimage.sh` —
+`-device virtio-rng-device`. Оба источника спрашиваются на любой машине,
+каждый сам знает, есть ли он здесь.
+
+### Дефект, который нашёлся: `memcmp` libc на aarch64
+
+С энтропией `openssl version`, `rand`, `dgst`, ED25519-ключ и **TLS 1.3 к
+серверу на хосте с сертификатом Ed25519 — `HTTP/1.0 200 ok`**. А RSA — нет:
+`genrsa` писал ключ, который сам же не мог прочитать (`STORE routines:
+unsupported`), сертификат RSA 2048 с провода не декодировался, и base64
+в госте давал **другие байты**, чем на хосте, на том же файле; в OID
+подписи вместо sha256 читался sha224. Данные зависели от размера и
+выравнивания — почерк строковой функции, а не криптографии.
+
+Стенд `port/test/libc/strtest.c` — memcpy/memmove/memset/memcmp и
+str* против побайтового эталона, все длины до 520 при всех смещениях
+внутри строки кэша, 6.76 млн проверок; на хосте ноль отказов, в госте —
+**`memcmp` неверен уже на длине 8** при десятках сочетаний смещений.
+`common/lib/libc/arch/aarch64/string/memcmp.S` — версия 1.1 2014 года,
+NetBSD починил её в 2018 (1.3, «fix memcmp bugs»), тогда же переписал
+`memcpy`/`memmove` (`bcopy.S`), в 2020 `strlen`, в 2026 `memset`. Все
+взяты из trunk; в госте после этого 6.76 млн проверок без отказа.
+
+Что это значит помимо OpenSSL: **каждая программа системы носила этот
+`memcmp` со дня первого `login:`.** Ядро — нет: libminc берёт `memcmp` из
+C ещё с первой загрузки, когда «memcmp теряет хвост» нашлось в ядре —
+и тогда же стоило проверить libc тем же стендом. Не проверили; нашлось
+через OpenSSL, которому нужны точные байты. Правка libc статическая,
+userland перелинкован целиком (`relink-all.sh`).
+
+### Потребители
+
+- **libfetch** с `WITH_SSL` (HTTPS), `ftp(1)` с SSL — оба пересобраны из
+  чистых объектников: смена `CPPFLAGS` make'у не видна.
+- **pkg_install** — старый 20130131 лез в поля `X509`, непрозрачные с
+  1.1. Взят **20260227** из NetBSD-current; он требует `libnetpgpverify`
+  (PGP-подписи пакетов) — `crypto/external/bsd/netpgp/{dist/src/netpgpverify,
+  lib/verify}` тоже из trunk, наш 2015 года не имел `pgpv_new_cursor`.
+  libarchive в дереве 2.8 (2012), а pkg_install говорит именами 3.0 —
+  восемь `-D` в `Makefile.inc` под `__MINIX` переименовывают их обратно
+  (`archive_read_free` → `archive_read_finish` и т. д.); удалятся вместе
+  с обновлением libarchive, которое не сделано: reachover NetBSD-current
+  хочет expat, zstd, ACL, xattr — отдельная работа. zstd и `-lpthread` из
+  его `sbin/Makefile.inc` под `__MINIX` сняты. `mkpkg.sh` ставит
+  `PKGTOOLS_VERSION=20260227`.
+- **OpenSSH с OpenSSL**: `WITH_OPENSSL` теперь и для MINIX (RSA/ECDSA
+  ключи хоста, DH-GEX, полный список шифров), без `ENABLE_PKCS11` — ему
+  нужен dlopen. Две диагностики GCC 15 по файлу: `ossl_error()` без
+  вызывающего в `ssh-pkcs11.c`, `__dead` без `noreturn`-выхода в
+  `ssh-keygen.c` (для него у GCC нет флага уже `-Wno-error`).
+- **Доверие**: `external/mpl/mozilla-certdata` (177 корней Mozilla,
+  готовые PEM) и `usr.sbin/certctl` из trunk; `certs.conf` едет в образ
+  через `ETC` ramdisk с `ETCSRC` (источник не в `etc/`), `rc` на первой
+  загрузке делает `certctl rehash` — `/etc/openssl/certs` с хэшами и
+  `ca-certificates.crt`. `sys.mk` получил `MV?=`, которого ждал Makefile
+  certctl.
+- **Часы платы**: ramdisk ставит 2013 год, с которого ни один сертификат
+  ещё не действителен; `rc` платы после аренды DHCP делает `rdate -n
+  pool.ntp.org` — скачком, без `-a`: расхождение годами.
+
+### Перелинковка, которая не перелинковывала
+
+Второй дефект того же дня — в инструменте, а не в системе. После починки
+libc `relink-all.sh` прошёл 322 каталога и доложил 294 ok. `awk` при этом
+продолжал падать на любом `exit` с `longjmp botch` — а `setjmp` был
+починен ещё 2026-09-10. Оказалось, что в `DESTDIR` **75 программ старше
+libc.a**: `tar`, `pax`, `ps`, `sysctl`, `ifconfig`, `ping`, `sed`, `sort`,
+`find`, `make`, `vi`, `less`, `mfs`, `procfs`, `ld.elf_so`... Две причины:
+
+- **make не перелинковывает программу, чьи объектники не менялись** —
+  `libc.a` не входит в её зависимости (`DPADD` по умолчанию пуст), и
+  готовый файл «новее исходников». То есть всё, что «перелинковывалось»
+  после правок libc, на деле перелинковывалось только там, где что-то
+  ещё заставило make работать.
+- **Список брал из обзора 8.3 только `OK`**, а `sed`, `sort`, `find`,
+  `tar`, `ps` там стояли `FAIL` — их починили в ту же веху, но обзор не
+  перезаписали, и с тех пор ни одна перелинковка их не касалась. `nawk`,
+  `less`, `file`, `nvi`, `xz` импортированы после обзора и в списке не
+  были вовсе.
+
+Скрипт теперь удаляет в obj все исполняемые старше `libc.a`, берёт весь
+обзор плюс каталоги, импортированные позже, и в конце **печатает, что
+осталось в `DESTDIR` со старой libc** — это и есть критерий, а не
+счётчик ok. Урок тот же, что с `mem.o` у `trace(1)`: сообщение «ok» от
+make говорит о зависимостях, которые он знает, а не о том, что двоичный
+файл свежий. Проверять надо результат — здесь mtime в `DESTDIR`.

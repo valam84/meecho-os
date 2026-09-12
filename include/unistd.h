@@ -246,9 +246,9 @@ pid_t	 getsid(pid_t);
  */
 #if (defined(_XOPEN_SOURCE) && defined(_XOPEN_SOURCE_EXTENDED)) || \
     (_XOPEN_SOURCE - 0) >= 500 || defined(_NETBSD_SOURCE)
-#ifndef	intptr_t
+#ifndef	_BSD_INTPTR_T_
 typedef	__intptr_t	intptr_t;
-#define	intptr_t	__intptr_t
+#define	_BSD_INTPTR_T_
 #endif
 
 #define F_ULOCK		0

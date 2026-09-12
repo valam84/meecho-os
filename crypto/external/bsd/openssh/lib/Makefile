@@ -135,6 +135,11 @@ COPTS.kexgexc.c+=	-Wno-error=deprecated-declarations
 COPTS.ssh-ecdsa-sk.c+=	-Wno-error=deprecated-declarations
 COPTS.ssh-ecdsa.c+=	-Wno-error=deprecated-declarations
 COPTS.ssh-pkcs11.c+=	-Wno-error=deprecated-declarations
+.if defined(__MINIX)
+# WITH_OPENSSL without ENABLE_PKCS11 (no dlopen in a static userland, see
+# ../Makefile.inc) leaves ossl_error() in this file with no caller.
+COPTS.ssh-pkcs11.c+=	-Wno-error=unused-function
+.endif
 COPTS.ssh-rsa.c+=	-Wno-error=deprecated-declarations
 COPTS.sshbuf-getput-crypto.c+=	-Wno-error=deprecated-declarations
 COPTS.sshkey.c+=	-Wno-error=deprecated-declarations

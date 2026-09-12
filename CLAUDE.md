@@ -291,9 +291,9 @@ SMP — неверно; с 2026-09-08 SMP на плате **проверен и 
   публичный API libedit), остальное — файлы, как в NetBSD. Разбор —
   `PORTING-LOG.md`, «Корень по `hier(7)` и `<tab>` в шелле».
 - **Пакеты, этап 1 (2026-09-12): `pkg_add`/`pkg_info`/`pkg_delete` в
-  корне, репозиторий по HTTP.** `pkg_install` из дерева (20130131,
-  префикс `/usr/pkg`), `libarchive` и `libfetch` собраны **без SSL** —
-  `MKCRYPTO=no` для aarch64 в `bsd.own.mk`, то же решение, что у OpenSSH.
+  корне, репозиторий по HTTP.** `pkg_install` (с 2026-09-12 — **20260227** из
+  NetBSD-current, префикс `/usr/pkg`), `libarchive` и `libfetch` (с SSL,
+  см. заметку про OpenSSL ниже).
   Пакеты делает хост: `port/mkpkg.sh` (формат pkgsrc tar'ом, `@pkgdir` в
   архив не класть), рецепты `port/pkg/<имя>/build.sh` поверх
   `port/pkg/env.sh`; первый — Lua 5.4.7. Репозиторий: на QEMU `python3 -m
@@ -303,6 +303,48 @@ SMP — неверно; с 2026-09-08 SMP на плате **проверен и 
   плате — нет (корень надо перелить). `pkgin` нет; самосборка (нативный
   компилятор + pkgsrc) — отдельная веха. Разбор — `PORTING-LOG.md`,
   «Пакеты, этап 1».
+- **OpenSSL 3.5.7 в дереве (2026-09-12)** — `crypto/external/apache2/openssl`
+  из NetBSD-current, `HAVE_OPENSSL=35` в `bsd.own.mk`, 1.0.1p убран.
+  Конфигурация MEECHO — **без потоков, без thread pool, без secure memory**
+  (`configuration.h` под `__minix`, `thread.inc` под `__MINIX`): у
+  процессов нет потоков ядра и `pthread.h`, у VM нет `mlock`/`mprotect`.
+  Потребители: libfetch/`ftp` с HTTPS, `pkg_install` с подписями
+  (+ `libnetpgpverify` из trunk), OpenSSH с `WITH_OPENSSL` (без PKCS#11 —
+  dlopen), `openssl(1)`. Доверие: `external/mpl/mozilla-certdata` +
+  `usr.sbin/certctl`; `certs.conf` едет в образ, `rc` первой загрузкой
+  делает `certctl rehash`. На плате часы — `rdate -n pool.ntp.org` в `rc`
+  после DHCP, иначе 2013 год и ни один сертификат не действителен.
+  Проверено на QEMU: TLS 1.3 к серверу хоста (RSA и Ed25519), `ftp
+  https://github.com/` с проверкой по системному хранилищу. Разбор —
+  `PORTING-LOG.md`, «OpenSSL 3.5».
+- **Энтропия на QEMU — `virtio-rng`** (2026-09-12): второй аппаратный
+  источник службы `random` (`virtio_rng.c`, тот же контракт, что `trng.c`),
+  `ramimage.sh` даёт `-device virtio-rng-device`. Без него пул на
+  эмуляторе не сеялся никогда, и всё, что хочет зерна (libcrypto первым),
+  отказывало.
+- **`memcmp` libc на aarch64 был сломан с первого дня** (2026-09-12): версия
+  2014 года, NetBSD починил в 2018. Нашлось через OpenSSL (base64 давал
+  другие байты, RSA не декодировался). Взяты из trunk `memcmp.S`,
+  `bcopy.S`/`memcpy.S`/`memmove.S`, `memset.S`, `strlen.S`. Стенд —
+  `port/test/libc/strtest.c` (6.76 млн проверок против побайтового
+  эталона; **гонять после любой правки строковых функций, на машине, не
+  на хосте**). Ядро не задето: libminc берёт memcmp/memset/strcat из C.
+- **`relink-all.sh` не перелинковывал** (2026-09-12): make не пересобирает
+  программу, чьи объектники не менялись, — libc.a не в её зависимостях, —
+  а список брал только «OK» из обзора 8.3, где sed, sort, find, tar, ps
+  стояли как FAIL. 75 программ носили старую libc, `awk` — `longjmp`,
+  починенный 09-10, и падал на каждом `exit`. Теперь скрипт удаляет в obj
+  исполняемые старше libc.a, берёт весь обзор и в конце **печатает, что
+  осталось со старой libc** — должно быть пусто.
+- **Ядро молчит на SIGILL из user-режима** (2026-09-12): `ESR_EC_UNKNOWN` и
+  `ESR_EC_MSR_MRS` — сигнал без печати; программы (libcrypto `armcap.c`)
+  щупают расширения процессора, исполняя их.
+- **`sh`: `set -o pipefail`** (POSIX 2024; `certctl` без него не стартует),
+  `/etc/services` и `/etc/protocols` в образе (без них `getaddrinfo` не
+  знает `https`).
+- **Не сделано**: libarchive остаётся 2.8 (reachover trunk требует expat,
+  zstd, ACL); pkg_install говорит именами 3.0 через `-D` в его
+  `Makefile.inc`. Проверка OpenSSL на плате — после переливки корня.
 - ~~**`trace(1)` на машине не работает**~~ **Работает с 2026-09-09.** Ошибка
   LP64 в прототипе `ptrace()` (`int` вместо машинного слова) была найдена и
   починена ещё тогда, но симптом остался, и причину не выдумывали. Причина
@@ -1856,8 +1898,11 @@ wsl -d Ubuntu -u minix -- bash -c 'bash /home/minix/bin/mkcard.sh /mnt/d/minix/p
   и `tree-includes.sh` ничего не меняет. Симптом: «поправил, пересобрал, всё
   по-старому». Копии убраны в `~/xtools-aarch64/fixinclude-removed/`;
   проверять, что там пусто:
-  `ls ~/xtools-aarch64/lib/gcc/aarch64-elf64-minix/*/include-fixed/` —
-  должны остаться только `README` и `sys/`. При пересборке тулчейна —
+  `ls -R ~/xtools-aarch64/lib/gcc/aarch64-elf64-minix/*/include-fixed/` —
+  должны остаться только `README` и **пустой** `sys/`: 2026-09-12 там
+  лежал `sys/types.h` с `#define uint64_t __uint64_t`, и он перекрывал
+  переход дерева на `_BSD_UINT64_T_` (OpenSSL склеивал
+  `safe_muldiv___uint64_t`). При пересборке тулчейна —
   `--disable-fixincludes`.
 - **Объектники переживают замену исходников.** После импорта каталога из
   NetBSD-current `cleandir` может не помочь: старый `.o` с более свежей

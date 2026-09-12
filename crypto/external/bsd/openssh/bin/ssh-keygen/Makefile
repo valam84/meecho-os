@@ -17,5 +17,10 @@ COPTS.ssh-keygen.c+=	${CC_WNO_FORMAT_TRUNCATION}
 COPTS.ssh-keygen.c+= -Wno-error=deprecated-declarations
 COPTS.moduli.c+= -Wno-error=deprecated-declarations
 COPTS.ssh-keygen.c+= ${${ACTIVE_CC} == "clang":? -Wno-error=invalid-noreturn :}
+# MEECHO: GCC 15 says the same thing about do_convert_to_pkcs8() and
+# friends - __dead functions whose switch falls off the end - and has no
+# flag for that diagnostic short of -Wno-error. Imported code; the file
+# keeps its warnings, they just stop being fatal.
+COPTS.ssh-keygen.c+= ${${ACTIVE_CC} == "gcc":? -Wno-error :}
 
 .include <bsd.prog.mk>

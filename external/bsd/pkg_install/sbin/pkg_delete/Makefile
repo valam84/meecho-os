@@ -7,8 +7,4 @@ PROG= pkg_delete
 
 .PATH:	${DIST}/delete
 
-# GCC 7+: a getopt case that falls through on purpose, without the
-# comment the compiler looks for.  Imported code, one diagnostic.
-COPTS.pkg_delete.c+=	${CC_WNO_IMPLICIT_FALLTHROUGH}
-
 .include <bsd.prog.mk>

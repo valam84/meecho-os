@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.1.1.10 2011/02/18 22:32:27 aymeric Exp $	*/
+/*	$NetBSD: main.c,v 1.5 2024/06/11 09:26:57 wiz Exp $	*/
 
 #if HAVE_CONFIG_H
 #include "config.h"
@@ -7,7 +7,7 @@
 #if HAVE_SYS_CDEFS_H
 #include <sys/cdefs.h>
 #endif
-__RCSID("$NetBSD: main.c,v 1.1.1.10 2011/02/18 22:32:27 aymeric Exp $");
+__RCSID("$NetBSD: main.c,v 1.5 2024/06/11 09:26:57 wiz Exp $");
 
 /*
  *
@@ -33,20 +33,16 @@ __RCSID("$NetBSD: main.c,v 1.1.1.10 2011/02/18 22:32:27 aymeric Exp $");
 #if HAVE_ERR_H
 #include <err.h>
 #endif
-#if HAVE_SYS_PARAM_H
-#include <sys/param.h>
-#endif
 #include "lib.h"
 #include "add.h"
 
-static char Options[] = "AC:DIK:LP:RVW:fhm:np:t:Uuvw:";
+static char Options[] = "AC:DIK:P:RVfhm:np:t:Uuv";
 
 char   *Destdir = NULL;
 char   *OverrideMachine = NULL;
+char   *OverrideOpsys = NULL;
+char   *OverrideOSVersion = NULL;
 char   *Prefix = NULL;
-char   *View = NULL;
-char   *Viewbase = NULL;
-Boolean NoView = FALSE;
 Boolean NoInstall = FALSE;
 Boolean NoRecord = FALSE;
 Boolean Automatic = FALSE;
@@ -65,10 +61,9 @@ int	ReplaceSame = 0;
 static void
 usage(void)
 {
-	(void) fprintf(stderr, "%s\n%s\n%s\n%s\n",
-	    "usage: pkg_add [-AfhILnRuVv] [-C config] [-P destdir] [-K pkg_dbdir]",
-	    "               [-m machine] [-p prefix] [-s verification-type",
-	    "               [-W viewbase] [-w view]\n",
+	(void) fprintf(stderr, "%s\n%s\n%s\n",
+	    "usage: pkg_add [-AfhInRuVv] [-C config] [-P destdir] [-K pkg_dbdir]",
+	    "               [-m machine] [-p prefix]",
 	    "               [[ftp|http]://[user[:password]@]host[:port]][/path/]pkg-name ...");
 	exit(1);
 }
@@ -112,16 +107,13 @@ main(int argc, char **argv)
 			pkgdb_set_dir(optarg, 3);
 			break;
 
-		case 'L':
-			NoView = TRUE;
-			break;
-
 		case 'R':
 			NoRecord = TRUE;
 			break;
 
 		case 'm':
-			OverrideMachine = optarg;
+			parse_cross(optarg, &OverrideMachine, &OverrideOpsys,
+			    &OverrideOSVersion);
 			break;
 
 		case 'n':
@@ -150,14 +142,6 @@ main(int argc, char **argv)
 			Verbose = TRUE;
 			break;
 
-		case 'W':
-			Viewbase = optarg;
-			break;
-
-		case 'w':
-			View = optarg;
-			break;
-
 		case 'h':
 		case '?':
 		default:
@@ -178,7 +162,10 @@ main(int argc, char **argv)
 		free(pkgdbdir);
 	}
 
+#ifndef BOOTSTRAP
 	process_pkg_path();
+#endif
+
 	TAILQ_INIT(&pkgs);
 
 	if (argc == 0) {
@@ -187,6 +174,7 @@ main(int argc, char **argv)
 		usage();
 	}
 
+#ifndef BOOTSTRAP
 	if (strcasecmp(do_license_check, "no") == 0)
 		LicenseCheck = 0;
 	else if (strcasecmp(do_license_check, "yes") == 0)
@@ -199,6 +187,7 @@ main(int argc, char **argv)
 
 	if (LicenseCheck)
 		load_license_lists();
+#endif
 
 	/* Get all the remaining package names, if any */
 	for (; argc > 0; --argc, ++argv) {

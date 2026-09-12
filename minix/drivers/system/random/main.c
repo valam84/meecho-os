@@ -10,6 +10,7 @@
 #include "assert.h"
 #include "random.h"
 #include "trng.h"
+#include "virtio_rng.h"
 
 #define NR_DEVS            1		/* number of minor devices */
 #  define RANDOM_DEV  0			/* minor device for /dev/random */
@@ -94,8 +95,13 @@ static int sef_cb_init_fresh(int UNUSED(type), sef_init_info_t *UNUSED(info))
    * Аппаратный источник, если он у машины есть: он и сеет пул на
    * загрузке. ENODEV - машина без него, и это не отказ: пул тогда
    * живёт на временах прихода прерываний, как и раньше.
+   *
+   * Источников два, по одному на машину, которых у порта две: TRNG в SoC
+   * платы и virtio-rng у эмулятора. Оба спрашиваются - каждый сам знает,
+   * есть ли он здесь.
    */
   (void)trng_init();
+  (void)vrng_init();
 
   r_random(0);				/* also set periodic timer */
 
@@ -258,6 +264,7 @@ static void r_random(clock_t UNUSED(stamp))
   if (++trng_countdown >= TRNG_EVERY) {
 	trng_countdown = 0;
 	(void)trng_feed();
+	(void)vrng_feed();
   }
 
   if(sys_getrandom_bin(&krandom_bin, bin) == OK)

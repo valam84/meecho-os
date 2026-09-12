@@ -119,6 +119,16 @@ then
 		if dhcpcd -d -t 20 "$netif" > /var/log/dhcpcd.log 2>&1
 		then	echo "Leased on $netif:"
 			ifconfig "$netif" | grep 'inet '
+			# Часы. У платы нет часов, которые умеет readclock, и
+			# ramdisk поставил 2013 год - дата, с которой ни один
+			# сертификат ещё не действителен, то есть без этого
+			# шага TLS на плате не работает вовсе. SNTP один раз,
+			# скачком (без -a): расхождение здесь измеряется
+			# годами, и плавно его не выправить.
+			if [ -x /usr/sbin/rdate ]
+			then	rdate -n pool.ntp.org ||
+				    echo "WARNING: clock not set (rdate)"
+			fi
 		else	echo "WARNING: no lease on $netif (see /var/log/dhcpcd.log)"
 		fi
 	else
@@ -166,6 +176,17 @@ if [ -x /usr/sbin/sshd ] && [ -f /etc/ssh/ssh_host_ed25519_key ]
 then
 	echo "Starting sshd"
 	/usr/sbin/sshd || echo "WARNING: sshd did not start"
+fi
+
+# The CA store for TLS clients (libfetch, and so pkg_add and ftp).  The
+# bundle itself is installed under /usr/share/certs; what /etc/openssl/certs
+# holds are hash links into it plus one concatenated file, and certctl(8)
+# makes those from certs.conf.  Once, on the first boot: it takes a few
+# seconds of openssl(1) per certificate and nothing changes afterwards.
+if [ -x /usr/sbin/certctl ] && [ ! -f /etc/openssl/certs/ca-certificates.crt ]
+then
+	echo "Building the CA certificate store"
+	/usr/sbin/certctl rehash || echo "WARNING: certctl failed"
 fi
 
 exit 0

@@ -408,6 +408,23 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 			copr_not_available_handler();
 			break;
 
+		case ESR_EC_UNKNOWN:
+		case ESR_EC_MSR_MRS:
+			/*
+			 * An instruction the process may not execute: an
+			 * undefined encoding, or a system register EL0 has
+			 * no business reading. That is SIGILL and nothing for
+			 * the console - programs probe for CPU features by
+			 * executing them and catching exactly this signal
+			 * (libcrypto's armcap.c tries seven of them on a
+			 * Cortex-A72), and a line per probe made every TLS
+			 * handshake look like a kernel event.
+			 */
+			if (!from_user)
+				inkernel_disaster(frame, kind, esr, far);
+			cause_sig(proc_nr(pr), SIGILL);
+			break;
+
 		default:
 			if (!from_user)
 				inkernel_disaster(frame, kind, esr, far);

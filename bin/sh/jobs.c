@@ -1046,6 +1046,25 @@ waitforjob(struct job *jp)
 		set_curjob(jp, 2);
 #endif
 	status = jp->ps[jp->nprocs - 1].status;
+	/*
+	 * pipefail (POSIX.1-2024, NetBSD sh since 2023): the status of a
+	 * pipeline is that of its rightmost member that failed, not of its
+	 * last member.  Scripts written with it - certctl(8) is one - use
+	 * "set -o pipefail" and would otherwise not start here at all.
+	 * Without the option nothing below changes.
+	 */
+	if (pipefail) {
+		int i;
+
+		for (i = jp->nprocs - 1; i >= 0; i--) {
+			int s2 = jp->ps[i].status;
+
+			if (!WIFEXITED(s2) || WEXITSTATUS(s2) != 0) {
+				status = s2;
+				break;
+			}
+		}
+	}
 	/* convert to 8 bits */
 	if (WIFEXITED(status))
 		st = WEXITSTATUS(status);

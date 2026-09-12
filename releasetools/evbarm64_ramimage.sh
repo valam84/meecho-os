@@ -394,6 +394,17 @@ then
 	fi
 fi
 
+# The CA store for TLS clients (libfetch, and so pkg_add and ftp).  The
+# bundle itself is installed under /usr/share/certs; what /etc/openssl/certs
+# holds are hash links into it plus one concatenated file, and certctl(8)
+# makes those from certs.conf.  Once, on the first boot: it takes a few
+# seconds of openssl(1) per certificate and nothing changes afterwards.
+if [ -x /usr/sbin/certctl ] && [ ! -f /etc/openssl/certs/ca-certificates.crt ]
+then
+	echo "Building the CA certificate store"
+	/usr/sbin/certctl rehash || echo "WARNING: certctl failed"
+fi
+
 exit 0
 END_RC
 	# The disk root is not the ramdisk.  The ramdisk holds what it takes
@@ -465,6 +476,12 @@ then	fwd=""
 else	cmd="${cmd} -netdev user,id=net0"
 fi
 cmd="${cmd} -device virtio-net-device,netdev=net0"
+# The host's randomness, offered to the guest as virtio-rng: the random
+# service seeds its pool from it (drivers/system/random/virtio_rng.c).
+# Without it an idle virtual machine never collects enough interrupt
+# timings to seed at all, and nothing that needs a seed - TLS first -
+# can be tried here.
+cmd="${cmd} -device virtio-rng-device"
 cmd="${cmd} -kernel ${KERNEL_BIN} -initrd ${ARCHIVE}"
 if [ ${disk} -eq 1 ]
 then

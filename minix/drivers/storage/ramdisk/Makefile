@@ -116,6 +116,16 @@ ETC+=			dhcpcd.conf
 # то есть файл, который ставит NetBSD'шный install и не ставит эта
 # сборка; к тому же наш отличается от импортного - см. etc/sshd_config.
 ETC+=			sshd_config
+# What certctl(8) reads to build /etc/openssl/certs: which CA bundle to
+# trust.  Its source is the tool's own directory, not etc/; ETCSRC below
+# says so.  Without the file "certctl rehash" refuses, and without the
+# store every TLS client verifies against nothing.
+ETC+=			openssl/certs.conf
+# Port names for getaddrinfo(3): without /etc/services "https" is not a
+# service and ftp(1) cannot even look the host up.
+ETC+=			services
+ETC+=			protocols
+ETCSRC.openssl/certs.conf=	${NETBSDSRCDIR}/usr.sbin/certctl/certs.conf
 EXTRA+=			ttys
 PROGRAMS+=		getty
 dir.getty:=	libexec/getty
@@ -221,8 +231,8 @@ PROGROOT:= ${.OBJDIR:S,/minix/drivers/storage/ramdisk,,}
 
 # Generate dependencies rules for config files
 .for etc in ${ETC}
-etc/${etc}: ${NETBSDSRCDIR}/etc/${etc}
-	mkdir -p ${.OBJDIR}/etc
+etc/${etc}: ${ETCSRC.${etc}:U${NETBSDSRCDIR}/etc/${etc}}
+	mkdir -p ${.OBJDIR}/etc/${etc:H}
 	${INSTALL} $> $@
 .endfor
 

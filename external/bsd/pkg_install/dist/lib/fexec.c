@@ -1,4 +1,4 @@
-/*	$NetBSD: fexec.c,v 1.1.1.3 2009/08/06 16:55:26 joerg Exp $	*/
+/*	$NetBSD: fexec.c,v 1.5 2025/05/09 13:26:38 wiz Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -37,6 +37,12 @@
 #if HAVE_SYS_CDEFS_H
 #include <sys/cdefs.h>
 #endif
+#if HAVE_SYS_TYPES_H
+#include <sys/types.h>
+#endif
+#if HAVE_SYS_STAT_H
+#include <sys/stat.h>
+#endif
 #if HAVE_SYS_WAIT_H
 #include <sys/wait.h>
 #endif
@@ -46,6 +52,9 @@
 #endif
 #if HAVE_ERRNO_H
 #include <errno.h>
+#endif
+#if HAVE_FCNTL_H
+#include <fcntl.h>
 #endif
 #if HAVE_STDARG_H
 #include <stdarg.h>
@@ -59,7 +68,33 @@
 
 #include "lib.h"
 
-__RCSID("$NetBSD: fexec.c,v 1.1.1.3 2009/08/06 16:55:26 joerg Exp $");
+/*
+ * Newer macOS releases are not able to correctly handle vfork() when the
+ * underlying file is changed or removed, as is the case when upgrading
+ * pkg_install itself.  The manual pages suggest using posix_spawn()
+ * instead, which seems to work ok.
+ */
+#if defined(__APPLE__) && \
+	((__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__-0) >= 1050)
+#define FEXEC_USE_POSIX_SPAWN	1
+#else
+#define FEXEC_USE_POSIX_SPAWN	0
+#endif
+
+#if FEXEC_USE_POSIX_SPAWN
+#include <spawn.h>
+extern char **environ;
+
+#ifndef O_CLOEXEC
+#define O_CLOEXEC	0
+#endif
+
+#ifndef O_DIRECTORY
+#define O_DIRECTORY	0
+#endif
+#endif
+
+__RCSID("$NetBSD: fexec.c,v 1.5 2025/05/09 13:26:38 wiz Exp $");
 
 static int	vfcexec(const char *, int, const char *, va_list);
 
@@ -67,6 +102,8 @@ static int	vfcexec(const char *, int, const char *, va_list);
  * fork, then change current working directory to path and
  * execute the command and arguments in the argv array.
  * wait for the command to finish, then return the exit status.
+ *
+ * macOS uses posix_spawn() instead due to reasons explained above.
  */
 int
 pfcexec(const char *path, const char *file, const char **argv)
@@ -74,11 +111,59 @@ pfcexec(const char *path, const char *file, const char **argv)
 	pid_t			child;
 	int			status;
 
+#if FEXEC_USE_POSIX_SPAWN
+	int err, prevcwd;
+	posix_spawn_file_actions_t act;
+
+	if ((prevcwd = open(".", O_RDONLY|O_CLOEXEC|O_DIRECTORY)) < 0) {
+		warn("open prevcwd failed");
+		return -1;
+	}
+
+	if ((path != NULL) && (chdir(path) < 0)) {
+		warn("chdir %s failed", path);
+		return -1;
+	}
+
+	if ((err = posix_spawn_file_actions_init(&act)) != 0) {
+		errno = err;
+		warn("failed to init posix_spawn");
+		return -1;
+	}
+
+	if (HideStdout) {
+		err = posix_spawn_file_actions_addopen(&act, STDOUT_FILENO,
+		    "/dev/null", O_WRONLY, 0);
+		if (err != 0) {
+			errno = err;
+			warn("failed to add posix_spawn action");
+			return -1;
+		}
+	}
+
+	if (posix_spawn(&child, file, &act, NULL, (char **)argv, environ) < 0) {
+		warn("posix_spawn failed");
+		return -1;
+	}
+
+	if (fchdir(prevcwd) < 0) {
+		warn("fchdir prevcwd failed");
+		return -1;
+	}
+
+	(void)close(prevcwd);
+#else
+	int devnull;
 	child = vfork();
 	switch (child) {
 	case 0:
+		devnull = open("/dev/null", O_WRONLY);
+
 		if ((path != NULL) && (chdir(path) < 0))
 			_exit(127);
+
+		if (HideStdout)
+			(void)dup2(devnull, STDOUT_FILENO);
 
 		(void)execvp(file, __UNCONST(argv));
 		_exit(127);
@@ -86,6 +171,7 @@ pfcexec(const char *path, const char *file, const char **argv)
 	case -1:
 		return -1;
 	}
+#endif
 
 	while (waitpid(child, &status, 0) < 0) {
 		if (errno != EINTR)

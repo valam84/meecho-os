@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.inc,v 1.3 2010/11/05 09:09:01 he Exp $
+# $NetBSD: Makefile.inc,v 1.6 2026/04/30 13:31:47 simonb Exp $
 
 .include <bsd.own.mk>
 
@@ -12,18 +12,24 @@ CPPFLAGS+=	-DBINDIR='"${BINDIR}"'
 DPADD+=	${LIBINSTALL}/libinstall.a
 LDADD+=	-L${LIBINSTALL} -linstall -ltermcap
 
-DPADD+=		${LIBFETCH}
-LDADD+=		-lfetch
-.if ${MKCRYPTO} != "no"
-DPADD+=		${LIBSSL} ${LIBCRYPTO}
-LDADD+=		-lssl -lcrypto
-.endif
+DPADD+=		${LIBNETPGPVERIFY} ${LIBFETCH} ${LIBSSL} ${LIBCRYPTO}
+LDADD+=		-lnetpgpverify -lfetch -lssl -lcrypto
 
 DPADD+=		${LIBARCHIVE}
 LDADD+=		-larchive
+.if !defined(__MINIX)
+# MEECHO: no zstd in this tree and libarchive here predates it.
+.include "${NETBSDSRCDIR}/external/bsd/zstd/Makefile.zstd"
+PROGDPLIBS+=	${ZSTDDPLIBS}	# XXX needed by libarchive
+.endif
 
 DPADD+=		${LIBZ} ${LIBBZ2}
 LDADD+=		-lz -lbz2
 
 DPADD+=		${LIBLZMA}
 LDADD+=		-llzma
+.if !defined(__MINIX)
+# MEECHO: no libpthread; nothing linked here asks for it.
+DPADD+=		${LIBPTHREAD}
+LDADD+=		-lpthread
+.endif

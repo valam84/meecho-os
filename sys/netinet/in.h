@@ -42,14 +42,14 @@
 #include <sys/featuretest.h>
 #include <machine/int_types.h>
 
-#ifndef uint8_t
+#ifndef	_BSD_UINT8_T_
 typedef __uint8_t	uint8_t;
-#define	uint8_t		__uint8_t
+#define	_BSD_UINT8_T_
 #endif
 
-#ifndef uint32_t
+#ifndef	_BSD_UINT32_T_
 typedef __uint32_t	uint32_t;
-#define	uint32_t	__uint32_t
+#define	_BSD_UINT32_T_
 #endif
 
 #include <sys/ansi.h>
@@ -298,6 +298,8 @@ struct in_pktinfo {
 	struct in_addr	ipi_addr;	/* src/dst address */
 	unsigned int ipi_ifindex;	/* interface index */
 };
+
+#define ipi_spec_dst ipi_addr	/* Solaris/Linux compatibility */
 
 /*
  * Defaults and limits for options

@@ -8,15 +8,14 @@ USE_FORT?= yes	# network client/server
 
 # Avoid increasing the binary size by not linking with libcrypto
 # on static platforms.
-.if defined(__MINIX)
-# MEECHO: libcrypto в дереве - OpenSSL 1.0.1p (2015), EOL с 2016 года и под
-# aarch64 никогда не собиравшийся. Импортировать OpenSSL 3.x ради ssh - это
-# вторая по величине работа после самого ssh, а платит она только за RSA,
-# ECDSA и DH-GEX, то есть за алгоритмы, которые современный клиент и так не
-# выбирает первыми. Поэтому берётся ветка без libcrypto - та самая, которой
-# NetBSD собирает этот же импорт на m68000 (см. .else ниже). Остаются
-# ed25519, curve25519 / sntrup761 / mlkem768, chacha20-poly1305 и aes-ctr.
-.elif ${MACHINE_ARCH} != "m68000"
+#
+# MEECHO: until 2026-09-12 this took the no-libcrypto branch (the one
+# NetBSD uses on m68000): the libcrypto in the tree was OpenSSL 1.0.1p and
+# did not build.  With OpenSSL 3.5 in crypto/external/apache2 there is no
+# reason left - RSA and ECDSA host keys, DH-GEX and the wider cipher list
+# come back.  PKCS#11 stays out: it wants dlopen, and the userland here is
+# static (see HAVE_DLOPEN below).
+.if ${MACHINE_ARCH} != "m68000"
 WITH_OPENSSL=1
 .endif
 
@@ -43,7 +42,10 @@ CPPFLAGS+=-DOPENSSL_API_COMPAT=0x10100000L
 .endif
 
 .ifdef WITH_OPENSSL
-CPPFLAGS+=-DWITH_OPENSSL -DENABLE_PKCS11
+CPPFLAGS+=-DWITH_OPENSSL
+.if !defined(__MINIX)
+CPPFLAGS+=-DENABLE_PKCS11
+.endif
 .endif
 
 CPPFLAGS+=-DWITH_ZLIB

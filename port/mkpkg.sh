@@ -28,7 +28,7 @@ name= comment= desc= license= prefix=/usr/pkg pkgpath= deps=
 OPSYS=${OPSYS:-Minix}
 OS_VERSION=${OS_VERSION:-0.1.0}
 MACHINE_ARCH=${MACHINE_ARCH:-aarch64}
-PKGTOOLS_VERSION=${PKGTOOLS_VERSION:-20130131}
+PKGTOOLS_VERSION=${PKGTOOLS_VERSION:-20260227}
 
 usage() {
 	echo "usage: mkpkg.sh -n name-ver -c comment [-d descfile] [-l license]" >&2

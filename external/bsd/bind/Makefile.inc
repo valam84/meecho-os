@@ -110,8 +110,8 @@ LIBDPLIBS+=	$L ${NETBSDSRCDIR}/crypto/external/bsd/heimdal/lib/lib$L
 LDADD+= -lcrypto -lcrypt
 DPADD+= ${LIBCRYPTO} ${LIBCRYPT}
 .else
-.if exists(${NETBSDSRCDIR}/crypto/external/bsd/openssl/lib/libcrypto)
-LIBDPLIBS+=	crypto ${NETBSDSRCDIR}/crypto/external/bsd/openssl/lib/libcrypto
+.if exists(${NETBSDSRCDIR}/crypto/external/${EXTERNAL_OPENSSL_SUBDIR}/lib/libcrypto)
+LIBDPLIBS+=	crypto ${NETBSDSRCDIR}/crypto/external/${EXTERNAL_OPENSSL_SUBDIR}/lib/libcrypto
 .else
 LIBDPLIBS+=	crypto ${NETBSDSRCDIR}/lib/libcrypto
 .endif

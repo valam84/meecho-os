@@ -17,8 +17,15 @@
 		profile ---644 0 0 etc/profile
 		motd ---644 0 0 etc/motd
 		dhcpcd.conf ---644 0 0 etc/dhcpcd.conf
+		services ---644 0 0 etc/services
+		protocols ---644 0 0 etc/protocols
 		ssh d--755 0 0
 			sshd_config ---644 0 0 etc/sshd_config
+		$
+		openssl d--755 0 0
+			certs.conf ---644 0 0 etc/openssl/certs.conf
+			certs d--755 0 0
+			$
 		$
 #endif
 	$

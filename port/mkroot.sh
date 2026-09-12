@@ -122,12 +122,13 @@ then
 			# Часы. У платы нет часов, которые умеет readclock, и
 			# ramdisk поставил 2013 год - дата, с которой ни один
 			# сертификат ещё не действителен, то есть без этого
-			# шага TLS на плате не работает вовсе. SNTP один раз,
-			# скачком (без -a): расхождение здесь измеряется
-			# годами, и плавно его не выправить.
-			if [ -x /usr/sbin/rdate ]
-			then	rdate -n pool.ntp.org ||
-				    echo "WARNING: clock not set (rdate)"
+			# шага TLS на плате не работает вовсе. Один запрос
+			# SNTP, скачком: расхождение здесь измеряется годами.
+			# (rdate(8) в дереве - только RFC 868, порт 37, на
+			# который публичные серверы давно не отвечают.)
+			if [ -x /usr/sbin/sntp ]
+			then	sntp pool.ntp.org ||
+				    echo "WARNING: clock not set (sntp)"
 			fi
 		else	echo "WARNING: no lease on $netif (see /var/log/dhcpcd.log)"
 		fi

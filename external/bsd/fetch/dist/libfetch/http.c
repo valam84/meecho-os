@@ -1,6 +1,6 @@
-/*	$NetBSD: http.c,v 1.3 2014/01/07 02:13:00 joerg Exp $	*/
+/*	$NetBSD: http.c,v 1.14 2026/04/16 10:13:29 wiz Exp $	*/
 /*-
- * Copyright (c) 2000-2004 Dag-Erling Coïdan Smørgrav
+ * Copyright (c) 2000-2004 Dag-Erling CoÃ¯dan SmÃ¸rgrav
  * Copyright (c) 2003 Thomas Klausner <wiz@NetBSD.org>
  * Copyright (c) 2008, 2009 Joerg Sonnenberger <joerg@NetBSD.org>
  * All rights reserved.
@@ -63,8 +63,12 @@
  * SUCH DAMAGE.
  */
 
-#if defined(__linux__) || defined(__MINT__)
+#if defined(__linux__) || defined(__MINT__) || defined(__FreeBSD_kernel__)
 /* Keep this down to Linux or MiNT, it can create surprises elsewhere. */
+/*
+   __FreeBSD_kernel__ is defined for GNU/kFreeBSD.
+   See http://glibc-bsd.alioth.debian.org/porting/PORTING .
+*/
 #define _GNU_SOURCE
 #endif
 
@@ -93,6 +97,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(__APPLE__)
+#include <xlocale.h>	/* for strptime_l */
+#endif
 #include <unistd.h>
 
 #include <netinet/in.h>
@@ -133,6 +140,7 @@
 
 #define HTTP_ERROR(xyz) ((xyz) > 400 && (xyz) < 599)
 
+static int http_cmd(conn_t *, const char *, ...) LIBFETCH_PRINTFLIKE(2, 3);
 
 /*****************************************************************************
  * I/O functions for decoding chunked streams
@@ -327,7 +335,7 @@ http_closefn(void *v)
 		setsockopt(io->conn->sd, IPPROTO_TCP, TCP_NODELAY, &val,
 			   (socklen_t)sizeof(val));
 			  fetch_cache_put(io->conn, fetch_close);
-#ifdef TCP_NOPUSH
+#if defined(TCP_NOPUSH) && !defined(__APPLE__)
 		val = 1;
 		setsockopt(io->conn->sd, IPPROTO_TCP, TCP_NOPUSH, &val,
 		    sizeof(val));
@@ -404,7 +412,7 @@ static struct {
 /*
  * Send a formatted line; optionally echo to terminal
  */
-__printflike(2, 3)
+LIBFETCH_PRINTFLIKE(2, 3)
 static int
 http_cmd(conn_t *conn, const char *fmt, ...)
 {
@@ -488,6 +496,16 @@ http_match(const char *str, const char *hdr)
 	return (hdr);
 }
 
+/* Remove whitespace at the end of the buffer */
+static void
+http_conn_trimright(conn_t *conn)
+{
+	while (conn->buflen &&
+	    isspace((unsigned char)conn->buf[conn->buflen - 1]))
+		conn->buflen--;
+	conn->buf[conn->buflen] = '\0';
+}
+
 /*
  * Get the next header and return the appropriate symbolic code.
  */
@@ -496,13 +514,20 @@ http_next_header(conn_t *conn, const char **p)
 {
 	int i;
 
-	if (fetch_getln(conn) == -1)
-		return (hdr_syserror);
-	while (conn->buflen && isspace((unsigned char)conn->buf[conn->buflen - 1]))
-		conn->buflen--;
-	conn->buf[conn->buflen] = '\0';
+	/*
+	 * Have to do the stripping here because of the first line. So
+	 * it's done twice for the subsequent lines. No big deal
+	 */
+	http_conn_trimright(conn);
+
 	if (conn->buflen == 0)
 		return (hdr_end);
+
+	if (fetch_getln(conn) == -1)
+		return (hdr_syserror);
+
+	http_conn_trimright(conn);
+
 	/*
 	 * We could check for malformed headers but we don't really care.
 	 * A valid header starts with a token immediately followed by a
@@ -521,14 +546,23 @@ http_next_header(conn_t *conn, const char **p)
 static int
 http_parse_mtime(const char *p, time_t *mtime)
 {
-	char locale[64], *r;
 	struct tm tm;
+	char *r;
 
-	strncpy(locale, setlocale(LC_TIME, NULL), sizeof(locale));
+#ifdef LC_C_LOCALE
+	r = strptime_l(p, "%a, %d %b %Y %H:%M:%S GMT", &tm, LC_C_LOCALE);
+#else
+	char *locale;
+
+	locale = strdup(setlocale(LC_TIME, NULL));
+	if (locale == NULL)
+		return (-1);
 	setlocale(LC_TIME, "C");
 	r = strptime(p, "%a, %d %b %Y %H:%M:%S GMT", &tm);
 	/* XXX should add support for date-2 and date-3 */
 	setlocale(LC_TIME, locale);
+	free(locale);
+#endif
 	if (r == NULL)
 		return (-1);
 	*mtime = timegm(&tm);
@@ -605,13 +639,12 @@ http_base64(const char *src)
 	    "0123456789+/";
 	char *str, *dst;
 	size_t l;
-	unsigned int t, r;
+	int t;
 
 	l = strlen(src);
 	if ((str = malloc(((l + 2) / 3) * 4 + 1)) == NULL)
 		return (NULL);
 	dst = str;
-	r = 0;
 
 	while (l >= 3) {
 		t = (src[0] << 16) | (src[1] << 8) | src[2];
@@ -620,7 +653,7 @@ http_base64(const char *src)
 		dst[2] = base64[(t >> 6) & 0x3f];
 		dst[3] = base64[(t >> 0) & 0x3f];
 		src += 3; l -= 3;
-		dst += 4; r += 4;
+		dst += 4;
 	}
 
 	switch (l) {
@@ -631,7 +664,6 @@ http_base64(const char *src)
 		dst[2] = base64[(t >> 6) & 0x3f];
 		dst[3] = '=';
 		dst += 4;
-		r += 4;
 		break;
 	case 1:
 		t = src[0] << 16;
@@ -639,7 +671,6 @@ http_base64(const char *src)
 		dst[1] = base64[(t >> 12) & 0x3f];
 		dst[2] = dst[3] = '=';
 		dst += 4;
-		r += 4;
 		break;
 	case 0:
 		break;
@@ -708,13 +739,16 @@ http_authorize(conn_t *conn, const char *hdr, const char *p)
 static conn_t *
 http_connect(struct url *URL, struct url *purl, const char *flags, int *cached)
 {
+	struct url *curl;
 	conn_t *conn;
+	hdr_t h;
+	const char *p;
 	int af, verbose;
-#ifdef TCP_NOPUSH
+#if defined(TCP_NOPUSH) && !defined(__APPLE__)
 	int val;
 #endif
 
-	*cached = 1;
+	*cached = 0;
 
 #ifdef INET6
 	af = AF_UNSPEC;
@@ -730,6 +764,7 @@ http_connect(struct url *URL, struct url *purl, const char *flags, int *cached)
 		af = AF_INET6;
 #endif
 
+	curl = (purl != NULL) ? purl : URL;
 	if (purl && strcasecmp(URL->scheme, SCHEME_HTTPS) != 0) {
 		URL = purl;
 	} else if (strcasecmp(URL->scheme, SCHEME_FTP) == 0) {
@@ -738,17 +773,46 @@ http_connect(struct url *URL, struct url *purl, const char *flags, int *cached)
 		return (NULL);
 	}
 
-	if ((conn = fetch_cache_get(URL, af)) != NULL) {
+	if ((conn = fetch_cache_get(curl, af)) != NULL) {
 		*cached = 1;
 		return (conn);
 	}
 
-	if ((conn = fetch_connect(URL, af, verbose)) == NULL)
+	if ((conn = fetch_connect(curl, af, verbose)) == NULL)
 		/* fetch_connect() has already set an error code */
 		return (NULL);
+	if (strcasecmp(URL->scheme, SCHEME_HTTPS) == 0 && purl) {
+		http_cmd(conn, "CONNECT %s:%d HTTP/1.1\r\n",
+				URL->host, URL->port);
+		http_cmd(conn, "Host: %s:%d\r\n",
+				URL->host, URL->port);
+		/* proxy authorization */
+		if (*purl->user || *purl->pwd)
+			http_basic_auth(conn, "Proxy-Authorization",
+			    purl->user, purl->pwd);
+		else if ((p = getenv("HTTP_PROXY_AUTH")) != NULL && *p != '\0')
+			http_authorize(conn, "Proxy-Authorization", p);
+		http_cmd(conn, "\r\n");
+		if (http_get_reply(conn) != HTTP_OK) {
+			http_seterr(conn->err);
+			goto ouch;
+		}
+		/* Read and discard the rest of the proxy response (if any) */
+		do {
+			switch ((h = http_next_header(conn, &p))) {
+			case hdr_syserror:
+				fetch_syserr();
+				goto ouch;
+			case hdr_error:
+				http_seterr(HTTP_PROTOCOL_ERROR);
+				goto ouch;
+			default:
+				/* ignore */ ;
+			}
+		} while (h > hdr_end);
+	}
 	if (strcasecmp(URL->scheme, SCHEME_HTTPS) == 0 &&
-	    fetch_ssl(conn, verbose) == -1) {
-		fetch_close(conn);
+	    fetch_ssl(conn, URL, verbose) == -1) {
 		/* grrr */
 #ifdef EAUTH
 		errno = EAUTH;
@@ -756,15 +820,18 @@ http_connect(struct url *URL, struct url *purl, const char *flags, int *cached)
 		errno = EPERM;
 #endif
 		fetch_syserr();
-		return (NULL);
+		goto ouch;
 	}
 
-#ifdef TCP_NOPUSH
+#if defined(TCP_NOPUSH) && !defined(__APPLE__)
 	val = 1;
 	setsockopt(conn->sd, IPPROTO_TCP, TCP_NOPUSH, &val, sizeof(val));
 #endif
 
 	return (conn);
+ouch:
+	fetch_close(conn);
+	return (NULL);
 }
 
 static struct url *
@@ -798,9 +865,9 @@ set_if_modified_since(conn_t *conn, time_t last_modified)
 	struct tm tm;
 	char buf[80];
 	gmtime_r(&last_modified, &tm);
-	snprintf(buf, sizeof(buf), "%.3s, %02d %.3s %4d %02d:%02d:%02d GMT",
+	snprintf(buf, sizeof(buf), "%.3s, %02d %.3s %4ld %02d:%02d:%02d GMT",
 	    weekdays + tm.tm_wday * 3, tm.tm_mday, months + tm.tm_mon * 3,
-	    tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	    (long)(tm.tm_year + 1900), tm.tm_hour, tm.tm_min, tm.tm_sec);
 	http_cmd(conn, "If-Modified-Since: %s\r\n", buf);
 }
 
@@ -896,7 +963,7 @@ http_request(struct url *URL, const char *op, struct url_stat *us,
 		if (verbose)
 			fetch_info("requesting %s://%s%s",
 			    url->scheme, host, url->doc);
-		if (purl) {
+		if (purl && strcasecmp(URL->scheme, SCHEME_HTTPS) != 0) {
 			http_cmd(conn, "%s %s://%s%s HTTP/1.1\r\n",
 			    op, url->scheme, host, url->doc);
 		} else {
@@ -956,7 +1023,7 @@ http_request(struct url *URL, const char *op, struct url_stat *us,
 		 * be compatible with such configurations, fiddle with socket
 		 * options to force the pending data to be written.
 		 */
-#ifdef TCP_NOPUSH
+#if defined(TCP_NOPUSH) && !defined(__APPLE__)
 		val = 0;
 		setsockopt(conn->sd, IPPROTO_TCP, TCP_NOPUSH, &val,
 			   sizeof(val));

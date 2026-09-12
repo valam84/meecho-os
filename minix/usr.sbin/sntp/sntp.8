@@ -1,0 +1,39 @@
+.Dd September 12, 2026
+.Dt SNTP 8
+.Os
+.Sh NAME
+.Nm sntp
+.Nd set the clock from an NTP server, once
+.Sh SYNOPSIS
+.Nm
+.Op Fl p
+.Op Fl t Ar seconds
+.Ar host
+.Sh DESCRIPTION
+.Nm
+sends one SNTP request (RFC 4330) to
+.Ar host
+on UDP port 123 and sets the system clock to the transmit timestamp of
+the reply, stepping it.
+There is no slewing: on a machine without a battery clock the offset at
+boot is measured in years.
+.Bl -tag -width Ds
+.It Fl p
+Print the time the server gave, do not set the clock.
+.It Fl t Ar seconds
+Wait this long for an answer from each address of
+.Ar host
+(default 5).
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr date 1 ,
+.Xr rdate 8
+.Sh HISTORY
+.Nm
+was written for MEECHO on the BIGTREETECH CB2, which has no clock the
+system can read;
+.Xr rdate 8
+in this tree speaks only the RFC 868 time protocol, which public servers
+no longer answer.

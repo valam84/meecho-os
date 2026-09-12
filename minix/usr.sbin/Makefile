@@ -5,6 +5,7 @@ SUBDIR+=	diskctl
 SUBDIR+=	fbdctl
 SUBDIR+=	mkfs.mfs
 SUBDIR+=	mkproto
+SUBDIR+=	sntp
 
 # Only the AArch64 kernel is handed its boot images as one archive, and the
 # format header is only installed there.

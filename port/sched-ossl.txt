@@ -1,0 +1,32 @@
+# OpenSSL, pkg_add и HTTPS на плате: первый прогон после импорта OpenSSL
+# 3.5 и починки memcmp. Консоль на 115200 (журнал будет цитироваться),
+# метки конца команды - printf, не echo. После проверок с консоли - окно
+# под ssh, поэтому запускать с board-cycle.sh -l.
+120 WAIT switching console to 115200
+1 BAUD 115200
+2 <CR>
+1 <CR>
+600 WAIT login:
+2 root
+60 WAIT they are.
+2 export TERM=vt100 PAGER=cat
+3 uname -srm; date; cat /proc/uptime; printf 'd%s\n' 1
+40 WAIT d1
+3 ls /etc/openssl/certs | wc -l; ls -l /etc/openssl/certs/ca-certificates.crt; printf 'd%s\n' 2
+40 WAIT d2
+3 openssl version; openssl rand -hex 8; awk 'BEGIN{exit 3}'; echo awk=$?; printf 'd%s\n' 3
+60 WAIT d3
+3 pkg_add lua; pkg_info; lua -e 'print(2^10, _VERSION)'; printf 'd%s\n' 4
+120 WAIT d4
+3 ftp -o /dev/null https://github.com/; echo ftp=$?; printf 'd%s\n' 5
+120 WAIT d5
+3 openssl genrsa -out /tmp/r.pem 2048 2>/dev/null; openssl rsa -in /tmp/r.pem -noout -check; printf 'd%s\n' 6
+120 WAIT d6
+3 echo | openssl s_client -connect github.com:443 -brief 2>&1 | head -4; printf 'd%s\n' 7
+120 WAIT d7
+# Окно: работаем по ssh с рабочей машины.
+30 WAIT ---hold-open---
+3 cat /proc/uptime; printf 'd%s\n' 8
+40 WAIT d8
+2 /sbin/reboot
+20

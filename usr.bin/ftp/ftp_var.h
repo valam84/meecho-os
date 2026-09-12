@@ -1,7 +1,7 @@
-/*	$NetBSD: ftp_var.h,v 1.83 2015/01/12 14:17:08 christos Exp $	*/
+/*	$NetBSD: ftp_var.h,v 1.92 2026/02/08 08:31:58 lukem Exp $	*/
 
 /*-
- * Copyright (c) 1996-2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 1996-2026 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -165,12 +165,13 @@ enum {
 	FEAT_max
 };
 
-
 /*
  * Global defines
  */
-#define	FTPBUFLEN	(4 * MAXPATHLEN)
+#define	FTPBUFLEN	(16 * 1024)
 #define	MAX_IN_PORT_T	0xffffU
+#define	XFERBUFMIN	(1 * 1024)	/* 1 KiB max read()/write() */
+#define	XFERBUFMAX	(128 * 1024)	/* 128 KiB max read()/write() */
 
 #define	HASHBYTES	1024	/* default mark for `hash' command */
 #define	DEFAULTINCR	1024	/* default increment for `rate' command */
@@ -254,6 +255,7 @@ GLOBAL	int	epsv4bad;	/* EPSV doesn't work on the current server */
 GLOBAL	int	epsv6;		/* use EPSV/EPRT on IPv6 connections */
 GLOBAL	int	epsv6bad;	/* EPSV doesn't work on the current server */
 GLOBAL	int	editing;	/* command line editing enabled */
+GLOBAL	StringList *custom_headers;	/* stringlist with custom HTTP headers */
 GLOBAL	int	features[FEAT_max];	/* remote FEATures supported */
 
 #ifndef NO_EDITCOMPLETE
@@ -269,6 +271,7 @@ GLOBAL	int	unix_server;	/* server is unix, can use binary for ascii */
 GLOBAL	int	unix_proxy;	/* proxy is unix, can use binary for ascii */
 GLOBAL	char	localcwd[MAXPATHLEN];	/* local dir */
 GLOBAL	char	remotecwd[MAXPATHLEN];	/* remote dir */
+GLOBAL	int	remcwdvalid;		/* remotecwd has been updated */
 GLOBAL	char   *username;	/* name of user logged in as. (dynamic) */
 
 GLOBAL	sa_family_t family;	/* address family to use for connections */
@@ -295,8 +298,8 @@ GLOBAL	int	mflag;		/* flag: if != 0, then active multi command */
 
 GLOBAL	int	options;	/* used during socket creation */
 
-GLOBAL	int	sndbuf_size;	/* socket send buffer size */
-GLOBAL	int	rcvbuf_size;	/* socket receive buffer size */
+GLOBAL	int	sndbuf_size;	/* socket send buffer size; 0 = autoscale */
+GLOBAL	int	rcvbuf_size;	/* socket receive buffer size; 0 = autoscale */
 
 GLOBAL	int	macnum;		/* number of defined macros */
 GLOBAL	struct macel macros[16];
@@ -319,9 +322,10 @@ GLOBAL	FILE	*cin;
 GLOBAL	FILE	*cout;
 GLOBAL	int	 data;
 
-extern	struct cmd	cmdtab[];
-extern	struct option	optiontab[];
+extern	struct cmd		cmdtab[];
+extern	struct option		optiontab[];
 
+extern	size_t ftp_buflen;
 
 #define	EMPTYSTRING(x)	((x) == NULL || (*(x) == '\0'))
 #define	FREEPTR(x)	if ((x) != NULL) { free(x); (x) = NULL; }
@@ -337,11 +341,12 @@ extern	struct option	optiontab[];
 #endif
 
 #ifdef NO_DEBUG
-#define DPRINTF(...)
-#define DWARN(...)
+#define DPRINTF(...)	(void)0
+#define DWARN(...)	(void)0
 #else
-#define DPRINTF(...)	if (ftp_debug) (void)fprintf(ttyout, __VA_ARGS__)
-#define DWARN(...)	if (ftp_debug) warn(__VA_ARGS__)
+#define DWFTP(a)	do a; while (0)
+#define DPRINTF(...)	DWFTP(if (ftp_debug) (void)fprintf(ttyout, __VA_ARGS__))
+#define DWARN(...)	DWFTP(if (ftp_debug) warn(__VA_ARGS__))
 #endif
 
 #define STRorNULL(s)	((s) ? (s) : "<null>")

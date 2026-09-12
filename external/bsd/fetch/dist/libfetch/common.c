@@ -1,6 +1,6 @@
-/*	$NetBSD: common.c,v 1.2 2011/06/25 20:27:01 christos Exp $	*/
+/*	$NetBSD: common.c,v 1.13 2026/04/16 10:33:56 wiz Exp $	*/
 /*-
- * Copyright (c) 1998-2004 Dag-Erling Coïdan Smørgrav
+ * Copyright (c) 1998-2004 Dag-Erling CoÃ¯dan SmÃ¸rgrav
  * Copyright (c) 2008, 2010 Joerg Sonnenberger <joerg@NetBSD.org>
  * All rights reserved.
  *
@@ -41,7 +41,11 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/uio.h>
-
+#if HAVE_POLL_H
+#include <poll.h>
+#elif HAVE_SYS_POLL_H
+#include <sys/poll.h>
+#endif
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -236,6 +240,7 @@ fetch_reopen(int sd)
 	conn->next_buf = NULL;
 	conn->next_len = 0;
 	conn->sd = sd;
+	conn->buf_events = POLLIN;
 	return (conn);
 }
 
@@ -316,6 +321,7 @@ fetch_connect(struct url *url, int af, int verbose)
 	if ((conn = fetch_reopen(sd)) == NULL) {
 		fetch_syserr();
 		close(sd);
+		return (NULL);
 	}
 	conn->cache_url = fetchCopyURL(url);
 	conn->cache_af = af;
@@ -368,7 +374,9 @@ fetch_cache_get(const struct url *url, int af)
 {
 	conn_t *conn, *last_conn = NULL;
 
-	for (conn = connection_cache; conn; conn = conn->next_cached) {
+	for (conn = connection_cache; conn; last_conn = conn,
+	    conn = conn->next_cached)
+	{
 		if (conn->cache_url->port == url->port &&
 		    strcmp(conn->cache_url->scheme, url->scheme) == 0 &&
 		    strcmp(conn->cache_url->host, url->host) == 0 &&
@@ -395,8 +403,8 @@ fetch_cache_get(const struct url *url, int af)
 void
 fetch_cache_put(conn_t *conn, int (*closecb)(conn_t *))
 {
-	conn_t *iter, *last;
-	int global_count, host_count;
+	conn_t *iter, *last, *oiter;
+	int global_count, host_count, added;
 
 	if (conn->cache_url == NULL || cache_global_limit == 0) {
 		(*closecb)(conn);
@@ -405,20 +413,28 @@ fetch_cache_put(conn_t *conn, int (*closecb)(conn_t *))
 
 	global_count = host_count = 0;
 	last = NULL;
-	for (iter = connection_cache; iter;
-	    last = iter, iter = iter->next_cached) {
+	for (iter = connection_cache; iter; ) {
 		++global_count;
-		if (strcmp(conn->cache_url->host, iter->cache_url->host) == 0)
+		added = !strcmp(conn->cache_url->host, iter->cache_url->host);
+		if (added)
 			++host_count;
 		if (global_count < cache_global_limit &&
-		    host_count < cache_per_host_limit)
-			continue;
-		--global_count;
-		if (last != NULL)
-			last->next_cached = iter->next_cached;
-		else
-			connection_cache = iter->next_cached;
-		(*iter->cache_close)(iter);
+		    host_count < cache_per_host_limit) {
+			oiter = NULL;
+			last = iter;
+		} else {
+			--global_count;
+			if (added)
+				--host_count;
+			if (last != NULL)
+				last->next_cached = iter->next_cached;
+			else
+				connection_cache = iter->next_cached;
+			oiter = iter;
+		}
+		iter = iter->next_cached;
+		if (oiter)
+			(*oiter->cache_close)(oiter);
 	}
 
 	conn->cache_close = closecb;
@@ -430,7 +446,7 @@ fetch_cache_put(conn_t *conn, int (*closecb)(conn_t *))
  * Enable SSL on a connection.
  */
 int
-fetch_ssl(conn_t *conn, int verbose)
+fetch_ssl(conn_t *conn, const struct url *URL, int verbose)
 {
 
 #ifdef WITH_SSL
@@ -445,13 +461,26 @@ fetch_ssl(conn_t *conn, int verbose)
 	conn->ssl_meth = SSLv23_client_method();
 	conn->ssl_ctx = SSL_CTX_new(conn->ssl_meth);
 	SSL_CTX_set_mode(conn->ssl_ctx, SSL_MODE_AUTO_RETRY);
+	if (getenv("SSL_NO_VERIFY_PEER") == NULL) {
+		SSL_CTX_set_default_verify_paths(conn->ssl_ctx);
+		SSL_CTX_set_verify(conn->ssl_ctx, SSL_VERIFY_PEER, NULL);
+	}
 
 	conn->ssl = SSL_new(conn->ssl_ctx);
 	if (conn->ssl == NULL){
 		fprintf(stderr, "SSL context creation failed\n");
 		return (-1);
 	}
+	conn->buf_events = 0;
 	SSL_set_fd(conn->ssl, conn->sd);
+#if OPENSSL_VERSION_NUMBER >= 0x0090806fL && !defined(OPENSSL_NO_TLSEXT)
+	if (!SSL_set_tlsext_host_name(conn->ssl, (char *)(uintptr_t)URL->host)) {
+		fprintf(stderr,
+		    "TLS server name indication extension failed for host %s\n",
+		    URL->host);
+		return (-1);
+	}
+#endif
 	if (SSL_connect(conn->ssl) == -1){
 		ERR_print_errors_fp(stderr);
 		return (-1);
@@ -483,6 +512,16 @@ fetch_ssl(conn_t *conn, int verbose)
 #endif
 }
 
+static int
+compute_timeout(const struct timeval *tv)
+{
+	struct timeval cur;
+	int timeout;
+
+	gettimeofday(&cur, NULL);
+	timeout = (tv->tv_sec - cur.tv_sec) * 1000 + (tv->tv_usec - cur.tv_usec) / 1000;
+	return timeout;
+}
 
 /*
  * Read a character from a connection w/ timeout
@@ -490,8 +529,9 @@ fetch_ssl(conn_t *conn, int verbose)
 ssize_t
 fetch_read(conn_t *conn, char *buf, size_t len)
 {
-	struct timeval now, timeout, waittv;
-	fd_set readfds;
+	struct timeval timeout_end;
+	struct pollfd pfd;
+	int timeout_cur;
 	ssize_t rlen;
 	int r;
 
@@ -508,39 +548,52 @@ fetch_read(conn_t *conn, char *buf, size_t len)
 	}
 
 	if (fetchTimeout) {
-		FD_ZERO(&readfds);
-		gettimeofday(&timeout, NULL);
-		timeout.tv_sec += fetchTimeout;
+		gettimeofday(&timeout_end, NULL);
+		timeout_end.tv_sec += fetchTimeout;
 	}
 
+	pfd.fd = conn->sd;
 	for (;;) {
-		while (fetchTimeout && !FD_ISSET(conn->sd, &readfds)) {
-			FD_SET(conn->sd, &readfds);
-			gettimeofday(&now, NULL);
-			waittv.tv_sec = timeout.tv_sec - now.tv_sec;
-			waittv.tv_usec = timeout.tv_usec - now.tv_usec;
-			if (waittv.tv_usec < 0) {
-				waittv.tv_usec += 1000000;
-				waittv.tv_sec--;
-			}
-			if (waittv.tv_sec < 0) {
-				errno = ETIMEDOUT;
-				fetch_syserr();
-				return (-1);
-			}
-			errno = 0;
-			r = select(conn->sd + 1, &readfds, NULL, NULL, &waittv);
-			if (r == -1) {
-				if (errno == EINTR && fetchRestartCalls)
-					continue;
-				fetch_syserr();
-				return (-1);
-			}
+		pfd.events = conn->buf_events;
+		if (fetchTimeout && pfd.events) {
+			do {
+				timeout_cur = compute_timeout(&timeout_end);
+				if (timeout_cur < 0) {
+					errno = ETIMEDOUT;
+					fetch_syserr();
+					return (-1);
+				}
+				errno = 0;
+				r = poll(&pfd, 1, timeout_cur);
+				if (r == -1) {
+					if (errno == EINTR && fetchRestartCalls)
+						continue;
+					fetch_syserr();
+					return (-1);
+				}
+			} while (pfd.revents == 0);
 		}
 #ifdef WITH_SSL
-		if (conn->ssl != NULL)
-			rlen = SSL_read(conn->ssl, buf, (int)len);
-		else
+		if (conn->ssl != NULL) {
+			rlen = SSL_read(conn->ssl, buf, len);
+			if (rlen == -1) {
+				switch (SSL_get_error(conn->ssl, rlen)) {
+				case SSL_ERROR_WANT_READ:
+					conn->buf_events = POLLIN;
+					break;
+				case SSL_ERROR_WANT_WRITE:
+					conn->buf_events = POLLOUT;
+					break;
+				default:
+					errno = EIO;
+					fetch_syserr();
+					return -1;
+				}
+			} else {
+				/* Assume buffering on the SSL layer. */
+				conn->buf_events = 0;
+			}
+		} else
 #endif
 			rlen = read(conn->sd, buf, len);
 		if (rlen >= 0)
@@ -709,6 +762,22 @@ fetch_close(conn_t *conn)
 {
 	int ret;
 
+#ifdef WITH_SSL
+	if (conn->ssl) {
+		SSL_shutdown(conn->ssl);
+		SSL_set_connect_state(conn->ssl);
+		SSL_free(conn->ssl);
+		conn->ssl = NULL;
+	}
+	if (conn->ssl_ctx) {
+		SSL_CTX_free(conn->ssl_ctx);
+		conn->ssl_ctx = NULL;
+	}
+	if (conn->ssl_cert) {
+		X509_free(conn->ssl_cert);
+		conn->ssl_cert = NULL;
+	}
+#endif
 	ret = close(conn->sd);
 	if (conn->cache_url)
 		fetchFreeURL(conn->cache_url);

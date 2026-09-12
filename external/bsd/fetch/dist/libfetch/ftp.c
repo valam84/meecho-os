@@ -1,6 +1,6 @@
-/*	$NetBSD: ftp.c,v 1.7 2014/01/07 02:13:00 joerg Exp $	*/
+/*	$NetBSD: ftp.c,v 1.13 2026/04/16 10:05:08 wiz Exp $	*/
 /*-
- * Copyright (c) 1998-2004 Dag-Erling Coïdan Smørgrav
+ * Copyright (c) 1998-2004 Dag-Erling CoÃ¯dan SmÃ¸rgrav
  * Copyright (c) 2008, 2009, 2010 Joerg Sonnenberger <joerg@NetBSD.org>
  * All rights reserved.
  *
@@ -42,7 +42,7 @@
  *
  * Major Changelog:
  *
- * Dag-Erling Coïdan Smørgrav
+ * Dag-Erling CoÃ¯dan SmÃ¸rgrav
  * 9 Jun 1998
  *
  * Incorporated into libfetch
@@ -98,6 +98,7 @@
 #include "common.h"
 #include "ftperr.h"
 
+static int ftp_cmd(conn_t *, const char *, ...) LIBFETCH_PRINTFLIKE(2, 3);
 #define FTP_ANONYMOUS_USER	"anonymous"
 
 #define FTP_CONNECTION_ALREADY_OPEN	125
@@ -138,7 +139,6 @@ static void
 unmappedaddr(struct sockaddr_in6 *sin6, socklen_t *len)
 {
 	struct sockaddr_in *sin4;
-	void *addrp;
 	uint32_t addr;
 	int port;
 
@@ -146,8 +146,11 @@ unmappedaddr(struct sockaddr_in6 *sin6, socklen_t *len)
 	    !IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr))
 		return;
 	sin4 = (struct sockaddr_in *)(void *)sin6;
-	addrp = &sin6->sin6_addr.s6_addr[12];
-	addr = *(uint32_t *)addrp;
+#ifdef s6_addr32
+	addr = sin6->sin6_addr.s6_addr32[3];
+#else
+	memcpy(&addr, &sin6->sin6_addr.s6_addr[12], sizeof(addr));
+#endif
 	port = sin6->sin6_port;
 	memset(sin4, 0, sizeof(struct sockaddr_in));
 	sin4->sin_addr.s_addr = addr;
@@ -198,7 +201,7 @@ ftp_chkerr(conn_t *conn)
 /*
  * Send a command and check reply
  */
-__printflike(2, 3)
+LIBFETCH_PRINTFLIKE(2, 3)
 static int
 ftp_cmd(conn_t *conn, const char *fmt, ...)
 {
@@ -331,7 +334,8 @@ ftp_cwd(conn_t *conn, const char *path, int subdir)
 	} else if (strcmp(conn->ftp_home, "/") == 0) {
 		dst = strdup(path - 1);
 	} else {
-		asprintf(&dst, "%s/%s", conn->ftp_home, path);
+		if (asprintf(&dst, "%s/%s", conn->ftp_home, path) == -1)
+			dst = NULL;
 	}
 	if (dst == NULL) {
 		fetch_syserr();
@@ -688,14 +692,13 @@ ftp_transfer(conn_t *conn, const char *oper, const char *file, const char *op_ar
 	const char *filename;
 	size_t filenamelen;
 	int type;
-	int low, pasv, verbose;
+	int pasv, verbose;
 	int e, sd = -1;
 	socklen_t l;
 	char *s;
 	fetchIO *df;
 
 	/* check flags */
-	low = CHECK_FLAG('l');
 	pasv = !CHECK_FLAG('a');
 	verbose = CHECK_FLAG('v');
 
@@ -861,6 +864,7 @@ retry_mode:
 		uint16_t p;
 #if defined(IPV6_PORTRANGE) || defined(IP_PORTRANGE)
 		int arg;
+		int low = CHECK_FLAG('l');
 #endif
 		int d;
 		char hname[INET6_ADDRSTRLEN];
@@ -1107,22 +1111,18 @@ static struct url *
 ftp_get_proxy(struct url * url, const char *flags)
 {
 	struct url *purl;
-	char *p, *fp, *FP, *hp, *HP;
+	char *p;
 
 	if (flags != NULL && strchr(flags, 'd') != NULL)
-		return NULL;
+		return (NULL);
 	if (fetch_no_proxy_match(url->host))
-		return NULL;
+		return (NULL);
 
-	FP = getenv("FTP_PROXY");
-	fp = getenv("ftp_proxy");
-	HP = getenv("HTTP_PROXY");
-	hp = getenv("http_proxy");
-
-	if ((((p = FP) || (p = fp) || (p = HP) || (p = hp))) &&
+	if (((p = getenv("FTP_PROXY")) || (p = getenv("ftp_proxy")) ||
+		(p = getenv("HTTP_PROXY")) || (p = getenv("http_proxy"))) &&
 	    *p && (purl = fetchParseURL(p)) != NULL) {
 		if (!*purl->scheme) {
-			if (fp || FP)
+			if (getenv("FTP_PROXY") || getenv("ftp_proxy"))
 				strcpy(purl->scheme, SCHEME_FTP);
 			else
 				strcpy(purl->scheme, SCHEME_HTTP);
@@ -1131,10 +1131,10 @@ ftp_get_proxy(struct url * url, const char *flags)
 			purl->port = fetch_default_proxy_port(purl->scheme);
 		if (strcasecmp(purl->scheme, SCHEME_FTP) == 0 ||
 		    strcasecmp(purl->scheme, SCHEME_HTTP) == 0)
-			return purl;
+			return (purl);
 		fetchFreeURL(purl);
 	}
-	return NULL;
+	return (NULL);
 }
 
 /*
@@ -1170,12 +1170,14 @@ ftp_request(struct url *url, const char *op, const char *op_arg,
 		return (NULL);
 
 	if ((path = fetchUnquotePath(url)) == NULL) {
+		fetch_close(conn);
 		fetch_syserr();
 		return NULL;
 	}
 
 	/* change directory */
 	if (ftp_cwd(conn, path, op_arg != NULL) == -1) {
+		fetch_close(conn);
 		free(path);
 		return (NULL);
 	}
@@ -1188,12 +1190,14 @@ ftp_request(struct url *url, const char *op, const char *op_arg,
 	if (us && ftp_stat(conn, path, us) == -1
 	    && fetchLastErrCode != FETCH_PROTO
 	    && fetchLastErrCode != FETCH_UNAVAIL) {
+		fetch_close(conn);
 		free(path);
 		return (NULL);
 	}
 
 	if (if_modified_since && url->last_modified > 0 &&
 	    url->last_modified >= us->mtime) {
+		fetch_cache_put(conn, ftp_disconnect);
 		free(path);
 		fetchLastErrCode = FETCH_UNCHANGED;
 		snprintf(fetchLastErrString, MAXERRSTRING, "Unchanged");
@@ -1202,6 +1206,7 @@ ftp_request(struct url *url, const char *op, const char *op_arg,
 
 	/* just a stat */
 	if (strcmp(op, "STAT") == 0) {
+		fetch_cache_put(conn, ftp_disconnect);
 		free(path);
 		return fetchIO_unopen(NULL, NULL, NULL, NULL);
 	}

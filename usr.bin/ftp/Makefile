@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.36 2012/12/21 18:07:36 christos Exp $
+#	$NetBSD: Makefile,v 1.46 2026/07/06 07:07:00 mlelstv Exp $
 #	from: @(#)Makefile	8.2 (Berkeley) 4/3/94
 
 .include <bsd.own.mk>
@@ -7,15 +7,8 @@ USE_FORT?= yes	# network client
 
 PROG=	ftp
 SRCS=	cmds.c cmdtab.c complete.c domacro.c fetch.c ftp.c main.c \
-	progressbar.c ruserpass.c util.c
-
-.if defined(__MINIX)
-.if !empty(DBG:M-Og) || !empty(CFLAGS:M-Og) || \
-	!empty(DBG:M-g) || !empty(CFLAGS:M-g)
-#LSC: -Wno-maybe-uninitialized while compiling with -DNDEBUG -Og
-CWARNFLAGS.gcc+=	-Wno-maybe-uninitialized -Wno-clobbered
-.endif
-.endif # defined(__MINIX)
+	progressbar.c ruserpass.c uri.c util.c
+SRCS+=	ssl.c
 
 # Uncomment the following to provide defaults for gate-ftp operation
 #
@@ -26,12 +19,9 @@ CPPFLAGS+=-DNO_EDITCOMPLETE -DNO_ABOUT -DNO_AUTH -DNO_HELP -DNO_STATUS -DNO_DEBU
 .else
 LDADD+=	-ledit -lterminfo
 DPADD+=	${LIBEDIT} ${LIBTERMINFO}
-.if (${MKCRYPTO} != "no")
 CPPFLAGS+= -DWITH_SSL
-SRCS+=ssl.c
 LDADD+= -lssl -lcrypto
 DPADD+= ${LIBSSL} ${LIBCRYPTO}
-.endif
 .endif
 
 .if (!defined(SMALLPROG) || defined(SMALLPROG_INET6)) && (${USE_INET6} != "no")
@@ -40,5 +30,9 @@ CPPFLAGS+= -DINET6
 
 cmds.o fetch.o: version.h
 main.o:	ftp_var.h
+
+.if ${MACHINE_CPU} == "m68k"
+COPTS.ftp.c+=	-Wno-error=clobbered
+.endif
 
 .include <bsd.prog.mk>

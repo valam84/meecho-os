@@ -1,11 +1,8 @@
-/*	$NetBSD: version.h,v 1.105 2026/07/18 22:55:06 lukem Exp $	*/
+/*	$NetBSD: uri.h,v 1.1 2026/07/06 07:07:00 mlelstv Exp $	*/
 
 /*-
- * Copyright (c) 1999-2026 The NetBSD Foundation, Inc.
+ * Copyright (c) 2026 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Luke Mewburn.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,10 +26,4 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef FTP_PRODUCT
-#define	FTP_PRODUCT	"NetBSD-ftp"
-#endif
-
-#ifndef FTP_VERSION
-#define	FTP_VERSION	"20260718"
-#endif
+char *make_absurl(char *, const char *);

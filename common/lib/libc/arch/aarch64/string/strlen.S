@@ -1,4 +1,4 @@
-/* $NetBSD: strlen.S,v 1.1 2014/08/10 05:47:35 matt Exp $ */
+/* $NetBSD: strlen.S,v 1.5 2020/09/09 14:49:27 jakllsch Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <machine/asm.h>
 
-RCSID("$NetBSD: strlen.S,v 1.1 2014/08/10 05:47:35 matt Exp $")
+RCSID("$NetBSD: strlen.S,v 1.5 2020/09/09 14:49:27 jakllsch Exp $")
 
 #ifdef STRNLEN
 #define FUNCNAME	strnlen
@@ -47,8 +47,12 @@ RCSID("$NetBSD: strlen.S,v 1.1 2014/08/10 05:47:35 matt Exp $")
 ENTRY(FUNCNAME)
 	mov	x4, x0			/* need x0 for return */
 	add	x9, x0, #8		/* start + dword */
+	bic	x9, x9, #7		/* and aligned */
 #ifdef STRNLEN
-	add	x10, x0, x1		/* don't go past here */
+	adds	x10, x0, x1		/* x10 = s + maxlen */
+	b.cc	1f			/* if go past, */
+	mvn	x10, xzr		/* set limit 0xffffffffffffffff */
+1:
 #endif
 	mov	x11, #MASK8_0x01	/* test mask */
 
@@ -61,23 +65,12 @@ ENTRY(FUNCNAME)
 	 * before the data won't match as NUL.
 	 */
 	add	x4, x4, x0		/* make dword aligned */
-	/*
-	 * x0 has done its job.  It was the negated misalignment, used just
-	 * above to round the pointer down; from here it is the length
-	 * accumulator, and the rounding is already accounted for by the
-	 * "add x0, x0, x4 / sub x0, x0, x9" at the end - x4 is below the
-	 * original pointer by exactly that much.  Leaving the misalignment in
-	 * it subtracted the same amount twice, so an unaligned string came
-	 * back short by its own misalignment.
-	 */
-	mov	x0, xzr			/* start the length at zero */
 	ldr	x7, [x4], #8		/* load dword */
-	lsl	x3, x3, #3		/* convert bytes to bits */
 #ifdef __AARCH64EB__
-	lsr	x5, x11, x3		/* make mask for BE */
-#else
-	lsl	x5, x11, x3		/* make mask for LE */
+	rev	x7, x7			/* convert to LE */
 #endif
+	lsl	x3, x3, #3		/* convert bytes to bits */
+	lsl	x5, x11, x3		/* make mask for LE */
 	eor	x5, x5, x11		/* invert mask */
 	orr	x7, x7, x5		/* prevent NULs */
 	b	.Lstrlen_dword_loop_noload
@@ -85,9 +78,12 @@ ENTRY(FUNCNAME)
 .Lstrlen_dword_loop:
 #ifdef STRNLEN
 	cmp	x4, x10
-	b.ge	.Lstrlen_done
+	b.hs	.Lstrlen_done
 #endif
 	ldr	x7, [x4], #8		/* load dword */
+#ifdef __AARCH64EB__
+	rev	x7, x7			/* convert to LE */
+#endif
 .Lstrlen_dword_loop_noload:
 	/*
 	 * Use the formula (X - 1) & ~(X | 0x7f) to find NUL bytes.
@@ -101,17 +97,8 @@ ENTRY(FUNCNAME)
 
 	/*
 	 * We know there is a NUL in this dword.  Use clz to find it.
-	 *
-	 * The byte we are looking for is marked in x6, the result of the test
-	 * above: a NUL byte has become 0x80 there and every other byte 0x00.
-	 * It is not in x7 - "orr x7, x7, #MASK8_0x7f" overwrote the data two
-	 * instructions ago.  Reversing and counting x7 measured a value whose
-	 * every byte has its low seven bits set, so clz was always zero and
-	 * the length always came back rounded down to a multiple of eight.
 	 */
-#ifdef __AARCH64EL__
 	rev	x6, x6			/* convert to BE */
-#endif
 	clz	x6, x6			/* find null byte */
 	add	x0, x0, x6, lsr #3	/* add offset to the length */
 
@@ -119,7 +106,7 @@ ENTRY(FUNCNAME)
 	sub	x0, x0, x9		/* subtract start from the length */
 #ifdef STRNLEN
 	cmp	x0, x1			/* did we go too far? */
-        csel    x0, x0, x1, lt		/* yes, return max length */
+	csel	x0, x0, x1, lo		/* yes, return max length */
 #endif
 	ret
 #ifdef STRNLEN

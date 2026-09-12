@@ -1,4 +1,4 @@
-/* $NetBSD: memset.S,v 1.1 2014/08/10 05:47:35 matt Exp $ */
+/* $NetBSD: memset.S,v 1.4 2026/03/13 21:13:45 andvar Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -131,9 +131,9 @@ ENTRY(memset)
 	add	x12, x15, x11	/* round start to a block boundary */
 	asr	x12, x12, x9	/* "starting" block number */
 	add	x13, x15, x2	/* get ending address */
-	asr	x13, x13, x9	/* "ending" block numebr */
+	asr	x13, x13, x9	/* "ending" block number */
 	cmp	x13, x12	/* how many blocks? */
-	b.eq	.Lfilled	/*   none, do it 16 bytes at a time */
+	b.ls	.Lfilled	/*   none, do it 16 bytes at a time */
 
 	/*
 	 * Now we have one or more blocks to deal with.  First now we need
@@ -144,6 +144,7 @@ ENTRY(memset)
 
 	sub	x7, x10, x7	/* subtract offset from block length */
 	sub	x2, x2, x7	/* subtract that from length */
+	asr	x7, x7, #4	/* length -> N*16 */
 
 	tbz	x15, #0, .Lzero_hword_aligned
 	strb	wzr, [x15], #1
@@ -157,31 +158,26 @@ ENTRY(memset)
 	tbz	x15, #3, .Lzero_qword_aligned
 	str	xzr, [x15], #8
 .Lzero_qword_aligned:
-	/*
-	 * x15 is qword aligned now, so whatever is still between it and the
-	 * block boundary is a whole number of qwords.  Recompute it rather
-	 * than adjust the earlier count: the four stores above wrote between
-	 * 0 and 15 bytes of it, and the amount depends on the alignment they
-	 * found.
-	 *
-	 * This used to divide the pre-alignment distance by four and jump
-	 * that far back into an unrolled run of stores.  Three things were
-	 * wrong with that.  The distance is only a multiple of 16 by
-	 * accident, so the computed target was not always an instruction
-	 * boundary; the bytes written while aligning were counted twice; and
-	 * the unrolled run was 15 stores, enough for a 256-byte block, while
-	 * DCZID_EL0 is allowed to report much larger ones - QEMU reports 512.
-	 * A block bigger than the run made the branch land above the run
-	 * entirely.  A loop is a few cycles slower once per call and cannot
-	 * be wrong about any of that.
-	 */
-	and	x7, x15, x11	/* offset within the block, now qword aligned */
-	cbz	x7, .Lblock_aligned
-	sub	x7, x10, x7	/* qwords left to the block boundary */
-.Lzero_to_block:
+	cbz	x7, .Lblock_aligned	/* aligned? just branch */
+
+	/* align to DCZID_EL0:BS boundary */
+	tbz	x7, #0, 0f		/* fill 16byte? */
 	stp	xzr, xzr, [x15], #16
-	subs	x7, x7, #16
-	b.ne	.Lzero_to_block
+0:
+	tbz	x7, #1, 1f		/* fill 32byte? */
+	stp	xzr, xzr, [x15], #16
+	stp	xzr, xzr, [x15], #16
+1:
+	lsr	x7, x7, #2
+	cbz	x7, 9f
+.L64bytes_fill:
+	sub	x7, x7, #1
+	stp	xzr, xzr, [x15], #16
+	stp	xzr, xzr, [x15], #16
+	stp	xzr, xzr, [x15], #16
+	stp	xzr, xzr, [x15], #16
+	cbnz	x7, .L64bytes_fill
+9:
 
 /*
  * Now we are block aligned.
@@ -195,14 +191,6 @@ ENTRY(memset)
 	ret
 
 .Lblock_done:
-	/*
-	 * The loop above went one block too far, so x2 is negative and what
-	 * is really left is x2 modulo the block size.  Masking with x11, the
-	 * block mask, is what does that.  It used to mask with x12, which at
-	 * this point holds a block *number* left over from the arithmetic
-	 * near .Lzerofill - so the remaining length came out as an unrelated
-	 * value and the tail was filled wrongly.
-	 */
 	and	x2, x2, x11	/* make positive again */
 	mov	x6, xzr		/* fill 2nd xword */
 	b	.Lqword_loop	/* and finish filling */

@@ -199,6 +199,62 @@ def descend(root, relpath):
     return node
 
 
+# ------------------------------------------------------------ скелет hier(7)
+
+# Каталоги, которые в DESTDIR есть, а программ в них нет: /home, /lib,
+# /usr/include, /var/mail, /usr/local... Без них корень - это только то, где
+# лежат двоичные файлы, и "ls /home" отвечает отказом на системе, где
+# положено быть /home. Список не пишется руками: его уже написал
+# distrib-dirs по etc/mtree/NetBSD.dist.*, а METALOG в DESTDIR - это запись
+# того, что он сделал, с правами, которых у самих каталогов на диске нет
+# (сборка непривилегированная, и там всё 755).
+#
+# Не берутся /dev и /etc - их описывает ramdisk, буквально и с устройствами;
+# и не берутся дети каталогов, содержимое которых на машину не едет: под
+# /usr/include полторы сотни пустых подкаталогов без единого заголовка
+# сказали бы о системе неправду. Сами каталоги при этом остаются.
+SKELETON_OWN = ("dev", "etc")
+SKELETON_PRUNE = ("usr/include", "usr/libdata/debug", "boot")
+
+
+def add_skeleton(root, destdir):
+    """Добавить в корень пустые каталоги иерархии по METALOG из DESTDIR."""
+    metalog = os.path.join(destdir, "METALOG")
+    if not os.path.isfile(metalog):
+        sys.stderr.write("нет %s, скелет каталогов не добавлен\n" % metalog)
+        return
+    dirs = {}
+    with open(metalog, "r") as f:
+        for ln in f:
+            parts = ln.split()
+            if len(parts) < 2 or "type=dir" not in parts:
+                continue
+            path = parts[0]
+            if path.startswith("./"):
+                path = path[2:]
+            if path in ("", "."):
+                continue
+            mode = "755"
+            for p in parts[1:]:
+                if p.startswith("mode="):
+                    mode = "%03o" % (int(p[5:], 8) & 0o777)
+            dirs[path] = mode
+    for path in sorted(dirs):
+        top = path.split("/")[0]
+        if top in SKELETON_OWN:
+            continue
+        if any(path.startswith(p + "/") for p in SKELETON_PRUNE):
+            continue
+        head, _, name = path.rpartition("/")
+        parent = descend(root, head) if head else root
+        if name in parent.kids:
+            continue                             # уже есть, со своими правами
+        sub = Node()
+        sub.line = "d--%s 0 0" % dirs[path]
+        sub.kids = {}
+        parent.add(name, sub)
+
+
 # ------------------------------------------------------------------- запись
 
 def emit(node, out, depth=0):
@@ -228,6 +284,7 @@ def main(argv):
             sys.stderr.write("нет %s, пропущено\n" % src)
             continue
         add_tree(descend(root, sub), src, FILTERED_SUBDIRS.get(sub))
+    add_skeleton(root, destdir)
 
     out = sys.stdout
     out.write("\n".join(header) + "\n")

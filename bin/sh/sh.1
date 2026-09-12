@@ -312,16 +312,25 @@ changed by the
 .Ic cd
 command.
 .It "\ \ " Em tabcomplete
-Enables filename completion in the command line editor.
+Enables completion in the command line editor.
 Typing a tab character will extend the current input word to match a
-filename.
-If more than one filename matches it is only extended to be the common prefix.
+filename, or, when the word is the first of a command and contains no
+slash, the name of a built-in command or of an executable file found in
+.Ev PATH .
+If more than one name matches it is only extended to be the common prefix.
 Typing a second tab character will list all the matching names.
 One of the editing modes, either
 .Fl E
 or
 .Fl V ,
 must be enabled for this to work.
+An interactive shell starts with
+.Em tabcomplete
+and
+.Fl E
+set unless
+.Fl V
+was requested.
 .El
 .Ss Lexical Structure
 The shell reads input in terms of lines from a file and breaks it up into

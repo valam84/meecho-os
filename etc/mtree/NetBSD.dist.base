@@ -154,6 +154,11 @@
 ./usr/libdata/debug/usr/tests/minix-posix/ddekit
 ./usr/libdata/debug/usr/tests/minix-posix/rmibtest
 ./usr/libexec
+./usr/local
+./usr/local/bin
+./usr/local/lib
+./usr/local/sbin
+./usr/local/share
 ./usr/log
 ./usr/man
 ./usr/man/man1

@@ -42,9 +42,13 @@ __RCSID("$NetBSD: histedit.c,v 1.47 2014/06/18 18:17:30 christos Exp $");
 #endif /* not lint */
 
 #include <sys/param.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <dirent.h>
 #include <paths.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 /*
  * Editline and history functions (and glue).
@@ -78,6 +82,238 @@ STATIC const char *fc_replace(const char *, char *, char *);
 #ifdef DEBUG
 extern FILE *tracefile;
 #endif
+
+/*
+ * <tab> completion.
+ *
+ * libedit completes file names and nothing else, and that is all NetBSD's
+ * sh ever bound <tab> to.  Here the first word of a command is completed
+ * from the builtins and from PATH instead: on a machine whose only user
+ * interface is this shell, the names of its programs are the first thing
+ * one needs to be told.  Every other word, and a first word with a slash in
+ * it, still goes to libedit.  Several matches insert what they share; when
+ * there is nothing left to share, <tab> lists them.
+ */
+
+/* What libedit takes for the end of a word (filecomplete.c). */
+static const char word_break[] = " \t\n\"\\'`@$><=;|&{(";
+
+/* More candidates than this and the list asks before scrolling. */
+#define QUERY_ITEMS	100
+
+struct cmdlist {
+	char **name;
+	size_t n, cap;
+};
+
+static void
+cmdlist_add(struct cmdlist *l, const char *name)
+{
+	char **v;
+	size_t cap;
+
+	if (l->n + 1 >= l->cap) {
+		cap = l->cap ? l->cap * 2 : 64;
+		if ((v = realloc(l->name, cap * sizeof(*v))) == NULL)
+			return;
+		l->name = v;
+		l->cap = cap;
+	}
+	if ((l->name[l->n] = strdup(name)) != NULL)
+		l->n++;
+}
+
+static void
+cmdlist_free(struct cmdlist *l)
+{
+	size_t i;
+
+	for (i = 0; i < l->n; i++)
+		free(l->name[i]);
+	free(l->name);
+}
+
+static int
+cmdlist_cmp(const void *a, const void *b)
+{
+	return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+/*
+ * Every command whose name begins with text: the builtins, then each
+ * directory of PATH in order.  Sorted and without repeats: the same name in
+ * two directories is one command as far as the list is concerned.
+ */
+static void
+command_matches(const char *text, struct cmdlist *l)
+{
+	const struct builtincmd *bp;
+	const char *path, *end;
+	char dir[PATH_MAX], full[PATH_MAX];
+	size_t len, dlen, i, j;
+	DIR *dp;
+	struct dirent *de;
+	struct stat st;
+
+	len = strlen(text);
+	for (bp = builtincmd; bp->name != NULL; bp++)
+		if (strncmp(bp->name, text, len) == 0)
+			cmdlist_add(l, bp->name);
+
+	for (path = pathval(); path != NULL; path = end ? end + 1 : NULL) {
+		end = strchr(path, ':');
+		dlen = end ? (size_t)(end - path) : strlen(path);
+		if (dlen == 0)
+			strcpy(dir, ".");
+		else
+			snprintf(dir, sizeof(dir), "%.*s", (int)dlen, path);
+		if ((dp = opendir(dir)) == NULL)
+			continue;
+		while ((de = readdir(dp)) != NULL) {
+			/* An empty word does not show hidden names. */
+			if (de->d_name[0] == '.' && len == 0)
+				continue;
+			if (strncmp(de->d_name, text, len) != 0)
+				continue;
+			snprintf(full, sizeof(full), "%s/%s", dir, de->d_name);
+			if (stat(full, &st) == 0 && S_ISREG(st.st_mode) &&
+			    (st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)))
+				cmdlist_add(l, de->d_name);
+		}
+		closedir(dp);
+	}
+
+	qsort(l->name, l->n, sizeof(*l->name), cmdlist_cmp);
+	for (i = j = 0; i < l->n; i++) {
+		if (j > 0 && strcmp(l->name[j - 1], l->name[i]) == 0) {
+			free(l->name[i]);
+			continue;
+		}
+		l->name[j++] = l->name[i];
+	}
+	l->n = j;
+}
+
+/*
+ * Print the candidates in columns under the command line.  The caller
+ * returns CC_REDISPLAY so that libedit draws the prompt and the line again
+ * below them.
+ */
+static void
+list_matches(struct cmdlist *l)
+{
+	struct winsize ws;
+	size_t maxlen, width, cols, rows, r, c, i;
+	int screen = 80;
+	char ch;
+
+	if (l->n > QUERY_ITEMS) {
+		fprintf(el_out, "\nDisplay all %zu possibilities? (y or n) ",
+		    l->n);
+		fflush(el_out);
+		if (read(fileno(el_in), &ch, 1) != 1 || ch != 'y') {
+			fputc('\n', el_out);
+			fflush(el_out);
+			return;
+		}
+	}
+
+	if (ioctl(fileno(el_out), TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+		screen = ws.ws_col;
+	for (maxlen = 0, i = 0; i < l->n; i++)
+		if (strlen(l->name[i]) > maxlen)
+			maxlen = strlen(l->name[i]);
+	width = maxlen + 2;
+	cols = (size_t)screen / width;
+	if (cols == 0)
+		cols = 1;
+	rows = (l->n + cols - 1) / cols;
+
+	fputc('\n', el_out);
+	for (r = 0; r < rows; r++) {
+		for (c = 0; c < cols; c++) {
+			i = c * rows + r;
+			if (i >= l->n)
+				break;
+			if (i + rows < l->n)
+				fprintf(el_out, "%-*s", (int)width, l->name[i]);
+			else
+				fputs(l->name[i], el_out);
+		}
+		fputc('\n', el_out);
+	}
+	fflush(el_out);
+}
+
+/*
+ * Does the word starting at word begin a command?  At the start of the
+ * line, or after something that ends a command and starts another.
+ */
+static int
+command_position(const char *buf, const char *word)
+{
+	while (word > buf && (word[-1] == ' ' || word[-1] == '\t'))
+		word--;
+	return word == buf || strchr(";|&(`{", word[-1]) != NULL;
+}
+
+static unsigned char
+sh_complete(EditLine *e, int ch)
+{
+	const LineInfo *li;
+	const char *word;
+	char *text, saved;
+	struct cmdlist l;
+	size_t len, common, k;
+	unsigned char ret;
+
+	li = el_line(e);
+	word = li->cursor;
+	while (word > li->buffer && strchr(word_break, word[-1]) == NULL)
+		word--;
+	len = (size_t)(li->cursor - word);
+	if (memchr(word, '/', len) != NULL ||
+	    !command_position(li->buffer, word))
+		return _el_fn_complete(e, ch);
+
+	/* li points into libedit's scratch space; copy before editing. */
+	if ((text = malloc(len + 1)) == NULL)
+		return CC_ERROR;
+	memcpy(text, word, len);
+	text[len] = '\0';
+	memset(&l, 0, sizeof(l));
+	command_matches(text, &l);
+	free(text);
+
+	if (l.n == 0) {
+		el_beep(e);
+		cmdlist_free(&l);
+		return CC_NORM;
+	}
+
+	/* What every match shares; the list is sorted, so ends suffice. */
+	common = strlen(l.name[0]);
+	for (k = 0; k < common && l.name[0][k] == l.name[l.n - 1][k]; k++)
+		continue;
+	common = k;
+
+	if (l.n == 1) {
+		el_insertstr(e, l.name[0] + len);
+		el_insertstr(e, " ");
+		ret = CC_REFRESH;
+	} else if (common > len) {
+		saved = l.name[0][common];
+		l.name[0][common] = '\0';
+		el_insertstr(e, l.name[0] + len);
+		l.name[0][common] = saved;
+		ret = CC_REFRESH;
+	} else {
+		list_matches(&l);
+		ret = CC_REDISPLAY;
+	}
+	cmdlist_free(&l);
+	return ret;
+}
 
 /*
  * Set history and editing status.  Called whenever the status may
@@ -140,6 +376,9 @@ histedit(void)
 				el_set(el, EL_ADDFN, "rl-complete",
 				    "ReadLine compatible completion function",
 				    _el_fn_complete);
+				el_set(el, EL_ADDFN, "sh-complete",
+				    "Command or file name completion",
+				    sh_complete);
 			} else {
 bad:
 				out2str("sh: can't initialize editing\n");
@@ -157,8 +396,8 @@ bad:
 				el_set(el, EL_EDITOR, "vi");
 			else if (Eflag)
 				el_set(el, EL_EDITOR, "emacs");
-			el_set(el, EL_BIND, "^I", 
-			    tabcomplete ? "rl-complete" : "ed-insert", NULL);
+			el_set(el, EL_BIND, "^I",
+			    tabcomplete ? "sh-complete" : "ed-insert", NULL);
 		}
 	} else {
 		INTOFF;

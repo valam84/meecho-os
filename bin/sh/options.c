@@ -103,6 +103,19 @@ procargs(int argc, char **argv)
 		iflag = 2;
 	if (mflag == 2)
 		mflag = iflag;
+	/*
+	 * A shell talking to a terminal edits its command line and completes
+	 * on <tab> unless told otherwise.  NetBSD leaves both off and expects
+	 * each user's .shrc to turn them on; this system has one shell for
+	 * everything, from the serial console up, and no .shrc to speak of.
+	 * Scripts see none of this: iflag is 1 only for an interactive shell.
+	 */
+	if (iflag == 1) {
+		if (Eflag == 2 && Vflag == 2)
+			Eflag = 1;
+		if (tabcomplete == 2)
+			tabcomplete = 1;
+	}
 	for (i = 0; i < NOPTS; i++)
 		if (optlist[i].val == 2)
 			optlist[i].val = 0;

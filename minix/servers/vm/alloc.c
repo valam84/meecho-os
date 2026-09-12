@@ -37,6 +37,26 @@ static bitchunk_t free_pages_bitmap[PAGE_BITMAP_CHUNKS];
 static int free_page_cache[PAGE_CACHE_MAX];
 static int free_page_cache_size = 0;
 
+/*
+ * How many pages are free right now, kept alongside the bitmap so that
+ * the question is one comparison and not a walk of a million bits, and
+ * how many of them are held back for system processes.
+ *
+ * The reserve is what stands between "a user process ate the memory" and
+ * "the system is gone": without it the first process to exhaust RAM took
+ * VFS down with it - VFS grew its heap by one page, got nothing, faulted,
+ * RS could not replace it, and the kernel stopped. A request without
+ * PAF_RESERVE (a user process's pages) is refused once it would leave less
+ * than the reserve, and the process gets ENOMEM or SIGSEGV - the reasonable
+ * response test64 asks for. VM's own pages, and the pages of processes RS
+ * has marked as system, carry PAF_RESERVE and may use it up. Sized in
+ * mem_init(): 2% of RAM, between 2 and 32 MB.
+ */
+static phys_bytes free_pages_count = 0;
+static phys_bytes reserve_pages = 0;
+#define RESERVE_MIN_PAGES	((2 * 1024 * 1024) / VM_PAGE_SIZE)
+#define RESERVE_MAX_PAGES	((32 * 1024 * 1024) / VM_PAGE_SIZE)
+
 /* Used for sanity check. */
 static phys_bytes mem_low, mem_high;
 
@@ -154,7 +174,7 @@ reservedqueue_addslot(struct reserved_pages *rq)
 
 	sanitycheck_rq(rq);
 
-	if((cl = alloc_mem(rq->npages, rq->allocflags)) == NO_MEM)
+	if((cl = alloc_mem(rq->npages, rq->allocflags | PAF_RESERVE)) == NO_MEM)
 		return ENOMEM;
 
 	cl_addr = CLICK2ABS(cl);
@@ -332,6 +352,20 @@ void mem_init(struct memory *chunks)
 		first = 0;
 	}
   }
+
+  /* The system reserve: see the note at free_pages_count. */
+  reserve_pages = total_pages / 50;
+  if(reserve_pages < RESERVE_MIN_PAGES) reserve_pages = RESERVE_MIN_PAGES;
+  if(reserve_pages > RESERVE_MAX_PAGES) reserve_pages = RESERVE_MAX_PAGES;
+}
+
+/*
+ * For /proc and diagnostics: the reserve as set, and what is free now.
+ */
+void mem_reserve_stats(phys_bytes *free, phys_bytes *reserve)
+{
+	*free = free_pages_count;
+	*reserve = reserve_pages;
 }
 
 #if SANITYCHECKS
@@ -366,7 +400,15 @@ void memstats(int *nodes, int *pages, int *largest)
 	}
 }
 
-static int findbit(int low, int startscan, int pages, int memflags, int *len)
+/*
+ * Returns a page number, or NO_MEM. It has to return phys_bytes and not int:
+ * NO_MEM is (phys_clicks) 0xFFFFFFFE, and through an int return it came back
+ * as -2, which widens to 0xFFFFFFFFFFFFFFFE on LP64 - not NO_MEM. alloc_pages()
+ * then took page -2 for a real block and cleared bits far outside the bitmap,
+ * and the first process to exhaust memory (test64) took VM down with a wild
+ * store. On ILP32 the -2 wrapped back to 0xFFFFFFFE and nothing showed.
+ */
+static phys_bytes findbit(int low, int startscan, int pages, int memflags, int *len)
 {
 	int run_length = 0, i;
 	int freerange_start = startscan;
@@ -410,6 +452,14 @@ static phys_bytes alloc_pages(int pages, int memflags)
 	static int lastscan = -1;
 	int startscan, run_length;
 
+	/*
+	 * The system reserve: see the note at free_pages_count. Checked
+	 * before any search, the page cache path included.
+	 */
+	if(!(memflags & PAF_RESERVE) &&
+	   free_pages_count < reserve_pages + (phys_bytes) pages)
+		return NO_MEM;
+
 	if(memflags & PAF_LOWER16MB)
 		maxpage = boundary16 - 1;
 	else if(memflags & PAF_LOWER1MB)
@@ -442,12 +492,25 @@ static phys_bytes alloc_pages(int pages, int memflags)
 	if(mem == NO_MEM)
 		return NO_MEM;
 
+	/*
+	 * A page number the bitmap cannot hold is a defect above, not memory.
+	 * Say so and refuse: the caller gets ENOMEM and VM stays up, which is
+	 * the one thing a wild store into the bitmap cannot promise.
+	 */
+	if(mem + pages > (phys_bytes) NUMBER_PHYSICAL_PAGES) {
+		printf("VM: alloc_pages: page %lu+%d is outside the bitmap\n",
+			(unsigned long) mem, pages);
+		return NO_MEM;
+	}
+
 	/* remember for next time */
 	lastscan = mem;
 
 	for(i = mem; i < mem + pages; i++) {
 		UNSET_BIT(free_pages_bitmap, i);
 	}
+	assert(free_pages_count >= (phys_bytes) pages);
+	free_pages_count -= pages;
 
 	if(memflags & PAF_CLEAR) {
 		int s;
@@ -473,6 +536,10 @@ static void free_pages(phys_bytes pageno, int npages)
 #endif
 
 	for(i = pageno; i <= lim; i++) {
+		/* Counted only if it was not free: a page freed twice must
+		 * not be counted twice, whatever else is wrong with it. */
+		if(!page_isfree(i))
+			free_pages_count++;
 		SET_BIT(free_pages_bitmap, i);
 		if(free_page_cache_size < PAGE_CACHE_MAX) {
 			free_page_cache[free_page_cache_size++] = i;

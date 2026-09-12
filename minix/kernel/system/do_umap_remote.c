@@ -95,8 +95,12 @@ int do_umap_remote(struct proc * caller, message * m_ptr)
 	printf("SYSTEM:do_umap: vm_lookup failed\n");
 	return EFAULT;
       }
-      if(phys_addr == 0)
-	panic("vm_lookup returned zero physical address");
+      if(phys_addr == 0) {
+	/* Not a page any caller may use, whatever the tables say. */
+	printf("SYSTEM:do_umap: zero physical address for %s / %d\n",
+		targetpr->p_name, targetpr->p_endpoint);
+	return EFAULT;
+      }
       break;
   default:
   	printf("umap: peculiar type\n");

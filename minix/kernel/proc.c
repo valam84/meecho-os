@@ -1916,7 +1916,28 @@ static void notify_scheduler(struct proc *p)
 
 	if ((err = mini_send(p, p->p_scheduler->p_endpoint,
 					&m_no_quantum, FROM_KERNEL))) {
-		panic("WARNING: Scheduling: mini_send returned %d\n", err);
+		/*
+		 * The scheduler did not take the message: it is gone
+		 * (EDEADSRCDST), or it is itself blocked sending to this
+		 * process (ELOCKED). Either is the scheduler's trouble, and
+		 * the process in hand did nothing but use up its quantum.
+		 * Stopping the whole machine here made every process hostage
+		 * to one server; instead the process keeps its priority,
+		 * gets a fresh quantum, and goes back on the queue - the
+		 * same thing the kernel does for processes it schedules
+		 * itself. Said once per scheduler, not once per tick.
+		 */
+		static endpoint_t reported = NONE;
+
+		if (reported != p->p_scheduler->p_endpoint) {
+			reported = p->p_scheduler->p_endpoint;
+			printf("kernel: scheduler %d unreachable (%d) for %s / "
+			    "%d; scheduling it in the kernel\n",
+			    p->p_scheduler->p_endpoint, err, p->p_name,
+			    p->p_endpoint);
+		}
+		p->p_cpu_time_left = ms_2_cpu_time(p->p_quantum_size_ms);
+		RTS_UNSET(p, RTS_NO_QUANTUM);
 	}
 }
 

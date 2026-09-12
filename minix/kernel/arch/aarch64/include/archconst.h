@@ -29,8 +29,17 @@
 #define AARCH64_PSR_M_EL0T	0x0
 #define AARCH64_PSR_M_EL1H	0x5
 
-#define INIT_PSR	(AARCH64_PSR_M_EL0T | AARCH64_PSR_D | \
-			 AARCH64_PSR_A | AARCH64_PSR_F)
+/*
+ * A process runs with SError unmasked. An SError is the bus reporting an
+ * access that went wrong asynchronously - a write to a register of a block
+ * whose clock is off, on the target SoC - and with the A bit set it stays
+ * pending and is never heard of: the driver that caused it goes on as if
+ * the write had landed. Linux runs with it unmasked on the same silicon, so
+ * the board is known to boot that way. The kernel itself keeps it masked;
+ * one pending at the return to EL0 is taken then, as a SError from EL0, and
+ * trap_handler() reports it and kills the process it was charged to.
+ */
+#define INIT_PSR	(AARCH64_PSR_M_EL0T | AARCH64_PSR_D | AARCH64_PSR_F)
 #define INIT_TASK_PSR	(AARCH64_PSR_M_EL1H | AARCH64_PSR_D | \
 			 AARCH64_PSR_A | AARCH64_PSR_F)
 

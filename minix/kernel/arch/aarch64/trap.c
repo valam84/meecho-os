@@ -380,6 +380,24 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 		bsp_irq_handle();
 		break;
 
+	case EXC_EL0_64_SERROR:
+		/*
+		 * The bus reporting, after the fact, an access that failed:
+		 * on the target SoC a register of a block whose clock is off,
+		 * or a DMA descriptor pointing outside RAM. It is charged to
+		 * the process that was running when it was taken, which is
+		 * the process that made it or the one that happened to be
+		 * next after the kernel returned to EL0 with it pending -
+		 * the syndrome says which little it can. Reported on the
+		 * console because a silent one is how a driver goes on
+		 * believing its write landed. The process gets SIGBUS.
+		 */
+		printf("KERNEL: SError while running %s / %d, pc 0x%lx, "
+		    "esr 0x%lx; sending SIGBUS\n", pr->p_name, pr->p_endpoint,
+		    (unsigned long)frame->pc, (unsigned long)esr);
+		cause_sig(proc_nr(pr), SIGBUS);
+		break;
+
 	case EXC_EL1H_SYNC:
 	case EXC_EL0_64_SYNC:
 		switch (ec) {
@@ -438,12 +456,12 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 
 	default:
 		/*
-		 * FIQ, SError, anything taken on SP_EL0, and anything from
-		 * AArch32. None of these can happen on a machine set up the
-		 * way this one is - FIQ and SError stay masked, the kernel
-		 * runs as EL1h, and there is no AArch32 userland - so
-		 * reaching here means the machine is not in the state the
-		 * kernel believes.
+		 * FIQ, SError taken in the kernel, anything taken on SP_EL0,
+		 * and anything from AArch32. None of these can happen on a
+		 * machine set up the way this one is - FIQ stays masked
+		 * everywhere and SError inside the kernel, the kernel runs as
+		 * EL1h, and there is no AArch32 userland - so reaching here
+		 * means the machine is not in the state the kernel believes.
 		 */
 		if (!from_user)
 			inkernel_disaster(frame, kind, esr, far);

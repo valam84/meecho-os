@@ -701,11 +701,17 @@ vm_memset(struct proc *caller, endpoint_t who, phys_bytes ph, int c,
 			/*
 			 * A process can be helped; a bad physical address
 			 * cannot, and the caller had no business handing one
-			 * over.
+			 * over. Only VM asks for physical ranges, and a VM
+			 * that has miscounted its pages is a VM that should
+			 * hear EFAULT and report it - not a kernel that stops
+			 * before VM could say what it was doing.
 			 */
-			if (whoptr == NULL)
-				panic("vm_memset: bad physical address "
-				    "0x%lx", (unsigned long)cur);
+			if (whoptr == NULL) {
+				printf("vm_memset: %s / %d: bad physical address "
+				    "0x%lx\n", caller->p_name, caller->p_endpoint,
+				    (unsigned long)cur);
+				return EFAULT;
+			}
 
 			vm_suspend(caller, whoptr, ph, count,
 			    VMSTYPE_KERNELCALL, 1);

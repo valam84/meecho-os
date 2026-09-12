@@ -157,8 +157,15 @@ int do_vdevio(struct proc * caller, message * m_ptr)
   return(OK);
 
 bad:
-	panic("do_vdevio: unaligned port: %d", port);
-	return EPERM;
+	/*
+	 * The vector is the caller's: a port it may not touch this way is
+	 * its mistake, and it is told so. Stopping the kernel over a
+	 * misaligned port in a driver's request would let any I/O-capable
+	 * driver take the machine down with one number.
+	 */
+	printf("do_vdevio: %s / %d: unaligned port 0x%x\n", caller->p_name,
+		caller->p_endpoint, port);
+	return EINVAL;
 }
 
 #endif /* USE_VDEVIO */

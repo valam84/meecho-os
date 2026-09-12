@@ -135,7 +135,7 @@ int priv_add_mem(struct proc *rp, struct minix_mem_range *memr);
 void vtimer_check(struct proc *rp);
 
 /* interrupt.c */
-void put_irq_handler(irq_hook_t *hook, int irq, irq_handler_t handler);
+int put_irq_handler(irq_hook_t *hook, int irq, irq_handler_t handler);
 void rm_irq_handler(const irq_hook_t *hook);
 void enable_irq(const irq_hook_t *hook);
 int disable_irq(const irq_hook_t *hook);

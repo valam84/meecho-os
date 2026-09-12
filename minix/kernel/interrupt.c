@@ -25,22 +25,34 @@ static irq_hook_t* irq_handlers[NR_IRQ_VECTORS] = {0};
 /*===========================================================================*
  *				put_irq_handler				     *
  *===========================================================================*/
-/* Register an interrupt handler.  */
-void put_irq_handler( irq_hook_t* hook, int irq,
+/* Register an interrupt handler.
+ *
+ * Returns OK, EINVAL for a line outside the table, or ENOSPC when the line
+ * already carries as many hooks as an id word has bits. Neither is the
+ * kernel's own mistake: do_irqctl() reaches here with a line and a hook
+ * that a driver asked for, and one driver asking for too much is a driver
+ * that gets an error, not a kernel that stops. The id search runs on an
+ * unsigned word for the same reason it once ran on int: shifting a set bit
+ * out of the top of a signed int is undefined, and a compiler is entitled
+ * to decide the loop never ends.
+ */
+int put_irq_handler( irq_hook_t* hook, int irq,
   const irq_handler_t handler)
 {
-  int id;
+  irq_id_t id;
   irq_hook_t **line;
-  unsigned long bitmap;
+  irq_id_t bitmap;
 
-  if( irq < 0 || irq >= NR_IRQ_VECTORS )
-	panic("invalid call to put_irq_handler: %d",  irq);
+  if( irq < 0 || irq >= NR_IRQ_VECTORS ) {
+	printf("put_irq_handler: irq %d is outside the table\n", irq);
+	return EINVAL;
+  }
 
   line = &irq_handlers[irq];
 
   bitmap = 0;
   while ( *line != NULL ) {
-	if(hook == *line) return; /* extra initialization */
+	if(hook == *line) return OK; /* extra initialization */
 	bitmap |= (*line)->id;	/* mark ids in use */
 	line = &(*line)->next;
   }
@@ -49,9 +61,12 @@ void put_irq_handler( irq_hook_t* hook, int irq,
   for (id = 1; id != 0; id <<= 1)
   	if (!(bitmap & id)) break;
 
-  if(id == 0)
-  	panic("Too many handlers for irq: %d",  irq);
-  
+  if(id == 0) {
+	printf("put_irq_handler: irq %d already has %d hooks\n", irq,
+		(int)(CHAR_BIT * sizeof(irq_id_t)));
+	return ENOSPC;
+  }
+
   hook->next = NULL;
   hook->handler = handler;
   hook->irq = irq;
@@ -66,6 +81,7 @@ void put_irq_handler( irq_hook_t* hook, int irq,
 	  hw_intr_used(irq);
 	  hw_intr_unmask(hook->irq);
   }
+  return OK;
 }
 
 /*===========================================================================*

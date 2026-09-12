@@ -38,12 +38,17 @@ void panic(const char *fmt, ...)
   printf("kernel on CPU %d: ", cpuid);
   util_stacktrace();
 
-#if 0
-  if(get_cpulocal_var(proc_ptr)) {
-	  printf("current process : ");
+  /*
+   * Who was running, and where it was: most panics are the kernel refusing
+   * something a server asked for, and the server's stack says what it was
+   * doing when it asked. Cheap, and the last thing this console will show.
+   */
+  if(get_cpulocal_var(proc_ptr) && !isemptyp(get_cpulocal_var(proc_ptr))) {
+	  printf("current process %s / %d: ",
+		get_cpulocal_var(proc_ptr)->p_name,
+		get_cpulocal_var(proc_ptr)->p_endpoint);
 	  proc_stacktrace(get_cpulocal_var(proc_ptr));
   }
-#endif
 
   /* Abort MINIX. */
   minix_shutdown(0);

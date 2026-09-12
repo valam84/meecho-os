@@ -111,7 +111,11 @@ int do_irqctl(struct proc * caller, message * m_ptr)
       hook_ptr->proc_nr_e = caller->p_endpoint;	/* process to notify */
       hook_ptr->notify_id = notify_id;		/* identifier to pass */   	
       hook_ptr->policy = m_ptr->m_lsys_krn_sys_irqctl.policy;	/* policy for interrupts */
-      put_irq_handler(hook_ptr, irq_vec, generic_handler);
+      if ((r = put_irq_handler(hook_ptr, irq_vec, generic_handler)) != OK) {
+          /* The line would not take another hook; the slot goes back. */
+          hook_ptr->proc_nr_e = NONE;
+          return r;
+      }
       DEBUGBASIC(("IRQ %d handler registered by %s / %d\n",
 			      irq_vec, caller->p_name, caller->p_endpoint));
 

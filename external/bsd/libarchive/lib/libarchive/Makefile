@@ -262,4 +262,23 @@ MLINKS+=	archive_write_disk.3 archive_write_disk_set_standard_lookup.3
 MLINKS+=	archive_write_disk.3 archive_write_disk_set_user_lookup.3
 MLINKS+=	libarchive.3 archive.3
 
+# GCC 15 on a 2012 import; the code is not ours to reformat.  One named
+# diagnostic per file:
+#  - calloc(sizeof(*x), 1) with the arguments the other way round from what
+#    GCC 14 expects; harmless, the product is the same.
+#  - switch cases that fall through on purpose, without the comment GCC 7
+#    looks for.
+#  - ar(1) headers are fixed-width fields padded with spaces, not C
+#    strings, and strncpy without the NUL is exactly what the format wants.
+COPTS.archive_read_support_compression_bzip2.c+=	${CC_WNO_CALLOC_TRANSPOSED_ARGS}
+COPTS.archive_read_support_compression_compress.c+=	${CC_WNO_CALLOC_TRANSPOSED_ARGS}
+COPTS.archive_read_support_compression_gzip.c+=		${CC_WNO_CALLOC_TRANSPOSED_ARGS}
+COPTS.archive_read_support_compression_program.c+=	${CC_WNO_CALLOC_TRANSPOSED_ARGS}
+COPTS.archive_read_support_compression_rpm.c+=		${CC_WNO_CALLOC_TRANSPOSED_ARGS}
+COPTS.archive_read_support_compression_uu.c+=		${CC_WNO_CALLOC_TRANSPOSED_ARGS}
+COPTS.archive_read_support_compression_xz.c+=		${CC_WNO_CALLOC_TRANSPOSED_ARGS}
+COPTS.archive_read_support_format_iso9660.c+=		${CC_WNO_IMPLICIT_FALLTHROUGH}
+COPTS.archive_read_support_format_mtree.c+=		${CC_WNO_IMPLICIT_FALLTHROUGH}
+COPTS.archive_write_set_format_ar.c+=			${CC_WNO_STRINGOP_TRUNCATION}
+
 .include <bsd.lib.mk>

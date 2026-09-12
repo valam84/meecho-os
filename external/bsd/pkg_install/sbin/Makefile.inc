@@ -12,8 +12,12 @@ CPPFLAGS+=	-DBINDIR='"${BINDIR}"'
 DPADD+=	${LIBINSTALL}/libinstall.a
 LDADD+=	-L${LIBINSTALL} -linstall -ltermcap
 
-DPADD+=		${LIBFETCH} ${LIBSSL} ${LIBCRYPTO}
-LDADD+=		-lfetch -lssl -lcrypto
+DPADD+=		${LIBFETCH}
+LDADD+=		-lfetch
+.if ${MKCRYPTO} != "no"
+DPADD+=		${LIBSSL} ${LIBCRYPTO}
+LDADD+=		-lssl -lcrypto
+.endif
 
 DPADD+=		${LIBARCHIVE}
 LDADD+=		-larchive

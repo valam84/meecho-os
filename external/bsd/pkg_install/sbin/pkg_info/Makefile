@@ -10,4 +10,8 @@ SRCS= main.c perform.c show.c
 
 CWARNFLAGS.clang+=	-Wno-format-security
 
+# GCC 7+: a getopt case that falls through on purpose, without the
+# comment the compiler looks for.  Imported code, one diagnostic.
+COPTS.main.c+=	${CC_WNO_IMPLICIT_FALLTHROUGH}
+
 .include <bsd.prog.mk>

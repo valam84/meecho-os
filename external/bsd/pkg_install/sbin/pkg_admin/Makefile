@@ -19,4 +19,11 @@ LINK_PKGVUL=	yes
 .include <bsd.init.mk>
 
 .PATH:	${DIST}/admin
+# GCC 7+/12+ on imported code, two named diagnostics in one file: a getopt
+# case that falls through on purpose, and errx() in add_required_by()
+# printing a path the line before it freed -- a real slip in an error
+# message, reached only when write(2) to +REQUIRED_BY fails after open(2)
+# succeeded.  Left as imported; the fix belongs upstream.
+COPTS.main.c+=	${CC_WNO_IMPLICIT_FALLTHROUGH} ${CC_WNO_USE_AFTER_FREE}
+
 .include <bsd.prog.mk>

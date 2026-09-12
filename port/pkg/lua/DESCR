@@ -1,0 +1,6 @@
+Lua is a powerful, efficient, lightweight, embeddable scripting language.
+It supports procedural programming, object-oriented programming, functional
+programming, data-driven programming, and data description.
+
+This package is built statically against the MEECHO userland and installs
+the interpreter (lua), the compiler (luac), the headers and liblua.a.

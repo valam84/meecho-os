@@ -290,6 +290,19 @@ SMP — неверно; с 2026-09-08 SMP на плате **проверен и 
   из встроенных и `PATH` (`sh_complete()` в `bin/sh/histedit.c`, только
   публичный API libedit), остальное — файлы, как в NetBSD. Разбор —
   `PORTING-LOG.md`, «Корень по `hier(7)` и `<tab>` в шелле».
+- **Пакеты, этап 1 (2026-09-12): `pkg_add`/`pkg_info`/`pkg_delete` в
+  корне, репозиторий по HTTP.** `pkg_install` из дерева (20130131,
+  префикс `/usr/pkg`), `libarchive` и `libfetch` собраны **без SSL** —
+  `MKCRYPTO=no` для aarch64 в `bsd.own.mk`, то же решение, что у OpenSSH.
+  Пакеты делает хост: `port/mkpkg.sh` (формат pkgsrc tar'ом, `@pkgdir` в
+  архив не класть), рецепты `port/pkg/<имя>/build.sh` поверх
+  `port/pkg/env.sh`; первый — Lua 5.4.7. Репозиторий: на QEMU `python3 -m
+  http.server` в `~/obj-evbarm64/pkg` и `PKG_PATH=http://10.0.2.2:8000/All`;
+  на плату — `port/pkg-publish.sh` (хаб, `:8080/All`), `mkroot.sh` кладёт
+  `PKG_PATH` в `/usr/pkg/etc/pkg_install.conf`. Проверено на QEMU, на
+  плате — нет (корень надо перелить). `pkgin` нет; самосборка (нативный
+  компилятор + pkgsrc) — отдельная веха. Разбор — `PORTING-LOG.md`,
+  «Пакеты, этап 1».
 - ~~**`trace(1)` на машине не работает**~~ **Работает с 2026-09-09.** Ошибка
   LP64 в прототипе `ptrace()` (`int` вместо машинного слова) была найдена и
   починена ещё тогда, но симптом остался, и причину не выдумывали. Причина

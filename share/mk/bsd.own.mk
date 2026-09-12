@@ -84,6 +84,13 @@ BITCODE_LD_FLAGS_2ND?=${BITCODE_LD_FLAGS_1ST}
 .if !empty(MACHINE_ARCH:Maarch64)
 CONFIG_SMP?=		1
 CONFIG_MAX_CPUS?=	8
+# The libcrypto in this tree is OpenSSL 1.0.1p: EOL since 2016 and never
+# built for aarch64.  OpenSSH already takes its no-libcrypto branch (see
+# crypto/external/bsd/openssh/Makefile.inc); this says the same thing to
+# everyone else that asks -- libfetch, pkg_install -- so that they build
+# their plain-HTTP, no-signature variants instead of failing on a library
+# that does not exist.  Importing a current OpenSSL is a separate decision.
+MKCRYPTO:=		no
 .endif
 
 .ifdef CONFIG_SMP
@@ -816,6 +823,8 @@ CC_WNO_STRINGOP_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wn
 CC_WNO_ARRAY_PARAMETER=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 11:? -Wno-array-parameter :}
 CC_WNO_MISLEADING_INDENTATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 6:? -Wno-misleading-indentation :}
 CC_WNO_RESTRICT=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-restrict :}
+CC_WNO_USE_AFTER_FREE=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 12:? -Wno-use-after-free :}
+CC_WNO_UNUSED_CONST_VARIABLE=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 6:? -Wno-unused-const-variable :}
 CC_WNO_UNTERMINATED_STRING_INITIALIZATION=	\
 				${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 15:? -Wno-unterminated-string-initialization :}
 

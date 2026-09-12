@@ -207,6 +207,31 @@ else
 	echo "$0: нет ${AUTHKEYS} - вход по ключу не настроен" >&2
 fi
 
+# Откуда плата берёт пакеты: /usr/pkg/etc/pkg_install.conf с PKG_PATH на
+# репозиторий хаба (pkg-publish.sh). Это настройка площадки, как и ключ
+# выше, поэтому она подставляется здесь, а не лежит в дереве. Каталог
+# usr/pkg/etc в proto уже есть - из скелета hier(7); файл встаёт в него
+# тем же приёмом, что authorized_keys: awk находит "etc" сразу под "pkg".
+PKG_REPO_URL=${PKG_REPO_URL:-http://192.168.33.2:8080/All}
+printf 'PKG_PATH=%s\n' "${PKG_REPO_URL}" > "${WORK}/pkg_install.conf"
+awk -v conf="${WORK}/pkg_install.conf" '
+	{ print }
+	/^\t\tpkg d--/ { inpkg = 1; next }
+	inpkg && /^\t\t\tetc d--/ {
+		print "\t\t\t\tpkg_install.conf ---644 0 0 " conf
+		inpkg = 0
+	}
+	/^\t\t?[^\t]/ { inpkg = 0 }' \
+	"${WORK}/proto.emmc" > "${WORK}/proto.emmc.new"
+if grep -q pkg_install.conf "${WORK}/proto.emmc.new"
+then
+	mv "${WORK}/proto.emmc.new" "${WORK}/proto.emmc"
+	echo "pkg_install.conf: PKG_PATH=${PKG_REPO_URL}"
+else
+	echo "$0: в proto нет usr/pkg/etc - PKG_PATH не задан" >&2
+	rm -f "${WORK}/proto.emmc.new"
+fi
+
 rm -f "${IMG}" "${IMG}.gz"
 dd if=/dev/zero of="${IMG}" bs=1M count=0 seek=${MB} 2>/dev/null
 

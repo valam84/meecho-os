@@ -36,4 +36,9 @@ httperr.h: ${LIBFETCHDIR}/http.errors ${LIBFETCHDIR}/errlist.sh
 	${HOST_SH} ${LIBFETCHDIR}/errlist.sh http_errlist HTTP \
 	    ${LIBFETCHDIR}/http.errors > ${.TARGET}
 
+# GCC 8+: strncpy(locale, setlocale(...), sizeof(locale)) with no room
+# kept for the NUL.  A locale name is a few bytes, the buffer is 64; the
+# code is imported and stays as it is.  One diagnostic, one file.
+COPTS.http.c+=	${CC_WNO_STRINGOP_TRUNCATION}
+
 .include <bsd.lib.mk>

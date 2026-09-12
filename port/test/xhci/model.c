@@ -245,9 +245,9 @@ struct mep {
 	int dir_in;
 
 	/* What the device has to give, and what it has been given. */
-	uint8_t supply[64 * 1024];
+	uint8_t supply[XHCI_DEV_BUF];
 	size_t supply_len, supply_pos;
-	uint8_t sink[64 * 1024];
+	uint8_t sink[XHCI_DEV_BUF];
 	size_t sink_len;
 
 	/* The transfer descriptor being assembled. */
@@ -869,6 +869,19 @@ endpoint_run(unsigned slot, unsigned dci)
 
 		len = trb.status & 0x1ffff;
 		ep->trb_len = ep->trb_done = 0;	/* until move_bytes() says */
+
+		/*
+		 * TD Size (4.11.2.4): how many packets of the descriptor
+		 * follow this entry.  A chained entry that says none do is a
+		 * contradiction the part resolves in its own favour - on the
+		 * board it ended the transfer there, and the rest of the data
+		 * arrived as the answer to the next request.  The model does
+		 * not imitate that; it says so, which is what the stand needs.
+		 */
+		if (type == XHCI_TRB_NORMAL && (trb.control & XHCI_TRB_CH) &&
+		    ((trb.status >> 17) & 0x1f) == 0)
+			complain("a chained entry at 0x%lx says no packets "
+			    "remain after it", (unsigned long)where);
 
 		switch (type) {
 		case XHCI_TRB_SETUP: {

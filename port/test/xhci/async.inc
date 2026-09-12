@@ -470,7 +470,7 @@ td_wait(struct xhci_td *td)
 static void
 test_td_matching(void)
 {
-	static uint8_t pattern[64 * 1024];
+	static uint8_t pattern[XHCI_DEV_BUF];
 	struct xhci_ep *in;
 	struct xhci_td td;
 	unsigned i;
@@ -569,12 +569,19 @@ test_td_matching(void)
 	model_ep_supply(dev0.slot, in->dci, pattern, 100);
 	check(xhci_transfer_start(&dev0, in, XHCI_DEV_BUF, &td) != 0,
 	    "a bulk read of the whole buffer is put on the ring");
-	check(td.n == 2, "as a descriptor of %u TRBs", td.n);
-	if (td.n == 2) {
-		check(td.off[1] == td.len[0] &&
-		    td.len[0] + td.len[1] == XHCI_DEV_BUF,
-		    "as two chained TRBs of %u and %u bytes", td.len[0],
-		    td.len[1]);
+	check(td.n == XHCI_DEV_BUF / 0x10000 + 1,
+	    "as a descriptor of %u TRBs", td.n);
+	if (td.n >= 2) {
+		unsigned sum = 0, contiguous = 1;
+
+		for (i = 0; i < td.n; i++) {
+			if (td.off[i] != sum)
+				contiguous = 0;
+			sum += td.len[i];
+		}
+		check(contiguous && sum == XHCI_DEV_BUF,
+		    "chained TRBs of %u, %u, ... bytes, contiguous, %u in all",
+		    td.len[0], td.len[1], sum);
 		td_wait(&td);
 		check(td_state == 2 && td_actual == 100,
 		    "and a short answer in the first reports %u bytes",

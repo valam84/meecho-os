@@ -44,6 +44,22 @@
 #define XHCI_PAGE		4096
 
 /*
+ * Cache maintenance covers whole lines, and a range that ends inside a line
+ * is not shortened but LENGTHENED - by the kernel, into a write-back of
+ * that line first (the NetBSD bus_dma rule, for the half-line that holds
+ * somebody else's bytes).  After a DMA read that is exactly wrong: the
+ * processor's copy of the line, fetched before the controller wrote, lands
+ * on top of what it wrote.  On the board a 13-byte status block came back
+ * as the bytes that were there before - "CSW tag mismatch" - on one chunk
+ * in forty, only when the invalidate was cut to the transfer's length.  So
+ * every range this driver hands to the cache is rounded up to lines; the
+ * buffers are page-aligned and nobody else lives in them.  128 is more
+ * than the line of this part (64), and that is the safe direction.
+ */
+#define XHCI_CACHE_LINE		128
+#define XHCI_CACHE_ROUND(n)	(((n) + XHCI_CACHE_LINE - 1) & ~(size_t)(XHCI_CACHE_LINE - 1))
+
+/*
  * A transfer request block: four words, and the last one carries both the
  * type and the cycle bit that says whose turn it is.
  */
@@ -91,11 +107,15 @@ struct xhci_ep {
 #define XHCI_MAX_EPS		8
 
 /*
- * The buffer a device's transfers go through.  Mass storage asks for
- * thirty-two kilobytes at a time (sixty-four sectors), so anything
- * smaller would make every read two transfers instead of one.
+ * The buffer a device's transfers go through, and so the most one transfer
+ * can carry.  256 KiB, because the cost of a chunk on this system is
+ * mostly fixed - three transfers and the client's hand-offs around them,
+ * about 1.8 ms whatever the size - while the wire moves 64 KiB in 2 ms:
+ * 32 KiB chunks read a flash drive at 15 MB/s, 64 KiB at 17, and the
+ * drive itself gives 22 to Linux.  A TRB carries at most 64 KiB, so a
+ * transfer of this size is up to five chained entries (XHCI_TD_MAX_TRBS).
  */
-#define XHCI_DEV_BUF		(64 * 1024)
+#define XHCI_DEV_BUF		(256 * 1024)
 
 /*
  * A device the controller has given a slot to - on a root port, or behind
@@ -299,7 +319,7 @@ int xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
  * about every short answer.  Three is what a control transfer takes;
  * a bulk transfer takes one, or two when its buffer crosses 64 KiB.
  */
-#define XHCI_TD_MAX_TRBS	3
+#define XHCI_TD_MAX_TRBS	5
 
 struct xhci_td {
 	unsigned n;

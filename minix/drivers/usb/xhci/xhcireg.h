@@ -204,6 +204,10 @@
 #define XHCI_EVENT_EP_ID(c)	(((c) >> 16) & 0x1f)
 #define XHCI_EVENT_LENGTH(s)	((s) & 0xffffff)
 
+/* The status word of a transfer TRB: length in the low 17 bits, packets
+ * of the descriptor still to come in the 5 above (4.11.2.4). */
+#define XHCI_TRB_TD_SIZE(n)	(((uint32_t)(n) & 0x1f) << 17)
+
 /*===========================================================================*
  *    xHCI: the TRBs a control transfer is made of                           *
  *===========================================================================*/

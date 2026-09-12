@@ -36,6 +36,9 @@
 #            it found nothing: the controller keeps its busy flag and
 #            raises nothing more.  "the transfer had finished and nobody
 #            was told", twice per bring-up, after every polled sequence
+#   tdsize   TD Size left at zero on a chained entry - the controller ends
+#            the transfer there, and the rest of the data answers the
+#            NEXT request: "CSW tag mismatch" on every 64 KiB read
 #
 #   sh mutate.sh
 
@@ -150,8 +153,21 @@ mut_ehb() {
 	changed xhci_ring.c ehb
 }
 
+#
+# tdsize: the packets-to-come field left at zero on a chained entry.  The
+#         controller reads that as the end of the descriptor and finishes
+#         the transfer there; the rest of the data arrives as the answer
+#         to the next request.  The board: "CSW tag mismatch" on every
+#         read of 64 KiB, the first size that crosses a 64 KiB boundary.
+#
+mut_tdsize() {
+	perl -0pi -e 's/\(uint32_t\)chunk \| XHCI_TRB_TD_SIZE\(td_size\), control\);/(uint32_t)chunk, control);/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c tdsize
+}
+
 bad=0
-for m in link first isp doorbell ack wake td ehb; do
+for m in link first isp doorbell ack wake td ehb tdsize; do
 	run_one "$m" "mut_$m" || bad=$((bad + 1))
 done
 

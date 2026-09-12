@@ -94,6 +94,7 @@ static struct {
 	int dir_in;
 	phys_bytes trb;			/* the TD's last TRB, for the log */
 	struct xhci_td td;		/* every TRB an event may name */
+	u64_t t_start;			/* when the doorbell was rung */
 } out;
 
 int
@@ -119,13 +120,15 @@ static void hub_news(message *m);
 static struct {
 	unsigned urbs;
 	unsigned long bytes;
-	unsigned long t_total;		/* receipt of request to reply */
 	unsigned long t_copyin;		/* reading the grant */
 	unsigned long t_copyout;	/* writing it back */
-	unsigned long t_run;		/* the transfer itself */
-	unsigned long t_gap;		/* between our reply and the next one */
+	unsigned long t_run, n_large;	/* doorbell to event, 4 KiB and up */
+	unsigned long t_small, n_small;	/* the same for the small ones */
+	unsigned long t_gap, n_gap;	/* our completion to the next request */
+	unsigned long t_in;		/* a request: receipt to accepted */
+	unsigned long t_out;		/* an event: seen to completion sent */
 	unsigned long t_memcpy;		/* copying to and from the buffer */
-	u64_t last_done;
+	u64_t last_done;		/* 0: no completion sent yet */
 } urbstat;
 
 static unsigned stat_every;		/* 0: say nothing */
@@ -168,6 +171,14 @@ static char urbmem[sizeof(struct usb_urb) + XHCI_DEV_BUF]
     __attribute__((aligned(8)));
 
 #define URB_SKIP	offsetof(struct usb_urb, dev_id)
+
+/*
+ * How much of the block is header, measured from where the grant starts:
+ * everything up to the data.  The data itself moves between the client's
+ * grant and the transfer buffer directly, and only in the direction the
+ * transfer goes.
+ */
+#define URB_HDR		(offsetof(struct usb_urb, buffer) - URB_SKIP)
 
 struct xhci_device *
 xhci_device_by_id(unsigned id)
@@ -397,19 +408,36 @@ finish(unsigned actual, int status)
 	 */
 	urb->urb_id = out.id;
 
+	if (out.dir_in && actual != 0) {
+		const uint8_t *b = (const uint8_t *)out.dev->buf;
+
+		log_debug(&xhci_log, "returned %u of %u: %02x %02x %02x %02x "
+		    "%02x %02x %02x %02x\n", actual, (unsigned)urb->size,
+		    b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
+	}
+
+	/*
+	 * Back to the client: the data into this driver's copy of the
+	 * block, and the whole block back.
+	 *
+	 * That is two copies of the data and a copy of the data area for
+	 * every transfer, whichever way it went, and it was tried the
+	 * other way - header through the grant, data straight from the
+	 * transfer buffer, only in the direction of the transfer.  The
+	 * board took 18.5 MB/s from it and then, deterministically, on the
+	 * 68th chunk of 64 KiB or the 35th of 256 KiB of one particular
+	 * read after two others, "CSW tag mismatch" from the storage driver
+	 * and a wedged device; never under log=3, never in 1.6 GiB of other
+	 * reads, three times out of three in that sequence.  A defect that
+	 * debug output hides is a race, the stand has no way to see it, and
+	 * the mechanism was not found.  So the copies stay, and the attempt
+	 * is written down in port/PORTING-LOG.md rather than shipped.
+	 */
 	if (status == OK && out.dir_in && actual != 0) {
 		u64_t t = now();
 
 		memcpy(urb->buffer, (void *)out.dev->buf, actual);
 		urbstat.t_memcpy += since(t);
-	}
-
-	if (out.dir_in && actual != 0) {
-		const uint8_t *b = (const uint8_t *)urb->buffer;
-
-		log_debug(&xhci_log, "returned %u of %u: %02x %02x %02x %02x "
-		    "%02x %02x %02x %02x\n", actual, (unsigned)urb->size,
-		    b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
 	}
 
 	{
@@ -440,14 +468,27 @@ finish(unsigned actual, int status)
 
 	urbstat.bytes += urb->actual_length;
 	out.busy = 0;
+	urbstat.last_done = now();
 
+	/*
+	 * Where the time went, in two columns: the transfers that carry
+	 * data (4 KiB and up) and the small ones around them (a command
+	 * block, a status block, a hub poll).  The wire time is from the
+	 * doorbell to the event; the gap is from our completion message to
+	 * the client's next request - the client's own time, which on this
+	 * system is a driver built on DDEKit threads.
+	 */
 	if (stat_every != 0 && ++urbstat.urbs % stat_every == 0) {
 		log_info(&xhci_log, "%u urbs, %lu bytes: copy in %lu us, "
-		    "copy out %lu us, memcpy %lu us, on the wire %lu us in "
-		    "%lu transfers; interrupts %lu, alarms %lu\n",
+		    "copy out %lu us, memcpy %lu us, cache %lu us in %lu; in "
+		    "%lu us, out %lu us; on the wire %lu us in %lu large, "
+		    "%lu us in %lu small; gap %lu us in %lu; interrupts %lu, "
+		    "alarms %lu\n",
 		    urbstat.urbs, urbstat.bytes, urbstat.t_copyin,
-		    urbstat.t_copyout, urbstat.t_memcpy, xhci_t_wire,
-		    xhci_n_wire, xhci_n_irq, xhci_n_alarm);
+		    urbstat.t_copyout, urbstat.t_memcpy, xhci_t_cache,
+		    xhci_n_cache, urbstat.t_in, urbstat.t_out, urbstat.t_run,
+		    urbstat.n_large, urbstat.t_small, urbstat.n_small,
+		    urbstat.t_gap, urbstat.n_gap, xhci_n_irq, xhci_n_alarm);
 		memset(&urbstat, 0, sizeof(urbstat));
 		xhci_t_cache = xhci_n_cache = 0;
 		xhci_t_poll = xhci_n_poll = 0;
@@ -489,19 +530,46 @@ xhci_urb_transfer_event(const struct xhci_trb *ev)
 	if (r == 1)
 		return 1;		/* ours, and more of it is coming */
 
-	if (out.dir_in)
+	if (out.length >= 4096) {
+		urbstat.t_run += since(out.t_start);
+		urbstat.n_large++;
+		/*
+		 * A bulk read that came back short is news: a mass storage
+		 * device answers a READ with exactly what was asked, and the
+		 * bytes it did not deliver arrive as the answer to the NEXT
+		 * request - "CSW tag mismatch" in the storage driver.
+		 */
+		if (actual != out.length)
+			log_info(&xhci_log, "a %u-byte transfer for %d came back "
+			    "with %u (completion %u, %u TRBs)\n", out.length,
+			    out.client, actual, cc, out.td.n);
+	} else {
+		urbstat.t_small += since(out.t_start);
+		urbstat.n_small++;
+	}
+
+	/*
+	 * Only what arrived: the kernel walks the range line by line, and
+	 * the whole buffer is a thousand lines for a 13-byte status block.
+	 */
+	if (out.dir_in && actual != 0)
 		xhci_cache(CACHE_INVALIDATE, (void *)out.dev->buf,
-		    out.ep != NULL ? XHCI_DEV_BUF : XHCI_PAGE,
+		    XHCI_CACHE_ROUND(actual),
 		    "a transfer buffer");
 
-	if (cc != XHCI_CC_SUCCESS && cc != XHCI_CC_SHORT_PACKET) {
-		log_warn(&xhci_log, "a %u-byte transfer for %d completed "
-		    "with %u\n", out.length, out.client, cc);
-		finish(0, EIO);
-	} else
-		finish(actual, OK);
+	{
+		u64_t t = now();
 
-	xhci_alarm(0, NULL);
+		if (cc != XHCI_CC_SUCCESS && cc != XHCI_CC_SHORT_PACKET) {
+			log_warn(&xhci_log, "a %u-byte transfer for %d "
+			    "completed with %u\n", out.length, out.client, cc);
+			finish(0, EIO);
+		} else
+			finish(actual, OK);
+
+		xhci_alarm(0, NULL);
+		urbstat.t_out += since(t);
+	}
 	return 1;
 }
 
@@ -568,7 +636,7 @@ send_urb(message *m)
 	struct xhci_device *dev;
 	struct xhci_ep *ep = NULL;
 	unsigned id, length;
-	u64_t t_mark;
+	u64_t t_mark, t_recv;
 	int dir_in, r;
 
 	/*
@@ -582,14 +650,21 @@ send_urb(message *m)
 		return;
 	}
 
-	if (size > sizeof(urbmem) - URB_SKIP) {
+	if (size < URB_HDR || size > sizeof(urbmem) - URB_SKIP) {
 		log_warn(&xhci_log, "a request block of %u bytes, which is "
-		    "more than this driver holds\n", (unsigned)size);
+		    "not a size this driver holds\n", (unsigned)size);
 		reply(m->m_source, EINVAL, 0);
 		return;
 	}
 
 	memset(urbmem, 0, sizeof(urbmem));
+
+	if (urbstat.last_done != 0) {
+		urbstat.t_gap += since(urbstat.last_done);
+		urbstat.n_gap++;
+		urbstat.last_done = 0;
+	}
+	t_recv = now();
 
 	t_mark = now();
 	if ((r = sys_safecopyfrom(m->m_source, gid, 0,
@@ -619,6 +694,7 @@ send_urb(message *m)
 	out.id = id;
 	out.dev = dev;
 	out.ep = NULL;
+	out.t_start = now();
 
 	switch (urb->type) {
 	case USB_TRANSFER_BLK:
@@ -700,6 +776,7 @@ send_urb(message *m)
 	xhci_alarm(5000000, "a client's transfer");
 
 	accept(m->m_source, id);
+	urbstat.t_in += since(t_recv);
 
 	/*
 	 * Without the interrupt there is nobody to wake this driver when

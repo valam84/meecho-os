@@ -525,12 +525,20 @@ xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	if (length > XHCI_DEV_BUF)
 		return 0;
 
-	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)dev->buf, XHCI_DEV_BUF,
-	    "a transfer buffer");
+	/*
+	 * Only as much of the buffer as this transfer uses.  The kernel
+	 * walks the range line by line, and the whole buffer is a thousand
+	 * lines - cleaned for a 31-byte command block and again for a
+	 * 13-byte status block, twice each, around every chunk of data.
+	 * That is work proportional to the buffer, not to the transfer.
+	 */
+	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)dev->buf,
+	    XHCI_CACHE_ROUND(length != 0 ? length : 1), "a transfer buffer");
 
 	do {
 		size_t chunk = 0x10000 - (phys & 0xffff);
 		uint32_t control = XHCI_TRB_TYPE(XHCI_TRB_NORMAL);
+		unsigned td_size;
 
 		if (chunk > left)
 			chunk = left;
@@ -544,8 +552,25 @@ xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 		if (ep->dir_in)
 			control |= XHCI_TRB_ISP;
 
+		/*
+		 * TD Size: how many packets of the descriptor are still to
+		 * come after this entry (4.11.2.4), at most 31, and zero on
+		 * the last.  The controller uses it to know where the
+		 * descriptor ends; a chained entry that says "none left" is
+		 * read as the end of the transfer, and the board showed what
+		 * follows - the data after it delivered against the NEXT
+		 * transfer, "CSW tag mismatch" on every read of 64 KiB.  A
+		 * single-entry transfer says zero either way, which is why
+		 * 32 KiB chunks never showed it, and why the stand, whose
+		 * model does not read this field, could not.
+		 */
+		td_size = ep->max_packet != 0 ?
+		    (unsigned)((left + ep->max_packet - 1) / ep->max_packet) : 0;
+		if (td_size > 31)
+			td_size = 31;
+
 		last = xhci_ring_push(&ep->ring, (uint32_t)phys, 0,
-		    (uint32_t)chunk, control);
+		    (uint32_t)chunk | XHCI_TRB_TD_SIZE(td_size), control);
 		td_add(td, last, done, chunk);
 
 		phys += chunk;

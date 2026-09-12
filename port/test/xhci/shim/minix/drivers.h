@@ -42,6 +42,7 @@ typedef unsigned long u64_t;
  * which is the only party that ever dereferences it.
  */
 #define AC_ALIGN4K	0x02
+#define AC_ALIGN64K	0x04
 
 void *alloc_contig(size_t size, int flags, phys_bytes *phys);
 void free_contig(void *addr, size_t size);

@@ -136,7 +136,19 @@ xhci_alloc_dma(size_t size, phys_bytes *phys, const char *what)
 {
 	void *v;
 
-	v = alloc_contig(size, AC_ALIGN4K, phys);
+	/*
+	 * A buffer of 64 KiB or more is aligned to 64 KiB, so that a transfer
+	 * of up to 64 KiB is one TRB.  The chained descriptor is implemented
+	 * and the stand checks it, but on the board a chained bulk read is
+	 * followed, one time in a few dozen and only after the file system
+	 * cache has been warmed on the same region, by a status block the
+	 * storage driver does not recognise - and the mechanism has not
+	 * been found.  Until it is, no transfer this driver is asked for
+	 * crosses a 64 KiB boundary: the storage driver's chunk is 64 KiB
+	 * and starts here.
+	 */
+	v = alloc_contig(size, size >= 0x10000 ? AC_ALIGN64K : AC_ALIGN4K,
+	    phys);
 	if (v == NULL) {
 		log_warn(&xhci_log, "out of contiguous memory for %s\n", what);
 		return NULL;

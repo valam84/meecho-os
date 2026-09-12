@@ -1,7 +1,7 @@
 # Roadmap
 
 The full plan, with the reasoning for each decision, is [`PLAN.md`](../../PLAN.md)
-(Russian). This is the summary and the state as of **2026-09-10**.
+(Russian). This is the summary and the state as of **2026-09-12**.
 
 ## Done
 
@@ -15,6 +15,7 @@ The full plan, with the reasoning for each decision, is [`PLAN.md`](../../PLAN.m
 | 7 | storage: a root on disk, `readclock`, **MFS V4**, a metadata journal, `fsck` |
 | 8 | the board as a working machine: eMMC root, userland, network, ssh, SMP under load |
 | 9.1–9.3 | storage at the speed of the hardware: ADMA2 and an interrupt for the eMMC |
+| 10.1–10.5 | USB: the RK3566's xHCI, enumeration, the URB protocol, and a flash drive behind the board's hub |
 
 Stage 8 is closed in full. What that means concretely: a CB2 boots from its own
 eMMC into a 1 GB root with 276 programs, brings up Ethernet, gets an address by
@@ -183,12 +184,51 @@ These are known unknowns, not tasks with hidden answers.
   waiting for entropy at boot is a reliable way to get a system that sometimes
   does not boot.
 
+## Stage 10: USB
+
+The board's carrier has four USB-A sockets and a hub soldered behind them, so
+"USB" here means a host controller, a hub and a device on it — not one port.
+The controller is an xHCI inside a Synopsys DWC3, wrapped in Rockchip glue
+that no specification describes; the registers were read out of the running
+vendor kernel before a line of the driver was written, as they were for the
+GMAC. The client side is not new: `usb_hub` and `usb_storage` come from MINIX
+and speak URBs to whatever answers to the label `usbd`, so the work was to
+answer that protocol over rings rather than to port two drivers.
+
+What runs: a flash drive behind the hub is enumerated, read at 15–16 MB/s, and
+its contents match digests taken by the vendor kernel beforehand. Transfers are
+asynchronous and wait on interrupt line 201; `irq=0` makes every wait poll, so
+the two can be compared on one boot with one drive — they differ by 15%, not by
+the factor the first measurement suggested. That first number, 648 KB/s, was
+the cost of logging at debug level inside the measured window.
+
+Three defects are worth knowing about if you touch this code, and all three are
+in [`port/PORTING-LOG.md`](../../port/PORTING-LOG.md):
+
+- an event that names the *short* TRB of a descriptor, not the last one, so
+  matching on the last reports every short answer as a full one;
+- the Event Handler Busy flag, which the controller clears only on a write the
+  driver used to make when it had found something — after a polled sequence it
+  therefore went deaf until a deadline;
+- TD Size on chained entries: left at zero, the controller ends the transfer at
+  the first entry and the rest of the data answers the *next* request.
+
+`port/test/xhci/` builds the driver's own ring and device files against a model
+of the controller — 118 checks, and nine mutations that put each real defect
+back and must all be caught.
+
+**Open in stage 10:** nothing starts the stack at boot; chained descriptors have
+a reproducible failure on this part that is not understood, so a transfer is
+kept inside 64 KiB; and the 6 MB/s between us and the vendor kernel is in the
+client driver's DDEKit thread hand-offs, measured at 0.5–0.7 ms per transfer.
+
 ## What comes next
 
-Stage 9 was the last stage the plan had, and 10 is not written yet. What is
-open and named, in no particular order: 9.4 — the SD card controller, moving
-the userland onto shared libraries now that dynamic linking works, the bounce
-buffer that still cuts every request into 32 KiB pieces, and two defects in
+What is open and named, in no particular order: 9.4 — the SD card controller,
+moving the userland onto shared libraries now that dynamic linking works, the
+bounce buffer that still cuts every eMMC request into 32 KiB pieces, the three
+USB items above, a VFS defect that panics with "process has two calls" when a
+reboot lands in the middle of a block transfer, and two defects in
 `servers/sched/schedule.c` found while closing the occupancy question —
 `pick_cpu()` overwrites the scheduler's idea of a process's core on a quantum
 expiry that never moves it, so `do_stop_scheduling()` later decrements the

@@ -14,6 +14,7 @@ interrupts, it schedules, and it passes messages. Everything else is a process:
   ───────────────────────────────────────────────────────────
    VFS   MFS   PFS   PM   VM   RS   DS   SCHED   MIB   procfs   lwip
    tty   sdmmc   dwmac   memory   random   virtio_blk   virtio_net
+   xhci   usb_hub   usb_storage
   ───────────────────────────────────────────────────────────
                           kernel
 ```

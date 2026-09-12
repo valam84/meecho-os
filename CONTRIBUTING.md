@@ -47,9 +47,9 @@ If you only want to look at a running system first, take a release and run it �
 - **Raise the 4 GB physical memory ceiling.** It comes from the free-page bitmap
   in `servers/vm/alloc.c` and `VM_MAX_PHYS_MEM` beside it. The kernel does not
   need the limit at all.
-- **The MINIX test suite.** `tests/` has never been run on this port. Finding
-  out what passes is itself a contribution, and every failure is a real bug
-  report.
+- **The MINIX test suite.** It builds and runs now — 112 programs, through
+  `port/test/suite/qemu-tests.py` — and the failures that are left are real bug
+  reports waiting for somebody to read them.
 - **Another AArch64 board.** Every driver already finds its hardware in the
   device tree and every permission is granted from a `compatible` string, so a
   new board is mostly a question of which drivers it needs, not of a new board
@@ -58,21 +58,35 @@ If you only want to look at a running system first, take a release and run it �
 
 ### Large, and needs the board
 
-- **Stage 9: DMA and interrupts for the eMMC driver.** This is the best next
-  piece of work in the project and it is described in
-  [docs/meecho/ROADMAP.md](docs/meecho/ROADMAP.md). Both of the driver's
-  limitations were deliberate and neither is justified any more.
+- ~~**Stage 9: DMA and interrupts for the eMMC driver.**~~ Done 2026-09-09: the
+  driver transfers by ADMA2 and waits on an interrupt. What is left of it is the
+  bounce buffer that still cuts every request into 32 KiB pieces.
 - **A driver for the SD card controller** (`rockchip,rk3568-dw-mshc`).
   Different registers from the eMMC's SDHCI, and there is no driver at all.
-- **USB.** Nothing exists. It is a project, not a task.
+- ~~**USB.** Nothing exists.~~ It exists as of 2026-09-11: an xHCI driver, the
+  tree's own hub and mass storage drivers over a URB layer, and a flash drive
+  behind the board's hub read at 15–16 MB/s. Three pieces are open, and each is
+  a real task: nothing starts the stack at boot; chained transfer descriptors
+  have a reproducible failure nobody has explained, so a transfer is kept
+  inside 64 KiB; and the 6 MB/s between us and the vendor kernel is measured to
+  be in `usb_storage`'s DDEKit thread hand-offs, not in the controller.
 
 ### Investigations, where the honest answer is "nobody knows"
 
-- **SMP occupancy tops out below two cores of four**, and adding jobs does not
-  raise it. A candidate is named in the porting log and not one line of it is
-  confirmed.
-- **`trace(1)` fails with "Kernel magic check failed".** A real LP64 bug was
-  found and fixed on the way there, and the symptom survived it.
+- **A chained USB transfer descriptor fails on this controller**, and only
+  after a particular shape of request. Every transfer before it is complete and
+  correct; then a status block comes back with the wrong tag and the device is
+  wedged. Not the copying, not the cache range, not the chunk size — all three
+  were tried and ruled out. Under debug logging it does not happen, which says
+  it is a race and says nothing about where.
+- **VFS panics with "process has two calls"** when a reboot arrives in the
+  middle of a block transfer, and takes PM down with it.
+- ~~**SMP occupancy tops out below two cores of four.**~~ Closed 2026-09-09:
+  there was no ceiling, the benchmark was measuring message passing rather than
+  computation.
+- ~~**`trace(1)` fails with "Kernel magic check failed".**~~ Closed 2026-09-09,
+  and the cause was not in the code at all: an object file had been compiled
+  before the LP64 fix and carried the truncation already generated.
 
 ## How a change is proven
 
@@ -80,10 +94,19 @@ In this order, and each stage answers a different question:
 
 **1. A host bench, where one exists.** `port/test/` holds benches that compile
 the real code with the machine stubbed out: `cachectl` (4.66 million checks over
-cache-line arithmetic), `sdmmc` (119 checks, the card layer through its function
-table and the block layer against a grant model), `dwmac` (the pin arithmetic
-against a table computed by hand, separately, first), `uds`, `hashbang.sh`.
-They run in seconds and they catch broken expectations immediately.
+cache-line arithmetic), `sdmmc` (133 checks, the card layer through its function
+table and the block layer against a grant model), `xhci` (118 checks against a
+model of the controller — memory with no coherency and a part that reads a ring
+only when the doorbell rings), `dwmac` (the pin arithmetic against a table
+computed by hand, separately, first), `uds`, `hashbang.sh`. They run in seconds
+and they catch broken expectations immediately.
+
+A bench that passes is worth nothing until it has been shown to fail, so the
+xHCI one ships with `mutate.sh`: it puts each of the driver's nine real defects
+back into a copy, one at a time, and every one of them must be caught. A
+mutation that survives is a check that is decoration — and one did survive,
+which is how a defect that had been fixed in one file and repeated in another
+was found.
 
 They also have a known blind spot, and it is worth stating: **a bench cannot
 catch a misunderstanding of the hardware.** Of the four things the SDHCI

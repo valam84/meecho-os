@@ -17,6 +17,7 @@ board's own device tree — the board is in mainline Linux from 6.14 as
 | PSCI | `arm,psci-1.0`, `method = "smc"` | Works as is; `psci.c` reads the method from the tree and knows both instructions |
 | eMMC | `mmc@fe310000`, `rockchip,rk3568-dwcmshc` — **SDHCI, not dw-mshc** — 8-bit, up to 200 MHz, non-removable, IRQ 51 | Driver written (`sdmmc`) |
 | SD card | `mmc@fe2b0000`, `rockchip,rk3568-dw-mshc`, 4-bit, IRQ 130 | Different registers, different file. **No driver** |
+| USB | `usb@fcc00000`, an xHCI inside a DWC3, IRQ 201; a hub is soldered behind the carrier's four sockets | Driver written (`usb/xhci`); see [USB](#usb) below |
 
 **`rockchip,rk3568-dwcmshc` is not `dw-mshc`** despite the names: it has the
 standard SD Host Controller registers and an ordinary divider. The card slot is
@@ -74,6 +75,29 @@ The bootloader cannot be relied on for any of it: this U-Boot has no
 > transmit reference voltage. A driver written from mainline brings the link up
 > and carries nothing. The board settled it itself: its own `dmesg` names the
 > function it executed.
+
+## USB
+
+| | |
+|---|---|
+| Controller | an xHCI 1.1 inside a Synopsys DWC3 3.0a (`GSNPSID 0x5533300a`) at `0xfcc00000`, 4 MB, GIC line 201 |
+| What it reports | 64 slots, 2 ports, 1 interrupter, **64-byte contexts**, **32-bit addressing**, and one scratchpad page it will not run without |
+| Ports | port 1 is USB 2.0 and real; port 2 is announced as SuperSpeed and has **no USB3 PHY behind it** — the tree gives this controller a `usb2-phy` only, so a port whose protocol nobody can serve is left alone |
+| PHY | `usb2phy0` at `0xfe8a0000` (the OTG port), its logical half in a separate syscon at `0xfdca0000`, and a reference clock in the **PMU's** clock controller at `0xfdd00000` — two blocks with similar offsets is the trap here |
+| Around it | power domain 15 in the PMU at `0xfdd90000`, one reset line in the CRU at `0xfdd20000` |
+| What is on it | a **Terminus hub soldered to the carrier**. The CM4 form factor brings one USB 2.0 port out and the carrier has four sockets, so a hub must be between them: a device is never on a root port, it needs a route string, and it is announced by the hub driver rather than found in a register |
+
+Two numbers in the glue differ from the vendor's snapshot (`mode con0`, `pipe
+gates`), and both belong to the SuperSpeed half this driver does not drive. The
+recipe and the register dumps are in [`port/cb2-usb/`](../../port/cb2-usb/).
+
+> **The specification is not enough, twice over.** A transfer descriptor of more
+> than one entry must carry TD Size — how many packets follow this entry — or
+> the controller ends the transfer at the first one and the rest of the data
+> answers the *next* request. And the Event Handler Busy flag, which the
+> controller sets when it raises its line, is cleared only by a write of the
+> event dequeue pointer: a driver that is woken, finds the ring empty and goes
+> back to sleep without that write hears nothing further.
 
 ## Other blocks in use
 

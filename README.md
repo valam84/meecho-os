@@ -66,9 +66,9 @@ touches the machine:
   tree, because the target board has one and QEMU can give either;
 - a 64-bit message ABI (the IPC message was 64 bytes and had to be re-laid out
   for LP64 — all 256 variants, by a generator);
-- drivers: SDHCI eMMC, DesignWare GMAC Ethernet with a Motorcomm PHY,
-  DesignWare 8250 and PL011 serial, PL031 RTC, the SoC's hardware RNG,
-  virtio-mmio block and network;
+- drivers: SDHCI eMMC, DesignWare GMAC Ethernet with a Motorcomm PHY, an xHCI
+  host controller inside a Synopsys DWC3, DesignWare 8250 and PL011 serial,
+  PL031 RTC, the SoC's hardware RNG, virtio-mmio block and network;
 - an on-disk file system, **MFS V4**, with 64-bit sizes, nanosecond timestamps,
   variable-length directory entries, a metadata journal, and an `fsck` that was
   tested by corrupting real volumes.
@@ -94,6 +94,7 @@ desk, not a simulation of one.
 | Network: ping, TCP to a real server | yes (virtio-net) | yes (GMAC + YT8531 PHY) |
 | DHCP, name resolution | yes | yes |
 | ssh in, interactive session on a pty | yes | yes |
+| USB: a flash drive behind a hub, read at 15–16 MB/s | no xHCI on `virt` | yes (xHCI in a DWC3) |
 | Real-time clock | yes (PL031) | no RTC; date comes from DHCP-era `rc` |
 | Reboot and power-off through PSCI | yes | yes |
 
@@ -106,7 +107,15 @@ Known gaps, stated plainly:
   [milestone 9](docs/meecho/ROADMAP.md). A request is still cut into 32 KiB
   pieces, which is the size of the bounce buffer rather than a limit of the
   controller.
-- **No USB, no display, no audio.** The board's console is a serial port.
+- **USB works; nothing starts it for you.** The xHCI driver, the tree's own hub
+  driver and its mass storage driver are in the root image, but `/etc/rc` does
+  not start them — a USB disk is three `minix-service up` lines away, not a
+  mount. A flash drive behind the board's hub reads at 15–16 MB/s where the
+  vendor kernel gets 22.3; the difference is measured and is in the client
+  driver's thread hand-offs, not in the controller. One transfer never crosses
+  a 64 KiB boundary, because chained transfer descriptors have a failure on
+  this part that is reproducible and not yet explained.
+- **No display, no audio.** The board's console is a serial port.
 - ~~**Everything is statically linked.**~~ Dynamic linking works as of
   2026-09-10: a program with a `PT_INTERP` starts through `ld.elf_so`, both
   lazily bound and under `LD_BIND_NOW`, and `dlopen` works. `exec` had the
@@ -144,7 +153,7 @@ Building from source takes a couple of hours, most of it a cross-toolchain:
 ## The porting log
 
 Every non-obvious decision in this tree is written down in
-[`port/PORTING-LOG.md`](port/PORTING-LOG.md) — 9,400 lines of it — and each
+[`port/PORTING-LOG.md`](port/PORTING-LOG.md) — 12,000 lines of it — and each
 entry answers *why*, not *what*. Some of it is worth reading even if you never
 build the system:
 
@@ -155,6 +164,10 @@ build the system:
 - Why `select(2)` reported an empty pipe as readable, why it only broke the
   *second* ssh login, and why raising the log level "fixed" it.
 - Why a `#!` script crashed depending on the length of the environment.
+- Why a USB transfer finished and nobody was told, why the flag that explains
+  it is cleared by a register write the driver made only when it had found
+  something, and why the same fix had been tried a day earlier and reverted for
+  a symptom that had another cause.
 - Why every `longjmp(3)` returned to address zero, why the check meant to
   catch exactly that rejected valid buffers instead, and why all of it
   surfaced the first evening the test suite was ever run.
@@ -174,10 +187,10 @@ that is a reasonable request and it will be answered.
 | `minix/kernel/arch/aarch64/` | the architecture layer: MMU, traps, timer, SMP, GIC, PSCI |
 | `minix/kernel/arch/aarch64/bringup/` | the standalone bring-up kernel this was grown from; still runs |
 | `minix/servers/vm/arch/aarch64/` | four-level page tables |
-| `minix/drivers/` | `sdmmc` (eMMC), `dwmac` (Ethernet), `tty`, `random/trng`, virtio |
+| `minix/drivers/` | `sdmmc` (eMMC), `dwmac` (Ethernet), `usb/xhci`, `tty`, `random/trng`, virtio |
 | `minix/fs/mfs/`, `minix/lib/libminixfs/` | MFS V3 and V4, the journal |
 | `port/` | the scripts that build, run and debug all of this |
-| `port/test/` | host-side test benches: cache maintenance, the card layer, pin arithmetic, uds |
+| `port/test/` | host-side test benches: cache maintenance, the card layer, the xHCI rings, pin arithmetic, uds |
 | `minix/tests/` | the MINIX test suite, 112 programs; `port/test/suite/` runs it on QEMU |
 | `docs/meecho/` | this documentation |
 | `PLAN.md`, `port/PORTING-LOG.md` | the roadmap and the log (Russian) |

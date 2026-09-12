@@ -86,6 +86,7 @@ sdev_suspend(dev_t dev, cp_grant_id_t grant0, cp_grant_id_t grant1,
 
 	fp->fp_sdev.dev = dev;
 	fp->fp_sdev.callnr = job_call_nr;
+	fp->fp_sdev.reply_pending = FALSE;
 	fp->fp_sdev.grant[0] = grant0;
 	fp->fp_sdev.grant[1] = grant1;
 	fp->fp_sdev.grant[2] = grant2;
@@ -980,6 +981,33 @@ sdev_cancel(void)
 }
 
 /*
+ * A worker thread is about to finish its normal work.  If a socket driver
+ * replied to the call it suspended while it was still busy (see sdev_reply()),
+ * deliver that reply now, from the worker: the process is then released only
+ * once nothing in VFS is working on its behalf any more.
+ */
+void
+sdev_finish_pending(struct fproc * rfp)
+{
+	message m;
+
+	if (rfp->fp_blocked_on != FP_BLOCKED_ON_SDEV ||
+	    !rfp->fp_sdev.reply_pending)
+		return;
+
+	m = rfp->fp_sdev.reply;
+	rfp->fp_sdev.reply_pending = FALSE;
+	rfp->fp_blocked_on = FP_BLOCKED_ON_NONE;
+
+	/* As in sdev_cancel(): we are on a worker thread already. */
+	if (m.m_type == SDEV_ACCEPT_REPLY &&
+	    m.m_lsockdriver_vfs_accept_reply.sock_id >= 0)
+		sdev_finish_accept(rfp, &m);
+	else
+		sdev_finish(rfp, &m);
+}
+
+/*
  * A socket driver has sent a reply to a socket request.  Process it, by either
  * waking up an active worker thread, finishing the system call from here, or
  * (in the exceptional case of accept calls) spawning a new worker thread to
@@ -1054,6 +1082,23 @@ sdev_reply(void)
 	    get_smap_by_dev(rfp->fp_sdev.dev, NULL) != sp) {
 		printf("VFS: ignoring sock dev reply, %d not blocked on %d\n",
 		    rfp->fp_endpoint, who_e);
+		return;
+	} else if (wp != NULL) {
+		/*
+		 * The process is suspended on this socket, but the worker
+		 * thread that suspended it has not returned yet: it is still
+		 * finishing the system call and is blocked on something else,
+		 * such as the PFS round trip in put_vnode() at the end of
+		 * close_filp().  Finishing the call from here would reply to
+		 * the process now, and its next system call would then meet
+		 * its own worker still active - "process has two calls"
+		 * (CLOSE, SENDTO), seen on the board under load, with dhcpcd's
+		 * syslog() doing close() and send() back to back.  Keep the
+		 * reply; the worker delivers it on its way out, in
+		 * sdev_finish_pending().
+		 */
+		rfp->fp_sdev.reply = m_in;
+		rfp->fp_sdev.reply_pending = TRUE;
 		return;
 	} else if (call_nr == SDEV_ACCEPT_REPLY &&
 	    m_in.m_lsockdriver_vfs_accept_reply.sock_id >= 0) {

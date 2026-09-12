@@ -57,6 +57,9 @@ EXTERN struct fproc {
 			int fd;		/* listener file descr. (VFS_ACCEPT) */
 			vir_bytes buf;	/* user buffer address (VFS_RECVMSG) */
 		} aux;			/* call-specific auxiliary data */
+		int reply_pending;	/* driver replied while the worker that
+					 * suspended the call was still busy */
+		message reply;		/* that reply, kept for the worker */
 	} u_sdev;
   } fp_u;
 

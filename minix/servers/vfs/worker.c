@@ -264,6 +264,9 @@ static void *worker_main(void *arg)
 		fp->fp_func();
 
 		fp->fp_func = NULL;	/* deliberately unset AFTER the call */
+
+		/* A socket reply that arrived while we were still busy. */
+		sdev_finish_pending(fp);
 	}
 
 	/* Perform postponed PM work, if any. */
@@ -385,8 +388,19 @@ void worker_start(struct fproc *rfp, void (*func)(void), message *m_ptr,
 
 	/* The process cannot make more than one call at once. */
 	if (!is_pm_work && has_normal_work)
-		panic("process has two calls (%x, %x)",
-			rfp->fp_msg.m_type, m_ptr->m_type);
+		/*
+		 * Who, not only what: this fired on the board twice (2026-09
+		 * -09 under dd, 2026-09-12 under certctl), both times as
+		 * (CLOSE, SENDTO), and the original message named neither the
+		 * process nor whether the first call was still on a worker or
+		 * parked as pending - which is the whole question.
+		 */
+		panic("process %s (pid %d, ep %d) has two calls (%x, %x); "
+		    "%s, blocked_on %d, flags %x",
+			rfp->fp_name, rfp->fp_pid, rfp->fp_endpoint,
+			rfp->fp_msg.m_type, m_ptr->m_type,
+			is_active ? "worker active" : "pending",
+			rfp->fp_blocked_on, rfp->fp_flags);
 
 	/* PM will not send more than one job per process to us at once. */
 	if (is_pm_work && has_pm_work)

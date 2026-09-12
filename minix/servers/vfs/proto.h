@@ -303,6 +303,7 @@ int sdev_select(dev_t dev, int ops);
 void sdev_stop(struct fproc *rfp);
 void sdev_cancel(void);
 void sdev_reply(void);
+void sdev_finish_pending(struct fproc *rfp);
 
 /* smap.c */
 void init_smap(void);

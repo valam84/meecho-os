@@ -56,7 +56,16 @@
  * the maximum needed by any given driver. The number of interrupt hooks may
  * be incremented on systems with many device drivers. 
  */
-#ifndef USE_APIC
+#if defined(__aarch64__)
+/*
+ * Hooks are what drivers register on the 512 lines a GICv3 can have, and a
+ * driver that gets ENOSPC from sys_irqsetpolicy() does not always look.
+ * Without USE_APIC this used to fall through to 16 - the PC-without-APIC
+ * number - while the kernel audit believed it was 64. The array is static
+ * and 128 costs nothing that shows.
+ */
+#define NR_IRQ_HOOKS	 128		/* number of interrupt hooks */
+#elif !defined(USE_APIC)
 #define NR_IRQ_HOOKS	  16		/* number of interrupt hooks */
 #else
 #define NR_IRQ_HOOKS	  64		/* number of interrupt hooks */

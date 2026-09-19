@@ -21,6 +21,7 @@
 
 #include "archconst.h"
 #include "arch_proto.h"
+#include "direct_utils.h"
 #include "kernel/debug.h"
 #include "kernel/ktrace.h"
 #include "trap.h"
@@ -46,6 +47,17 @@ typedef int _trap_frame_offsets_check[
 /* struct proc is entered through its p_reg, so p_reg must come first. */
 typedef int _trap_proc_reg_first_check[
 	(offsetof(struct proc, p_reg) == 0) ? 1 : -1];
+
+/*
+ * VECTOR_KERNEL decides "this frame would be in the guard page" by testing
+ * bit K_STACK_SHIFT of the address, which is only the right question while
+ * a stack is one page, the guard below it another, and the pair aligned to
+ * both together; the emergency stacks are found by shifting the CPU number.
+ */
+typedef int _trap_stack_shape_check[
+	((1UL << K_STACK_SHIFT) == K_STACK_SIZE &&
+	 (1UL << K_OVERFLOW_STACK_SHIFT) == K_OVERFLOW_STACK_SIZE &&
+	 K_OVERFLOW_STACK_SIZE >= 2 * FRAME_SIZE) ? 1 : -1];
 
 /* Defined in exception.S. */
 extern char exception_vectors[];
@@ -96,6 +108,59 @@ inkernel_disaster(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 		proc_stacktrace(saved);
 
 	panic("exception in the kernel");
+}
+
+/*===========================================================================*
+ *				trap_stack_overflow			     *
+ *===========================================================================*/
+/*
+ * From VECTOR_KERNEL, on this CPU's emergency stack, because the frame for
+ * an EL1 exception would have started in the guard page below the kernel
+ * stack. frame->sp is the SP at the moment of the exception, which is what
+ * the fault handler would have printed had it had somewhere to run.
+ *
+ * Two things this is not. A fault while the CPU is still on one of the boot
+ * stacks in head.S can trip the same test, because those stacks do not have
+ * the guard's shape; that is an ordinary kernel exception, reported as one.
+ * And a second arrival here on the same CPU means the report itself faulted,
+ * which is worth one line and no more: another attempt would loop.
+ */
+void __dead
+trap_stack_overflow(struct stackframe_s *frame, u64_t kind, u64_t esr,
+	u64_t far)
+{
+	static volatile int reporting[CONFIG_MAX_CPUS];
+	unsigned cpu = cpuid;
+	vir_bytes guard = (vir_bytes)get_k_stack_top(cpu) - 2 * K_STACK_SIZE;
+	vir_bytes sp = frame->sp - FRAME_SIZE;
+	struct proc *saved;
+
+	if (reporting[cpu]++) {
+		/* Bytes straight to the UART: printf is what may have failed. */
+		direct_print("\nexception while reporting a kernel stack "
+		    "overflow; this cpu stops here\n");
+		for (;;)
+			halt_cpu();
+	}
+
+	if (sp < guard || sp >= guard + K_STACK_SIZE)
+		inkernel_disaster(frame, kind, esr, far);
+
+	saved = get_cpulocal_var(proc_ptr);
+
+	printf("\ncpu %u: kernel stack overflow: sp 0x%lx is %lu bytes below "
+	    "the stack at 0x%lx\n", cpu, (unsigned long)frame->sp,
+	    (unsigned long)(guard + K_STACK_SIZE - frame->sp),
+	    (unsigned long)(guard + K_STACK_SIZE));
+	printf("vector %d ESR 0x%lx EC 0x%lx FAR 0x%lx pc 0x%lx psr 0x%lx\n",
+	    (int)kind, (unsigned long)esr, (unsigned long)ESR_EC(esr),
+	    (unsigned long)far, (unsigned long)frame->pc,
+	    (unsigned long)frame->psr);
+
+	if (saved != NULL)
+		proc_stacktrace(saved);
+
+	panic("kernel stack overflow");
 }
 
 /*===========================================================================*

@@ -193,9 +193,16 @@ kern_phys_map *kern_phys_map_list(void);
  * labels the reservation, which the architecture layer makes in its own
  * assembly the way the two 32-bit ports do - not in the link script, so that
  * the size can be written in terms of K_STACK_SIZE and CONFIG_MAX_CPUS.
- * k_stacks is that address rounded up to a page.
+ * k_stacks is that address, and the pair is aligned to its own size, which
+ * the EL1 vector relies on to tell the guard from the stack in one bit.
+ *
+ * The guard pages are left out of the kernel's page table by
+ * map_kernel_image(), which is why the reservation has both ends labelled.
+ * Declared as the labels they are: the 32-bit ports declare k_stacks_start
+ * as a pointer and take its address, which happens to work and reads as if
+ * the pointer were the thing.
  */
-EXTERN void *k_stacks_start;
+extern char k_stacks_start[], k_stacks_end[];
 extern void *k_stacks;
 
 #define get_k_stack_top(cpu)	((void *)(((char *)(k_stacks)) \

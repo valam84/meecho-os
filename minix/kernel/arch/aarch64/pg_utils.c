@@ -565,12 +565,30 @@ map_kernel_image(kinfo_t *cbi, phys_bytes root, vir_bytes offset)
 	phys_bytes rodata = sym_phys(__rodata_start);
 	phys_bytes data = sym_phys(__rodata_end);
 	phys_bytes end = sym_phys(__kernel_end);
+	phys_bytes stacks = sym_phys(k_stacks_start);
+	phys_bytes stacks_end = sym_phys(k_stacks_end);
+	phys_bytes pair;
 
 	map_range(cbi, root, text + offset, text,
 	    sym_phys(__text_end) - text, PG_KERNEL_RX);
 	map_range(cbi, root, rodata + offset, rodata,
 	    data - rodata, PG_KERNEL_RO);
-	map_range(cbi, root, data + offset, data, end - data, PG_KERNEL_RW);
+
+	/*
+	 * The writable range, minus the guard page under each CPU's kernel
+	 * stack. The stacks sit inside .bss (vectors.S reserves them there);
+	 * each CPU owns a pair of pages, the upper one is its stack and the
+	 * lower one stays unmapped, so that running off the bottom of the
+	 * stack faults instead of writing into the CPU below. Nothing else in
+	 * the image is left out: the linear map of RAM has a hole where the
+	 * image is, so this is the only mapping these pages have.
+	 */
+	map_range(cbi, root, data + offset, data, stacks - data, PG_KERNEL_RW);
+	for (pair = stacks; pair < stacks_end; pair += 2 * K_STACK_SIZE)
+		map_range(cbi, root, pair + K_STACK_SIZE + offset,
+		    pair + K_STACK_SIZE, K_STACK_SIZE, PG_KERNEL_RW);
+	map_range(cbi, root, stacks_end + offset, stacks_end, end - stacks_end,
+	    PG_KERNEL_RW);
 }
 
 /*===========================================================================*

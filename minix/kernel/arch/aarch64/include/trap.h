@@ -71,9 +71,16 @@ struct proc;
 /* Point VBAR_EL1 at the vector table. */
 void trap_init(void);
 
-/* Called from exception.S with the frame it just built. */
+/* Called from vectors.S with the frame it just built. */
 void trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr,
 	u64_t far);
+
+/*
+ * Called from vectors.S on the emergency stack when an EL1 exception found
+ * no kernel stack left to build its frame on. Does not return.
+ */
+void trap_stack_overflow(struct stackframe_s *frame, u64_t kind, u64_t esr,
+	u64_t far) __dead;
 
 /*
  * Enter user mode through a process's own saved frame.
@@ -84,9 +91,6 @@ void trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr,
  * back from user are one piece of code. Declared in kernel/proto.h as well;
  * this comment is why the argument is what it is.
  */
-
-/* Reserved by exception.S: two pages of stack per CPU. */
-extern char k_stacks_area[];
 
 #endif /* !__ASSEMBLER__ */
 

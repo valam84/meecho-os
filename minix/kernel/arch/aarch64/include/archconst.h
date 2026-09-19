@@ -48,12 +48,28 @@
  * 272 bytes, and nothing in the kernel recurses deeply, so a page is ample;
  * what matters more is that the stacks are page-aligned and page-apart, so
  * that an overrun lands in a guard page instead of in the neighbouring CPU's
- * stack.
+ * stack - a guard page that is not mapped, so that it faults, and a fault
+ * the EL1 vector recognises by address before it stores anything
+ * (VECTOR_KERNEL in vectors.S), so that it does not recurse.
+ *
+ * Written as a shift as well as a size because the vector tests one bit of
+ * SP, and that only works while a stack is exactly one page and its pair of
+ * pages is aligned to 2 * K_STACK_SIZE. trap.c checks the two agree.
  *
  * Here rather than in arch_proto.h because vectors.S makes the reservation
  * and has to agree with the C side about its size.
  */
+#define K_STACK_SHIFT	AARCH64_PAGE_SHIFT
 #define K_STACK_SIZE	AARCH64_PAGE_SIZE
+
+/*
+ * The emergency stack a CPU reports an overflow from: two pages, so that the
+ * report - printf, the process's stack trace, panic() - has more room than
+ * the stack it is reporting on had. Aligned to its size so that the vector
+ * can find it with one multiply.
+ */
+#define K_OVERFLOW_STACK_SHIFT	(AARCH64_PAGE_SHIFT + 1)
+#define K_OVERFLOW_STACK_SIZE	(1 << K_OVERFLOW_STACK_SHIFT)
 
 /*
  * Bytes reserved at the top of a kernel stack for what has to be found

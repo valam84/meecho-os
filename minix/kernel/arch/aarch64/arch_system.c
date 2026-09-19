@@ -313,8 +313,8 @@ arch_init(void)
 	 * entry path switches onto them; this is where the pointer the two
 	 * agree on gets set, exactly as ARM does it.
 	 */
-	k_stacks = (void *)&k_stacks_start;
-	assert(!((vir_bytes)k_stacks % K_STACK_SIZE));
+	k_stacks = k_stacks_start;
+	assert(!((vir_bytes)k_stacks % (2 * K_STACK_SIZE)));
 
 	/*
 	 * The vectors are already installed - pre_init() writes VBAR_EL1

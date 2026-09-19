@@ -39,13 +39,65 @@
 
 	.text
 
-/* An entry taken from EL1: the frame goes on the stack already in use. */
+/*
+ * An entry taken from EL1: the frame goes on the stack already in use -
+ * unless there is no stack left.
+ *
+ * Each CPU's kernel stack is the upper page of an 8 KiB pair whose lower page
+ * is not mapped (see the reservation at the end of this file, and
+ * map_kernel_image() in pg_utils.c). A frame that would start in that lower
+ * page cannot be stored: the store would fault, the fault would take this
+ * same vector, claim another frame further down, and fault again - a
+ * recursion that only ends when SP has walked through the guard into the
+ * next CPU's stack, where the stores succeed and the diagnosis is of a
+ * machine that has just been corrupted. So the frame's address is checked
+ * before anything is written through it. Because the pair is aligned to its
+ * own size, "in the lower page" is one bit of the address.
+ *
+ * There is no free register to check with. SP_EL0 is one: the kernel runs
+ * on SP_EL1 and never uses SP_EL0 itself, and a process's SP_EL0 is dead
+ * while the kernel runs - saved into its frame on the way in
+ * (SAVE_FRAME_TAIL) and reloaded from it on the way out (exception_return).
+ * Linux does the same on this path.
+ *
+ * On overflow the frame goes on this CPU's emergency stack instead, and the
+ * handler does not return. x1 has to be parked in memory for a moment while
+ * the emergency stack is located, and the only address reachable without a
+ * second register is a fixed one - so that word is shared between CPUs. Two
+ * CPUs overflowing in the same instant would corrupt each other's x1 in the
+ * report, and nothing else; both are on their way to a panic.
+ *
+ * The stacks in head.S, which the boot CPU runs on until its first
+ * restore_user_context() and the secondaries until pg_ap_enter_high(), do
+ * not have this shape, so a kernel fault on one of them can trip the test.
+ * trap_stack_overflow() tells the two apart by address and reports the fault
+ * for what it is; the frame is still safe, because the emergency stack is
+ * always writable.
+ */
 	.macro	VECTOR_KERNEL kind
 	.balign	0x80
 	sub	sp, sp, #FRAME_SIZE
+	msr	sp_el0, x0
+	mov	x0, sp
+	tbz	x0, #K_STACK_SHIFT, 9f
+	mrs	x0, sp_el0
 	stp	x0, x1, [sp, #FRAME_X(0)]
 	mov	x0, #\kind
 	b	exception_entry_kernel
+9:
+	adrp	x0, k_overflow_scratch
+	str	x1, [x0, #:lo12:k_overflow_scratch]
+	mrs	x1, tpidr_el1
+	add	x1, x1, #1
+	lsl	x1, x1, #K_OVERFLOW_STACK_SHIFT
+	adrp	x0, k_overflow_stacks
+	add	x0, x0, #:lo12:k_overflow_stacks
+	add	x0, x0, x1
+	mov	x1, sp			/* the frame base that fell into the guard */
+	mov	sp, x0
+	sub	sp, sp, #FRAME_SIZE
+	mov	x0, #\kind
+	b	exception_entry_overflow
 	.endm
 
 /* An entry taken from EL0: the frame goes into the process's own p_reg. */
@@ -305,6 +357,40 @@ exception_return:
 	.size	exception_entry_kernel, . - exception_entry_kernel
 
 /*
+ * From EL1 with the kernel stack exhausted, on this CPU's emergency stack.
+ * x0 is the vector number, x1 the address the frame would have had; the
+ * interrupted x0 is in SP_EL0 and the interrupted x1 in k_overflow_scratch,
+ * both put there by VECTOR_KERNEL. Assembled into an ordinary frame so that
+ * the report can be read like any other, with sp being the SP at the moment
+ * of the exception rather than where the frame actually is. Never returns:
+ * there is nothing to return to.
+ */
+exception_entry_overflow:
+	str	x1, [sp, #FRAME_X(1)]	/* park it; SAVE_FRAME_TAIL uses x1 */
+	SAVE_FRAME_TAIL
+	ldr	x1, [sp, #FRAME_X(1)]
+	add	x1, x1, #FRAME_SIZE
+	str	x1, [sp, #FRAME_SP]
+	mrs	x1, sp_el0
+	str	x1, [sp, #FRAME_X(0)]
+	adrp	x1, k_overflow_scratch
+	ldr	x1, [x1, #:lo12:k_overflow_scratch]
+	str	x1, [sp, #FRAME_X(1)]
+
+	mov	x1, x0			/* vector number */
+	mov	x0, sp			/* frame */
+
+	mrs	x2, esr_el1
+	mrs	x3, far_el1
+
+	mov	x29, xzr
+
+	bl	trap_stack_overflow
+	b	.
+
+	.size	exception_entry_overflow, . - exception_entry_overflow
+
+/*
  * void restore_user_context(struct proc *p)
  *
  * Enter user mode through p's own frame. Does not return: whatever called
@@ -326,16 +412,38 @@ restore_user_context:
 
 /*
  * Kernel stacks, two pages per CPU: the top of the upper page is the stack
- * pointer, the lower one is the guard an overrun lands in.
+ * pointer, the lower one is the guard an overrun lands in. The guard is not
+ * mapped - map_kernel_image() leaves it out of the kernel's own page table -
+ * so an overrun faults instead of writing into the neighbouring CPU's stack.
+ *
+ * The reservation is aligned to the size of a pair, not of a page, and
+ * VECTOR_KERNEL depends on it: with the pair aligned to 8 KiB, whether an
+ * address is in the guard or in the stack is bit K_STACK_SHIFT of the address.
  *
  * Reserved here rather than in the link script so that the size can be
  * written in terms of K_STACK_SIZE and CONFIG_MAX_CPUS, which is what the two
  * 32-bit ports do and what arch_proto.h already describes.
  */
 	.section .bss.kstacks, "aw", @nobits
-	.balign	K_STACK_SIZE
+	.balign	2 * K_STACK_SIZE
 	.globl	k_stacks_start
 k_stacks_start:
 	.space	2 * K_STACK_SIZE * CONFIG_MAX_CPUS
 	.globl	k_stacks_end
 k_stacks_end:
+
+/*
+ * Where a CPU goes when its kernel stack is gone: K_OVERFLOW_STACK_SIZE per
+ * CPU, ordinary mapped memory, used only to report the overflow and stop.
+ * And the one word VECTOR_KERNEL parks x1 in while it finds this stack -
+ * shared, because it is reached without a register to index with.
+ */
+	.balign	K_OVERFLOW_STACK_SIZE
+	.globl	k_overflow_stacks
+k_overflow_stacks:
+	.space	K_OVERFLOW_STACK_SIZE * CONFIG_MAX_CPUS
+
+	.balign	8
+	.globl	k_overflow_scratch
+k_overflow_scratch:
+	.space	8

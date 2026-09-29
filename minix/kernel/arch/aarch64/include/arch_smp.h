@@ -62,6 +62,18 @@ void smp_ap_boot(unsigned cpu);
  */
 void smp_halt_if_stopping(void);
 
+/*
+ * The lock watchdog (lockwd.c): the big kernel lock as context_stop() takes
+ * and releases it, the per-core setup arch_init() does, and what idle() does
+ * on a secondary instead of stopping its timer.
+ */
+struct proc;
+void lockwd_cpu_init(void);
+void bkl_lock_watched(struct proc *p);
+void bkl_unlock_watched(void);
+void stop_local_timer_idle(void);
+#define stop_local_timer_idle stop_local_timer_idle
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _AARCH64_SMP_H_ */

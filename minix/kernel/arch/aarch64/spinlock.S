@@ -51,6 +51,45 @@ arch_spinlock_lock:
 	.size	arch_spinlock_lock, . - arch_spinlock_lock
 
 /*
+ * int arch_spinlock_lock_until(atomic_t *lock, u64_t deadline)
+ *
+ * The same acquire, giving up once CNTVCT_EL0 reaches deadline: 0 when the
+ * lock was taken, 1 when time ran out first. A deadline already in the past
+ * makes it a single attempt - a trylock.
+ *
+ * The wfe needs something to wake it that does not depend on the holder,
+ * because the case this exists for is a holder that will never release. That
+ * is the timer's event stream, which arch_init() turns on for every core;
+ * without it a waiter on a dead holder would sleep in wfe for good and never
+ * get to look at the clock.
+ */
+	.globl	arch_spinlock_lock_until
+	.type	arch_spinlock_lock_until, %function
+arch_spinlock_lock_until:
+	mov	w2, #1
+1:
+	ldaxr	w3, [x0]		/* arms the monitor as well */
+	cbnz	w3, 2f			/* already held */
+	stxr	w4, w2, [x0]
+	cbnz	w4, 1b			/* lost the race, try again */
+	mov	w0, #0
+	ret
+
+2:
+	isb				/* order the counter read, as read_tsc_64 */
+	mrs	x4, cntvct_el0
+	cmp	x4, x1
+	b.hs	3f
+	wfe
+	b	1b
+
+3:
+	clrex
+	mov	w0, #1
+	ret
+	.size	arch_spinlock_lock_until, . - arch_spinlock_lock_until
+
+/*
  * void arch_spinlock_unlock(atomic_t *lock)
  */
 	.globl	arch_spinlock_unlock

@@ -300,13 +300,22 @@ arch_init(void)
 	 * every core, which the cycle counter is not. See
 	 * port/PORTING-LOG.md, stage 1.
 	 *
-	 * The event stream and EL0 access to the timer registers stay off:
-	 * nothing in userland programs a timer, and a bit granted without a
-	 * user is a bit nobody will think to revoke.
+	 * EL0 access to the timer registers stays off: nothing in userland
+	 * programs a timer, and a bit granted without a user is a bit nobody
+	 * will think to revoke. The event stream is the kernel's own, below.
 	 */
 	__asm__ volatile("mrs %0, cntkctl_el1" : "=r"(cntkctl));
 	cntkctl |= AARCH64_CNTKCTL_EL0VCTEN;
 	__asm__ volatile("msr cntkctl_el1, %0" :: "r"(cntkctl));
+
+#ifdef CONFIG_SMP
+	/*
+	 * The lock watchdog, per core: the event stream that lets a wait for
+	 * the kernel lock look at the clock. On the boot core also reads
+	 * lockwd= from the command line.
+	 */
+	lockwd_cpu_init();
+#endif
 
 	/*
 	 * The per-CPU kernel stacks. exception.S reserves them and the EL0

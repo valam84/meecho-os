@@ -36,4 +36,11 @@ int bsp_register_timer_handler(irq_handler_t handler);
  */
 void bsp_timer_restart(void);
 
+/*
+ * And a sixth, for the lock watchdog: in place of the stop, a single wake-up
+ * this many counter ticks from now, so an idle secondary still looks at the
+ * kernel lock now and then. See lockwd.c.
+ */
+void bsp_timer_idle_wake(u64_t ticks);
+
 #endif /* _BSP_TIMER_H_ */

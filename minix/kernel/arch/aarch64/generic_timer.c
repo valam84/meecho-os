@@ -240,6 +240,29 @@ bsp_timer_restart(void)
 }
 
 /*===========================================================================*
+ *				bsp_timer_idle_wake			     *
+ *===========================================================================*/
+void
+bsp_timer_idle_wake(u64_t ticks)
+{
+	/*
+	 * One interrupt, ticks from now, and no periodic tick after it.
+	 *
+	 * timer_running stays zero, as after a stop: whatever runs next on
+	 * this core finds the tick off and bsp_timer_restart() arms it from
+	 * now, exactly as it does coming back from a real stop. The wake-up
+	 * itself goes through the ordinary tick handler, which advances a
+	 * stale timer_next - harmless, because arm_this_cpu() on the way out
+	 * of idle has already replaced it.
+	 */
+	write_ctl(0);
+	write_cval(read_cntpct() + ticks);
+	write_ctl(CNTP_CTL_ENABLE);
+	bsp_irq_unmask(virt_timer.intid);
+	timer_running[cpuid] = 0;
+}
+
+/*===========================================================================*
  *				bsp_timer_stop				     *
  *===========================================================================*/
 void

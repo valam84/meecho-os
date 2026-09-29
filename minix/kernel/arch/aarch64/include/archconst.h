@@ -104,6 +104,11 @@
  */
 #define AARCH64_CNTKCTL_EL0PCTEN	(1UL << 0)	/* physical counter */
 #define AARCH64_CNTKCTL_EL0VCTEN	(1UL << 1)	/* virtual counter */
+/* The event stream, which wakes wfe on a bit of the virtual counter. */
+#define AARCH64_CNTKCTL_EVNTEN		(1UL << 2)
+#define AARCH64_CNTKCTL_EVNTDIR		(1UL << 3)	/* 1->0 instead of 0->1 */
+#define AARCH64_CNTKCTL_EVNTI_SHIFT	4
+#define AARCH64_CNTKCTL_EVNTI_MASK	(0xfUL << 4)	/* which counter bit */
 
 #define PG_ALLOCATEME ((phys_bytes)-1)
 

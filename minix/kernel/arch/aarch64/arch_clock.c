@@ -250,7 +250,8 @@ context_stop(struct proc *p)
 		/* Only an estimate: it may be taken between here and there. */
 		succ = big_kernel_lock.val;
 
-		BKL_LOCK();
+		/* With a time limit: see lockwd.c. */
+		bkl_lock_watched(p);
 
 		/*
 		 * Every way into the kernel passes here, so this is where a
@@ -356,7 +357,7 @@ context_stop(struct proc *p)
 
 #ifdef CONFIG_SMP
 	if (must_bkl_unlock)
-		BKL_UNLOCK();
+		bkl_unlock_watched();
 #endif
 }
 

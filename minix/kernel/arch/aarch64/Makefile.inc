@@ -66,7 +66,7 @@ SRCS+=	head.S arch_system.c memory.c cache.c direct_tty_utils.c \
 # share/mk/bsd.own.mk, because the scheduler needs them as much as the kernel
 # does. All that is left here is what an SMP kernel is built from.
 .ifdef CONFIG_SMP
-SRCS+=	arch_smp.c spinlock.S
+SRCS+=	arch_smp.c spinlock.S lockwd.c
 .endif
 
 # The rest of the architecture layer is written by taking the bring-up kernel

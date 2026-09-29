@@ -194,9 +194,18 @@ static void idle(void)
 
 #ifdef CONFIG_SMP
 	get_cpulocal_var(cpu_is_idle) = 1;
-	/* we don't need to keep time on APs as it is handled on the BSP */
+	/*
+	 * We don't need to keep time on APs as it is handled on the BSP. An
+	 * architecture may want an idle AP woken now and then all the same -
+	 * aarch64 does, so that it notices a core hung with the kernel lock
+	 * held - and says so by defining stop_local_timer_idle.
+	 */
 	if (cpuid != bsp_cpu_id)
+#ifdef stop_local_timer_idle
+		stop_local_timer_idle();
+#else
 		stop_local_timer();
+#endif
 	else
 #endif
 	{

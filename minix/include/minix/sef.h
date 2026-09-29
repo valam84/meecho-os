@@ -322,8 +322,15 @@ void sef_setcb_gcov(sef_cb_gcov_t cb);
 /* What to intercept. */
 #define INTERCEPT_SEF_FI_REQUESTS 1
 #define SEF_FI_REQUEST_TYPE COMMON_REQ_FI_CTL
+/*
+ * From RS only, like every other SEF request above: RS forwards
+ * "minix-service fi" requests, and nobody else has a reason to send one. The
+ * check was missing, so any process could send RS_FI_CRASH to any server -
+ * VFS, PM, VM, RS included - and have it panic on purpose. (It also named
+ * m_ptr instead of its own mp.)
+ */
 #define IS_SEF_FI_REQUEST(mp, status) \
-    (m_ptr->m_type == COMMON_REQ_FI_CTL)
+    ((mp)->m_type == COMMON_REQ_FI_CTL && (mp)->m_source == RS_PROC_NR)
 
 /* Fault injection tool support. */
 #define SEF_FI_ALLOW_EDFI               1

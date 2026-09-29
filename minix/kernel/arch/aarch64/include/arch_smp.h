@@ -56,6 +56,12 @@ void smp_ap_start(unsigned cpu);
 /* And on the same core once it is running in the upper half. */
 void smp_ap_boot(unsigned cpu);
 
+/*
+ * Stop here if another core is shutting the machine down. Called by every
+ * core right after it takes the big kernel lock, before doing any work.
+ */
+void smp_halt_if_stopping(void);
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _AARCH64_SMP_H_ */

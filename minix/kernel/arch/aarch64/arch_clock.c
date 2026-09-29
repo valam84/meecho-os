@@ -252,6 +252,13 @@ context_stop(struct proc *p)
 
 		BKL_LOCK();
 
+		/*
+		 * Every way into the kernel passes here, so this is where a
+		 * core finds out that another one is stopping the machine -
+		 * before it runs the system call or handler it came in for.
+		 */
+		smp_halt_if_stopping();
+
 		read_tsc_64(&tsc);
 
 		bkl_ticks[cpu] = bkl_ticks[cpu] + tsc - bkl_tsc;

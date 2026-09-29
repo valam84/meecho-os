@@ -27,6 +27,20 @@ void panic(const char *fmt, ...)
   	reset();
   }
   kinfo.minix_panicing = ARE_PANICING;
+
+#ifdef CONFIG_SMP
+  /*
+   * Stop the other cores first, and only then report. A panic says the
+   * kernel's state is not fit to run on; the other cores would go on running
+   * on it while the report is printed - and print into it - and the stack
+   * and process state below would be read off a machine still moving.
+   * minix_shutdown() does the same later, but by then the report is done;
+   * after this it finds ncpus == 1 and skips it.
+   */
+  if (ncpus > 1)
+	  smp_shutdown_aps();
+#endif
+
   if (fmt != NULL) {
 	printf("kernel panic: ");
   	va_start(arg, fmt);

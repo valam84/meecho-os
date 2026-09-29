@@ -43,8 +43,23 @@ u64_t cpu_mpidr[CONFIG_MAX_CPUS];
  */
 static volatile int ap_cpu_ready;
 
-/* And the same on the way down, written by the core that is stopping. */
-static volatile int cpu_down;
+/*
+ * And the same on the way down, written by the core that is stopping. One
+ * word per core rather than one for all: cores that were waiting for the big
+ * kernel lock stop on their own the moment they get it (see
+ * smp_halt_if_stopping()), in whatever order the lock hands them out, and a
+ * shared word would let a later report overwrite the one being waited for.
+ */
+static volatile int cpu_down[CONFIG_MAX_CPUS];
+
+/*
+ * The core that is stopping the others, or -1. Any other core that gets the
+ * big kernel lock while this is set stops instead of doing what it came in
+ * for: the core that set it has declared the kernel's state unfit to run on,
+ * and letting a core that was queued for the lock run a system call on that
+ * state is exactly what a panic is meant to prevent.
+ */
+static volatile int halt_requester = -1;
 
 /* How long to wait for a core to come up, in ticks of the spin below. */
 #define AP_BOOT_SPINS	10000000
@@ -301,6 +316,14 @@ ap_finish_booting(void)
 	BKL_LOCK();
 
 	/*
+	 * A core still waiting here when the kernel panics has not joined the
+	 * system yet, so it is not among those told to stop - but the panic
+	 * lets go of the lock to stop the others, and this core would take it
+	 * and carry on booting in the middle of the report.
+	 */
+	smp_halt_if_stopping();
+
+	/*
 	 * Vectors, the timer registers EL0 is allowed to read, and the kernel
 	 * stack pointer: all per-CPU, and none of them set by the core that
 	 * started this one.
@@ -401,7 +424,7 @@ arch_smp_halt_cpu(void)
 	 * wait for. After the unlock this core owns nothing and may be
 	 * observed at any moment.
 	 */
-	cpu_down = (int)cpuid;
+	cpu_down[cpuid] = 1;
 	barrier();
 
 	/*
@@ -412,6 +435,21 @@ arch_smp_halt_cpu(void)
 
 	for (;;)
 		__asm__ volatile("wfi");
+}
+
+/*===========================================================================*
+ *				smp_halt_if_stopping			     *
+ *===========================================================================*/
+void
+smp_halt_if_stopping(void)
+{
+	int requester = halt_requester;
+
+	if (requester < 0 || requester == (int)cpuid)
+		return;
+
+	stop_local_timer();
+	arch_smp_halt_cpu();
 }
 
 /*===========================================================================*
@@ -426,15 +464,23 @@ smp_shutdown_aps(void)
 	if (ncpus == 1)
 		goto done;
 
+	/*
+	 * Before the lock goes: from here on, whoever gets it next stops
+	 * rather than works. That includes cores already spinning for it and
+	 * a secondary still in ap_finish_booting(), neither of which can take
+	 * the IPI below while it spins.
+	 */
+	for (cpu = 0; cpu < ncpus; cpu++)
+		cpu_down[cpu] = 0;
+	halt_requester = (int)cpuid;
+	barrier();
+
 	/* The other cores have to be able to enter the kernel to be told. */
 	BKL_UNLOCK();
 
 	for (cpu = 0; cpu < ncpus; cpu++) {
 		if (cpu == cpuid || !cpu_test_flag(cpu, CPU_IS_READY))
 			continue;
-
-		cpu_down = -1;
-		barrier();
 
 		gic_send_ipi(cpu, GIC_IPI_HALT);
 
@@ -448,12 +494,12 @@ smp_shutdown_aps(void)
 		 * core is still there.
 		 */
 		for (spins = AP_BOOT_SPINS; spins > 0; spins--) {
-			if (cpu_down == (int)cpu)
+			if (cpu_down[cpu])
 				break;
 			arch_pause();
 		}
 
-		if (cpu_down != (int)cpu)
+		if (!cpu_down[cpu])
 			printf("SMP: CPU %d did not stop\n", cpu);
 	}
 

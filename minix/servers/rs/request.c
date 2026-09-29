@@ -471,6 +471,13 @@ int do_init_ready(message *m_ptr)
   who_p = _ENDPOINT_P(m_ptr->m_source);
   result = m_ptr->m_rs_init.result;
 
+  /*
+   * Only a service RS started can report that it initialised. Anything else
+   * has no rproc slot, and dereferencing the empty one took RS down - and
+   * RS, its own signal manager, takes the kernel with it.
+   */
+  if (who_p < 0 || who_p >= NR_PROCS || rproc_ptr[who_p] == NULL)
+      return EPERM;
   rp = rproc_ptr[who_p];
   rpub = rp->r_pub;
 
@@ -897,6 +904,9 @@ int do_upd_ready(message *m_ptr)
   int i;
 
   who_p = _ENDPOINT_P(m_ptr->m_source);
+  /* From a service, as in do_init_ready(): a user has no rproc slot. */
+  if (who_p < 0 || who_p >= NR_PROCS || rproc_ptr[who_p] == NULL)
+      return EPERM;
   rp = rproc_ptr[who_p];
   result = m_ptr->m_rs_update.result;
 

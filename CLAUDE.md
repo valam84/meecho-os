@@ -1810,7 +1810,10 @@ UNG в WSL был бы вторым пробросом поверх первог
 Пока администратор не сделает `.35` статической арендой для MAC, ходить
 через хаб: в `~/.ssh/config` профиля Windows есть `cb2-hub` (хаб,
 :<порт>) и `cb2-lan` (плата через `ProxyJump cb2-hub`); скриптам —
-`BOARD=cb2-lan BOARD_PORT=22`. **Интерактивная консоль платы с паролем** —
+`BOARD=cb2-lan BOARD_PORT=22`. **Звать только виндовый `ssh.exe`** — тот,
+что в Git Bash, профиля с кириллическим именем не находит и говорит
+`Could not resolve hostname cb2-hub`; см. «Подводные камни окружения».
+**Интерактивная консоль платы с паролем** —
 `screen` на хабе: `ssh -t cb2-hub "screen -L -Logfile /tmp/console.log
 /dev/ttyUSB0 1500000"` (выход `Ctrl-A`, `\`); журнал сессии читается с
 хаба, а `run-sched.sh` отказывает (`console-BUSY`), пока `screen` держит
@@ -1910,6 +1913,19 @@ wsl -d Ubuntu -u minix -- bash -c 'bash /home/minix/bin/mkcard.sh /mnt/d/minix/p
   скрипта), либо задавать его без ведущего слэша (`cd /tmp && LOG=x.log …`).
 - **Вывод `wsl.exe` в UTF-16.** Пропускать через `tr -d '\0'`, иначе русский
   текст превращается в мусор.
+- **`ssh` из Git Bash не видит ни конфига, ни ключей**, потому что имя
+  профиля кириллическое: `HOME` приходит к нему в CP866, и он ищет
+  `/c/Users/\340\344\354\350\355\350\361\362\360\340\362\356\360.OFFICE/.ssh`
+  — каталога с таким именем нет. Симптом обманчив: сначала `Could not
+  resolve hostname cb2-hub` (конфиг не прочитан, значит и `Host` не
+  существует), а под `-F` — `no such identity` и `Permission denied
+  (publickey)`, то есть выглядит как проблема доступа, а не кодировки.
+  Лечение: ходить **виндовым** `ssh` — `/c/Windows/System32/OpenSSH/ssh.exe`
+  (из PowerShell — `& "$env:SystemRoot\System32\OpenSSH\ssh.exe"`), он
+  читает `~/.ssh/config` правильно. Плюс `MSYS_NO_PATHCONV=1`, иначе Git
+  Bash перепишет удалённую команду в виндовый путь (см. про `/usr/bin/monpair`
+  выше). Сложные команды удалённой стороне — через
+  `echo <base64> | base64 -d | bash`.
 - **Heredoc в Git Bash съедает двойные обратные слэши**: `'\\\n'` в
   `cat <<'EOF'` приходит как `'\\n'`. Файлы с экранированием (Python,
   ассемблер, patch) писать через Write по UNC-пути, не heredoc'ом.

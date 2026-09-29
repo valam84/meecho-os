@@ -411,14 +411,15 @@ restore_user_context:
 	.size	restore_user_context, . - restore_user_context
 
 /*
- * Kernel stacks, two pages per CPU: the top of the upper page is the stack
- * pointer, the lower one is the guard an overrun lands in. The guard is not
- * mapped - map_kernel_image() leaves it out of the kernel's own page table -
- * so an overrun faults instead of writing into the neighbouring CPU's stack.
+ * Kernel stacks, a pair of K_STACK_SIZE halves per CPU: the top of the upper
+ * half is the stack pointer, the lower half is the guard an overrun lands in.
+ * The guard is not mapped - map_kernel_image() leaves it out of the kernel's
+ * own page table - so an overrun faults instead of writing into the
+ * neighbouring CPU's stack.
  *
- * The reservation is aligned to the size of a pair, not of a page, and
- * VECTOR_KERNEL depends on it: with the pair aligned to 8 KiB, whether an
- * address is in the guard or in the stack is bit K_STACK_SHIFT of the address.
+ * The reservation is aligned to the size of a pair, and VECTOR_KERNEL depends
+ * on it: with the pair aligned to 2 * K_STACK_SIZE, whether an address is in
+ * the guard or in the stack is bit K_STACK_SHIFT of the address.
  *
  * Reserved here rather than in the link script so that the size can be
  * written in terms of K_STACK_SIZE and CONFIG_MAX_CPUS, which is what the two

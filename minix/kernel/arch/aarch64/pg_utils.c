@@ -575,10 +575,10 @@ map_kernel_image(kinfo_t *cbi, phys_bytes root, vir_bytes offset)
 	    data - rodata, PG_KERNEL_RO);
 
 	/*
-	 * The writable range, minus the guard page under each CPU's kernel
-	 * stack. The stacks sit inside .bss (vectors.S reserves them there);
-	 * each CPU owns a pair of pages, the upper one is its stack and the
-	 * lower one stays unmapped, so that running off the bottom of the
+	 * The writable range, minus the guard under each CPU's kernel stack.
+	 * The stacks sit inside .bss (vectors.S reserves them there); each
+	 * CPU owns a pair of K_STACK_SIZE halves, the upper one is its stack
+	 * and the lower one stays unmapped, so that running off the bottom of the
 	 * stack faults instead of writing into the CPU below. Nothing else in
 	 * the image is left out: the linear map of RAM has a hole where the
 	 * image is, so this is the only mapping these pages have.

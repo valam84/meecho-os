@@ -51,8 +51,9 @@ typedef int _trap_proc_reg_first_check[
 /*
  * VECTOR_KERNEL decides "this frame would be in the guard page" by testing
  * bit K_STACK_SHIFT of the address, which is only the right question while
- * a stack is one page, the guard below it another, and the pair aligned to
- * both together; the emergency stacks are found by shifting the CPU number.
+ * a stack is a power of two, the guard below it the same size, and the pair
+ * aligned to both together; the emergency stacks are found by shifting the
+ * CPU number.
  */
 typedef int _trap_stack_shape_check[
 	((1UL << K_STACK_SHIFT) == K_STACK_SIZE &&

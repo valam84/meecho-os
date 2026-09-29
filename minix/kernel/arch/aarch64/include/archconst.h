@@ -44,23 +44,29 @@
 			 AARCH64_PSR_A | AARCH64_PSR_F)
 
 /*
- * One page of kernel stack per CPU. The exception frame is 34 registers,
- * 272 bytes, and nothing in the kernel recurses deeply, so a page is ample;
- * what matters more is that the stacks are page-aligned and page-apart, so
- * that an overrun lands in a guard page instead of in the neighbouring CPU's
- * stack - a guard page that is not mapped, so that it faults, and a fault
- * the EL1 vector recognises by address before it stores anything
- * (VECTOR_KERNEL in vectors.S), so that it does not recurse.
+ * Two pages of kernel stack per CPU, and below them a guard of the same
+ * size: an overrun lands there instead of in the neighbouring CPU's stack -
+ * a guard that is not mapped, so that it faults, and a fault the EL1 vector
+ * recognises by address before it stores anything (VECTOR_KERNEL in
+ * vectors.S), so that it does not recurse.
+ *
+ * Two pages, not one, by measurement (port/stack-depth.py, KERNEL-AUDIT #9).
+ * One page was chosen as "ample" and was not: do_update alone had a 5 KB
+ * frame and every live update overflowed. With that and two other frames
+ * off the stack, the deepest working path is 2.7 KB from an EL0 entry and
+ * 3.4 KB for a fault in a user copy - 84 % of a page - and a panic from the
+ * deepest point needs 5.4 KB: on one page its report would have been a
+ * report of a stack overflow instead. Linux on arm64 uses four pages.
  *
  * Written as a shift as well as a size because the vector tests one bit of
- * SP, and that only works while a stack is exactly one page and its pair of
- * pages is aligned to 2 * K_STACK_SIZE. trap.c checks the two agree.
+ * SP: that works for any power of two, as long as the pair (guard below,
+ * stack above) is aligned to 2 * K_STACK_SIZE. trap.c checks the two agree.
  *
  * Here rather than in arch_proto.h because vectors.S makes the reservation
  * and has to agree with the C side about its size.
  */
-#define K_STACK_SHIFT	AARCH64_PAGE_SHIFT
-#define K_STACK_SIZE	AARCH64_PAGE_SIZE
+#define K_STACK_SHIFT	(AARCH64_PAGE_SHIFT + 1)
+#define K_STACK_SIZE	(1 << K_STACK_SHIFT)
 
 /*
  * The emergency stack a CPU reports an overflow from: two pages, so that the

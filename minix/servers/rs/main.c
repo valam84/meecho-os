@@ -174,6 +174,7 @@ static int sef_cb_init_fresh(int UNUSED(type), sef_init_info_t *UNUSED(info))
   int *calls;
   int all_c[] = { ALL_C, NULL_C };
   int no_c[] = {  NULL_C };
+  int basic_vmc[] = { VM_BASIC_CALLS, NULL_C };
 
   /* See if we run in verbose mode. */
   env_parse("rs_verbose", "d", 0, &rs_verbose, 0, 1);
@@ -313,7 +314,18 @@ static int sef_cb_init_fresh(int UNUSED(type), sef_init_info_t *UNUSED(info))
       strlcpy(rpub->proc_name, ip->proc_name, sizeof(rpub->proc_name));
 
       /* Initialize vm call mask bitmap. */
-      calls = SRV_OR_USR(rp, SRV_VC, USR_VC) == ALL_C ? all_c : no_c;
+      /*
+       * A user process - init, and through VM's acl_fork() every process
+       * descended from it - gets the basic calls com.h names as "allowed to
+       * every process", not all of them. USR_VC says ALL_C, and taken
+       * literally that let any user make the calls VM means for PM, VFS
+       * and RS alone (fork and exit of a process slot, file mappings on
+       * VFS's behalf, live update), most of which trust their sender.
+       */
+      if (rp->r_priv.s_flags & SYS_PROC)
+          calls = SRV_VC == ALL_C ? all_c : no_c;
+      else
+          calls = basic_vmc;
       fill_call_mask(calls, NR_VM_CALLS, rpub->vm_call_mask, VM_RQ_BASE, TRUE);
 
       /* Scheduling parameters. */

@@ -151,9 +151,18 @@ int main(void)
 		if(result != OK) panic("do_sef_init_request failed!\n");
 		result = SUSPEND;	/* do not reply to RS */
 	} else if (msg.m_type == VM_PAGEFAULT) {
+		/*
+		 * Only the kernel reports page faults. A message of this type
+		 * from anyone else used to be reported and then handled all
+		 * the same - with an address and a syndrome of the sender's
+		 * choosing, ending in assertions in VM and in the kernel. Now
+		 * it is reported and dropped; the sender gets no reply, as a
+		 * faulting process never does.
+		 */
 		if (!IPC_STATUS_FLAGS_TEST(rcv_sts, IPC_FLG_MSG_FROM_KERNEL)) {
 			printf("VM: process %d faked VM_PAGEFAULT "
-					"message!\n", msg.m_source);
+					"message, ignored\n", msg.m_source);
+			continue;
 		}
 		do_pagefaults(&msg);
 		/*

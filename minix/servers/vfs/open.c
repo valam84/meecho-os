@@ -282,6 +282,13 @@ int common_open(char path[PATH_MAX], int oflags, mode_t omode, int for_exec)
   if (r != OK) {
 	if (r != SUSPEND) {
 		fp->fp_filp[fd] = NULL;
+		/*
+		 * The slot goes back free, so it goes back without the
+		 * close-on-exec bit set above: a free slot with the bit on
+		 * is what do_fcntl(F_DUPFD) asserts never exists, and any
+		 * open(O_CLOEXEC) failing after that point left one.
+		 */
+		FD_CLR(fd, &fp->fp_cloexec_set);
 		filp->filp_count = 0;
 		filp->filp_vno = NULL;
 		put_vnode(vp);

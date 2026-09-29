@@ -188,12 +188,21 @@ static void do_reply(struct worker_thread *wp)
 {
   struct vmnt *vmp = NULL;
 
-  if(who_e != VM_PROC_NR && (vmp = find_vmnt(who_e)) == NULL)
-	panic("Couldn't find vmnt for endpoint %d", who_e);
-
+  /*
+   * Who sent it is checked first, and a stranger is dropped, not a reason to
+   * stop. The main loop routes by message type alone, so anything can arrive
+   * here - and an endpoint with no vmnt that is not VM is exactly "anything":
+   * that used to be a panic, and VFS is not restartable.
+   */
   if (wp->w_task != who_e) {
 	printf("VFS: tid %d: expected %d to reply, not %d\n",
 		wp->w_tid, wp->w_task, who_e);
+	return;
+  }
+
+  if(who_e != VM_PROC_NR && (vmp = find_vmnt(who_e)) == NULL) {
+	printf("VFS: tid %d: reply from %d, which has no vmnt\n",
+		wp->w_tid, who_e);
 	return;
   }
   /* It should be impossible to trigger the following case, but it is here for

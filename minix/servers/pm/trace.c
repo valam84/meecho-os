@@ -35,6 +35,10 @@
 #include <signal.h>
 #include "mproc.h"
 
+/* A signal just delivered may have been lethal. */
+#define CHILD_GONE(rmp) \
+	(((rmp)->mp_flags & (IN_USE | EXITING)) != IN_USE)
+
 /*===========================================================================*
  *				do_trace  				     *
  *===========================================================================*/
@@ -194,16 +198,30 @@ do_trace(void)
 	child->mp_tracer = NO_TRACER;
 
 	/* Let all tracer-pending signals through the filter. */
-	for (i = 1; i < _NSIG; i++) {
+	for (i = 1; i < _NSIG && !CHILD_GONE(child); i++) {
 		if (sigismember(&child->mp_sigtrace, i)) {
 			sigdelset(&child->mp_sigtrace, i);
 			check_sig(child->mp_pid, i, FALSE /* ksig */);
 		}
 	}
 
+	/*
+	 * One of those signals may have been lethal: then the child is on
+	 * its way out, and sig_proc() on an exiting process is a panic in
+	 * PM, not a no-op. Nothing is left to resume either.
+	 */
+	if (CHILD_GONE(child)) {
+		mp->mp_reply.m_pm_lc_ptrace.data = 0;
+		return(OK);
+	}
+
 	if (m_in.m_lc_pm_ptrace.data > 0) {		/* issue signal */
 		sig_proc(child, m_in.m_lc_pm_ptrace.data, TRUE /*trace*/,
 			FALSE /* ksig */);
+		if (CHILD_GONE(child)) {
+			mp->mp_reply.m_pm_lc_ptrace.data = 0;
+			return(OK);
+		}
 	}
 
 	/* Resume the child as if nothing ever happened. */
@@ -223,6 +241,11 @@ do_trace(void)
 	if (m_in.m_lc_pm_ptrace.data > 0) {		/* issue signal */
 		sig_proc(child, m_in.m_lc_pm_ptrace.data, FALSE /*trace*/,
 			FALSE /* ksig */);
+		/* A lethal one: the child is exiting, nothing to resume. */
+		if (CHILD_GONE(child)) {
+			mp->mp_reply.m_pm_lc_ptrace.data = 0;
+			return(OK);
+		}
 	}
 
 	/* If there are any other signals waiting to be delivered,

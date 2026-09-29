@@ -43,10 +43,17 @@ int do_update(struct proc * caller, message * m_ptr)
   int src_p, dst_p, flags;
   struct proc *src_rp, *dst_rp;
   struct priv *src_privp, *dst_privp;
-  struct proc orig_src_proc;
-  struct proc orig_dst_proc;
-  struct priv orig_src_priv;
-  struct priv orig_dst_priv;
+  /*
+   * Static, not on the stack: two process slots and two privilege
+   * structures are over 5 KB on LP64 (struct proc carries a 272-byte
+   * register frame and 128-byte messages), and the kernel stack is 4 KB.
+   * On aarch64 every live update overflowed it. One copy is enough: kernel
+   * calls run under the big kernel lock and never nest.
+   */
+  static struct proc orig_src_proc;
+  static struct proc orig_dst_proc;
+  static struct priv orig_src_priv;
+  static struct priv orig_dst_priv;
   int i, r;
 
   /* Lookup slots for source and destination process. */

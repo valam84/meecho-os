@@ -36,7 +36,11 @@ int do_privctl(struct proc * caller, message * m_ptr)
   int i, r;
   struct io_range io_range;
   struct minix_mem_range mem_range;
-  struct priv priv;
+  /*
+   * Static, not on the stack: 1.3 KB on LP64 against a 4 KB kernel stack.
+   * Kernel calls run under the big kernel lock and never nest.
+   */
+  static struct priv priv;
   int irq;
 
   /* Check whether caller is allowed to make this call. Privileged processes 

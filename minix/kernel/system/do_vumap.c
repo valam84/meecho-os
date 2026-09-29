@@ -27,8 +27,14 @@ int do_vumap(struct proc *caller, message *m_ptr)
  */
   endpoint_t endpt, source, granter;
   struct proc *procp;
-  struct vumap_vir vvec[MAPVEC_NR];
-  struct vumap_phys pvec[MAPVEC_NR];
+  /*
+   * Static, not on the stack: 2.2 KB on LP64 against a 4 KB kernel stack,
+   * on the path every virtio_blk transfer takes - and verify_grant()'s
+   * printf below it is another kilobyte. Kernel calls run under the big
+   * kernel lock and never nest, so one copy is enough.
+   */
+  static struct vumap_vir vvec[MAPVEC_NR];
+  static struct vumap_phys pvec[MAPVEC_NR];
   vir_bytes vaddr, paddr, vir_addr;
   phys_bytes phys_addr;
   int i, r, proc_nr, vcount, pcount, pmax, access;

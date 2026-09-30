@@ -264,9 +264,6 @@ static void *worker_main(void *arg)
 		fp->fp_func();
 
 		fp->fp_func = NULL;	/* deliberately unset AFTER the call */
-
-		/* A socket reply that arrived while we were still busy. */
-		sdev_finish_pending(fp);
 	}
 
 	/* Perform postponed PM work, if any. */
@@ -277,6 +274,17 @@ static void *worker_main(void *arg)
 
 		fp->fp_flags &= ~FP_PM_WORK;
 	}
+
+	/*
+	 * A socket reply (or a socket driver's death) that arrived while we
+	 * were still busy, deferred by sdev_reply() or sdev_stop(). After
+	 * both kinds of work, not only normal work: a worker doing PM work
+	 * alone - a signal for a process blocked on a socket - defers a reply
+	 * just the same, and nothing else would ever deliver it. Not for a
+	 * process PM work has just freed.
+	 */
+	if (fp->fp_pid != PID_FREE)
+		sdev_finish_pending(fp);
 
 	/* Perform cleanup actions. */
 	thread_cleanup();

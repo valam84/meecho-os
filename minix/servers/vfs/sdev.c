@@ -55,14 +55,39 @@
  * will return a negative error code, and also store the same negative error
  * code in the m_type field of the 'm_ptr' message structure.
  */
+/*
+ * A request could not be sent to the socket driver: asynsend3() fails when its
+ * table is full, and a driver that stops receiving (hung, not dead) is enough
+ * to fill it. That used to be a panic at every call site. Revoke the grants
+ * made for the request, so the driver can never use them, and fail the call.
+ */
+static int
+sdev_send_failed(const char * where, int r, cp_grant_id_t grant0,
+	cp_grant_id_t grant1, cp_grant_id_t grant2)
+{
+
+	printf("VFS: asynsend in %s failed: %d\n", where, r);
+	if (GRANT_VALID(grant0))
+		(void)cpf_revoke(grant0);
+	if (GRANT_VALID(grant1))
+		(void)cpf_revoke(grant1);
+	if (GRANT_VALID(grant2))
+		(void)cpf_revoke(grant2);
+	return EIO;
+}
+
 static int
 sdev_sendrec(struct smap * sp, message * m_ptr)
 {
 	int r;
 
 	/* Send the request to the driver. */
-	if ((r = asynsend3(sp->smap_endpt, m_ptr, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in sdev_sendrec failed: %d", r);
+	if ((r = asynsend3(sp->smap_endpt, m_ptr, AMF_NOREPLY)) != OK) {
+		/* As if the driver had died: m_type carries the error. */
+		m_ptr->m_type = sdev_send_failed("sdev_sendrec", r,
+		    GRANT_INVALID, GRANT_INVALID, GRANT_INVALID);
+		return m_ptr->m_type;
+	}
 
 	/* Suspend this thread until we have received the response. */
 	self->w_task = sp->smap_endpt;
@@ -208,7 +233,7 @@ sdev_bindconn(dev_t dev, int type, vir_bytes addr, unsigned int addr_len,
 
 	/* Send the request to the driver. */
 	if ((r = asynsend3(sp->smap_endpt, &m, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in sdev_bindconn failed: %d", r);
+		return sdev_send_failed("sdev_bindconn", r, grant, GRANT_INVALID, GRANT_INVALID);
 
 	/* Suspend the process until the reply arrives. */
 	return sdev_suspend(dev, grant, GRANT_INVALID, GRANT_INVALID, -1, 0);
@@ -324,7 +349,7 @@ sdev_accept(dev_t dev, vir_bytes addr, unsigned int addr_len, int filp_flags,
 
 	/* Send the request to the driver. */
 	if ((r = asynsend3(sp->smap_endpt, &m, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in sdev_accept failed: %d", r);
+		return sdev_send_failed("sdev_accept", r, grant, GRANT_INVALID, GRANT_INVALID);
 
 	/* Suspend the process until the reply arrives. */
 	return sdev_suspend(dev, grant, GRANT_INVALID, GRANT_INVALID,
@@ -404,7 +429,7 @@ sdev_readwrite(dev_t dev, vir_bytes data_buf, size_t data_len,
 
 	/* Send the request to the driver. */
 	if ((r = asynsend3(sp->smap_endpt, &m, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in sdev_readwrite failed: %d", r);
+		return sdev_send_failed("sdev_readwrite", r, data_grant, ctl_grant, addr_grant);
 
 	/* Suspend the process until the reply arrives. */
 	return sdev_suspend(dev, data_grant, ctl_grant, addr_grant, -1,
@@ -442,7 +467,7 @@ sdev_ioctl(dev_t dev, unsigned long request, vir_bytes buf, int filp_flags)
 
 	/* Send the request to the driver. */
 	if ((r = asynsend3(sp->smap_endpt, &m, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in sdev_ioctl failed: %d", r);
+		return sdev_send_failed("sdev_ioctl", r, grant, GRANT_INVALID, GRANT_INVALID);
 
 	/* Suspend the process until the reply arrives. */
 	return sdev_suspend(dev, grant, GRANT_INVALID, GRANT_INVALID, -1, 0);
@@ -630,7 +655,8 @@ sdev_close(dev_t dev, int may_suspend)
 
 		/* Send the request to the driver. */
 		if ((r = asynsend3(sp->smap_endpt, &m, AMF_NOREPLY)) != OK)
-			panic("VFS: asynsend in sdev_bindconn failed: %d", r);
+			return sdev_send_failed("sdev_close", r,
+			    GRANT_INVALID, GRANT_INVALID, GRANT_INVALID);
 
 		/* Suspend the process until the reply arrives. */
 		return sdev_suspend(dev, GRANT_INVALID, GRANT_INVALID,
@@ -663,7 +689,7 @@ sdev_select(dev_t dev, int ops)
 
 	/* Send the request to the driver. */
 	if ((r = asynsend3(sp->smap_endpt, &m, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in sdev_select failed: %d", r);
+		return sdev_send_failed("sdev_select", r, GRANT_INVALID, GRANT_INVALID, GRANT_INVALID);
 
 	return OK;
 }
@@ -724,6 +750,23 @@ sdev_finish_accept(struct fproc * rfp, message * m_ptr)
 
 	/* Let the upper socket layer handle the rest. */
 	resume_accept(rfp, status, dev, len, rfp->fp_sdev.aux.fd);
+}
+
+/*
+ * Is this reply one that sdev_finish_accept() must handle: a new socket from a
+ * successful accept? Decided by what the process is actually waiting for as
+ * well as by the message. A driver that sent an accept reply with a socket to
+ * a process blocked in recv(), say, used to take VFS down on the assertions in
+ * sdev_finish_accept(); now sdev_finish() reports a bad reply type and the
+ * call fails with EIO.
+ */
+static int
+sdev_is_accept_reply(struct fproc * rfp, const message * m_ptr)
+{
+
+	return (rfp->fp_sdev.callnr == VFS_ACCEPT &&
+	    m_ptr->m_type == SDEV_ACCEPT_REPLY &&
+	    m_ptr->m_lsockdriver_vfs_accept_reply.sock_id >= 0);
 }
 
 /*
@@ -916,15 +959,33 @@ sdev_stop(struct fproc * rfp)
 
 	assert(rfp->fp_blocked_on == FP_BLOCKED_ON_SDEV);
 
-	rfp->fp_blocked_on = FP_BLOCKED_ON_NONE;
-
 	/*
 	 * We use one single approach both here and when stopping worker
 	 * threads: the reply message's m_type is set to an error code (always
 	 * EIO for now) instead of an actual SDEV_ reply code.  We test for
 	 * this case in non-suspending calls as well as in sdev_finish().
 	 */
+	memset(&m, 0, sizeof(m));
 	m.m_type = EIO;
+
+	/*
+	 * The same window as in sdev_reply(): the process is suspended on the
+	 * socket, but its worker thread is still finishing the call - the PFS
+	 * round trip at the end of close(2), for one. Answering the process
+	 * now would let its next call meet that worker: "process has two
+	 * calls", by way of a socket driver dying (or being restarted) instead
+	 * of replying. Defer the EIO the same way. A real reply that arrived
+	 * before the driver died is kept: the driver did answer.
+	 */
+	if (rfp->fp_worker != NULL) {
+		if (!rfp->fp_sdev.reply_pending) {
+			rfp->fp_sdev.reply = m;
+			rfp->fp_sdev.reply_pending = TRUE;
+		}
+		return;
+	}
+
+	rfp->fp_blocked_on = FP_BLOCKED_ON_NONE;
 	sdev_finish(rfp, &m);
 }
 
@@ -947,7 +1008,18 @@ sdev_cancel(void)
 	/* The suspension status must just have been cleared by the caller. */
 	assert(fp->fp_blocked_on == FP_BLOCKED_ON_NONE);
 
-	if ((sp = get_smap_by_dev(fp->fp_sdev.dev, &sock_id)) != NULL) {
+	if (fp->fp_sdev.reply_pending) {
+		/*
+		 * The driver has already answered (or died), and the answer
+		 * was deferred while a worker was busy for this process.
+		 * Cancelling now would ask about a request the driver no
+		 * longer knows, and a socket driver does not answer that at
+		 * all - the process would wait here forever. Deliver what we
+		 * have instead.
+		 */
+		m = fp->fp_sdev.reply;
+		fp->fp_sdev.reply_pending = FALSE;
+	} else if ((sp = get_smap_by_dev(fp->fp_sdev.dev, &sock_id)) != NULL) {
 		/* Prepare the request message. */
 		memset(&m, 0, sizeof(m));
 		m.m_type = SDEV_CANCEL;
@@ -973,8 +1045,7 @@ sdev_cancel(void)
 	 * are already operating from a working thread here, we need not spawn
 	 * an additional worker thread for this case.
 	 */
-	if (m.m_type == SDEV_ACCEPT_REPLY &&
-	    m.m_lsockdriver_vfs_accept_reply.sock_id >= 0)
+	if (sdev_is_accept_reply(fp, &m))
 		sdev_finish_accept(fp, &m);
 	else
 		sdev_finish(fp, &m);
@@ -1000,8 +1071,7 @@ sdev_finish_pending(struct fproc * rfp)
 	rfp->fp_blocked_on = FP_BLOCKED_ON_NONE;
 
 	/* As in sdev_cancel(): we are on a worker thread already. */
-	if (m.m_type == SDEV_ACCEPT_REPLY &&
-	    m.m_lsockdriver_vfs_accept_reply.sock_id >= 0)
+	if (sdev_is_accept_reply(rfp, &m))
 		sdev_finish_accept(rfp, &m);
 	else
 		sdev_finish(rfp, &m);
@@ -1043,16 +1113,22 @@ sdev_reply(void)
 		req_id = m_in.m_lsockdriver_vfs_recv_reply.req_id;
 		break;
 	case SDEV_SELECT1_REPLY:
-		dev = make_smap_dev(sp,
-		    m_in.m_lsockdriver_vfs_select_reply.sock_id);
-		select_sdev_reply1(dev,
-		    m_in.m_lsockdriver_vfs_select_reply.status);
-		return;
 	case SDEV_SELECT2_REPLY:
+		/* make_smap_dev() asserts a valid socket ID; check it here. */
+		if (m_in.m_lsockdriver_vfs_select_reply.sock_id < 0) {
+			printf("VFS: ignoring select reply from %d for bad "
+			    "socket %d\n", who_e,
+			    m_in.m_lsockdriver_vfs_select_reply.sock_id);
+			return;
+		}
 		dev = make_smap_dev(sp,
 		    m_in.m_lsockdriver_vfs_select_reply.sock_id);
-		select_sdev_reply2(dev,
-		    m_in.m_lsockdriver_vfs_select_reply.status);
+		if (call_nr == SDEV_SELECT1_REPLY)
+			select_sdev_reply1(dev,
+			    m_in.m_lsockdriver_vfs_select_reply.status);
+		else
+			select_sdev_reply2(dev,
+			    m_in.m_lsockdriver_vfs_select_reply.status);
 		return;
 	default:
 		printf("VFS: ignoring unknown sock dev reply %d from %d\n",
@@ -1100,8 +1176,7 @@ sdev_reply(void)
 		rfp->fp_sdev.reply = m_in;
 		rfp->fp_sdev.reply_pending = TRUE;
 		return;
-	} else if (call_nr == SDEV_ACCEPT_REPLY &&
-	    m_in.m_lsockdriver_vfs_accept_reply.sock_id >= 0) {
+	} else if (sdev_is_accept_reply(rfp, &m_in)) {
 		/*
 		 * For accept replies that return a new socket, we need to
 		 * spawn a worker thread, because accept calls may block (so

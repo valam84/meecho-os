@@ -19,6 +19,12 @@
 #include <errno.h>
 #include <assert.h>
 
+#include <machine/archtypes.h>
+#include <minix/timers.h>
+#include "kernel/const.h"
+#include "kernel/config.h"
+#include "kernel/proc.h"	/* struct priv: the parent's asynsend table */
+
 #include "glo.h"
 #include "vm.h"
 #include "proto.h"
@@ -105,6 +111,30 @@ int do_fork(message *msg)
 	vir = msgaddr;
 	if (handle_memory_once(vmp, vir, sizeof(message), 1) != OK)
 	    panic("do_fork: handle_memory for parent failed\n");
+  }
+
+  {
+	/*
+	 * The same for the parent's asynsend table, and here it is not an
+	 * optimisation. The kernel writes each entry's result back into that
+	 * table when the message is delivered - which can be long after this
+	 * fork has made every page of the parent copy-on-write, and so
+	 * read-only. The kernel cannot wait for VM on that path; the write
+	 * fails, the entry is never marked done, and the same message is
+	 * delivered again, forever. That is what "minix-service refresh"
+	 * did: RS forks the new instance while its message to the old one is
+	 * still in the table, and the system spins on "asyn failed for
+	 * message entry in rs". Only a registered table (the kernel keeps
+	 * s_asyntab while entries are pending) needs it.
+	 */
+	static struct priv ppriv;	/* 1.3 KB; VM has one thread */
+
+	if (sys_getpriv(&ppriv, vmp->vm_endpoint) == OK &&
+	    ppriv.s_asyntab != (vir_bytes)-1 && ppriv.s_asynsize > 0 &&
+	    handle_memory_once(vmp, ppriv.s_asyntab,
+	    ppriv.s_asynsize * sizeof(asynmsg_t), 1) != OK)
+		printf("VM: fork: parent %d's asynsend table stays "
+		    "copy-on-write\n", vmp->vm_endpoint);
   }
 
   /* Inform caller of new child endpoint. */

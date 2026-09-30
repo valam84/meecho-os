@@ -205,8 +205,15 @@ cdev_opcl(int op, dev_t dev, int fd, int flags)
 	}
 
 	/* Send the request to the driver. */
-	if ((r = asynsend3(dp->dmap_driver, &dev_mess, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in cdev_opcl failed: %d", r);
+	/*
+	 * Here and below: asynsend3() fails when its table is full, which a
+	 * driver that stops receiving (hung, not dead) is enough to cause.
+	 * That used to be a panic; it fails this request instead.
+	 */
+	if ((r = asynsend3(dp->dmap_driver, &dev_mess, AMF_NOREPLY)) != OK) {
+		printf("VFS: asynsend in cdev_opcl failed: %d\n", r);
+		return EIO;
+	}
 
 	/* Block the thread waiting for a reply. */
 	self->w_task = dp->dmap_driver;
@@ -329,8 +336,12 @@ cdev_io(int op, dev_t dev, endpoint_t proc_e, vir_bytes buf, off_t pos,
 		  dev_mess.m_vfs_lchardriver_readwrite.flags |= CDEV_NONBLOCK;
 
 	/* Send the request to the driver. */
-	if ((r = asynsend3(dp->dmap_driver, &dev_mess, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in cdev_io failed: %d", r);
+	if ((r = asynsend3(dp->dmap_driver, &dev_mess, AMF_NOREPLY)) != OK) {
+		printf("VFS: asynsend in cdev_io failed: %d\n", r);
+		if (GRANT_VALID(gid))
+			(void)cpf_revoke(gid);
+		return EIO;
+	}
 
 	/* Suspend the calling process until a reply arrives. */
 	fp->fp_cdev.dev = dev;
@@ -368,8 +379,10 @@ cdev_select(dev_t dev, int ops)
 	dev_mess.m_vfs_lchardriver_select.ops = ops;
 
 	/* Send the request to the driver. */
-	if ((r = asynsend3(dp->dmap_driver, &dev_mess, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in cdev_select failed: %d", r);
+	if ((r = asynsend3(dp->dmap_driver, &dev_mess, AMF_NOREPLY)) != OK) {
+		printf("VFS: asynsend in cdev_select failed: %d\n", r);
+		return EIO;	/* "not sent", which callers expect */
+	}
 
 	return OK;
 }
@@ -396,8 +409,18 @@ cdev_cancel(dev_t dev, endpoint_t endpt __unused, cp_grant_id_t grant)
 	dev_mess.m_vfs_lchardriver_cancel.id = fp->fp_endpoint;
 
 	/* Send the request to the driver. */
-	if ((r = asynsend3(dp->dmap_driver, &dev_mess, AMF_NOREPLY)) != OK)
-		panic("VFS: asynsend in cdev_cancel failed: %d", r);
+	if ((r = asynsend3(dp->dmap_driver, &dev_mess, AMF_NOREPLY)) != OK) {
+		/*
+		 * The cancel cannot be sent. Revoke the grant, so the driver
+		 * can no longer touch the buffer, and end the call as a
+		 * cancel does; a late reply finds the process not blocked
+		 * and is dropped.
+		 */
+		printf("VFS: asynsend in cdev_cancel failed: %d\n", r);
+		if (GRANT_VALID(grant))
+			(void)cpf_revoke(grant);
+		return EINTR;
+	}
 
 	/* Suspend this thread until we have received the response. */
 	self->w_task = dp->dmap_driver;

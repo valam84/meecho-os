@@ -117,8 +117,20 @@ int fl;
 
 	first_slot = 0;
 	next_slot = dst_ind;
-	if (next_slot >= ASYN_NR)	/* Cleanup failed */
-		panic("asynsend: msgtable full");
+	if (next_slot >= ASYN_NR) {
+		/*
+		 * Cleanup failed: every slot holds a message its destination
+		 * has not taken yet. A slot frees only when the receiver
+		 * receives, so one hung (not dead) destination is enough to
+		 * get here - and that used to be a panic in the sender, which
+		 * for VFS means the whole system for one stuck driver. Give
+		 * the kernel its table back, since it was told to stop above,
+		 * and let the caller fail this one request.
+		 */
+		inside = 0;
+		senda_reload();
+		return ENOSPC;
+	}
   }
 
   fl |= AMF_VALID;	/* Mark in use */

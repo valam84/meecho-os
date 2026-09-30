@@ -67,6 +67,25 @@ advance(struct vnode *dirp, struct lookup *resolve, struct fproc *rfp)
 	return(NULL);
   }
 
+  /*
+   * The node must be on a file system VFS has mounted. Which endpoint it is on
+   * is the file system's answer, and an answer naming no mounted file system -
+   * a buggy FS, or one that died and came back - used to be a panic further
+   * down. It is a failed lookup; the vmnt lock is released as lookup()
+   * releases it on its own errors.
+   */
+  if (find_vmnt(res.fs_e) == NULL) {
+	printf("VFS: lookup answered with endpoint %d, which has no vmnt\n",
+	    res.fs_e);
+	unlock_vnode(new_vp);
+	if (*(resolve->l_vmp) != NULL) {
+		unlock_vmnt(*(resolve->l_vmp));
+		*(resolve->l_vmp) = NULL;
+	}
+	err_code = EIO;
+	return(NULL);
+  }
+
   /* Check whether we already have a vnode for that file */
   if ((vp = find_vnode(res.fs_e, res.inode_nr)) != NULL) {
 	unlock_vnode(new_vp);	/* Don't need this anymore */
@@ -99,8 +118,9 @@ advance(struct vnode *dirp, struct lookup *resolve, struct fproc *rfp)
 	new_vp->v_gid = res.gid;
 	new_vp->v_sdev = res.dev;
 
-	if( (vmp = find_vmnt(new_vp->v_fs_e)) == NULL)
-		  panic("advance: vmnt not found");
+	/* Checked right after lookup(), and nothing in between yields. */
+	vmp = find_vmnt(new_vp->v_fs_e);
+	assert(vmp != NULL);
 
 	new_vp->v_vmnt = vmp;
 	new_vp->v_dev = vmp->m_dev;
@@ -499,7 +519,12 @@ lookup(struct vnode *start_node, struct lookup *resolve, node_details_t *result_
 		/* Find the vmnt that represents the partition on
 		 * which we "climb up". */
 		if ((vmp = find_vmnt(res.fs_e)) == NULL) {
-			panic("VFS lookup: can't find parent vmnt");
+			/* The FS named an endpoint VFS has not mounted. */
+			printf("VFS: path lookup error; no vmnt for %d\n",
+			    res.fs_e);
+			if (vmpres) unlock_vmnt(vmpres);
+			*(resolve->l_vmp) = NULL;
+			return(EIO);
 		}
 
 		/* Make sure that the child FS does not feed a bogus path

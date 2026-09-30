@@ -66,7 +66,9 @@ bdev_sendrec(endpoint_t driver_e, message * mess_ptr)
 			printf("VFS: deadlock talking to %d\n", driver_e);
 			return EIO;
 		}
-		panic("VFS: uncaught bdev_sendrec failure: %d", r);
+		/* Anything else from the driver or IPC: fail this request. */
+		printf("VFS: bdev_sendrec to %d failed: %d\n", driver_e, r);
+		return EIO;
 	}
 
 	return OK;

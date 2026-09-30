@@ -101,8 +101,14 @@ int drv_sendrec(endpoint_t drv_e, message *reqmp)
 		return EIO;
 	}
 
-	if ((dp = get_dmap_by_endpt(drv_e)) == NULL)
-		panic("driver endpoint %d invalid", drv_e);
+	/*
+	 * The driver can be unmapped between the caller finding it and this
+	 * call - it died, or RS is restarting it. The request fails.
+	 */
+	if ((dp = get_dmap_by_endpt(drv_e)) == NULL) {
+		printf("VFS: driver endpoint %d is gone\n", drv_e);
+		return EIO;
+	}
 
 	lock_dmap(dp);
 	if (dp->dmap_servicing != INVALID_THREAD)

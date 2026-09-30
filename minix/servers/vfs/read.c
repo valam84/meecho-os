@@ -165,8 +165,13 @@ int read_write(struct fproc *rfp, int rw_flag, int fd, struct filp *f,
 		return EINVAL;
 	}
 
+	/*
+	 * A special file without a device: what the file system said about
+	 * the node, or what root gave mknod(2). Neither is a reason for VFS to
+	 * stop; the device is not there, which is ENXIO.
+	 */
 	if (vp->v_sdev == NO_DEV)
-		panic("VFS: read_write tries to access char dev NO_DEV");
+		return(ENXIO);
 
 	dev = vp->v_sdev;
 	op = (rw_flag == READING ? CDEV_READ : CDEV_WRITE);
@@ -207,13 +212,13 @@ int read_write(struct fproc *rfp, int rw_flag, int fd, struct filp *f,
 	}
 
 	if (vp->v_sdev == NO_DEV)
-		panic("VFS: read_write tries to access sock dev NO_DEV");
+		return(ENXIO);	/* as for character devices above */
 
 	r = sdev_readwrite(vp->v_sdev, buf, size, 0, 0, 0, 0, 0, rw_flag,
 	    f->filp_flags, 0);
   } else if (S_ISBLK(vp->v_mode)) {	/* Block special files. */
 	if (vp->v_sdev == NO_DEV)
-		panic("VFS: read_write tries to access block dev NO_DEV");
+		return(ENXIO);	/* as for character devices above */
 
 	lock_bsf();
 

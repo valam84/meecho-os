@@ -67,7 +67,11 @@ static int create_pipe(int fil_des[2], int flags)
   struct node_details res;
 
   /* Get a lock on PFS */
-  if ((vmp = find_vmnt(PFS_PROC_NR)) == NULL) panic("PFS gone");
+  /* No PFS (it died): no pipe, rather than no VFS. */
+  if ((vmp = find_vmnt(PFS_PROC_NR)) == NULL) {
+	printf("VFS: pipe(2) without PFS\n");
+	return(EIO);
+  }
   if ((r = lock_vmnt(vmp, VMNT_READ)) != OK) return(r);
 
   /* See if a free vnode is available */
@@ -156,8 +160,11 @@ map_vnode(struct vnode *vp, endpoint_t map_to_fs_e)
 
   if(vp->v_mapfs_e != NONE) return(OK);	/* Already mapped; nothing to do. */
 
-  if ((vmp = find_vmnt(map_to_fs_e)) == NULL)
-	panic("Can't map to unknown endpoint");
+  if ((vmp = find_vmnt(map_to_fs_e)) == NULL) {
+	/* As in create_pipe(): the FIFO cannot be opened without PFS. */
+	printf("VFS: cannot map a FIFO to %d, not mounted\n", map_to_fs_e);
+	return(EIO);
+  }
   if ((r = lock_vmnt(vmp, VMNT_WRITE)) != OK) {
 	if (r == EBUSY)
 		vmp = NULL;	/* Already locked, do not unlock */

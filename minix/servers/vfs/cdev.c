@@ -313,10 +313,11 @@ cdev_io(int op, dev_t dev, endpoint_t proc_e, vir_bytes buf, off_t pos,
 	if (op != CDEV_IOCTL) {
 		gid = cpf_grant_magic(dp->dmap_driver, proc_e, buf,
 		    (size_t)bytes, (op == CDEV_READ) ? CPF_WRITE : CPF_READ);
-		if (!GRANT_VALID(gid))
-			panic("VFS: cpf_grant_magic failed");
 	} else
 		gid = make_ioctl_grant(dp->dmap_driver, proc_e, buf, bytes);
+	/* No grant could be made (VFS's heap, or a leak): was a panic. */
+	if (!GRANT_VALID(gid))
+		return ENOMEM;
 
 	/* Set up the message that will be sent to the driver. */
 	memset(&dev_mess, 0, sizeof(dev_mess));

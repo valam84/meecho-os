@@ -76,6 +76,21 @@ sdev_send_failed(const char * where, int r, cp_grant_id_t grant0,
 	return EIO;
 }
 
+/*
+ * No grant could be made for a request (VFS's heap, or a leak): revoke the
+ * ones already made for it and fail it with ENOMEM. That used to be a panic.
+ */
+static int
+sdev_grant_failed(cp_grant_id_t grant0, cp_grant_id_t grant1)
+{
+
+	if (GRANT_VALID(grant0))
+		(void)cpf_revoke(grant0);
+	if (GRANT_VALID(grant1))
+		(void)cpf_revoke(grant1);
+	return ENOMEM;
+}
+
 static int
 sdev_sendrec(struct smap * sp, message * m_ptr)
 {
@@ -218,7 +233,7 @@ sdev_bindconn(dev_t dev, int type, vir_bytes addr, unsigned int addr_len,
 	grant = cpf_grant_magic(sp->smap_endpt, who_e, addr, addr_len,
 	    CPF_READ);
 	if (!GRANT_VALID(grant))
-		panic("VFS: cpf_grant_magic failed");
+		return ENOMEM;
 
 	/* Prepare the request message. */
 	memset(&m, 0, sizeof(m));
@@ -332,7 +347,7 @@ sdev_accept(dev_t dev, vir_bytes addr, unsigned int addr_len, int filp_flags,
 		grant = cpf_grant_magic(sp->smap_endpt, who_e, addr, addr_len,
 		    CPF_WRITE);
 		if (!GRANT_VALID(grant))
-			panic("VFS: cpf_grant_magic failed");
+			return ENOMEM;
 	} else
 		grant = GRANT_INVALID;
 
@@ -392,21 +407,21 @@ sdev_readwrite(dev_t dev, vir_bytes data_buf, size_t data_len,
 		data_grant = cpf_grant_magic(sp->smap_endpt, who_e, data_buf,
 		    data_len, bits);
 		if (!GRANT_VALID(data_grant))
-			panic("VFS: cpf_grant_magic failed");
+			return ENOMEM;
 	}
 
 	if (ctl_buf != 0) {
 		ctl_grant = cpf_grant_magic(sp->smap_endpt, who_e, ctl_buf,
 		    ctl_len, bits);
 		if (!GRANT_VALID(ctl_grant))
-			panic("VFS: cpf_grant_magic failed");
+			return sdev_grant_failed(data_grant, GRANT_INVALID);
 	}
 
 	if (addr_buf != 0) {
 		addr_grant = cpf_grant_magic(sp->smap_endpt, who_e, addr_buf,
 		    addr_len, bits);
 		if (!GRANT_VALID(addr_grant))
-			panic("VFS: cpf_grant_magic failed");
+			return sdev_grant_failed(data_grant, ctl_grant);
 	}
 
 	/* Prepare the request message. */
@@ -453,6 +468,8 @@ sdev_ioctl(dev_t dev, unsigned long request, vir_bytes buf, int filp_flags)
 
 	/* Allocate resources. */
 	grant = make_ioctl_grant(sp->smap_endpt, who_e, buf, request);
+	if (!GRANT_VALID(grant))
+		return ENOMEM;
 
 	/* Prepare the request message. */
 	memset(&m, 0, sizeof(m));
@@ -492,7 +509,7 @@ sdev_setsockopt(dev_t dev, int level, int name, vir_bytes addr,
 	/* Allocate resources. */
 	grant = cpf_grant_magic(sp->smap_endpt, who_e, addr, len, CPF_READ);
 	if (!GRANT_VALID(grant))
-		panic("VFS: cpf_grant_magic failed");
+		return ENOMEM;
 
 	/* Prepare the request message. */
 	memset(&m, 0, sizeof(m));
@@ -545,7 +562,7 @@ sdev_get(dev_t dev, int type, int level, int name, vir_bytes addr,
 	/* Allocate resources. */
 	grant = cpf_grant_magic(sp->smap_endpt, who_e, addr, *len, CPF_WRITE);
 	if (!GRANT_VALID(grant))
-		panic("VFS: cpf_grant_magic failed");
+		return ENOMEM;
 
 	/* Prepare the request message. */
 	memset(&m, 0, sizeof(m));

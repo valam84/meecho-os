@@ -88,8 +88,10 @@ make_ioctl_grant(endpoint_t driver_e, endpoint_t user_e, vir_bytes buf,
 	 */
 	grant = cpf_grant_magic(driver_e, user_e, buf, size, access);
 
-	if (!GRANT_VALID(grant))
-		panic("VFS: cpf_grant_magic failed");
-
+	/*
+	 * Always a grant, even for an ioctl without data, so GRANT_INVALID
+	 * here means only that no grant could be made (VFS's heap, or a leak).
+	 * That used to be a panic; the callers now fail the ioctl with ENOMEM.
+	 */
 	return grant;
 }

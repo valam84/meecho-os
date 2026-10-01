@@ -5,6 +5,15 @@
  * back the response.
  */
 
+/*
+ * Grants: when cpf_grant_*() fails here, the request fails with ENOMEM, and
+ * any grant already made for it is revoked. Each of these used to be a panic.
+ * The grant table grows by malloc() up to GRANT_MAX_IDX, so a failure means
+ * VFS's heap is exhausted or grants are leaking - neither a reason to take the
+ * whole system down with VFS, and the caller of every req_*() already handles
+ * an error from the file system.
+ */
+
 #include "fs.h"
 #include <minix/com.h>
 #include <minix/const.h>
@@ -38,7 +47,7 @@ static int req_breadwrite_actual(endpoint_t fs_e, endpoint_t user_e, dev_t dev, 
   grant_id = cpf_grant_magic(fs_e, user_e, user_addr, num_of_bytes,
 			(rw_flag == READING ? CPF_WRITE : CPF_READ) | cpflag);
   if(grant_id == -1)
-	  panic("req_breadwrite: cpf_grant_magic failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = rw_flag == READING ? REQ_BREAD : REQ_BWRITE;
@@ -184,7 +193,7 @@ int req_create(
   len = strlen(path) + 1;
   grant_id = cpf_grant_direct(fs_e, (vir_bytes) path, len, CPF_READ);
   if (grant_id == -1)
-	panic("req_create: cpf_grant_direct failed");
+	return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_CREATE;
@@ -241,7 +250,7 @@ int req_statvfs(endpoint_t fs_e, struct statvfs *buf)
   grant_id = cpf_grant_direct(fs_e, (vir_bytes) buf, sizeof(struct statvfs),
 			CPF_WRITE);
   if(grant_id == GRANT_INVALID)
-	panic("req_statvfs: cpf_grant_direct failed");
+	return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_STATVFS;
@@ -312,8 +321,7 @@ static int req_getdents_actual(
   }
 
   if (grant_id < 0)
-	panic("req_getdents: cpf_grant_direct/cpf_grant_magic failed: %d",
-								grant_id);
+	return(ENOMEM);
 
   m.m_type = REQ_GETDENTS;
   m.m_vfs_fs_getdents.inode = inode_nr;
@@ -401,7 +409,7 @@ int req_link(
 
   grant_id = cpf_grant_direct(fs_e, (vir_bytes)lastc, len, CPF_READ);
   if(grant_id == -1)
-	  panic("req_link: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_LINK;
@@ -444,7 +452,7 @@ int req_lookup(
   grant_id = cpf_grant_direct(fs_e, (vir_bytes) resolve->l_path, PATH_MAX,
 			      CPF_READ | CPF_WRITE);
   if(grant_id == -1)
-	  panic("req_lookup: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   flags = resolve->l_flags;
   len = strlen(resolve->l_path) + 1;
@@ -469,8 +477,10 @@ int req_lookup(
 
 	grant_id2 = cpf_grant_direct(fs_e, (vir_bytes) &credentials,
 				     sizeof(credentials), CPF_READ);
-	if(grant_id2 == -1)
-		panic("req_lookup: cpf_grant_direct failed");
+	if(grant_id2 == -1) {
+		cpf_revoke(grant_id);
+		return(ENOMEM);
+	}
 
 	m.m_vfs_fs_lookup.grant_ucred	= grant_id2;
 	m.m_vfs_fs_lookup.ucred_size	= sizeof(credentials);
@@ -542,7 +552,7 @@ int req_mkdir(
   len = strlen(lastc) + 1;
   grant_id = cpf_grant_direct(fs_e, (vir_bytes)lastc, len, CPF_READ);
   if(grant_id == -1)
-	  panic("req_mkdir: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_MKDIR;
@@ -582,7 +592,7 @@ int req_mknod(
   len = strlen(lastc) + 1;
   grant_id = cpf_grant_direct(fs_e, (vir_bytes)lastc, len, CPF_READ);
   if(grant_id == -1)
-	  panic("req_mknod: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_MKNOD;
@@ -676,7 +686,7 @@ int req_newdriver(
   len = strlen(label) + 1;
   grant_id = cpf_grant_direct(fs_e, (vir_bytes) label, len, CPF_READ);
   if (grant_id == -1)
-	panic("req_newdriver: cpf_grant_direct failed");
+	return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_NEW_DRIVER;
@@ -729,7 +739,7 @@ static int req_rdlink_actual(endpoint_t fs_e, ino_t inode_nr,
 	grant_id = cpf_grant_magic(fs_e, proc_e, buf, len, CPF_WRITE | cpflag);
   }
   if (grant_id == -1)
-	  panic("req_rdlink: cpf_grant_magic failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_RDLINK;
@@ -798,7 +808,7 @@ int req_readsuper(
   len = strlen(label)+1;
   grant_id = cpf_grant_direct(fs_e, (vir_bytes) label, len, CPF_READ);
   if (grant_id == -1)
-	  panic("req_readsuper: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_READSUPER;
@@ -846,7 +856,7 @@ static int req_readwrite_actual(endpoint_t fs_e, ino_t inode_nr, off_t pos,
   grant_id = cpf_grant_magic(fs_e, user_e, user_addr, num_of_bytes,
 			     (rw_flag==READING ? CPF_WRITE:CPF_READ) | cpflag);
   if (grant_id == -1)
-	  panic("req_readwrite: cpf_grant_magic failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = rw_flag == READING ? REQ_READ : REQ_WRITE;
@@ -906,8 +916,12 @@ int req_peek(endpoint_t fs_e, ino_t inode_nr, off_t pos, unsigned int bytes)
 
   memset(&m, 0, sizeof(m));
 
-  if (ex64hi(pos) != 0)
-	  panic("req_peek: pos too large");
+  /*
+   * No "pos too large" panic any more: seek_pos is an off_t, 64 bits, and
+   * the file system checks the position itself (fsdriver_peek()). The limit
+   * was left from a message with a 32-bit position, and a file mapped at an
+   * offset of 4 GiB or more reached it - from an ordinary mmap(2).
+   */
 
   /* Fill in request message */
   m.m_type = REQ_PEEK;
@@ -934,12 +948,14 @@ req_rename(endpoint_t fs_e, ino_t old_dir, char *old_name, ino_t new_dir, char *
   len_old = strlen(old_name) + 1;
   gid_old = cpf_grant_direct(fs_e, (vir_bytes) old_name, len_old, CPF_READ);
   if(gid_old == -1)
-	  panic("req_rename: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   len_new = strlen(new_name) + 1;
   gid_new = cpf_grant_direct(fs_e, (vir_bytes) new_name, len_new, CPF_READ);
-  if(gid_new == -1)
-	  panic("req_rename: cpf_grant_direct failed");
+  if(gid_new == -1) {
+	  cpf_revoke(gid_old);
+	  return(ENOMEM);
+  }
 
   /* Fill in request message */
   m.m_type = REQ_RENAME;
@@ -974,7 +990,7 @@ req_rmdir(endpoint_t fs_e, ino_t inode_nr, char *lastc)
   len = strlen(lastc) + 1;
   grant_id = cpf_grant_direct(fs_e, (vir_bytes) lastc, len, CPF_READ);
   if(grant_id == -1)
-	  panic("req_rmdir: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_RMDIR;
@@ -1013,14 +1029,14 @@ static int req_slink_actual(
   len = strlen(lastc) + 1;
   gid_name = cpf_grant_direct(fs_e, (vir_bytes) lastc, len, CPF_READ);
   if (gid_name == GRANT_INVALID)
-	  panic("req_slink: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   gid_buf = cpf_grant_magic(fs_e, proc_e, path_addr, path_length,
 	CPF_READ | cpflag);
 
   if (gid_buf == GRANT_INVALID) {
 	  cpf_revoke(gid_name);
-	  panic("req_slink: cpf_grant_magic failed");
+	  return(ENOMEM);
   }
 
   /* Fill in request message */
@@ -1089,7 +1105,7 @@ int req_stat_actual(endpoint_t fs_e, ino_t inode_nr, endpoint_t proc_e,
 	CPF_WRITE | cpflag);
 
   if (grant_id < 0)
-	panic("req_stat: cpf_grant_* failed");
+	return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_STAT;
@@ -1157,7 +1173,7 @@ req_unlink(endpoint_t fs_e, ino_t inode_nr, char *lastc)
   len = strlen(lastc) + 1;
   grant_id = cpf_grant_direct(fs_e, (vir_bytes) lastc, len, CPF_READ);
   if(grant_id == -1)
-	  panic("req_unlink: cpf_grant_direct failed");
+	  return(ENOMEM);
 
   /* Fill in request message */
   m.m_type = REQ_UNLINK;

@@ -164,6 +164,8 @@ bdev_ioctl(dev_t dev, endpoint_t proc_e, unsigned long req, vir_bytes buf)
 
 	/* Set up a grant if necessary. */
 	grant = make_ioctl_grant(dp->dmap_driver, proc_e, buf, req);
+	if (!GRANT_VALID(grant))
+		return ENOMEM;	/* no grant could be made; see device.c */
 
 	/* Set up the message passed to the driver. */
 	memset(&dev_mess, 0, sizeof(dev_mess));

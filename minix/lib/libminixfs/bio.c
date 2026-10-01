@@ -263,7 +263,15 @@ void
 lmfs_bflush(dev_t dev)
 {
 
-	/* First flush any dirty blocks on this device to disk, and the disk's
+	/* Close the open journal transaction first.  Its blocks are pinned:
+	 * lmfs_flushdev() does not write them home and lmfs_invalidate() may
+	 * not throw them away, so while they are pinned this request can do
+	 * neither half of its job.  A flush request never arrives in the
+	 * middle of an operation, so the transaction holds whole ones.
+	 */
+	lmfs_journal_sync();
+
+	/* Then flush any dirty blocks on this device to disk, and the disk's
 	 * own cache to the medium: the device is being closed, and what was
 	 * written to it raw is expected to be there when it is next opened.
 	 */

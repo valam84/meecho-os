@@ -797,6 +797,16 @@ void lmfs_invalidate(
 
   for (bp = &buf[0]; bp < &buf[nr_bufs]; bp++) {
 	if (bp->lmfs_dev == device) {
+		/* A held block is in use, and its memory may not go away
+		 * under the holder.  Between requests the only holder is the
+		 * journal, and its blocks outlive lmfs_bflush()'s commit only
+		 * when that commit failed - so they carry metadata that is on
+		 * no disk yet.  Purging them lost those changes and left the
+		 * journal pointing at unmapped memory: the next commit read
+		 * NULL and the file system died.
+		 */
+		if (bp->lmfs_count > 0)
+			continue;
 		assert(bp->data);
 		assert(bp->lmfs_bytes > 0);
 		munmap_t(bp->data, bp->lmfs_bytes);

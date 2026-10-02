@@ -85,8 +85,17 @@ int minix_mount(char *special, char *name, int mountflags, int srvflags,
 		}
 	}
   } else {
-		/* label to long? */
-		if (strlen(type) < MNT_LABEL_LEN) {
+		/* The running server is found by its label.  That is the type
+		 * unless rslabel= names it: the root file system server is
+		 * started by /etc/rc with flags mount(8) does not pass, and
+		 * its type is still "mfs", not its label.
+		 */
+		rslabel = find_rslabel(args);
+		if (rslabel != NULL) {
+			snprintf(label, MNT_LABEL_LEN, "%s", rslabel);
+			free(rslabel);
+		} else if (strlen(type) < MNT_LABEL_LEN) {
+			/* label to long? */
 			snprintf(label, MNT_LABEL_LEN, "%s", type);
 		} else {
 			errno = ENOMEM;
@@ -206,7 +215,7 @@ char *find_rslabel(char *args_line)
   if (args_line == NULL) return NULL;
 
   /* copy the input args_line we are going to modify it*/
-  input = strndup(args_line,20);
+  input = strdup(args_line);
   if (input == NULL) /* EOM */
 	return NULL; /* it is not that bad to not find a label */
 	

@@ -107,7 +107,7 @@ fi
 
 if [ "`sysenv bin_img`" = 1 ]
 then
-    bin_img="-i "
+    bin_img="-c "
 fi
 
 if sysenv cdproberoot >/dev/null
@@ -157,8 +157,23 @@ then
 fi
 
 # Change root from temporary boot ramdisk to the configure root device
+#
+# The root file system server is started here, not by mount(8), for one
+# flag: -f, never restart.  A restart of the root cannot work.  RS would
+# read the binary back through VFS from the very file system that died and
+# wait for it forever (the machine just stops answering); with an in-memory
+# copy (bin_img=1) it gets further, but the new instance has to take over
+# the state of the one that crashed, fails to, and the mount is gone all the
+# same - VFS cannot put a new server under every process's open files.
+# Without a restart the dead server is cleaned up at once, and VFS, seeing
+# the root file system exit, says so and stops the machine.  Measured with
+# port/test/audit/rootfs-crash.py.  The label is the one mount(8) would
+# make; rslabel= is how mount -e finds the server while the type stays mfs.
 if ! sysenv bootramdisk >/dev/null; then
-	mount -n $bin_img"$rootdevname" /
+	rootlabel=fs_`printf %.12s "${rootdevname##*/}"`
+	minix-service $bin_img-f up /service/mfs -label "$rootlabel" \
+		-args "$rootdevname /"
+	mount -e -n -t mfs -o rslabel="$rootlabel" "$rootdevname" /
 
 	# Reopen standard file descriptors, so that we can unmount the ramdisk.
 	# That is essentially a VFS shortcoming that should be fixed, though..

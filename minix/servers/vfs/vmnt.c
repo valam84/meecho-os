@@ -6,6 +6,7 @@
 #include "vmnt.h"
 #include <assert.h>
 #include <string.h>
+#include <sys/reboot.h>
 
 static int is_vmnt_locked(struct vmnt *vmp);
 static void clear_vmnt(struct vmnt *vmp);
@@ -180,8 +181,33 @@ int lock_vmnt(struct vmnt *vmp, tll_access_t locktype)
 void vmnt_unmap_by_endpt(endpoint_t proc_e)
 {
   struct vmnt *vmp;
+  int r;
 
   if ((vmp = find_vmnt(proc_e)) != NULL) {
+	/* The root file system is still mounted, so this is not the end of a
+	 * shutdown (pm_reboot() unmounts everything before the file servers
+	 * are told to go): its server died.  There is nothing to carry on
+	 * with.  A new instance cannot be put under the root and working
+	 * directories, open files and mapped executables of every process,
+	 * and the requests the dead one was serving are lost.  Freeing the
+	 * mount the way it is freed for any other file system leaves a
+	 * machine that has no root: every exec, page-in and path lookup fails
+	 * from then on, one process at a time, and the console only says
+	 * "Trying to talk to non-existent FS endpoint".  Say what happened
+	 * and stop, the way a kernel panic stops.
+	 */
+	if (proc_e == ROOT_FS_E && vmp->m_mounted_on == NULL) {
+		printf("VFS: the root file system (%s, endpoint %d) died; "
+		    "it cannot be restarted under open files, stopping\n",
+		    vmp->m_label, proc_e);
+		/* The kernel stops the machine a second from now; tearing the
+		 * mount down in the meantime would only add the noise above.
+		 */
+		if ((r = sys_abort(RB_AUTOBOOT)) != OK)
+			panic("root file system died, sys_abort: %d", r);
+		return;
+	}
+
 	mark_vmnt_free(vmp);
 	fs_cancel(vmp);
 	invalidate_filp_by_endpt(proc_e);

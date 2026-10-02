@@ -1,0 +1,26 @@
+# Падение корневой ФС на плате: громкая остановка, а не тихое зависание.
+#
+# Корень на eMMC (board-cycle.sh -e). rc ramdisk поднимает корневой MFS с
+# minix-service -f и монтирует mount -e -o rslabel=; `refresh` роняет его,
+# и VFS должна напечатать строку про корень и сбросить машину, после чего
+# U-Boot (флаг meecho.go уже снят) грузит обратно Armbian.
+#
+# Метки - printf, а не echo: терминал отражает набранное.
+120 WAIT switching console to 115200
+1 BAUD 115200
+2 <CR>
+1 <CR>
+420 WAIT login:
+2 root
+60 WAIT they are.
+2 export TERM=vt100 PAGER=cat
+3 mount; ps ax | grep '[m]fs'; printf 'd%s\n' 1
+40 WAIT d1
+3 /bin/ls / >/dev/null && printf 'f%s\n' 1
+40 WAIT f1
+3 minix-service refresh fs_c0d0; printf 'r%s\n' $?
+60 WAIT root file system
+20 WAIT will now be shut down
+0 BAUD 1500000
+# На 1500000 знаки теряются: ждать короткую метку.
+300 WAIT login:

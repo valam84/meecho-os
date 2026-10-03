@@ -166,8 +166,9 @@ Ubuntu `gcc-15-source`/`binutils-source` с патчами `port/toolchain/` с�
   VFS при выходе сервера смонтированного корня печатает `VFS: the root
   file system (…) died` и останавливает машину `sys_abort`. Зонд —
   `port/test/audit/rootfs-crash.py`; `refresh fs_c0d0` теперь тоже
-  остановка; на CB2 с корнем на eMMC — строка VFS, сброс, возврат в
-  Armbian (`sched-rootfs.txt`). Разбор — `PORTING-LOG.md`, «Падение
+  остановка; на CB2 с корнем на eMMC (`refresh` и авария посреди
+  запроса) — строка VFS, сброс, возврат в
+  Armbian (`sched-rootfs*.txt`). Разбор — `PORTING-LOG.md`, «Падение
   корневой ФС».
 - **Открыто**: аппаратного сторожа нет (#10); тесты 48 и 92 висят
   (сеть, не аудит — A/B), 94 нестабилен на обеих сборках. Порядок дальнейшей работы — `PLAN.md`,

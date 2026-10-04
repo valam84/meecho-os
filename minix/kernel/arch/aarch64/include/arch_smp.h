@@ -50,10 +50,10 @@ arch_cpuid(void)
 /* MPIDR_EL1 affinity of each CPU, from the device tree; index is the cpuid. */
 extern u64_t cpu_mpidr[CONFIG_MAX_CPUS];
 
-/* Called from head.S on a secondary, with the MMU off and a stack of its own. */
-void smp_ap_start(unsigned cpu);
-
-/* And on the same core once it is running in the upper half. */
+/*
+ * Where head.S sends a secondary, already in the upper half and on its own
+ * kernel stack (pg_ap_prepare()).
+ */
 void smp_ap_boot(unsigned cpu);
 
 /*

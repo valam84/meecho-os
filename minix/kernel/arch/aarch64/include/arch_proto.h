@@ -110,12 +110,12 @@ void pg_drop_identity(void);
 
 /*
  * The same two steps for a secondary core, which walks the same path over the
- * same tables with its own copies of the registers: turn translation on
- * against the identity map the boot core kept, and take that map away again
- * once this core is running high.
+ * same tables with its own copies of the registers: the boot core leaves it
+ * the register values to turn translation on with against the identity map
+ * it kept (head.S does the rest, without a stack), and the secondary takes
+ * that map away again once it is running high.
  */
-void pg_ap_paging_on(void);
-__dead void pg_ap_enter_high(unsigned cpu, void (*entry)(unsigned));
+void pg_ap_prepare(unsigned cpu, void (*entry)(unsigned));
 void pg_ap_drop_identity(void);
 
 /*

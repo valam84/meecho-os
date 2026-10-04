@@ -1,0 +1,16 @@
+# Подъём вторичных ядер после переноса включения MMU в head.S (2026-10-04).
+# Консоль только слушает с самой загрузки: строки "CPU n is up" и нет ли
+# "WARNING only"; проверки (cpuinfo, kern.cp_time) и /sbin/reboot - по ssh.
+# Запуск: board-cycle.sh -e -s -l sched-smpfix.txt
+120 WAIT switching console to 115200
+1 BAUD 115200
+# U-Boot после смены скорости ждёт Enter.
+2 <CR>
+1 <CR>
+300 WAIT c0d0:
+420 WAIT login:
+1800 WAIT reboot
+20 WAIT will now
+0 BAUD 1500000
+# На 1500000 знаки теряются: ждать короткую метку.
+300 WAIT login:

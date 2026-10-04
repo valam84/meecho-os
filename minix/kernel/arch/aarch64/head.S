@@ -354,26 +354,50 @@ ap_el1:
 	msr	daifset, #0xf
 
 	/*
-	 * One stack, shared by every secondary in turn.
+	 * Translation on, and into the upper half, without a stack.
 	 *
-	 * That is safe because the cores are started one at a time: smp_init()
-	 * does not call CPU_ON for the next core until this one has reported
-	 * itself up, and by then it is long since running on its own per-CPU
-	 * stack in the upper half. Giving each core its own early stack would
-	 * mean computing where it is from assembly, and this file deliberately
-	 * knows no constant that another file defines.
+	 * Until SCTLR_EL1.M is set this core's data accesses are Device and
+	 * go to memory past every cache; from the next instruction they are
+	 * cacheable and coherent. Memory written on one side of that switch
+	 * and read on the other can come back as what some cache - another
+	 * core's - holds instead, so nothing here writes memory at all, and
+	 * the one thing it reads is its line of ap_boot_params, which the boot
+	 * core cleaned to the point of coherency before CPU_ON. The layout is
+	 * struct ap_boot_params in pg_utils.c, checked there at compile time:
+	 *   0 MAIR  8 TCR  16 TTBR0  24 TTBR1  32 SCTLR bits  40 SP  48 entry
+	 * one 64-byte line per core, indexed by the number PSCI handed over.
 	 */
-	adrp	x0, ap_boot_stack_top
-	add	x0, x0, :lo12:ap_boot_stack_top
-	mov	sp, x0
+	adrp	x0, ap_boot_params
+	add	x0, x0, :lo12:ap_boot_params
+	add	x0, x0, x20, lsl #6
+	ldp	x1, x2, [x0, #0]
+	ldp	x3, x4, [x0, #16]
+	ldp	x5, x6, [x0, #32]
+	ldr	x7, [x0, #48]
+
+	msr	mair_el1, x1
+	msr	tcr_el1, x2
+	msr	ttbr0_el1, x3
+	msr	ttbr1_el1, x4
+	isb
+
+	/* The TLB is not guaranteed to start empty. */
+	tlbi	vmalle1
+	dsb	nsh
+	isb
+
+	mrs	x1, sctlr_el1
+	orr	x1, x1, x5
+	msr	sctlr_el1, x1
+	isb
 
 	/*
-	 * Into C, still physical. smp_ap_start() turns this core's MMU on and
-	 * leaves for the upper half; it does not come back.
+	 * Running on the identity map now. The stack and the entry point are
+	 * upper-half addresses, and smp_ap_boot() does not come back.
 	 */
+	mov	sp, x6
 	mov	x0, x20
-	bl	smp_ap_start
-	b	park_secondary
+	br	x7
 
 	.size	_start_ap, . - _start_ap
 
@@ -391,14 +415,3 @@ boot_stack:
 	.space	16384
 	.globl	boot_stack_top
 boot_stack_top:
-
-/*
- * And the one the secondaries share while they are physical. A page: all it
- * carries is smp_ap_start() and what turns the MMU on.
- */
-	.align	12
-	.globl	ap_boot_stack
-ap_boot_stack:
-	.space	4096
-	.globl	ap_boot_stack_top
-ap_boot_stack_top:

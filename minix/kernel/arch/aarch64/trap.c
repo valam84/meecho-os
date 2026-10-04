@@ -120,8 +120,8 @@ inkernel_disaster(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
  * stack. frame->sp is the SP at the moment of the exception, which is what
  * the fault handler would have printed had it had somewhere to run.
  *
- * Two things this is not. A fault while the CPU is still on one of the boot
- * stacks in head.S can trip the same test, because those stacks do not have
+ * Two things this is not. A fault while the boot CPU is still on the boot
+ * stack in head.S can trip the same test, because that stack does not have
  * the guard's shape; that is an ordinary kernel exception, reported as one.
  * And a second arrival here on the same CPU means the report itself faulted,
  * which is worth one line and no more: another attempt would loop.

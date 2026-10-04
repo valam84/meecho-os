@@ -67,9 +67,9 @@
  * CPUs overflowing in the same instant would corrupt each other's x1 in the
  * report, and nothing else; both are on their way to a panic.
  *
- * The stacks in head.S, which the boot CPU runs on until its first
- * restore_user_context() and the secondaries until pg_ap_enter_high(), do
- * not have this shape, so a kernel fault on one of them can trip the test.
+ * The boot stack in head.S, which the boot CPU runs on until its first
+ * restore_user_context(), does not have this shape, so a kernel fault on it
+ * can trip the test. (The secondaries use no stack before their own.)
  * trap_stack_overflow() tells the two apart by address and reports the fault
  * for what it is; the frame is still safe, because the emergency stack is
  * always writable.

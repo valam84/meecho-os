@@ -31,7 +31,7 @@
 
 #include "bsp_intr.h"
 
-/* Where head.S starts a secondary, so its physical address can be taken. */
+/* Where PSCI starts a secondary, so its physical address can be taken. */
 extern char _start_ap[];
 
 u64_t cpu_mpidr[CONFIG_MAX_CPUS];
@@ -206,10 +206,10 @@ discover_cpus(void)
 /*
  * Start the secondaries, one at a time.
  *
- * One at a time and not in a batch, because until a core reaches
- * pg_ap_enter_high() it is standing on the single early stack in head.S.
- * Waiting for it to report is what makes that stack safe, and it also means a
- * core that never comes up costs one wait rather than confusing the next.
+ * One at a time and not in a batch, so that a core that never comes up costs
+ * one wait rather than confusing the next, and so that the boot messages say
+ * which core is which. Each has its own line of ap_boot_params and its own
+ * kernel stack, so nothing shared stands in the way of a batch any more.
  */
 static void
 smp_start_aps(void)
@@ -225,6 +225,8 @@ smp_start_aps(void)
 
 		ap_cpu_ready = -1;
 		barrier();
+
+		pg_ap_prepare(cpu, smp_ap_boot);
 
 		r = psci_cpu_on(cpu_mpidr[cpu], entry, cpu);
 		if (r != PSCI_SUCCESS) {
@@ -305,9 +307,8 @@ ap_finish_booting(void)
 	 * machine that boots with one core and prints the others' greetings
 	 * afterwards.
 	 *
-	 * Safe this early because the shared stack in head.S was left behind
-	 * two calls ago: this core has been on its own per-CPU stack since
-	 * pg_ap_enter_high().
+	 * This core has been on its own per-CPU stack since head.S branched
+	 * here, and has used no other.
 	 */
 	ap_cpu_ready = (int)cpu;
 	barrier();
@@ -366,7 +367,8 @@ ap_finish_booting(void)
  *				smp_ap_boot				     *
  *===========================================================================*/
 /*
- * Where a secondary arrives in the upper half, on its own stack.
+ * Where a secondary arrives from head.S: in the upper half, on its own
+ * kernel stack, MMU and caches on, the identity map still in TTBR0.
  *
  * TPIDR_EL1 is written here and never again: from this instruction on, cpuid
  * works on this core, which is what every per-CPU variable in the kernel
@@ -381,26 +383,6 @@ smp_ap_boot(unsigned cpu)
 	pg_ap_drop_identity();
 
 	ap_finish_booting();
-	NOT_REACHABLE;
-}
-
-/*===========================================================================*
- *				smp_ap_start				     *
- *===========================================================================*/
-/*
- * And where it arrives from head.S: at EL1, MMU off, on the shared early
- * stack, running at a physical program counter.
- *
- * Everything reachable from here has to be position-independent, which
- * -mcmodel=small makes it, and must not touch anything the kernel has moved
- * to an upper-half address - the console among them. There is nothing to
- * print with until the branch below has happened.
- */
-void
-smp_ap_start(unsigned cpu)
-{
-	pg_ap_paging_on();
-	pg_ap_enter_high(cpu, smp_ap_boot);
 	NOT_REACHABLE;
 }
 

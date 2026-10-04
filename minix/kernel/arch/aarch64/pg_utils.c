@@ -45,6 +45,7 @@
 #include "kernel/kernel.h"
 
 #include <assert.h>
+#include <stddef.h>
 #include <string.h>
 
 #include <machine/vm.h>
@@ -835,9 +836,14 @@ pg_info(reg_t *ttbr_ph, u64_t **ttbr_v)
  * anything the boot loader left behind in the caches would shadow them. QEMU
  * does not model this; a real Cortex-A72 does, and the failure mode is a
  * machine that dies without a character of output.
+ *
+ * The range is an address as the core running this sees it: physical before
+ * the MMU is on, virtual after (pg_ap_prepare()). DC CIVAC takes a virtual
+ * address and reaches every cache in the inner-shareable domain, not only
+ * this core's.
  */
 static void
-dcache_clean_inval(phys_bytes start, phys_bytes size)
+dcache_clean_inval(u64_t start, u64_t size)
 {
 	u64_t ctr, line, addr, end;
 
@@ -926,24 +932,19 @@ pg_asids_usable(void)
 }
 
 /*===========================================================================*
- *				paging_on				     *
+ *				paging_tcr				     *
  *===========================================================================*/
 /*
- * Turn translation on for the core running this, with the given tree in
- * TTBR0 and the kernel's in TTBR1.
- *
- * Every core does exactly this, and each does it for itself: the registers
- * written here are all per-CPU, so a secondary is not repeating the boot
- * core's work, it is doing its own.
+ * The TCR_EL1 every core runs with. Computed by the boot core, for itself in
+ * paging_on() and for each secondary in pg_ap_prepare(): the cores of the
+ * machines this runs on are identical, and the value is read off ID
+ * registers that say so.
  */
-static void
-paging_on(phys_bytes low_root)
+static u64_t
+paging_tcr(void)
 {
-	u64_t tcr, sctlr;
+	u64_t tcr;
 	unsigned asid_bits;
-
-	assert(low_root != 0);
-	assert(kernel_root != 0);
 
 	/*
 	 * Both halves alike: 4 KiB granule, 48-bit addresses, inner
@@ -972,6 +973,29 @@ paging_on(phys_bytes low_root)
 
 	if (asid_bits == 16)
 		tcr |= TCR_AS;
+
+	return tcr;
+}
+
+/*===========================================================================*
+ *				paging_on				     *
+ *===========================================================================*/
+/*
+ * Turn translation on for the boot core, with the given tree in TTBR0 and the
+ * kernel's in TTBR1.
+ *
+ * A secondary does the same in head.S, from the values pg_ap_prepare() leaves
+ * it, and not by calling this: see there for why it must not use a stack.
+ */
+static void
+paging_on(phys_bytes low_root)
+{
+	u64_t tcr, sctlr;
+
+	assert(low_root != 0);
+	assert(kernel_root != 0);
+
+	tcr = paging_tcr();
 
 	__asm__ volatile(
 		"msr	mair_el1, %0\n\t"
@@ -1026,13 +1050,72 @@ vm_enable_paging(void)
 }
 
 /*===========================================================================*
- *				pg_ap_paging_on				     *
+ *				pg_ap_prepare				     *
  *===========================================================================*/
-/* The same, for a secondary core: same tables, its own registers. */
+/*
+ * What a secondary core needs to turn its MMU on and reach the upper half,
+ * as register values it loads in head.S. One cache line per core, laid out
+ * the way head.S reads it; the asserts below keep the two in step.
+ *
+ * Why a secondary does this in assembly and not by calling paging_on(): until
+ * SCTLR_EL1.M is set, its data accesses are Device and go to memory past
+ * every cache, and from the instruction after they are Normal cacheable and
+ * coherent. A stack used across that switch is written one way and read back
+ * the other, and the read is answered by whichever cache holds the line -
+ * including another core's, holding what that core left there. It did, on
+ * the CB2: the cores shared one early stack in head.S, the -O0 kernel of
+ * 2026-10-01 kept the core number in it across the switch, and cores 2 and
+ * 3 read back core 1's number from core 1's dirty line, took core 1's
+ * kernel stack, and never reported. At -O2 only x29 and x30 came back off
+ * that stack, and those are the same for every core - which is the whole
+ * reason it ever worked. QEMU has no caches to disagree.
+ *
+ * So the only memory a secondary reads before its MMU is on is this line,
+ * which the boot core cleans to the point of coherency before CPU_ON, and it
+ * writes none at all.
+ */
+struct ap_boot_params {
+	u64_t mair;		/* MAIR_EL1 */
+	u64_t tcr;		/* TCR_EL1 */
+	u64_t ttbr0;		/* the identity map */
+	u64_t ttbr1;		/* the kernel's tree */
+	u64_t sctlr_set;	/* bits head.S ORs into SCTLR_EL1 */
+	u64_t sp;		/* this core's kernel stack, upper half */
+	u64_t entry;		/* where to go, upper half */
+	u64_t unused;
+};
+
+typedef int _ap_boot_params_layout_check[
+	(sizeof(struct ap_boot_params) == 64 &&
+	 offsetof(struct ap_boot_params, mair) == 0 &&
+	 offsetof(struct ap_boot_params, ttbr0) == 16 &&
+	 offsetof(struct ap_boot_params, sctlr_set) == 32 &&
+	 offsetof(struct ap_boot_params, entry) == 48) ? 1 : -1];
+
+struct ap_boot_params ap_boot_params[CONFIG_MAX_CPUS] __aligned(64);
+
 void
-pg_ap_paging_on(void)
+pg_ap_prepare(unsigned cpu, void (*entry)(unsigned))
 {
-	paging_on(ap_identity_root);
+	struct ap_boot_params *p = &ap_boot_params[cpu];
+
+	assert(cpu < CONFIG_MAX_CPUS);
+	assert(ap_identity_root != 0);
+
+	p->mair = MAIR_VALUE;
+	p->tcr = paging_tcr();
+	p->ttbr0 = ap_identity_root;
+	p->ttbr1 = kernel_root;
+	p->sctlr_set = SCTLR_M | SCTLR_C | SCTLR_I;
+	p->sp = (u64_t)get_k_stack_top(cpu);
+	p->entry = (u64_t)entry;
+
+	/*
+	 * The boot core is running high, so this is its upper-half address;
+	 * DC CIVAC by that address reaches the same physical line, which is
+	 * what the secondary will read past the caches.
+	 */
+	dcache_clean_inval((u64_t)p, sizeof(*p));
 }
 
 /*===========================================================================*
@@ -1055,40 +1138,6 @@ pg_enter_high(void (*entry)(void))
 		"mov	sp, %1\n\t"
 		"br	%0"
 		:: "r"(target), "r"(stack) : "memory");
-
-	__builtin_unreachable();
-}
-
-/*===========================================================================*
- *				pg_ap_enter_high			     *
- *===========================================================================*/
-/*
- * The same branch for a secondary core, onto its own kernel stack.
- *
- * The boot core moves to the upper-half alias of the stack it was already
- * using; a secondary leaves the shared early stack behind entirely and takes
- * the per-CPU one arch_init() set up, which is an upper-half address already.
- * The core number is carried across in x0, because on the other side of this
- * branch there is nothing left to ask.
- */
-void
-pg_ap_enter_high(unsigned cpu, void (*entry)(unsigned))
-{
-	register vir_bytes target __asm__("x1") =
-	    (vir_bytes)entry + KERNEL_VA_OFFSET;
-	register vir_bytes stack __asm__("x2") =
-	    (vir_bytes)get_k_stack_top(cpu);
-	register u64_t arg __asm__("x0") = cpu;
-
-	/*
-	 * Fixed registers, so that setting the argument cannot overwrite the
-	 * address about to be branched to. There is no return path across
-	 * this branch and there is not meant to be.
-	 */
-	__asm__ volatile(
-		"mov	sp, %1\n\t"
-		"br	%0"
-		:: "r"(target), "r"(stack), "r"(arg) : "memory");
 
 	__builtin_unreachable();
 }

@@ -30,6 +30,7 @@ EXTERN struct schedproc {
 	unsigned priority;		/* the process' current priority */
 	unsigned time_slice;		/* this process's time slice */
 	unsigned cpu;		/* what CPU is the process running on */
+	clock_t last_noquantum;	/* when it last ran out of quantum */
 	bitchunk_t cpu_mask[BITMAP_CHUNKS(CONFIG_MAX_CPUS)]; /* what CPUs is the
 								process allowed
 								to run on */
@@ -37,3 +38,5 @@ EXTERN struct schedproc {
 
 /* Flag values */
 #define IN_USE		0x00001	/* set when 'schedproc' slot in use */
+#define PLACED		0x00002	/* counted in cpu_procs[cpu] */
+#define RAN_OUT		0x00004	/* last_noquantum is valid */

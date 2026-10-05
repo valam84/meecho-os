@@ -34,51 +34,178 @@ static int schedule_process(struct schedproc * rmp, unsigned flags);
 #define schedule_process_migrate(p)	\
 	schedule_process(p, SCHEDULE_CHANGE_CPU)
 
-#define CPU_DEAD	-1
-
-#define cpu_is_available(c)	(cpu_proc[c] >= 0)
-
 #define DEFAULT_USER_TIME_SLICE 200
 
 /* processes created by RS are sysytem processes */
 #define is_system_proc(p)	((p)->parent == RS_PROC_NR)
 
-static unsigned cpu_proc[CONFIG_MAX_CPUS];
+#ifdef CONFIG_SMP
+/*
+ * Where user processes go, and when they move.
+ *
+ * System processes live on the boot CPU and are never moved. A user process
+ * is placed when it starts, and may be moved when it runs out of quantum -
+ * the one moment the kernel says it is computing rather than waiting, and
+ * the moment it is off every run queue, so moving it costs nothing but its
+ * cache.
+ *
+ * The load of a CPU is the number of user processes placed there that ran
+ * out of quantum within BUSY_WINDOW_SECONDS: the ones competing for it.
+ * Counting every process placed there, which is what this used to do,
+ * weighs a sleeping shell the same as a compute job - and the count was
+ * bumped again on every quantum and never taken back, so it only grew. A
+ * process moves when its CPU has at least two more busy processes than the
+ * least loaded one: a strict improvement, so it cannot oscillate; with more
+ * jobs than CPUs the remainder stays where it is.
+ *
+ * The boot CPU takes user processes too, last among equals. Its system
+ * processes sit in higher priority queues and preempt a user job the moment
+ * they have work; what they leave idle is the boot CPU's time, which a
+ * placement that never used it threw away - a quarter of the machine on
+ * four cores (2026-10-04 on the CB2: three jobs ran as fast as one, four
+ * took twice as long).
+ *
+ * The window is wide enough that a CPU shared by several busy processes,
+ * each of which runs out of quantum only once per round, keeps counting all
+ * of them.
+ */
+#define BUSY_WINDOW_SECONDS	2
 
+static int cpu_procs[CONFIG_MAX_CPUS];	/* user processes placed per CPU */
+static int cpu_dead[CONFIG_MAX_CPUS];	/* refused by the kernel: EBADCPU */
+static clock_t busy_window;
+
+static int is_busy(const struct schedproc *rmp, clock_t now)
+{
+	return (rmp->flags & RAN_OUT) &&
+	    (clock_t)(now - rmp->last_noquantum) < busy_window;
+}
+
+/* Busy user processes per CPU. */
+static void cpu_loads(int load[CONFIG_MAX_CPUS])
+{
+	struct schedproc *rmp;
+	clock_t now = getticks();
+	unsigned c;
+
+	for (c = 0; c < CONFIG_MAX_CPUS; c++)
+		load[c] = 0;
+
+	for (rmp = schedproc; rmp < &schedproc[NR_PROCS]; rmp++) {
+		if ((rmp->flags & (IN_USE | PLACED)) != (IN_USE | PLACED))
+			continue;
+		if (is_busy(rmp, now))
+			load[rmp->cpu]++;
+	}
+}
+
+/*
+ * The best CPU other than "except" (-1 for none): least busy, then not the
+ * boot CPU, then fewest processes placed, then lowest number. -1 if every
+ * candidate is dead.
+ */
+static int least_loaded_cpu(const int load[CONFIG_MAX_CPUS], int except)
+{
+	unsigned c;
+	int best = -1;
+
+	for (c = 0; c < machine.processors_count; c++) {
+		if (cpu_dead[c] || (int)c == except)
+			continue;
+		if (best >= 0) {
+			int cb = (c == machine.bsp_id);
+			int bb = ((unsigned)best == machine.bsp_id);
+
+			if (load[c] > load[best])
+				continue;
+			if (load[c] == load[best]) {
+				if (cb > bb)
+					continue;
+				if (cb == bb && cpu_procs[c] >= cpu_procs[best])
+					continue;
+			}
+		}
+		best = c;
+	}
+	return best;
+}
+
+/* Move the process's place in the accounting to "cpu". */
+static void place_cpu(struct schedproc *rmp, unsigned cpu)
+{
+	if (rmp->flags & PLACED)
+		cpu_procs[rmp->cpu]--;
+	rmp->cpu = cpu;
+	cpu_procs[cpu]++;
+	rmp->flags |= PLACED;
+}
+
+static void unplace_cpu(struct schedproc *rmp)
+{
+	if (rmp->flags & PLACED)
+		cpu_procs[rmp->cpu]--;
+	rmp->flags &= ~PLACED;
+}
+#endif
+
+/*
+ * Choose a CPU for a process that is starting. Only here and in
+ * rebalance(): otherwise a process stays where it was put, because that is
+ * where the kernel has it.
+ */
 static void pick_cpu(struct schedproc * proc)
 {
 #ifdef CONFIG_SMP
-	unsigned cpu, c;
-	unsigned cpu_load = (unsigned) -1;
-	
-	if (machine.processors_count == 1) {
+	int load[CONFIG_MAX_CPUS];
+	int cpu;
+
+	if (machine.processors_count == 1 || is_system_proc(proc)) {
+		unplace_cpu(proc);
 		proc->cpu = machine.bsp_id;
 		return;
 	}
 
-	/* schedule sysytem processes only on the boot cpu */
-	if (is_system_proc(proc)) {
-		proc->cpu = machine.bsp_id;
-		return;
-	}
-
-	/* if no other cpu available, try BSP */
-	cpu = machine.bsp_id;
-	for (c = 0; c < machine.processors_count; c++) {
-		/* skip dead cpus */
-		if (!cpu_is_available(c))
-			continue;
-		if (c != machine.bsp_id && cpu_load > cpu_proc[c]) {
-			cpu_load = cpu_proc[c];
-			cpu = c;
-		}
-	}
-	proc->cpu = cpu;
-	cpu_proc[cpu]++;
+	cpu_loads(load);
+	cpu = least_loaded_cpu(load, -1);
+	if (cpu < 0)
+		cpu = machine.bsp_id;
+	place_cpu(proc, cpu);
 #else
 	proc->cpu = 0;
 #endif
 }
+
+#ifdef CONFIG_SMP
+/*
+ * A user process just ran out of quantum on its CPU. Move it if another CPU
+ * has at least two fewer busy processes, and reschedule it either way.
+ */
+static int rebalance(struct schedproc *rmp)
+{
+	int load[CONFIG_MAX_CPUS];
+	unsigned from = rmp->cpu;
+	int to, rv;
+
+	if (machine.processors_count == 1 || is_system_proc(rmp) ||
+	    !(rmp->flags & PLACED))
+		return schedule_process_local(rmp);
+
+	cpu_loads(load);
+	to = least_loaded_cpu(load, from);
+	if (to < 0 || load[from] < load[to] + 2)
+		return schedule_process_local(rmp);
+
+	place_cpu(rmp, to);
+	if ((rv = schedule_process(rmp, SCHEDULE_CHANGE_ALL)) == OK)
+		return OK;
+
+	/* Where it was, then; and never there again if the CPU is gone. */
+	if (rv == EBADCPU)
+		cpu_dead[to] = 1;
+	place_cpu(rmp, from);
+	return schedule_process_local(rmp);
+}
+#endif
 
 /*===========================================================================*
  *				do_noquantum				     *
@@ -100,7 +227,14 @@ int do_noquantum(message *m_ptr)
 		rmp->priority += 1; /* lower priority */
 	}
 
-	if ((rv = schedule_process_local(rmp)) != OK) {
+#ifdef CONFIG_SMP
+	rmp->last_noquantum = getticks();
+	rmp->flags |= RAN_OUT;
+	rv = rebalance(rmp);
+#else
+	rv = schedule_process_local(rmp);
+#endif
+	if (rv != OK) {
 		return rv;
 	}
 	return OK;
@@ -127,7 +261,7 @@ int do_stop_scheduling(message *m_ptr)
 
 	rmp = &schedproc[proc_nr_n];
 #ifdef CONFIG_SMP
-	cpu_proc[rmp->cpu]--;
+	unplace_cpu(rmp);
 #endif
 	rmp->flags = 0; /*&= ~IN_USE;*/
 
@@ -226,7 +360,9 @@ int do_start_scheduling(message *m_ptr)
 	pick_cpu(rmp);
 	while ((rv = schedule_process(rmp, SCHEDULE_CHANGE_ALL)) == EBADCPU) {
 		/* don't try this CPU ever again */
-		cpu_proc[rmp->cpu] = CPU_DEAD;
+#ifdef CONFIG_SMP
+		cpu_dead[rmp->cpu] = 1;
+#endif
 		pick_cpu(rmp);
 	}
 
@@ -299,8 +435,12 @@ static int schedule_process(struct schedproc * rmp, unsigned flags)
 	int err;
 	int new_prio, new_quantum, new_cpu, niced;
 
-	pick_cpu(rmp);
-
+	/*
+	 * No pick_cpu() here. This runs on every quantum and every nice, and
+	 * re-picking here changed rmp->cpu without telling the kernel (only
+	 * SCHEDULE_CHANGE_CPU does) and counted the process once more each
+	 * time.
+	 */
 	if (flags & SCHEDULE_CHANGE_PRIO)
 		new_prio = rmp->priority;
 	else
@@ -336,6 +476,9 @@ void init_scheduling(void)
 	int r;
 
 	balance_timeout = BALANCE_TIMEOUT * sys_hz();
+#ifdef CONFIG_SMP
+	busy_window = BUSY_WINDOW_SECONDS * sys_hz();
+#endif
 
 	if ((r = sys_setalarm(balance_timeout, 0)) != OK)
 		panic("sys_setalarm failed: %d", r);

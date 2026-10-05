@@ -1,0 +1,11 @@
+# Загрузка и долгое прослушивание консоли на 115200 без переключения
+# скорости: под нагрузкой по ssh авария должна остаться в журнале читаемой.
+# Запуск: board-cycle.sh -e -s -l sched-listen.txt
+120 WAIT switching console to 115200
+1 BAUD 115200
+# U-Boot после смены скорости ждёт Enter.
+2 <CR>
+1 <CR>
+300 WAIT c0d0:
+420 WAIT login:
+2400 WAIT will-not-appear-xyzzy

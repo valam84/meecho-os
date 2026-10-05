@@ -135,6 +135,13 @@ int pg_asids_usable(void);
 /* The tag this process's address space carries. Zero is the boot table's. */
 #define AARCH64_PROC_ASID(p)	((unsigned)((p)->p_nr + 1))
 
+/*
+ * Retire this process's TLB entries on every core: VM has rewritten its page
+ * tables (MF_FLUSH_TLB) and it is about to run on the core whose TTBR0
+ * already holds it. See memory.c.
+ */
+void arch_flush_proc_tlb(struct proc *p);
+
 void pg_clear(void);
 phys_bytes pg_load(void);
 void pg_map(phys_bytes phys, vir_bytes vaddr, vir_bytes vaddr_end,

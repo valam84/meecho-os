@@ -808,6 +808,36 @@ __switch_address_space(struct proc *p, struct proc **__ptproc)
 }
 
 /*===========================================================================*
+ *				arch_flush_proc_tlb			     *
+ *===========================================================================*/
+/*
+ * The other half of MF_FLUSH_TLB: the process's space is already loaded on
+ * this core, so __switch_address_space() above is not reached, and proc.c
+ * asks here instead.
+ *
+ * On every core, not this one. proc.c used refresh_tlb(), which is the local
+ * vmalle1, and that was enough only while a process lived on one core all
+ * its life. Once sched moves processes, their entries stay behind in the TLB
+ * of every core they ran on. VM rewrites a page table - a page fault, a
+ * copy-on-write after fork, munmap and a new mmap at the same address - and
+ * gives the old frame to someone else; the process comes back to a core that
+ * still holds the old translation and writes into that frame.
+ *
+ * Found by reading, while hunting the VFS assertion of 2026-10-05, and not
+ * the cause of it (that was d8-d15 in swapcontext(), libc ucontext.S): no
+ * symptom has been seen. It is a hole all the same, and sched opened it.
+ */
+void
+arch_flush_proc_tlb(struct proc *p)
+{
+	KTRACE_EV(KTV_TLBFLUSH);
+	if (pg_asids_usable())
+		refresh_tlb_asid(AARCH64_PROC_ASID(p));
+	else
+		refresh_tlb_all_is();
+}
+
+/*===========================================================================*
  *			      kern_req_phys_map				     *
  *===========================================================================*/
 int

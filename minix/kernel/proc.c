@@ -479,8 +479,17 @@ check_misc_flags:
 #endif
 #ifdef CONFIG_SMP
 	if (p->p_misc_flags & MF_FLUSH_TLB) {
+		/*
+		 * On aarch64 the process's entries may sit in the TLB of
+		 * every core it has run on, not only this one: sched moves
+		 * processes. See arch_flush_proc_tlb().
+		 */
 		if (tlb_must_refresh)
+#if defined(__aarch64__)
+			arch_flush_proc_tlb(p);
+#else
 			refresh_tlb();
+#endif
 		p->p_misc_flags &= ~MF_FLUSH_TLB;
 	}
 #endif

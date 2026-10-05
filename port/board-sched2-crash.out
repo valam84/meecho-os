@@ -1,0 +1,321 @@
+[!p]104[?7h[6n[32766;32766H[6n[[0;32m  OK  [0m] Stopped [0;1;39mrc-local.service[0m - /etc/rc.local Compatibility.
+[[0User Sessions.
+[[0;32m  OK  [0m] Stopped target [0;1;39mnetwork-online.target[0m - Networopped target [0;1;39mnetwork.target[0m - Network.
+[[0;32m  Systems.
+[[0;32m  OK  [0m] Stopped target [0;1;39mremote-K  [0m] Stopped target [0;1;39mnfs-client.target[0m - NFS cliait-online‚Ä¶vice[0m - Network Manager Wait Online.
+        
+         Stopping [0;1;39mnetworking.service[0m - Raise netwo[0m - WPA supplicant...
+[[0;32m  OK  [0m] Unmounted [0;1;[0;1;39muser-runtime-dir@0.service[0m‚Ä¶User Runtime Directory[[0;32m  OK  [0m] Started [0;lymouth-reboot.service[0m - Show Plymouth Reboot Screen.
+[[0;32m  OK  [0m] Removed slice [0;1;39muser-0.slice[0m - Us.
+         Stopping [0;1;39msystemd-logind.service[0m - User Log[[0;32m  OK  [0m] Stopped [0;1;39msystemd-logind.service[0m [[0;32m  OK  [0m] Stopped [0;1;39mwpa_supplicant.service[0m - WPA supplicant.
+[[0;32m  OK  [0m] Stopped [0;1;39mnetworking.service[0m - Ra[[0;32m  OK  [0m] Stopped [0;1;39mNetworkManager.service[0m - Network Manager.
+         Stopping [0;1;39mdbus.service[0m - D-Bus System Message Bus...
+[[0;32m  OK  [0m] Stopped [0;1;39mdbus.service[0m - D-Bus SyBus.
+[[0;32m  OK  [0m] Stopped target [0;1;39mbasic.target[0;32m  OK  [0m] Stopped [0;1;39msystemd-ask-password-plymo‚Äed target [0;1;39mpaths.target[0m - Path Units.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-ask-password-wall.‚ctory Watch.
+[[0;32m  OK  [0m] Stopped target [0;1;39mslice [0;1;39muser.slice[0m - User and Session Slice.
+[[0;32m 
+[[0;32m  OK  [0m] Closed [0;1;39mavahi-daemon.socket[0m [[0;32m  OK  [0m] Closed [0;1;39mdbus.socket[0m - D-Bus Syst OK  [0m] Closed [0;1;39msshd-unix-local.socket[0m - Op‚Ä¶tem[0m] Closed [0;1;39msyslog.socket[0m - Syslog Socket.
+[[0;32m  OK  [0m] Closed [0;1;39mssocket[0m - Hostname Service Socket.
+[[0;32m  OK  [0m] Sto         Stopping [0;1;39marmbian-ramlog.service[0m - Armbian 
+         Stopping [0;1;39msystemd-binfmt.service[0m - Set Up As...
+         Stopping [0;1;39msystemd-resolved.service[0m [[0;32m  OK  [0m] Stopped [0;tories.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-resolved.service[0[[0;32m  OK  [0m] Stopped [0;1;39msystemd-sysctl.service[0m - Apply Kernel Variables.
+[[0;32m  OK  [0m] Stopped [0;1;3[[0;32m  OK  [0m] Stopped [0;1;39msystemd-binfmt.service[0m - Set Up Additional Binary Forma[[0;32m  OK  [0m] Unset automount [0;1;39mproc-sys-fs-binfmt‚Ä¶[0mormats File System Automou[[0;32m  OK  [0m] Unmounted [0;1;39mvar-log.mount[0m - /var/og.
+[[0;32m  OK  [0m] Unmounted [0;1;39mvar-log.hdd.mount[0m - /var/log.hdd.
+[[0;32m  OK  [0m] Stopped [0;1;39marmbian-ramlog.service[0m - Armbian memory supported logging.
+         Stopping [0;1;39marmbian-zram-config.service[0m - Arm[[0;32m  OK  [0m] Stopped [0;1;39marmbian-zram-config.service[0m - Armbian ZRAM config.
+[[0;32m  OK  [0m] Stopped target [0;1;39mlocal-fs.target[0m -         Unmounting [0;1;39mboot.mount[0m - /boot...
+         Unmounting [0;1;39mrun-lock.mount[0m - Legacy Locks D         Unmounting [0;1;39mtmp.mount[0m - /tmp...
+[[0;32m  OK  [0m] Unmounted [0;1;39mrun-lock.mount[0m - Legacy Locks Directory /run/lock.[[0;32m  OK  [0m] Unmounted [0;1;39mtmp.mount[0m - /tmp.
+[[0;32m  OK  [0m] Stopped target [0;1;39mswap.target[0m - Sw         Deactivating swap [0;1;39mdev-zram0.swap[0m - /dev/zr
+[[0;32m  OK  [0m] Unmounted [0;1;39mboot.mount[0m - /boot.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-fsck@dev-disk-by\x‚[[0;32m  OK  [0m] Removed slic[0;1;39msystem-systemd\x2dfs‚Ä¶slice[0m - Slice /system/systemarget[0m‚Ä¶Preparation for Local File Systems.
+[[0;32m  OK [0m‚Ä¶mount Root and Kernel File Systems.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-tmpfiup-dev‚Ä¶[0mCreate Static Device Nodes in /dev.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-tmpfiles-setup-dev‚Ä¶[0mic DevK  [0m] Reached target [0;1;39mshutdown.target[0m - System Sh[[0;32m  OK  [0m] Deactivated swap [0;1;39mdev-zram0.swap[0m - /dev/zram0.
+[[0;32m  OK  [0m] Reached target [0;1;39mumount.target[0m - Unmount All Filesystems.
+[[0;32m  OK  [0m] Reached target [[0;32m  OK  [0m] Finished [0;1;39msystemd-reboot.service[0m;1;39mreboot.target[0m - System Reboot.
+[  125.479096] reboot: Restarting system
+DDR 2d653b3476 typ 24/01/20-15:04:19,fwver: v1.21
+ln
+LP4/4x de
+ddrconfig:0
+LPDDR4, 324MHz
+BW=32 Col=10 Bk=8 CS0 Row=16 CS=1 Die BW=16 Sizecs0 dqs0: -48ps, dqs1: -144ps, dqs2: -72ps, dqs3: -217ps, 
+
+chPHY drv:clk:38,ca:38,DQ:30,odt:0v:40,odt:0
+clk skew:0x65
+rx vref: 43.9%
+tx vref: 38.0%
+
+change to: 528MHz
+PHY drv:clk:38,ca:38,DQ:30,odt:0
+vrefinner:41%, vrefout:41ram drv:40,odt:0
+clk skew:0x58
+rx vref: 43.9%
+tx vref: 38.0%
+
+change to: 780MHz
+PHY drv:clk:38,ca:38,DQ:30,odt:60
+vrefinner:16%, vrefout:41%
+dram drv:40,odt:0
+clk skew:8
+rx vref: 15.4%
+tx vref: 38.0%
+
+change to: 1056MHz(final freq)
+PHY drv:clk:38,ca:38,DQ:30,odt:60
+vrefinner:16%, vrefout:29%
+dram drv:40,odt:80
+vref_ca:00000068
+clk skew:
+rx vref: 14.4%
+tx vref: 32.0%
+cs 0:
+the read training result:
+DQS0:0x3a, DQS1:0x39, DQS2:0x3f, DQS3:0x33, 
+x5 , 0x8  0x7  0x2  0x1  0x9  0xa  0x9  0x8 ,
+      0x12 0x11   0x3  0x1  0xa  0xc  0x6  0xb ,
+mid  :0x28 0x2a 0x2a 0x28 0x1e 26 0x26 0x26 0x24 ,
+      0x2f 0x2d 0x29 0x2a 0x22 0x1e 0x1e 0x 0x26 ,
+max  :0x45 0x47 0x46 0x46 0x3b 0x3c 0x3f 0x3e ,0x41 0x3   0x4d 0x4a 0x45 0x46 0x3e 0x3b 0x3a 0x40 ,0x42 0x3d 0x3c 0x38  0x37 0x3b 0x3a 0x39 0x39 0x39 ,0x39 0x38 0x3a 0x39 0x3a 0x38 0x0x38 0x39 0x37 0x37 ,0x39 0x38 0x39 0x37 0x39 0x38 0x3a 0x37 ,
+QS1:0x29, DQS2:0x33, DQS3:0x1f, 
+min  :0x5c 0x5f 0x61 0x5e 0x547 0x4f 0x50 0x50 0x4f 0x4c ,
+      0x59 0x59 0x57 0x57 0x4f 0x40x4b 0x4b 0x46 0x4c 0x46 ,
+mid  :0x78 0x7b 0x7c 0x79 0x6f 0x71 b 0x6b 0x6b 0x6a 0x67 ,
+      0x75 0x75 0x71 0x72 0x6a 0x66 0x60x66 0x62 0x67 0x62 ,
+max  :0x94 0x97 0x97 0x95 0x8b 0x8c 0x8f 7 0x87 0x86 0x82 ,
+      0x92 0x91 0x8c 0x8d 0x85 0x81 0x82 0x80x7f 0x83 0x7e ,
+range:0x38 0x38 0x36 0x37 0x37 0x35 0x37 0x37 7 0x37 0x36 ,
+      0x39 0x38 0x35 0x36 0x36 0x35 0x36 0x33 0x30x37 0x38 ,
+CA Training result:
+cs:0 min  :0x42 0x42 0x38 0x35x38 0x32 0x36 0x33 0x39 ,
+cs:0 mid  :0x80 0x82 0x77 0x75 0x77 074 0x68 ,
+cs:0 max  :0xbf 0xc2 0xb6 0xb6 0xb6 0xb6 0x9b ,0xbc 0ange:0x7d 0x80 0x7e 0x81 0x7e 0x7f 0x63 ,0x7c 0x81 0x79 0x83 0x7out
+
+U-Boot SPL 2026.04_armbian-2026.04-Sf96e-P0000-Hd9fb-V91fc-BeaTrying to boot from MMC2
+## Checking hash(es) for config config-1 ... OK
+## Checking hash(es) for Image atf-1 ... sha256+ OK
+## Checking hash(es) for Image u-boot ... sha256+ OK
+## Checking hash(es) for Image fdt-1 ... sha256+ OK
+## Checking hash(es) for Image atf-2 ... sha256+ OK
+## Checking hash(es) for Image atf-3 ... sha256+ OK
+## Checking hash(es) for Image atf-4 ... sha256+ OK
+## Checking hash(es) for Image atf-5 ... sha256+ OK
+## Checking hash(es) for Image atf-6 ... sha256+ OK
+INFO:    Preloader serial: 2
+NOTICE:  BL31: v2.3():v2.3-645-g8cea6ab0b:cl, fwver: v1.44
+NOTI16:36:43, Sep 19 2023
+INFO:    GICv3 without legacy support detNFO:    ARM GICv3 driver initialized in EL3
+INFO:    pmu v1 is INFO:    dfs DDR fsp_param[0].frz= 324MHz
+INFO:    dfs DDR fsp_param[2].freq_mhz= 528MHz
+INFO:ng opteed sec cpu_context!
+INFO:    boot cpu mask: 0
+INFO:    E provided by BL2 boot loader, Booting device without OPTEE initNK
+ERROR:   Error initializing runtime service opteed_fast
+INFO:    Entry point address = 0x800000
+INFO:    SPSR = 0x3c9
+
+
+U-Boot 2026.04_armbian-2026.04-Sf96e-P0000-Hd9fb-V91fc-Bea3803 +0800)
+
+Model: BigTreeTech CB2
+SoC:   RK3566
+DRAM:  2 GiB
+PMIC:  RK809 (on=0x40, off=0x00)
+Core:  636 devices, 31 uclasses, devicetree: separate
+MMC:   mmc@fe2b0000: 1, mmc@fe310000: 0
+Loading Environment from nowheOK
+In:    serial@fe660000
+Out:odel: BigTreeTech CB2
+SoC:   RK3566
+7[r[999;999H[6n8** Booting bootflow 'mmc@fe2b0000.bootdev.part_1' with script
+Boot script loaded from mmc 1:1
+5985 bytes read in 3 ms (1.9 MiB/s)
+23060718 bytes read in 2106 ms (10.4 MiB/s)
+44610048 bytes read in 3681 ms (11.6 MiB/s)
+171618 bytes read in 24 ms (6.8 MiB/s)
+Working FDT set to 120001073 bytes read in 8 ms (130.9 KiB/s)
+Applying kernel provided DT overlay rk3566-hdmi.dtbo
+3570 bytes read in 9 ms (386.7 KiB/s)
+Applying kernel provided 3566-fixup.scr)
+## Executing script at 09000000
+12854 bytes read in 4 ms (3.1 MiB/s)
+Applying user provided fix0000
+MEECHO: one-shot flag found, clearing it
+MEECHO: switching console to 115200
+## Switch baudrate to 115200 bps and press ENTER ...
+MEECHO: root on eMMC (meecho/root_emmc present)
+MEECHO: boot watchdog 3600s (meecho/bootwd_long present)
+MEECHO: loading from mmc 1:1
+132784 bytes read in 32 ms (4 MiB/s)
+15745024 bytes read in 1302 ms (11.5 MiB/s)
+171618 bytes read in 25 ms (6.5 MiB/s)
+MEECHO: booting, archive f04000 bytes
+## Flattened Device Tree blob at 4a000000
+   Booting using the fdt blob at 0x4a000000
+Working FDT set to 4a000000
+   Loading Ramdisk to 7bcfc000, end 7cc00000 ... OK
+   Loading Device Tree to 000000007ce8d000, end 000000007ceb9e61 ... OK
+Working FDT set to 7ce8d000
+
+Starting kernel ...
+
+MEECHO/aarch64: 4 cores, memory 0000000000200000-0000000040200000 000000004031b000-000000007bcfc000 000000007ceb8000-0000000080000000 000000007cc00000-000000007ce8d000 
+free chunks 4, memory ends at 0000000080000000
+boot archive 000000007bcfc000-000000007cc00000, 12 images
+SMP: 4 cores
+
+  |\/|
+==<-->==   MEECHO 0.1.0 (aarch64)
+           microkernel. messages.
+
+Copyright (c) 2026 MEECHO Project.  BSD-3-Clause.
+Derived from MINIX 3, Copyright 2016 Vrije Universiteit Amsterdam.
+CPU 1 is up
+CPU 3 is up
+CPU 2 is up
+Started VFS: 9 worker thread(s)
+readclock.arch(info)no real-time clock on this machine
+date: timed: No such file or directory
+Tue Jan  1 00:00:00 GMT 2013
+Starting the SD/MMC block driver
+sdmmc(info)mmc@fe310000: rockchip,dwcmshc-sdhci at 0xfe310000 (65536 bytes), irq 51, 8-bit bus, up to 200000000 Hz, soldered, 5 reset lines at 0xfdd20000
+sdmmc(info)SDHCI 4.20 at 0xfe310000, base clock 375000 Hz, caps 0x226dc881
+sdmmc(info)transfers by ADMA2, waits by interrupt
+sdmmc(info)write cache on, 1024 KiB
+sdmmc(info)eMMC "PJ3032": 61079552 sectors (29824 MiB), 8-bit bus at 50000000 Hz, high speed
+Root device name is /dev/c0d0
+/dev/c0d0: dirty, checking
+/dev/c0d0 is mounted on /
+none is mounted on /proc
+Root is on c0d0, driver sdmmc.
+trng(info)hardware random source at 0xfe388000, 32 bytes per read
+virtio-rng(info)no virtio-rng on this machine
+Starting the network driver dwmac
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_find.c+347(dwmac_find):controller at 0xfe010000 (65536 bytes), irq 64
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_find.c+349(dwmac_find):grf 0xfdc60000, cru 0xfdd20000, 1 reset lines, gpio 0xfdd60000 pin 21 (active low)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_find.c+355(dwmac_find):otp 0xfe38c000, soc-id at 0xa, 16 bytes
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_find.c+362(dwmac_find):rgmii delays tx 0x30 rx 0x10, clock from the PHY, phy at 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_rk.c+169(dwmac_rk_pins):iomux grf+0x040 <- 3300/ff00
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_rk.c+169(dwmac_rk_pins):iomux grf+0x044 <- 3333/ffff
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_rk.c+169(dwmac_rk_pins):iomux grf+0x048 <- 3330/fff0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_rk.c+169(dwmac_rk_pins):iomux grf+0x04c <- 3330/fff0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_rk.c+169(dwmac_rk_pins):iomux grf+0x050 <- 0003/000f
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_rk.c+169(dwmac_rk_pins):iomux grf+0x054 <- 0033/00ff
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+394(dwmac_init):synopsys id 0x51, user id 0x30
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_rk.c+305(dwmac_rk_reset_phy):phy reset on gpio pin 21
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+127(dwmac_phy_find):phy at 0: id 0x4f51e91b (Motorcomm YT8531)
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+294(dwmac_phy_reset):YT8531: set up as the vendor kernel sets it up
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext 000c = 8000  (reference 8000)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext 0027 = e812  (reference e810)  DIFFERS
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext 0057 = 274c  (reference 274c)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a000 = 0000  (reference 0000)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a001 = 8100  (reference 8100)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a003 = 00f1  (reference 00f1)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a010 = dbcf  (reference dbcf)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a012 = 00d0  (reference 00d0)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a039 = bf00  (reference bf00)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a03a = 9696  (reference 9696)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a03f = 9696  (reference 9696)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a040 = ffff  (reference ffff)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+248(dwmac_phy_dump_ext):phy ext a041 = 00ff  (reference 00ff)
+dwmac(warn):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+139(dwmac_read_hwaddr):no station address in the controller; using a locally administered one
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+435(dwmac_init):station address from the fuses: 8a:6e:41:09:8e:2f
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+231(cache_selftest):caches: CTR_EL0 84448004 (dcache line 64), CLIDR_EL1 82000023 (LoUU 0 LoC 2 LoUIS 0)
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+217(selftest_case):self-test control        phys 7ce09000 r 0 0:    0 lost (0..0)  p[0]=a5000000 p[1]=a5000001 p[16]=a5000010 p[1023]=a50003ff
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+217(selftest_case):self-test clean+inval    phys 7ce09000 r 0 0:    0 lost (0..0)  p[0]=a5000000 p[1]=a5000001 p[16]=a5000010 p[1023]=a50003ff
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+217(selftest_case):self-test clean only     phys 7ce09000 r 0 0:    0 lost (0..0)  p[0]=a5000000 p[1]=a5000001 p[16]=a5000010 p[1023]=a50003ff
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+217(selftest_case):self-test clean 64B      phys 7ce09000 r 0 0:    0 lost (0..0)  p[0]=a5000000 p[1]=a5000001 p[16]=a5000010 p[1023]=a50003ff
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+217(selftest_case):self-test heap control   phys 00000000 r 0 0:    0 lost (0..0)  p[0]=a5000000 p[1]=a5000001 p[16]=a5000010 p[1023]=a50003ff
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+217(selftest_case):self-test heap clean     phys 00000000 r 0 0:    0 lost (0..0)  p[0]=a5000000 p[1]=a5000001 p[16]=a5000010 p[1023]=a50003ff
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+217(selftest_case):self-test heap cl+inv    phys 00000000 r 0 0:    0 lost (0..0)  p[0]=a5000000 p[1]=a5000001 p[16]=a5000010 p[1023]=a50003ff
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+182(dwmac_mtl_init):fifo: 16384 bytes out, 32768 in
+Asking for an address on dwm0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce16000 head 0 tail 0  rx cur 7ce09000 next 0  mac cfg 00000003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 0 frames out (0 good), 0 frames in, 0 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 7949 status 0000  chip-config 8100 rgmii-config1 00f1
+dwmac(info):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+99(dwmac_link_check):link up: 100 Mbit/s, full duplex
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce16000 head 0 tail 0  rx cur 7ce09000 next 0  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 0 frames out (0 good), 0 frames in, 0 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce16040 head 4 tail 3  rx cur 7ce09010 next 1  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 4 frames out (4 good), 1 frames in, 5 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: 30000040 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 3: 7c1ca800 00000000 80000171 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce16060 head 6 tail 5  rx cur 7ce09010 next 1  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 6 frames out (6 good), 1 frames in, 7 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: 30000040 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 5: 7c1cb800 00000000 8000004e 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce16070 head 7 tail 6  rx cur 7ce09020 next 2  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 7 frames out (7 good), 2 frames in, 9 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: 30000040 30000040 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 6: 7c1cc000 00000000 80000046 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce16080 head 8 tail 7  rx cur 7ce09040 next 4  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 8 frames out (8 good), 4 frames in, 12 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: 30000040 30000040 30010049 30010486 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 7: 7c1cc800 00000000 80000056 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce160a0 head 10 tail 9  rx cur 7ce09080 next 8  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 10 frames out (10 good), 8 frames in, 18 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 9: 7c1cd800 00000000 8000003c 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce160a0 head 10 tail 9  rx cur 7ce090b0 next 11  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 10 frames out (10 good), 11 frames in, 21 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 9: 7c1cd800 00000000 8000003c 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce160c0 head 12 tail 11  rx cur 7ce090e0 next 14  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 12 frames out (12 good), 14 frames in, 25 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 11: 7c1ce800 00000000 80000046 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce160d0 head 13 tail 12  rx cur 7ce090f0 next 15  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 13 frames out (13 good), 15 frames in, 27 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 12: 7c1cf000 00000000 8000003c 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce160d0 head 13 tail 12  rx cur 7ce09110 next 17  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 13 frames out (13 good), 17 frames in, 29 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 12: 7c1cf000 00000000 8000003c 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+Leased on dwm0:
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+272(dwmac_dump):dma st 00000000  tx cur 7ce16100 head 16 tail 15  rx cur 7ce09130 next 19  mac cfg 0000e003  rx errors 0
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac.c+280(dwmac_dump):mac counters: 16 frames out (16 good), 19 frames in, 34 interrupts
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+500(dwmac_ring_dump):rx desc 0-7 des3: c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000 c1000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_ring.c+512(dwmac_ring_dump):tx desc 15: 7c1d0800 00000000 8000003c 30000000
+dwmac(debug):/home/minix/minix-src/minix/drivers/net/dwmac/dwmac_mdio.c+333(dwmac_phy_dump):phy: bmcr 1000 bmsr 796d status 7c00  chip-config 8100 rgmii-config1 00f1
+        inet 192.168.33.12 netmask 0xffffff00 broadcast 192.168.33.255
+Mon Oct  5 08:08:07 GMT 2026
+Starting sshd
+/home/minix/minix-src/minix/servers/vfs/path.c:51: assert "resolve->l_vnode_lock != TLL_NONE" failed, function "advance"
+vfs(1): panic: assert failed
+syslib:panic.c: stacktrace: 
+VFS mthread stacktraces:
+RS: unable to create service 'vfs' without a replica
+RS: unable to clone service (error -1)
+core system service died: service 'vfs'* (slot 4, ep 1, pid 7)
+rs            2 pc 0x4150ec lr 0x40f360 
+kernel panic: cause_sig: sig manager 2 gets lethal signal 6 for itself
+kernel on CPU 0: 
+current process rs / 2: rs            2 pc 0x4150ec lr 0x40f360 
+MEECHO will now reset.
+~~¸˛˘?˛~¯~ˇ‡~˛ÛÛ·Ò¯¸˝ü˘ˇ~ˇ~?˘??¸~~ˇ~¸ˇˇ˘ˇ˘ø~¸¸¸ˇˇÒ¯¸~~ˇ~ˇ¸ˇ>?˘?Ω.Ù~nnÃ~nÃûΩ‰f˝nf≈Ü~?Ì~}?<˝¸|~˛¸Ãû?/˝~¬??_˘˝??lO?/˝?¿?¸Û?˝??ˇxÛ~œ|?~˝?>y~=??~?|œ>?}G¸?^?ü>¸?Gº?|<º~>~¸}?? =/?_x?|?»>??/^?<¸ ?>~=/?˛~¸˝ˇ˙Ú˝ˇ˘ˇ˙˘˘ˇ˙ˇ˙Ò˛ˇ˙Ò√˛˝˛˙Ú˝ˇ∏˝≈qüÃÏ—ÌÌ)˙Õ˜Âi¡˚ˇ∑Æy_˙£Q™˘˚∏Ëä_£Qä˘ÒiÍ¶ˇ˝∑È˘ˇ∏Qq?˚O>ÇÒ„¸˛˛‡Á˛ˇ¸˛¸˛‡ÒˇˇˇÒ˛ˇˇˇˇ„˛¸˛˛«˛ˇÒ„¯˛ˇé˛Ò˛˛˛ˇ˛¸¯¸ˇ˛˛„¸¸˛¯¸¯¸(©ÈÈÍÒ—%6›˛É‚ˇ—"$h(Ò)È¡…ªÕàı·‰·ÈäÒ®Èˇ˛®·‰hÂß]¸©Åˇ°Â⁄ΩY,ˇı—≈)’âpã[´˝*ˇ˙Ë·éuqUç·—âËi…Èıhı,È¬ãÈiÕ)yãy9xq¨QqU	™âÍıˇ*ä— *—È&§·¨È…ßCQ≠›˘æ·ÊÌÕ˚(·„Ì˘ær®À+7¸ˇˇÂÌ|ˇ˘†+¡≥¥ÌÎ©tæ°ÕÚó˘zˇ˚ÂÀÕ˘…WSi¥À®Káß’˝mÌÈäŸËiäyõÚáß’˝Âä+yQπãÀ{ΩÛÎàa:¸éˇyYõ˚„¯™·äŸÈã´õ¡ª0rΩqØyÕÒ~âe{ŸÈãÏ©Àß·Ìgquˇ·Ò’…¡’ÚˇÈsxÈ˚ˇäŸÍÀÂÒ*,Ö©ï˝>Î™…yrôÂ´˝£‚≈È’·™Ì„K´›õˇ˝·„yrôu|q∑Q]q{äh˝¡®kôAÚ£’{·ä™Å’ jäh˝¢rª·…>¡ˇQ]yuqqjˇ¡ıöWS‹¡}{xûuÆ˝£À·Íä…£¡®+Ò *˝¢]]ˇ∑UYÚ£ﬁ®Ì…Å’™´Âi£¡ıy1´ÛÈÅ’ã äŸ´ˇ¡®-Ø—Â˙ˇäŸdmçæÎ≈ÌäôA˝KÀ’{È»käŸd jäÒˇ•ø´ õÂ€y™∞1ã∞ÕäŸŸ¸yé´ÆÛäŸŸÂÒäÈÕ·À®≠Õ†·ÀàÔ≈äÕÎà’·— ˘≈ÌÈÍä)ºˇÖß€zΩ≈·Qã≈ÂäÂ‚QÂ·…xyÛ£ﬁ:
+›sÕQ]ﬂuqqÚ£’È
+™…Ìˇá≥Uø∫ÛıqˇˇÈŸkÈ§´m·˘Î"çu
+˘y™x:º{´ˇÎà’Òh&··Î:
+;≈-£ãnË™Â‚KÎ—#Ôã··ˇ¡ıuÆ_Q˙¡ıymSC›ßß€ı.+Í…äŸ™´`éÈäÛ£ﬁæ˘äŸäŸdã*È˘(ÛQé}à¸KÀ’ÛÖ•À·hnkˇ¡ı™Uæã˘¸¡}ûÆY›˙KÎ—Ó—bã˘ˇäŸd™ÍÀ›¸Ö©-ã˛€Ò®•©Ï˝ ˝•πe—!Õá£•Ìhy·ˇKã’·Í*ÓˇÈ≈)…≥Ìò˝Ö•’˜∏·©ˇ¡ıuqÀ¸á£•È≠Í…„¡®iÎ¸ÂŸ…˝ÎË…´'
+Õ≈È’Ò
++¡kÅe yä•ˇQ8öﬂQ›Õ¡®kÍ´Ì˝£’q?
+£Èˇ¡®-˘äÌÂˇÖ•ÎÈä*—Q•y£qyÛy™x¡„äy¯•Ω´hj¯—m•°ÂÌÈäÛÈdØı™˘¡—z˛ã ≈QÂıj≈·Û£ﬁÔÂäi¸≈·´°—n·á£•ıh∏yÚáØÀ*Õ´Íˇ¡ı¸y™Òa£’·
+äÈÌˇÈ„8´≠ÕÎˇ·ÂãÀÍãÌ¸È„À™Ìä˝¡—ãÌä•ÍˇÎà„ã’ÀÔÒˇ¡ıuWæu]°ãÀÍãÌ˘Å’ >äÈÌˇ£’´´Â´‚È´™≠ ¡ÛÈd ˛´bÔˇ·´±U~™ˇÂÌäiçˇ·Âã™—È˘£Å’´Ì™hÖ©-®aËˇQ8öäq;´ÛÖ•Àqò≈äÚÅe#ÔÎ äˇ≈·´˘Òj∏∂Q]›IÆ¸Åe#ãÈ≤ÎË…≠ıkK·Ìã®äÌ6Kã’ËÒ√)Èˇ•≠´ ÀÈ›ˇáØ´Ò´·…KÎ®ãã| ÂÍ≈Ìi=<Âä„Kã’È ≤Õ™ŸtrÀäÕáØÀÍq∑ ¡ÌtÙò˝ˇÖ©ïÚHÒ: ≈È’kÍ
+›È„i˘√´È¯·Ò’Îk·Â‚•©ÏÈ¡Ÿ£’·:à·πˇ£ﬁ)·ä*c£ã™Í™+È—∫}È·ÌÏÒı¡}Ì*•™≥á´—+≠´‚áØÀhÂãˇy™;ãìÌãÈKã›ã´´ ÒˇÎË…È˘ÈK·Ìgä¡ãˇyYüQÆÆ…È„ÀjãÈÈ˝Òπ’i·„£ﬁ≈mäÌ¸Åe´—ÈÍˇKã’`h˘Ëˇ¡®i*È…¡—™mäÒˇáØ´ÈÂä˝¡ı:0´Õ¡—äyè·≠˝£ãÌ*88j£ãÒ{˘¢]2ª˙ÕäŸŸiÂäıˇÈd™hÍ#„á´ﬂÌ´ˇÈŸ:0´Õ£Àà—/…Å’€yâ¢·Ìã2ª˘˙á£•Â™·©¡äŸdÒÍâ‚È—Í-Òˇ£ãÈ
+ØˇKã’ÆYÓ·ÌÎ{}ÈÎ¡®-Ë≠Í¸·Ì´Ì #ˇäŸd´Âıy≈ÌiÍ™…·ÌgÈ'?Î¡ıªéSSWÈŸª.‚—∫˝Òªzxò·ÈàÂÈ€≈QÂ˙π˝äJÅe ãÀˇ£ﬁh™È…£’˘'ãı‚ÈŸ/´!"≠ˇÎ®ãËäıÈ·´Ò*ËÆIrÀæQ¸Ò•≠Àı‡#ˇ©Ÿ·äÍ%≈Î⁄KËÈ˙˛À¨Ú…≈È˙˘-ºÛeuªÈª yr˙—´¡·äÍ%≈Î’≈´·äÍ%≈Î ÀÕÂ·ä™JöÎÈk˛À¨ÚÍu;ﬁûQ±˙’≈´ÈÓÌ¨!ÒKÎ—Ì´ıÂ·˘•©Ï˚€≈ÕQ]ÆUäÕQÂÍ—¯ÒÈÈŸπà(äˇÅe¯ﬁ±•ˇ£’q¥˝™…•≠ÎÌıÈkÒÓ´˝¶ˇÆ˝AUç≈È˘

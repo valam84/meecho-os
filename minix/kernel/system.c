@@ -673,15 +673,20 @@ int sched_proc(struct proc *p, int priority, int quantum, int cpu, int niced)
 
 	/* FIXME this is a problem for SMP if the processes currently runs on a
 	 * different CPU */
-	if (proc_is_runnable(p)) {
 #ifdef CONFIG_SMP
-		if (p->p_cpu != cpuid && cpu != -1 && cpu != p->p_cpu) {
+	/*
+	 * Moving to another CPU takes the FP state along: a runnable process
+	 * elsewhere is stopped there and saves it; any other - in particular
+	 * one that just ran out of quantum, which is when sched moves it -
+	 * gives up the FPU it may still own on its old CPU (or on this one).
+	 */
+	if (cpu != -1 && cpu != p->p_cpu) {
+		if (proc_is_runnable(p) && p->p_cpu != cpuid)
 			smp_schedule_migrate_proc(p, cpu);
-		}
-#endif
-
-		RTS_SET(p, RTS_NO_QUANTUM);
+		else
+			smp_schedule_release_fpu(p);
 	}
+#endif
 
 	if (proc_is_runnable(p))
 		RTS_SET(p, RTS_NO_QUANTUM);

@@ -159,6 +159,31 @@ void smp_schedule_migrate_proc(struct proc * p, unsigned dest_cpu)
 	RTS_UNSET(p, RTS_PROC_STOP);
 }
 
+/*
+ * Take a process that is not running anywhere off the FPU of the CPU it was
+ * last on: save its registers into its own state and release ownership, so
+ * that it can be given another CPU.
+ *
+ * FP state is switched lazily, so a process that ran out of quantum - and is
+ * on no run queue - may still own its old CPU's registers. Changing p_cpu
+ * then leaves the new CPU to restore a stale copy and the old one to save
+ * into it later, on behalf of a process that has moved on. Nothing moved a
+ * non-runnable process between CPUs until sched started balancing.
+ */
+void smp_schedule_release_fpu(struct proc * p)
+{
+	if (p->p_cpu != cpuid) {
+		smp_schedule_sync(p, SCHED_IPI_SAVE_CTX);
+		return;
+	}
+
+	if (proc_used_fpu(p) && get_cpulocal_var(fpu_owner) == p) {
+		disable_fpu_exception();
+		save_local_fpu(p, FALSE /*retain*/);
+		release_fpu(p);
+	}
+}
+
 void smp_sched_handler(void)
 {
 	unsigned flgs;

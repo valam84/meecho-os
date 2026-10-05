@@ -1680,6 +1680,23 @@ void enqueue(
   else if (get_cpu_var(rp->p_cpu, cpu_is_idle)) {
 	  smp_schedule(rp->p_cpu);
   }
+  /*
+   * And the same preemption as above when the cpu is busy with a lower
+   * priority process: the IPI makes it preempt whatever it runs and pick
+   * again. Without it a process woken from another cpu - by a server's
+   * reply, by VM after a page fault - waits for the end of the current
+   * process's quantum, up to 200 ms per wakeup. On the CB2 a job started
+   * next to a busy one took one quantum per page fault and did not get
+   * going until its neighbour had finished (2026-10-05).
+   */
+  else {
+	  struct proc * curr = get_cpu_var(rp->p_cpu, proc_ptr);
+
+	  if (curr->p_endpoint == IDLE ||
+			  (curr->p_priority > rp->p_priority &&
+			   (priv(curr)->s_flags & PREEMPTIBLE)))
+		  smp_schedule(rp->p_cpu);
+  }
 #endif
 
   /* Make note of when this process was added to queue */

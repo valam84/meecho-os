@@ -18,6 +18,14 @@ member FPREG uc_mcontext.__gregs[_REG_X29]
 member LRREG uc_mcontext.__gregs[_REG_X30]
 member SPREG uc_mcontext.__gregs[_REG_SP]
 member PCREG uc_mcontext.__gregs[_REG_PC]
+member FREG8 uc_mcontext.__fregs.__qregs[8]
+member FREG9 uc_mcontext.__fregs.__qregs[9]
+member FREG10 uc_mcontext.__fregs.__qregs[10]
+member FREG11 uc_mcontext.__fregs.__qregs[11]
+member FREG12 uc_mcontext.__fregs.__qregs[12]
+member FREG13 uc_mcontext.__fregs.__qregs[13]
+member FREG14 uc_mcontext.__fregs.__qregs[14]
+member FREG15 uc_mcontext.__fregs.__qregs[15]
 define EFAULT EFAULT
 define EINVAL EINVAL
 define MCF_MAGIC MCF_MAGIC

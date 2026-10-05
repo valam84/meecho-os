@@ -10,9 +10,20 @@ IMPORT(__errno)
 /*
  * The AArch64 form of the earm routines. What has to be saved is what the
  * procedure call standard makes the callee's responsibility: x19-x28, the
- * frame pointer, the stack pointer and the return address. Argument and
- * temporary registers belong to the caller and are not preserved across
- * getcontext(), exactly as they are not preserved across any other call.
+ * frame pointer, the stack pointer, the return address - and the low halves
+ * of v8-v15, d8-d15. Argument and temporary registers belong to the caller
+ * and are not preserved across getcontext(), exactly as they are not
+ * preserved across any other call.
+ *
+ * d8-d15 are saved whatever uc_flags says. _UC_IGNFPU means the FP state as
+ * a whole - all 32 registers, FPCR, FPSR, through the kernel - may be
+ * skipped; it cannot mean the callee-saved part, which the caller of a
+ * context switch is entitled to find intact like x19-x28. On i386 the flag
+ * was harmless because x87 has no callee-saved registers. Here libmthread
+ * sets it, and GCC keeps values in d8-d15 across calls: VFS held a lock
+ * pair in d15 across a call that blocked and switched workers, came back
+ * with another worker's d15, and asserted in path.c:51 (2026-10-05).
+ * port/test/libc/ctxfp.c checks it.
  *
  * errno is reached through __errno() rather than by address so that the
  * same code serves the static and the position-independent library.
@@ -60,6 +71,14 @@ ENTRY(_getcontext)
 	stp	x23, x24, [x0, #REG23]
 	stp	x25, x26, [x0, #REG25]
 	stp	x27, x28, [x0, #REG27]
+	str	d8,  [x0, #FREG8]	/* And the callee-saved SIMD halves */
+	str	d9,  [x0, #FREG9]
+	str	d10, [x0, #FREG10]
+	str	d11, [x0, #FREG11]
+	str	d12, [x0, #FREG12]
+	str	d13, [x0, #FREG13]
+	str	d14, [x0, #FREG14]
+	str	d15, [x0, #FREG15]
 
 	/* 0xc0ffee is neither a shifted 16-bit nor a bitmask immediate, so
 	 * it takes two instructions to build. */
@@ -127,6 +146,14 @@ ENTRY(setcontext)
 	ldp	x23, x24, [x0, #REG23]
 	ldp	x25, x26, [x0, #REG25]
 	ldp	x27, x28, [x0, #REG27]
+	ldr	d8,  [x0, #FREG8]
+	ldr	d9,  [x0, #FREG9]
+	ldr	d10, [x0, #FREG10]
+	ldr	d11, [x0, #FREG11]
+	ldr	d12, [x0, #FREG12]
+	ldr	d13, [x0, #FREG13]
+	ldr	d14, [x0, #FREG14]
+	ldr	d15, [x0, #FREG15]
 	ldr	x29, [x0, #FPREG]	/* Restore fp */
 	ldr	x1, [x0, #SPREG]
 	mov	sp, x1			/* Restore sp */

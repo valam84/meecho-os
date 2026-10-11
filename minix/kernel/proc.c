@@ -1232,7 +1232,49 @@ field, caller->p_name, entry, priv(caller)->s_asynsize, priv(caller)->s_asyntab)
   			ASCOMPLAIN(caller_ptr, entry, "message entry");	\
 			/* Do NOT set r or goto asyn_error here! */ \
   }						\
-  			  } while(0)	
+  			  } while(0)
+
+/* Whether the "cannot record" complaint has been printed for a sender's
+ * current table, by privilege id; cleared when its table is replaced or a
+ * record goes through again.  Kept here rather than in struct priv because
+ * VM reads that structure (servers/vm/fork.c) and would have to be rebuilt
+ * with it.
+ */
+static char asyn_unrecorded[NR_SYS_PROCS];
+
+/*===========================================================================*
+ *				asyn_record				     *
+ *===========================================================================*/
+static int asyn_record(struct proc *src_ptr, vir_bytes table_v,
+	unsigned int entry, asynmsg_t *tabent)
+{
+/* Write the delivery of 'entry' into the sender's table, BEFORE delivering
+ * it.  The table is the only place that says a message has been delivered:
+ * an entry that is delivered but not marked AMF_DONE is delivered again on
+ * the next receive, and again after that - the receiver handles the same
+ * message forever.  The write fails where the sender's page is read-only to
+ * it (copy-on-write after a fork: resolve() will not hand the kernel a
+ * writable pointer there, and this path cannot wait for VM).  So the record
+ * comes first, and a message whose record cannot be written is not
+ * delivered: it stays pending, at most once instead of over and over, and
+ * goes through the moment the page is writable again (the sender writing to
+ * it, or VM at fork - servers/vm/fork.c).
+ */
+  sys_id_t id = priv(src_ptr)->s_id;
+
+  if (data_copy(KERNEL, (vir_bytes) tabent, src_ptr->p_endpoint,
+	table_v + entry*sizeof(asynmsg_t), sizeof(*tabent)) != OK) {
+	if (!asyn_unrecorded[id]) {
+		printf("kernel: asynsend table of %s (%d) is not writable at "
+		    "entry %u; its message to %d waits\n", src_ptr->p_name,
+		    src_ptr->p_endpoint, entry, tabent->dst);
+		asyn_unrecorded[id] = 1;
+	}
+	return FALSE;
+  }
+  asyn_unrecorded[id] = 0;
+  return TRUE;
+}
 
 /*===========================================================================*
  *				try_deliver_senda			     *
@@ -1250,6 +1292,7 @@ int try_deliver_senda(struct proc *caller_ptr,
   asynmsg_t tabent;
   const vir_bytes table_v = (vir_bytes) table;
   message *m_ptr = NULL;
+  endpoint_t held = NONE;	/* receiver whose message could not be recorded */
 
   privp = priv(caller_ptr);
 
@@ -1257,6 +1300,7 @@ int try_deliver_senda(struct proc *caller_ptr,
   privp->s_asyntab = -1;
   privp->s_asynsize = 0;
   privp->s_asynendpoint = caller_ptr->p_endpoint;
+  asyn_unrecorded[privp->s_id] = 0;	/* a new table, a new complaint */
 
   if (size == 0) return(OK);  /* Nothing to do, just return */
 
@@ -1317,10 +1361,25 @@ int try_deliver_senda(struct proc *caller_ptr,
 	 * If AMF_NOREPLY is set, do not satisfy the receiving part of
 	 * a SENDREC.
 	 */
-	if (r == OK && WILLRECEIVE(caller_ptr->p_endpoint, dst_ptr,
+	if (r == OK && dst_ptr->p_endpoint != held &&
+	    WILLRECEIVE(caller_ptr->p_endpoint, dst_ptr,
 	    (vir_bytes)&table[i].msg, NULL) &&
 	    (!(flags&AMF_NOREPLY) || !(dst_ptr->p_misc_flags&MF_REPLY_PEND))) {
-		/* Destination is indeed waiting for this message. */
+		/* Destination is indeed waiting for this message.  Record the
+		 * delivery first (see asyn_record()); if that cannot be done,
+		 * the message waits like one whose receiver is busy, and so
+		 * does every later one to the same receiver - delivering
+		 * those would reorder them.
+		 */
+		tabent.result = OK;
+		tabent.flags = flags | AMF_DONE;
+		if (!asyn_record(caller_ptr, table_v, i, &tabent)) {
+			held = dst_ptr->p_endpoint;
+			set_sys_bit(priv(dst_ptr)->s_asyn_pending,
+				    priv(caller_ptr)->s_id);
+			done = FALSE;
+			continue;
+		}
 		dst_ptr->p_delivermsg = tabent.msg;
 		dst_ptr->p_delivermsg.m_source = caller_ptr->p_endpoint;
 		dst_ptr->p_misc_flags |= MF_DELIVERMSG;
@@ -1329,6 +1388,9 @@ int try_deliver_senda(struct proc *caller_ptr,
 #if DEBUG_IPC_HOOK
 		hook_ipc_msgrecv(&dst_ptr->p_delivermsg, caller_ptr, dst_ptr);
 #endif
+		if (flags & AMF_NOTIFY)
+			do_notify = TRUE;
+		continue;	/* the result is in the table already */
 	} else if (r == OK) {
 		/* Inform receiver that something is pending */
 		set_sys_bit(priv(dst_ptr)->s_asyn_pending, 
@@ -1507,7 +1569,15 @@ static int try_one(endpoint_t receive_e, struct proc *src_ptr,
 	if ((flags & AMF_NOREPLY) && (dst_ptr->p_misc_flags & MF_REPLY_PEND)) 
 		continue;
 
-	/* Destination is ready to receive the message; deliver it */
+	/* Destination is ready to receive the message.  Record the delivery
+	 * in the sender's table first, then deliver (see asyn_record()).  A
+	 * message that cannot be recorded stays pending, and the scan stops
+	 * here: a later entry for the same receiver would overtake it.
+	 */
+	tabent.result = OK;
+	tabent.flags = flags | AMF_DONE;
+	if (!asyn_record(src_ptr, table_v, i, &tabent))
+		break;
 	r = OK;
 	dst_ptr->p_delivermsg = tabent.msg;
 	dst_ptr->p_delivermsg.m_source = src_ptr->p_endpoint;
@@ -1515,11 +1585,13 @@ static int try_one(endpoint_t receive_e, struct proc *src_ptr,
 #if DEBUG_IPC_HOOK
 	hook_ipc_msgrecv(&dst_ptr->p_delivermsg, src_ptr, dst_ptr);
 #endif
+	if (flags & AMF_NOTIFY) do_notify = TRUE;
+	break;
 
 store_result:
-	/* Store results for sender. We may just have started delivering a
-	 * message, so we must not return an error to the caller in the case
-	 * that storing the results triggers an error!
+	/* Only a malformed entry gets here (r == EINVAL): nothing is
+	 * delivered, so a failed write merely means the error is reported
+	 * again next time.
 	 */
 	tabent.result = r;
 	tabent.flags = flags | AMF_DONE;

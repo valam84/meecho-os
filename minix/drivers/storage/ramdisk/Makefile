@@ -157,6 +157,11 @@ dir.sdmmc:=	minix/drivers/storage/mmc
 # that has no clock, so that the time never stays at the epoch.
 PROGRAMS+=		readclock.drv
 dir.readclock.drv:= minix/drivers/clock/readclock
+# The binary of mib, the one boot-image service that restarts without
+# state: rc hands RS its path, and on a ramdisk root this is the only copy
+# there is.  See the comment in rc.
+PROGRAMS+=		mib
+dir.mib:=	minix/servers/mib
 PROGRAMS+=		readclock
 dir.readclock:=	minix/commands/readclock
 PROGRAMS+=		date

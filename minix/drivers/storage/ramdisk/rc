@@ -182,6 +182,21 @@ if ! sysenv bootramdisk >/dev/null; then
 	exec </dev/console
 fi
 
+# Give RS the binary of the one boot-image service that can be restarted.
+# RS started the boot image from the boot archive and has no path to any of
+# it, so a crash of a boot service ends in "read_exec failed" and RS
+# stopping the machine.  etc/rc.minix edits all of them; here only mib,
+# because only mib restarts without state (its restart callback is a fresh
+# init).  tty, memory, pfs, ds, sched, vfs and pm restart statefully, and a
+# state transfer from an instance that crashed is refused by libsys unless
+# the crash was injected - with a path they die the same way, one step
+# later.  Measured with port/test/audit/boot-restart.py.  On a ramdisk root
+# there is no /service/mib, and nothing to do.
+if [ X`sysenv arch` = Xaarch64 -a -x /service/mib ]
+then
+	minix-service edit /service/mib -label mib || :
+fi
+
 # Mount the ProcFS instance that was loaded from the ramdisk, on the root FS.
 mount -e -n -t procfs none /proc || echo "WARNING: couldn't mount procfs"
 

@@ -81,6 +81,16 @@ then
 			echo Starting the SD/MMC block driver
 			minix-service -c up /service/sdmmc -dev /dev/c0d0 \
 				-label sdmmc_0 -args instance=0
+			# And the machine's second storage controller, if it
+			# has one: soldered devices are numbered first, so on
+			# the CB2 this is the SD socket behind the eMMC, and on
+			# a board with only a socket it is nothing.  No
+			# controller, an empty socket, a card that will not
+			# answer - the driver says which and leaves, and the
+			# boot goes on; the root is whichever rootdevname
+			# names, c0d0 or c1d0.
+			minix-service -c up /service/sdmmc -dev /dev/c1d0 \
+				-label sdmmc_1 -args instance=1 2>/dev/null || :
 			;;
 		*)
 			echo Starting the virtio block driver

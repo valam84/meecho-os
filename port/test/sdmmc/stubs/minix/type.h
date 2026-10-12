@@ -7,4 +7,6 @@ typedef uint64_t u64_t;
 typedef uint32_t u32_t;
 typedef unsigned long phys_bytes;
 typedef unsigned long vir_bytes;
+typedef int endpoint_t;
+typedef int cp_grant_id_t;
 #endif

@@ -90,55 +90,41 @@ static size_t reg_size;
 static vir_bytes regs;
 
 /*
- * The reset controller: where it is, where it ended up, and which of its
- * lines belong to this controller. Empty on a machine whose tree names none,
- * which is every machine but this board so far.
+ * The controller's reset lines and its core clock, as the tree names them.
+ * What holds them, and what its registers look like, is sdmmc_clk.c's
+ * business; on a machine whose tree names none, or names a holder that file
+ * does not know, every operation on them answers ENOSYS and the firmware's
+ * settings stand.
  */
-static phys_bytes rst_base;
-static size_t rst_size;
-static vir_bytes rst_regs;
 static unsigned rst_n;
-static unsigned rst_id[SDMMC_MAX_RESETS];
+static struct sdmmc_line rst[SDMMC_MAX_RESETS];
+static struct sdmmc_line clk_core;
 
 /*
- * Rockchip's software reset registers: sixteen lines each, from 0x400 up,
- * and every write carries its own mask in the top half so that one line can
- * be changed without reading the register first. Line n lives in register
- * n / 16 at bit n % 16.
- */
-#define RK_SOFTRST_CON0		0x400
-#define RK_SOFTRST_PER_REG	16
-
-/*
- * The card clock's source, which on this SoC is a multiplexer and not a
- * divider - and getting that wrong is not a slow card but a wrong one.
+ * Whether the card clock's source follows the card clock - and getting that
+ * wrong on the part that needs it is not a slow card but a wrong one.
  *
- * With the delay line bypassed the controller samples what the card drives
- * against the *source* clock, not against the divided card clock. Leave the
- * source at 198 MHz and divide it by 534 for identification and the card is
- * clocked correctly while its answers are sampled at the wrong instants:
- * a 48-bit response comes back with bits missing but still looking like a
- * plausible number, and a 136-bit one does not come back at all. That is
- * how this driver spent an afternoon believing an eMMC had the operating
- * range 0x003f8000 when it was really answering 0x40ff8080.
+ * A standard part divides its base clock and touches nothing outside itself.
+ * The Rockchip part cannot be driven that way below 52 MHz: with its delay
+ * line bypassed it samples what the card drives against the *source* clock,
+ * not against the divided card clock. Leave the source at 198 MHz and divide
+ * it by 534 for identification and the card is clocked correctly while its
+ * answers are sampled at the wrong instants: a 48-bit response comes back
+ * with bits missing but still looking like a plausible number, and a 136-bit
+ * one does not come back at all. That is how this driver spent an afternoon
+ * believing an eMMC had the operating range 0x003f8000 when it was really
+ * answering 0x40ff8080. Linux does the same thing for the same part
+ * (dwcmshc_rk3568_set_clock): it sets the core clock to the card clock and
+ * leaves the divider at one.
  *
- * Hence the mux, and hence 375 kHz: it is not "at most 400" rounded down,
- * it is the one sub-megahertz input the multiplexer has. CLKSEL_CON28 bits
- * 14:12 choose between these six, and every Rockchip register takes its own
- * write mask in the top half so one field can be set without a read.
+ * So it is a property of the part, not of what the capabilities register
+ * says - and the register is no guide here anyway: this part names 200 MHz
+ * there whatever its source is set to, because the field is a constant of
+ * the design rather than a reading of the clock. Deciding by "the register
+ * names no base clock" was tried, and on the board it identified the eMMC at
+ * 200 MHz / 534 and read CMD2 as an idle bus, exactly as above.
  */
-#define RK_CLKSEL_CON28		0x170
-#define RK_CCLK_EMMC_SHIFT	12
-#define RK_CCLK_EMMC_MASK	0x7
-
-static const struct { uint32_t hz; unsigned sel; } cclk_emmc[] = {
-	{    375000, 5 },
-	{  24000000, 0 },
-	{  50000000, 4 },
-	{ 100000000, 3 },
-	{ 150000000, 2 },
-	{ 200000000, 1 }
-};
+static int source_follows;
 
 /* Read out of the part at init, not written down here. */
 static uint32_t base_clock;		/* the divider's input, in Hz */
@@ -472,33 +458,7 @@ dump_regs(const char *when)
 static void
 hardware_reset(void)
 {
-	unsigned i, reg, bit;
-	uint32_t v;
-
-	if (rst_regs == 0 || rst_n == 0)
-		return;
-
-	for (i = 0; i < rst_n; i++) {
-		reg = RK_SOFTRST_CON0 + (rst_id[i] / RK_SOFTRST_PER_REG) * 4;
-		bit = rst_id[i] % RK_SOFTRST_PER_REG;
-		if (reg + 4 > rst_size)
-			continue;
-		v = (1u << (bit + 16)) | (1u << bit);
-		*(volatile uint32_t *)(rst_regs + reg) = v;
-	}
-
-	micro_delay(10);
-
-	for (i = 0; i < rst_n; i++) {
-		reg = RK_SOFTRST_CON0 + (rst_id[i] / RK_SOFTRST_PER_REG) * 4;
-		bit = rst_id[i] % RK_SOFTRST_PER_REG;
-		if (reg + 4 > rst_size)
-			continue;
-		v = (1u << (bit + 16));		/* mask set, value clear */
-		*(volatile uint32_t *)(rst_regs + reg) = v;
-	}
-
-	micro_delay(100);
+	sdmmc_reset_pulse(rst, rst_n);
 }
 
 static int
@@ -543,51 +503,11 @@ reset(uint8_t mask)
  * The card clock.
  *
  * From specification 3.00 the divider is ten bits: the register holds N, the
- * divisor is 2N, and N == 0 means the base clock undivided. Rockchip's part
- * is documented as not accepting N == 0, and nothing here wants it - the
- * base is 198 MHz on this board and the fastest mode this driver uses is
- * 52 MHz - so the search starts at N = 1.
+ * divisor is 2N, and N == 0 means the base clock undivided. When the source
+ * follows the card clock (source_follows above) the source is already at or
+ * below the wish and N is zero; otherwise the smallest N that brings the
+ * base down to it.
  */
-/*
- * Point the card clock's multiplexer at the lowest source that a whole
- * divider can bring down to hz, and answer with that source's rate. Zero
- * when there is no reset controller mapped - which is the same register
- * block - and the caller then divides whatever the part came up with.
- */
-static uint32_t
-set_source_clock(uint32_t hz)
-{
-	unsigned i, best = 0;
-	uint32_t v, best_got = 0;
-
-	if (rst_regs == 0 || RK_CLKSEL_CON28 + 4 > rst_size || hz == 0)
-		return 0;
-
-	/*
-	 * The best source is the one whose highest achievable rate at or
-	 * below hz is greatest: a source at or below hz is used undivided,
-	 * a faster one is divided down.
-	 */
-	for (i = 0; i < sizeof(cclk_emmc) / sizeof(cclk_emmc[0]); i++) {
-		uint32_t cand = cclk_emmc[i].hz;
-		uint32_t got = (cand <= hz) ? cand :
-		    cand / (2 * ((cand + 2 * hz - 1) / (2 * hz)));
-
-		if (got <= hz && got > best_got) {
-			best = i;
-			best_got = got;
-		}
-	}
-
-	v = ((uint32_t)RK_CCLK_EMMC_MASK << (RK_CCLK_EMMC_SHIFT + 16)) |
-	    ((uint32_t)cclk_emmc[best].sel << RK_CCLK_EMMC_SHIFT);
-	*(volatile uint32_t *)(rst_regs + RK_CLKSEL_CON28) = v;
-
-	log_debug(&sdmmc_log, "card clock source %u Hz (mux %u) for %u Hz\n",
-	    cclk_emmc[best].hz, cclk_emmc[best].sel, hz);
-	return cclk_emmc[best].hz;
-}
-
 static int
 sdhci_set_clock(uint32_t hz, uint32_t *actual)
 {
@@ -609,7 +529,7 @@ sdhci_set_clock(uint32_t hz, uint32_t *actual)
 	 * The source first, because it decides both the rate the divider
 	 * works from and the clock the responses are sampled against.
 	 */
-	if (is_dwcmshc && (src = set_source_clock(hz)) != 0)
+	if (source_follows && sdmmc_clk_set_rate(&clk_core, hz, &src) == OK)
 		base_clock = src;
 
 	if (base_clock <= hz) {
@@ -1165,21 +1085,6 @@ sdhci_init(void)
 		regs = (vir_bytes)v;
 	}
 
-	if (rst_regs == 0 && rst_base != 0 && rst_n > 0) {
-		v = vm_map_phys(SELF, (void *)rst_base, rst_size);
-		if (v == MAP_FAILED) {
-			log_warn(&sdmmc_log, "cannot map the reset "
-			    "controller at 0x%lx; not granted by RS? "
-			    "carrying on without a hardware reset\n",
-			    (unsigned long)rst_base);
-			rst_n = 0;
-		} else {
-			rst_regs = (vir_bytes)v;
-			log_debug(&sdmmc_log, "reset controller at 0x%lx\n",
-			    (unsigned long)rst_base);
-		}
-	}
-
 	if ((r = reset(SDHC_RESET_ALL)) != OK)
 		return r;
 
@@ -1233,20 +1138,18 @@ sdhci_init(void)
 	/*
 	 * Where the divider's input comes from.
 	 *
-	 * The capabilities register is supposed to name it in MHz, and on
-	 * this part it does not: Rockchip's controller leaves the field
-	 * zero and Linux reads the rate out of the clock tree instead
-	 * (SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN). There is no clock tree here,
-	 * so the fallback is the tree's max-frequency - the highest rate the
-	 * board says the bus can carry.
+	 * The capabilities register is supposed to name it in MHz. Some
+	 * parts leave the field zero (Linux: SDHCI_QUIRK_CAP_CLOCK_BASE_
+	 * BROKEN), and then the fallback is the tree's max-frequency - the
+	 * highest rate the board says the bus can carry. That is a safe
+	 * direction to be wrong in, and the only safe one: over-estimating
+	 * the base makes every computed divider larger than it needs to be,
+	 * so the card runs slower than asked; under-estimating it would run
+	 * the card faster than asked, which is not slow data but wrong data.
 	 *
-	 * That is a safe direction to be wrong in, and it is the only safe
-	 * one. Over-estimating the base makes every computed divider larger
-	 * than it needs to be, so the card runs slower than asked; under-
-	 * estimating it would run the card faster than asked, which is not
-	 * slow data but wrong data. On this board the true base is 198 MHz
-	 * (cclk_emmc) against a max-frequency of 200 MHz, so the error is
-	 * one percent in the safe direction.
+	 * On a part whose source follows the card clock (source_follows) the
+	 * number is only a starting point: the first set_clock sets the
+	 * source and learns its real rate from sdmmc_clk.c.
 	 */
 	mhz = (caps >> SDHC_BASE_FREQ_SHIFT) &
 	    ((spec_version >= SDHC_SPEC_VERS_300) ?
@@ -1258,6 +1161,17 @@ sdhci_init(void)
 		log_info(&sdmmc_log, "the part does not say what its base "
 		    "clock is; taking %u Hz from the device tree\n",
 		    base_clock);
+	}
+
+	source_follows = 0;
+	if (is_dwcmshc) {
+		if (clk_core.ctl != SDMMC_NO_LINE)
+			source_follows = 1;
+		else
+			log_warn(&sdmmc_log, "this part needs its core clock "
+			    "moved with the card clock, and the tree names "
+			    "none this driver can set; identification will "
+			    "probably fail\n");
 	}
 
 	/*
@@ -1335,7 +1249,14 @@ sdhci_init(void)
 	 * prevent.
 	 */
 	if (irq_line >= 0 && !irq_ok) {
-		irq_hook = irq_line;
+		/*
+		 * The hook id is the bit the kernel sets in the notification,
+		 * so it has to fit irq_id_t (64 bits here): the first version
+		 * passed the line number, which worked for the eMMC's 51 and
+		 * was refused with EINVAL for the SD socket's 130. One line
+		 * per driver, so any small constant does; 1, as xhci uses.
+		 */
+		irq_hook = SDMMC_IRQ_HOOK;
 		if ((r = sys_irqsetpolicy(irq_line, 0, &irq_hook)) != OK)
 			log_warn(&sdmmc_log, "line %d not granted (%d); every "
 			    "wait will be a poll\n", irq_line, r);
@@ -1447,13 +1368,17 @@ sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	irq_line = info->irq;
 	this_host = host;
 
-	rst_base = info->reset_base;
-	rst_size = info->reset_size;
 	rst_n = info->nresets;
 	if (rst_n > SDMMC_MAX_RESETS)
 		rst_n = SDMMC_MAX_RESETS;
-	memcpy(rst_id, info->reset_id, sizeof(rst_id));
-	is_dwcmshc = fdt_node_is_compatible(node, "rockchip,dwcmshc-sdhci") ||
+	memcpy(rst, info->reset, sizeof(rst));
+	/*
+	 * "core" is the binding's name for the clock the card clock is
+	 * divided from, in the generic SDHCI binding and in Rockchip's.
+	 */
+	if (sdmmc_clk_get(node, "core", &clk_core) != OK)
+		clk_core.ctl = SDMMC_NO_LINE;
+	is_dwcmshc =fdt_node_is_compatible(node, "rockchip,dwcmshc-sdhci") ||
 	    fdt_node_is_compatible(node, "rockchip,rk3568-dwcmshc");
 
 	host->init = sdhci_init;

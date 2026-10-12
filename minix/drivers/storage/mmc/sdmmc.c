@@ -45,6 +45,7 @@
 #include <string.h>
 
 #include "sdmmc.h"
+#include "sdmmc_ioc.h"
 
 struct log sdmmc_log = {
 	.name = "sdmmc",
@@ -302,6 +303,8 @@ sdmmc_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 	case DIOCOPENCT:
 		return sys_safecopyto(endpt, grant, 0,
 		    (vir_bytes)&open_count, sizeof(open_count));
+	case SDMMC_IOC_LOG:
+		return sdmmc_ring_ioctl(endpt, grant);
 	}
 
 	/* DIOCFLUSH and DIOCDISCARD reach libblockdriver, not this. */
@@ -340,10 +343,26 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 	long v;
 	int r;
 
+	sdmmc_ring_install(&sdmmc_log);
+
 	v = LEVEL_INFO;
 	if (env_parse("log_level", "d", 0, &v, LEVEL_NONE,
 	    LEVEL_TRACE) == EP_SET)
 		sdmmc_log.log_level = (int)v;
+
+	/*
+	 * A second instance says so in every line: two copies of this driver
+	 * print to one console, and on the target board one of them is the
+	 * root's disk and the other a card in a socket.
+	 */
+	v = 0;
+	(void)env_parse("instance", "d", 0, &v, 0, 3);
+	if (v != 0) {
+		static char name[8] = "sdmmc";
+
+		name[5] = (char)('0' + v);
+		sdmmc_log.name = name;
+	}
 
 	/*
 	 * The transfer buffer, before anything is asked of the hardware: a

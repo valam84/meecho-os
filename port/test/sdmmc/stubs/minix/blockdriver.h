@@ -5,8 +5,7 @@
 #include <sys/types.h>
 
 typedef int devminor_t;
-typedef int endpoint_t;
-typedef int cp_grant_id_t;
+/* endpoint_t и cp_grant_id_t - в type.h: их видит и sdmmc.h. */
 typedef int device_id_t;
 typedef int thread_id_t;
 

@@ -18,6 +18,9 @@
  *	sdmmc_card.c	the card: CMD0..CMD25, capacity, bus width, flush
  *	sdmmc_host.c	which controller this machine has, asked of the tree
  *	sdmmc_sdhci.c	one controller: the SD Host Controller register set
+ *	sdmmc_dwmshc.c	another: the Synopsys DesignWare MSHC
+ *	sdmmc_clk.c	clocks and resets, through whatever holds them
+ *	sdmmc_clk_*.c	one clock-and-reset controller each
  *
  * A second controller is a second file beside sdmmc_sdhci.c and a second
  * line in the table, and nothing else moves. That matters here and not in
@@ -25,7 +28,9 @@
  * eMMC behind mmc@fe310000 is "rockchip,rk3568-dwcmshc", which is the
  * standard SDHCI register set; the SD socket behind mmc@fe2b0000 is
  * "rockchip,rk3568-dw-mshc", a Synopsys design with its own registers and
- * its own way of changing the clock. This driver does the first.
+ * its own way of changing the clock. A host file knows its registers and
+ * nothing about the SoC around them: the SoC's clock controller is reached
+ * through sdmmc_clk.c, by the names the tree gives the clocks.
  *
  * No board tables: the device is found by walking the device tree, and RS
  * grants its registers and interrupt from the same tree by way of a
@@ -60,6 +65,13 @@
 
 /* The sector size this driver speaks, and the only one it sets. */
 #define SDMMC_SECTOR_SIZE 512
+
+/*
+ * The id a host gives the kernel for its interrupt: the bit the notification
+ * carries, so it must be below the width of irq_id_t - not the line number,
+ * which can be anything the GIC has (see sdmmc_sdhci.c).
+ */
+#define SDMMC_IRQ_HOOK	1
 
 /*
  * The clock identification runs at.
@@ -122,6 +134,32 @@ struct sdmmc_cmd {
 };
 
 /*
+ * A clock or a reset line the tree gives the controller: which clock-and-reset
+ * controller holds it, and its number in that controller's binding.
+ *
+ * Neither number is the host driver's business. The host asks for "a rate on
+ * my core clock" or "pull my reset lines", and sdmmc_clk.c finds the holder by
+ * following the phandle and drives it through a small table of controllers it
+ * knows, matched on their compatible string - the same shape as the table of
+ * hosts in sdmmc_host.c. What a Rockchip CRU register looks like lives in
+ * sdmmc_clk_rk3568.c and nowhere else; a host file that wrote one would be a
+ * host file for one SoC.
+ *
+ * ctl is SDMMC_NO_LINE when the tree names nothing, or names a controller
+ * this driver has no table for. Every operation on such a line answers
+ * ENOSYS, and every host treats that as "the firmware's setting stands":
+ * a machine whose clocks this driver cannot change is a machine where the
+ * bootloader's clocks are the ones in use, which is how this driver worked
+ * before it could change any.
+ */
+#define SDMMC_NO_LINE	(-1)
+
+struct sdmmc_line {
+	int		ctl;		/* sdmmc_clk.c's index, or SDMMC_NO_LINE */
+	unsigned	id;		/* the line's number in that binding */
+};
+
+/*
  * What the tree said about the controller, read once by sdmmc_host.c so that
  * each host driver does not repeat the same four property lookups.
  */
@@ -134,23 +172,21 @@ struct sdmmc_devinfo {
 	unsigned	bus_width;	/* "bus-width", 1 when absent */
 	uint32_t	max_freq;	/* "max-frequency", 0 when absent */
 	int		non_removable;	/* "non-removable" present */
+	int		cap_sd_hs;	/* "cap-sd-highspeed" present */
 
 	/*
-	 * The reset lines the tree gives the controller, and where the thing
-	 * that holds them lives.
+	 * The reset lines the tree gives the controller, all of them.
 	 *
 	 * Not every machine has them - the mainline description of this SoC
-	 * has none for this controller - but the board's own tree does, and
-	 * the drivers that work on it pull those lines on every full reset.
-	 * A controller that a bootloader left configured for a mode this
-	 * driver does not use is exactly what a hardware reset is for, and
-	 * the software reset of the standard does not reach the vendor's
+	 * has none for the eMMC controller - but the board's own tree does,
+	 * and the drivers that work on it pull those lines on every full
+	 * reset. A controller that a bootloader left configured for a mode
+	 * this driver does not use is exactly what a hardware reset is for,
+	 * and the software reset of a controller does not reach the vendor's
 	 * half of it.
 	 */
-	phys_bytes	reset_base;	/* the reset controller's registers */
-	size_t		reset_size;
 	unsigned	nresets;
-	unsigned	reset_id[SDMMC_MAX_RESETS];
+	struct sdmmc_line reset[SDMMC_MAX_RESETS];
 };
 
 /*
@@ -174,6 +210,14 @@ struct sdmmc_host {
 
 	unsigned	max_bus_width;	/* what the board wired up */
 	uint32_t	max_freq;	/* what the board says it can take */
+
+	/*
+	 * Whether an SD card may be switched to high speed (50 MHz). The
+	 * tree says so with "cap-sd-highspeed", as Linux requires before it
+	 * tries; a board that leaves it out has a socket that was not laid
+	 * out for the rate, and the card stays at its default 25 MHz.
+	 */
+	int		sd_highspeed;
 
 	/*
 	 * How many blocks may be asked for in one command; 0 is no limit.
@@ -213,6 +257,13 @@ struct sdmmc_card {
 	uint32_t	clock;		/* what the host actually set */
 	int		high_speed;
 	int		cache_on;	/* eMMC cache is on: flush means CMD6 */
+	/*
+	 * Whether a multi-block transfer is announced with CMD23 or ended
+	 * with CMD12. Always the first on an eMMC; on an SD card, whatever
+	 * its SCR says.
+	 */
+	int		cmd23;
+	uint8_t		scr[8];		/* SD only, as it came off the bus */
 	char		name[8];	/* product name out of the CID */
 };
 
@@ -235,9 +286,57 @@ struct sdmmc_card {
 /* sdmmc_host.c: find the controller in the device tree. */
 int sdmmc_host_find(struct sdmmc_host *host);
 
+/*
+ * sdmmc_clk.c: clocks and resets, through whichever controller holds them.
+ *
+ * sdmmc_line_get() resolves the index'th entry of a list property ("clocks",
+ * "resets") or, when name is not NULL, the entry the matching names property
+ * ("clock-names", "reset-names") puts at that name. It runs during the walk,
+ * because that is when the tree is at hand; the controller's registers are
+ * mapped later, at the first operation, as the host's own are.
+ *
+ * set_rate asks for the highest rate the holder can make at or below hz and
+ * answers with what it made - which can be above hz when the holder has
+ * nothing that low, and the host's own divider has to take it from there.
+ */
+int sdmmc_line_get(const struct fdt_node *node, const char *list,
+	const char *names, const char *name, unsigned index,
+	struct sdmmc_line *line);
+int sdmmc_clk_get(const struct fdt_node *node, const char *name,
+	struct sdmmc_line *line);
+int sdmmc_clk_enable(const struct sdmmc_line *line);
+int sdmmc_clk_set_rate(const struct sdmmc_line *line, uint32_t hz,
+	uint32_t *got);
+int sdmmc_clk_set_phase(const struct sdmmc_line *line, unsigned degrees);
+int sdmmc_reset_set(const struct sdmmc_line *line, int asserted);
+void sdmmc_reset_pulse(const struct sdmmc_line *lines, unsigned n);
+
+/*
+ * One clock-and-reset controller this driver knows: what its registers mean.
+ * The registers are passed in already mapped, so a controller file is
+ * arithmetic over an address and nothing else - which is also what lets it
+ * be checked by a host test against a block of plain memory.
+ */
+struct sdmmc_clkctl_ops {
+	int	(*enable)(volatile uint8_t *regs, size_t size, unsigned id);
+	int	(*set_rate)(volatile uint8_t *regs, size_t size, unsigned id,
+		    uint32_t hz, uint32_t *got);
+	int	(*set_phase)(volatile uint8_t *regs, size_t size, unsigned id,
+		    unsigned degrees);
+	int	(*reset)(volatile uint8_t *regs, size_t size, unsigned id,
+		    int asserted);
+};
+
+/* sdmmc_clk_rk3568.c: the RK3566/RK3568 clock and reset unit. */
+extern const struct sdmmc_clkctl_ops sdmmc_rk3568_cru;
+
 /* sdmmc_sdhci.c: the SD Host Controller standard register set. */
 int sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	struct sdmmc_host *host);
+
+/* sdmmc_dwmshc.c: the Synopsys DesignWare Mobile Storage Host Controller. */
+int dwmshc_probe(const struct fdt_node *node,
+	const struct sdmmc_devinfo *info, struct sdmmc_host *host);
 
 /*
  * sdmmc_card.c: the card protocol, in terms of the host above.
@@ -257,5 +356,9 @@ int sdmmc_card_flush(void);
 
 /* Logging, shared so that one -args log_level= reaches every file. */
 extern struct log sdmmc_log;
+
+/* sdmmc_ring.c: the journal kept in memory too, and SDMMC_IOC_LOG. */
+void sdmmc_ring_install(struct log *log);
+int sdmmc_ring_ioctl(endpoint_t endpt, cp_grant_id_t grant);
 
 #endif /* _SDMMC_H */

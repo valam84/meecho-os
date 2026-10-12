@@ -14,8 +14,9 @@
  * and some cards answer it anyway, so the standard order is also the one
  * that cannot mis-identify.
  *
- * Speed. The card is taken to plain high speed - 52 MHz for an eMMC, the
- * card's default for SD - and no further. HS200 and HS400 need the
+ * Speed. The card is taken to plain high speed - 52 MHz for an eMMC, 50 MHz
+ * for an SD card whose socket the tree says can carry it, 25 MHz for one
+ * whose socket it does not - and no further. HS200 and HS400 need the
  * controller's delay line trained against the card, and a tuning loop with
  * nothing to check it against is how one gets data that is wrong rather than
  * slow. The eMMC on the target board reports HS200 and HS400 support and
@@ -121,8 +122,9 @@ send(uint8_t index, uint32_t arg, uint8_t rsp_type, struct sdmmc_cmd *out)
 }
 
 static int
-send_data(uint8_t index, uint32_t arg, uint8_t rsp_type, int write, void *buf,
-	phys_bytes phys, uint32_t blocks, int stop, struct sdmmc_cmd *out)
+send_data_len(uint8_t index, uint32_t arg, uint8_t rsp_type, int write,
+	void *buf, phys_bytes phys, uint32_t blocks, uint32_t blocklen, int stop,
+	struct sdmmc_cmd *out)
 {
 	struct sdmmc_cmd cmd;
 	int r;
@@ -135,13 +137,22 @@ send_data(uint8_t index, uint32_t arg, uint8_t rsp_type, int write, void *buf,
 	cmd.data = buf;
 	cmd.data_phys = phys;
 	cmd.blocks = blocks;
-	cmd.blocklen = SDMMC_SECTOR_SIZE;
+	cmd.blocklen = blocklen;
 	cmd.stop = stop;
 
 	r = host->command(&cmd);
 	if (out != NULL)
 		*out = cmd;
 	return r;
+}
+
+/* Sectors, which is every data command but the SD card's two registers. */
+static int
+send_data(uint8_t index, uint32_t arg, uint8_t rsp_type, int write, void *buf,
+	phys_bytes phys, uint32_t blocks, int stop, struct sdmmc_cmd *out)
+{
+	return send_data_len(index, arg, rsp_type, write, buf, phys, blocks,
+	    SDMMC_SECTOR_SIZE, stop, out);
 }
 
 /* An application command: CMD55 with the card's address, then the command. */
@@ -478,6 +489,153 @@ mmc_tune(void)
 }
 
 /*
+ * The SD card's configuration register: which bus widths it has and which
+ * of the optional commands it answers. Eight bytes, read with ACMD51 as a
+ * data block of its own length, most significant byte first - which is
+ * the order they land in the buffer, so scr[0] is bits 63:56.
+ *
+ * The one field this driver had been doing without is CMD_SUPPORT, and it
+ * decides how a multi-block transfer ends: a card that answers CMD23 is
+ * told the count up front, as an eMMC is; one that does not is stopped
+ * with CMD12 after the last block. Reading the SCR is mandatory for every
+ * card since version 1.0 of the specification, so a card that will not give
+ * it is not guessed about: it is treated as the oldest kind there is.
+ */
+#define SD_SCR_SPEC(scr)	((scr)[0] & 0x0f)
+#define SD_SCR_WIDTHS(scr)	((scr)[1] & 0x0f)
+#define  SD_SCR_WIDTH_4		(1 << 2)
+#define SD_SCR_CMD23(scr)	(((scr)[3] & (1 << 1)) != 0)
+
+static uint8_t sd_buf[64] __attribute__((aligned(4)));
+
+static void
+sd_read_scr(void)
+{
+	struct sdmmc_cmd cmd;
+	int r;
+
+	memset(sd_buf, 0, 8);
+	if ((r = send(MMC_APP_CMD, MMC_ARG_RCA(card->rca), SDMMC_RSP_R1,
+	    NULL)) == OK)
+		r = send_data_len(SD_APP_SEND_SCR, 0, SDMMC_RSP_R1, 0, sd_buf,
+		    0, 1, 8, 0, &cmd);
+	if (r == OK)
+		r = check_r1(&cmd);
+	if (r != OK) {
+		log_warn(&sdmmc_log, "the card would not give its SCR (%d); "
+		    "taking it for a version 1.0 card: one bit wide, default "
+		    "speed, CMD12\n", r);
+		memset(card->scr, 0, sizeof(card->scr));
+		card->scr[1] = 0x01;		/* one bit only */
+		return;
+	}
+	memcpy(card->scr, sd_buf, sizeof(card->scr));
+	/* Info, not debug: Linux prints the same bytes in .../scr, and on a
+	 * new board that comparison is the first one worth making. */
+	log_info(&sdmmc_log, "SCR %02x%02x%02x%02x%02x%02x%02x%02x\n",
+	    card->scr[0], card->scr[1], card->scr[2], card->scr[3],
+	    card->scr[4], card->scr[5], card->scr[6], card->scr[7]);
+}
+
+/*
+ * SD high speed: the switch function command, CMD6, with a 64-byte status
+ * block in reply - the same index as the eMMC's SWITCH, and nothing else in
+ * common with it.
+ *
+ * Asked first in check mode, which changes nothing and says whether
+ * function 1 of group 1 (access mode: high speed) is there and would be
+ * taken; then in set mode. The answer to the second is in the status block,
+ * not in the card status: byte 16's low nibble is the function group 1 now
+ * runs, and only 1 means the card switched. The other five groups are left
+ * as they are by putting 0xf in their fields.
+ *
+ * The specification gives the card eight clocks after the status block to
+ * change its timing, and asks the host not to raise the clock before. The
+ * command's own completion is later than that on any host.
+ */
+#define SD_SWITCH_CHECK		0x00fffff1
+#define SD_SWITCH_SET		0x80fffff1
+#define SD_SWITCH_GRP1_HS(st)	(((st)[13] & (1 << 1)) != 0)
+#define SD_SWITCH_GRP1_NOW(st)	((st)[16] & 0x0f)
+
+static int
+sd_switch_hs(void)
+{
+	struct sdmmc_cmd cmd;
+	int r;
+
+	memset(sd_buf, 0, sizeof(sd_buf));
+	r = send_data_len(SD_SEND_SWITCH_FUNC, SD_SWITCH_CHECK, SDMMC_RSP_R1,
+	    0, sd_buf, 0, 1, 64, 0, &cmd);
+	if (r == OK)
+		r = check_r1(&cmd);
+	if (r != OK)
+		return r;
+	if (!SD_SWITCH_GRP1_HS(sd_buf) || SD_SWITCH_GRP1_NOW(sd_buf) != 1) {
+		log_debug(&sdmmc_log, "the card offers no high speed (%02x, "
+		    "%02x)\n", sd_buf[13], sd_buf[16]);
+		return ENOTSUP;
+	}
+
+	memset(sd_buf, 0, sizeof(sd_buf));
+	r = send_data_len(SD_SEND_SWITCH_FUNC, SD_SWITCH_SET, SDMMC_RSP_R1,
+	    0, sd_buf, 0, 1, 64, 0, &cmd);
+	if (r == OK)
+		r = check_r1(&cmd);
+	if (r != OK)
+		return r;
+	if (SD_SWITCH_GRP1_NOW(sd_buf) != 1) {
+		log_warn(&sdmmc_log, "the card did not take high speed "
+		    "(group 1 now %u)\n", SD_SWITCH_GRP1_NOW(sd_buf));
+		return EIO;
+	}
+	return OK;
+}
+
+/*
+ * Widen the bus and raise the clock, for an SD card: four bits if both ends
+ * have them, and 50 MHz if the card switches to high speed and the tree
+ * says the socket can carry it - 25 MHz, the card's default, otherwise.
+ * Nothing faster: the UHS modes need the signalling moved to 1.8 V, which
+ * is a regulator on the board and not something this driver reaches.
+ */
+static void
+sd_tune(void)
+{
+	struct sdmmc_cmd cmd;
+	uint32_t hz = 25000000;
+
+	sd_read_scr();
+	card->cmd23 = SD_SCR_CMD23(card->scr);
+
+	if (host->max_bus_width >= 4 && limit_width >= 4 &&
+	    (SD_SCR_WIDTHS(card->scr) & SD_SCR_WIDTH_4)) {
+		if (send_app(SD_APP_SET_BUS_WIDTH, SD_ARG_BUS_WIDTH_4,
+		    SDMMC_RSP_R1, &cmd) == OK && check_r1(&cmd) == OK &&
+		    host->set_bus_width(4) == OK)
+			card->bus_width = 4;
+		else
+			log_warn(&sdmmc_log, "staying on a one-bit bus\n");
+	}
+
+	/* Switch function exists from version 1.10 of the specification. */
+	if (host->sd_highspeed && SD_SCR_SPEC(card->scr) >= 1 &&
+	    limit_hz >= 50000000 && host->max_freq >= 50000000) {
+		if (sd_switch_hs() == OK) {
+			(void)host->set_timing(1);
+			card->high_speed = 1;
+			hz = 50000000;
+		}
+	}
+
+	if (hz > limit_hz)
+		hz = limit_hz;
+	if (host->max_freq != 0 && hz > host->max_freq)
+		hz = host->max_freq;
+	(void)host->set_clock(hz, &card->clock);
+}
+
+/*
  * The write cache of an eMMC, and why it is turned on.
  *
  * A device with the cache off answers a write when the data is on the
@@ -690,20 +848,9 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 	    send(MMC_SET_BLOCKLEN, SDMMC_SECTOR_SIZE, SDMMC_RSP_R1, &cmd));
 
 	if (card->is_sd) {
-		/*
-		 * Four bits and the card's default speed. The SD high speed
-		 * switch is CMD6 with a 64-byte data phase and its own status
-		 * structure, and there is no SD card on the target board to
-		 * try it against; the socket there is behind the other
-		 * controller, which this driver does not yet drive.
-		 */
-		if (host->max_bus_width >= 4 &&
-		    send_app(SD_APP_SET_BUS_WIDTH, SD_ARG_BUS_WIDTH_4,
-		    SDMMC_RSP_R1, &cmd) == OK &&
-		    host->set_bus_width(4) == OK)
-			card->bus_width = 4;
-		(void)host->set_clock(25000000, &card->clock);
+		sd_tune();
 	} else {
+		card->cmd23 = 1;	/* mandatory from version 4.4 */
 		mmc_tune();
 		mmc_enable_cache();
 	}
@@ -711,10 +858,11 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 	card->present = 1;
 
 	log_info(&sdmmc_log, "%s \"%s\": %llu sectors (%llu MiB), "
-	    "%u-bit bus at %u Hz%s\n", card->is_sd ? "SD card" : "eMMC",
+	    "%u-bit bus at %u Hz%s%s\n", card->is_sd ? "SD card" : "eMMC",
 	    card->name, (unsigned long long)card->sectors,
 	    (unsigned long long)(card->sectors / 2048), card->bus_width,
-	    card->clock, card->high_speed ? ", high speed" : "");
+	    card->clock, card->high_speed ? ", high speed" : "",
+	    !card->is_sd ? "" : card->cmd23 ? ", CMD23" : ", CMD12");
 	return OK;
 }
 
@@ -726,9 +874,9 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
  * came back with the auto-command reported as both not executed and timed
  * out. CMD23 is mandatory on an eMMC of version 4.4 and later, Linux uses
  * it on this very card, and it removes the whole mechanism rather than
- * working around it. An SD card that does not offer CMD23 falls back to the
- * stop command; none is attached here, and that is the only reason the
- * fallback is untried.
+ * working around it. An SD card that does not offer CMD23 (its SCR says) is
+ * stopped by the host after the last block instead - CMD12 sent by the
+ * controller, which is what the stop flag of a command asks for.
  */
 static int
 set_block_count(uint32_t count)
@@ -788,12 +936,12 @@ sdmmc_card_read(uint64_t sector, uint32_t count, void *buf, phys_bytes phys)
 	while (count > 0) {
 		n = run_length(count, phys);
 
-		if (n > 1 && (r = set_block_count(n)) != OK)
+		if (n > 1 && card->cmd23 && (r = set_block_count(n)) != OK)
 			return r;
 
 		r = send_data(n > 1 ? MMC_READ_BLOCK_MULTIPLE :
 		    MMC_READ_BLOCK_SINGLE, data_address(sector),
-		    SDMMC_RSP_R1, 0, buf, phys, n, 0, &cmd);
+		    SDMMC_RSP_R1, 0, buf, phys, n, n > 1 && !card->cmd23, &cmd);
 		if (r != OK)
 			return r;
 		if ((r = check_r1(&cmd)) != OK)
@@ -827,12 +975,13 @@ sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf,
 	while (count > 0) {
 		n = run_length(count, phys);
 
-		if (n > 1 && (r = set_block_count(n)) != OK)
+		if (n > 1 && card->cmd23 && (r = set_block_count(n)) != OK)
 			return r;
 
 		r = send_data(n > 1 ? MMC_WRITE_BLOCK_MULTIPLE :
 		    MMC_WRITE_BLOCK_SINGLE, data_address(sector),
-		    SDMMC_RSP_R1, 1, (void *)(uintptr_t)buf, phys, n, 0, &cmd);
+		    SDMMC_RSP_R1, 1, (void *)(uintptr_t)buf, phys, n,
+		    n > 1 && !card->cmd23, &cmd);
 		if (r != OK)
 			return r;
 		if ((r = check_r1(&cmd)) != OK)

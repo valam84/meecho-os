@@ -86,6 +86,10 @@ struct model {
 	int		state;
 	int		ocr_polls;	/* сколько раз ответить «занят» */
 	int		app_next;	/* был CMD55 */
+	uint8_t		scr[8];		/* SD: регистр конфигурации */
+	int		no_scr;		/* SD: на ACMD51 молчит */
+	int		sd_hs_ok;	/* SD: умеет high speed */
+	int		sd_hs;		/* SD: переключена в high speed */
 	uint8_t		medium[MEDIUM_SECTORS * SDMMC_SECTOR_SIZE];
 
 	/* запись того, что спросили */
@@ -98,6 +102,9 @@ struct model {
 };
 
 static struct model m;
+
+/* Прикладная команда (после CMD55) в записи того, что спросили. */
+#define APP(x)	(0x80 | (x))
 static unsigned host_clock;
 static unsigned host_width;
 static int host_hs;
@@ -190,7 +197,8 @@ model_command(struct sdmmc_cmd *c)
 	int app = m.app_next;
 
 	m.app_next = 0;
-	record(c->index, c->arg);
+	/* ACMD6 и CMD6 - разные команды с одним номером: пишутся порознь. */
+	record(app ? APP(c->index) : c->index, c->arg);
 	memset(c->resp, 0, sizeof(c->resp));
 
 	if (app) {
@@ -209,9 +217,41 @@ model_command(struct sdmmc_cmd *c)
 		case SD_APP_SET_BUS_WIDTH:
 			c->resp[0] = r1_status();
 			return OK;
+		case SD_APP_SEND_SCR:
+			if (m.no_scr)
+				return ETIMEDOUT;
+			/* Восемь байт одним блоком своей длины, не сектор. */
+			if (c->data_dir != SDMMC_DATA_READ || c->blocks != 1 ||
+			    c->blocklen != 8)
+				return EIO;
+			memcpy(c->data, m.scr, 8);
+			c->resp[0] = r1_status();
+			return OK;
 		default:
 			return ETIMEDOUT;
 		}
+	}
+
+	/*
+	 * CMD6 у SD - не SWITCH eMMC, а switch function с блоком состояния в
+	 * 64 байта. Байт 13, бит 1: функция 1 группы 1 (high speed) есть;
+	 * младшая тетрада байта 16 - что группа 1 выбрала бы (проверка) или
+	 * выбрала (установка); 0xf - «не могу».
+	 */
+	if (c->index == SD_SEND_SWITCH_FUNC && m.is_sd) {
+		uint8_t *st = c->data;
+		int set = (c->arg >> 31) & 1;
+
+		if (c->data_dir != SDMMC_DATA_READ || c->blocks != 1 ||
+		    c->blocklen != 64)
+			return EIO;
+		memset(st, 0, 64);
+		st[13] = m.sd_hs_ok ? 0x03 : 0x01;
+		st[16] = m.sd_hs_ok ? 0x01 : 0x0f;
+		if (set && m.sd_hs_ok)
+			m.sd_hs = 1;
+		c->resp[0] = r1_status();
+		return OK;
 	}
 
 	switch (c->index) {
@@ -671,7 +711,15 @@ test_sd(void)
 	m.csd[1] = 0x3b370000;
 	m.csd[0] = 0x00000000;
 
-	host_width = 0;
+	/* SCR: версия 2.00, шины 1 и 4 бита, CMD23 нет. */
+	m.scr[0] = 0x02;
+	m.scr[1] = 0x05;
+	m.scr[2] = 0x80;
+	m.scr[3] = 0x00;
+	m.sd_hs_ok = 1;
+
+	host_width = 0; host_hs = -1;
+	mock.sd_highspeed = 0;
 	r = sdmmc_card_init(&mock, &card);
 	check(r == OK, "опознание SD", NULL);
 	if (r != OK)
@@ -683,10 +731,139 @@ test_sd(void)
 	check_u64(card.rca, 0x1234, "RCA взят из ответа карты");
 	check_u64(card.bus_width, 4, "шина расширена до четырёх бит");
 	check_u64(host_width, 4, "контроллер переведён на четыре бита");
-	check_u64(card.clock, 25000000, "такт SD — 25 МГц");
+	check_u64(card.clock, 25000000,
+	    "такт SD — 25 МГц: дерево не разрешило high speed");
+	check(count_cmd(SD_SEND_SWITCH_FUNC) == 0 || m.sd_hs == 0,
+	    "без cap-sd-highspeed карту не переключают", NULL);
 	check(count_cmd(MMC_SEND_OP_COND) == 0,
 	    "CMD1 карте SD не задавался", NULL);
 	check(count_cmd(MMC_APP_CMD) >= 2, "ACMD41 повторялся", NULL);
+	check(count_cmd(APP(SD_APP_SEND_SCR)) == 1, "SCR прочитан", NULL);
+	check_u64(arg_of(APP(SD_APP_SET_BUS_WIDTH), 0), SD_ARG_BUS_WIDTH_4,
+	    "ACMD6 просит четыре бита");
+	check(!card.cmd23, "по SCR у карты нет CMD23", NULL);
+
+	/* Многоблочное чтение без CMD23: карту останавливает CMD12. */
+	{
+		uint8_t buf[8 * SDMMC_SECTOR_SIZE];
+
+		fill_medium();
+		m.nseen = 0;
+		r = sdmmc_card_read(10, 8, buf, 0x4000000);
+		check(r == OK, "многоблочное чтение SD", NULL);
+		check(count_cmd(MMC_SET_BLOCK_COUNT) == 0,
+		    "CMD23 карте без него не задавался", NULL);
+		check(m.last_stop == 1, "чтение просит у хоста CMD12", NULL);
+		check(memcmp(buf, m.medium + 10 * SDMMC_SECTOR_SIZE,
+		    sizeof(buf)) == 0, "данные те, что на носителе", NULL);
+		r = sdmmc_card_read(10, 1, buf, 0x4000000);
+		check(r == OK && m.last_stop == 0,
+		    "одиночное чтение CMD12 не просит", NULL);
+	}
+}
+
+/* SD в гнезде, которое дерево объявило годным для 50 МГц. */
+static void
+test_sd_hs(void)
+{
+	struct sdmmc_card card;
+	uint8_t buf[4 * SDMMC_SECTOR_SIZE];
+	int r;
+
+	printf("SD-карта: high speed и CMD23\n");
+	memset(&m, 0, sizeof(m));
+	m.is_sd = 1;
+	m.sd_v2 = 1;
+	m.hc = 1;
+	m.ocr_polls = 1;
+	m.rca = 0x0001;
+	m.cid[3] = 0x03534453;
+	m.cid[2] = 0x55303847;
+	m.csd[3] = 0x400e0032;		/* CSD карты в гнезде CB2 */
+	m.csd[2] = 0x5b590001;
+	m.csd[1] = 0xd1eb7f80;
+	m.csd[0] = 0x0a400000;
+	/* SCR карты в гнезде CB2: 0205848300000000 - есть CMD20 и CMD23. */
+	m.scr[0] = 0x02; m.scr[1] = 0x05; m.scr[2] = 0x84; m.scr[3] = 0x83;
+	m.sd_hs_ok = 1;
+
+	host_width = 0; host_hs = -1; host_clock = 0;
+	mock.sd_highspeed = 1;
+	r = sdmmc_card_init(&mock, &card);
+	mock.sd_highspeed = 0;
+	check(r == OK, "опознание SD", NULL);
+	if (r != OK)
+		return;
+
+	/*
+	 * C_SIZE - биты 69:48: 0x01 из CSD[2] и 0xd1eb из CSD[1], 0x1d1eb.
+	 * (C_SIZE + 1) * 1024 = 122138624 - ровно столько секторов называет
+	 * fdisk вендорского Linux у этой карты (linux-reference.txt).
+	 */
+	check_u64(card.sectors, 122138624, "ёмкость карты платы из её CSD");
+	check(card.cmd23, "по SCR у карты есть CMD23", NULL);
+	check(m.sd_hs && card.high_speed, "карта переключена в high speed",
+	    NULL);
+	check_u64(arg_of(SD_SEND_SWITCH_FUNC, 0), 0x00fffff1,
+	    "сначала CMD6 в режиме проверки");
+	check_u64(arg_of(SD_SEND_SWITCH_FUNC, 1), 0x80fffff1,
+	    "потом CMD6 в режиме установки");
+	check_u64(host_hs, 1, "контроллер переведён в high speed");
+	check_u64(card.clock, 50000000, "такт SD — 50 МГц");
+
+	m.nseen = 0;
+	r = sdmmc_card_read(0, 4, buf, 0x4000000);
+	check(r == OK, "многоблочное чтение", NULL);
+	check(count_cmd(MMC_SET_BLOCK_COUNT) == 1, "объявлено CMD23", NULL);
+	check(m.last_stop == 0, "и CMD12 не просит", NULL);
+
+	/* Карта без high speed: проверка говорит «нет», установки нет. */
+	printf("SD-карта без high speed\n");
+	m.sd_hs = 0;
+	m.sd_hs_ok = 0;
+	m.state = ST_IDLE;
+	m.ocr_polls = 1;
+	m.nseen = 0;
+	mock.sd_highspeed = 1;
+	r = sdmmc_card_init(&mock, &card);
+	mock.sd_highspeed = 0;
+	check(r == OK, "опознание SD", NULL);
+	check(count_cmd(SD_SEND_SWITCH_FUNC) == 1,
+	    "CMD6 задан только в режиме проверки", NULL);
+	check(!card.high_speed, "high speed не включён", NULL);
+	check_u64(card.clock, 25000000, "такт SD — 25 МГц");
+}
+
+/* Карта, которая не отдаёт SCR: самая старая из возможных. */
+static void
+test_sd_no_scr(void)
+{
+	struct sdmmc_card card;
+	int r;
+
+	printf("SD-карта без SCR\n");
+	memset(&m, 0, sizeof(m));
+	m.is_sd = 1;
+	m.sd_v2 = 1;
+	m.hc = 1;
+	m.ocr_polls = 1;
+	m.rca = 0x0002;
+	m.cid[3] = 0x03534453;
+	m.csd[3] = 0x40000000;
+	m.csd[1] = 0x3b370000;
+	m.no_scr = 1;
+	m.sd_hs_ok = 1;
+
+	host_width = 0;
+	mock.sd_highspeed = 1;
+	r = sdmmc_card_init(&mock, &card);
+	mock.sd_highspeed = 0;
+	check(r == OK, "опознание без SCR не отказ", NULL);
+	check_u64(card.bus_width, 1, "шина остаётся в один бит");
+	check(!card.cmd23, "CMD23 не предполагается", NULL);
+	check(!card.high_speed && count_cmd(SD_SEND_SWITCH_FUNC) == 0,
+	    "high speed не пробуется у карты версии 1.0", NULL);
+	check_u64(card.clock, 25000000, "такт SD — 25 МГц");
 }
 
 /* Карта, которая не отвечает вовсе. */
@@ -716,6 +893,8 @@ main(int argc, char **argv)
 	test_emmc();
 	test_small_emmc();
 	test_sd();
+	test_sd_hs();
+	test_sd_no_scr();
 	test_absent();
 
 	printf("\n%d проверок, %d отказов\n", checks, failures);

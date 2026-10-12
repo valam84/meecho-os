@@ -1,0 +1,142 @@
+# mmc@fe2b0000 (SD)
+  CTRL            0x000 = 0x02000030
+  PWREN           0x004 = 0x00000001
+  CLKDIV          0x008 = 0x00000000
+  CLKSRC          0x00c = 0x00000000
+  CLKENA          0x010 = 0x00010001
+  TMOUT           0x014 = 0xe297d0ff
+  CTYPE           0x018 = 0x00000001
+  BLKSIZ          0x01c = 0x00000200
+  BYTCNT          0x020 = 0x0000d000
+  INTMASK         0x024 = 0x0000b7cf
+  CMDARG          0x028 = 0x0033d408
+  CMD             0x02c = 0x20002352
+  RESP0           0x030 = 0x00000900
+  RESP1           0x034 = 0xd1eb7f80
+  RESP2           0x038 = 0x5b590001
+  RESP3           0x03c = 0x400e0032
+  MINTSTS         0x040 = 0x00000000
+  RINTSTS         0x044 = 0x01000030
+  STATUS          0x048 = 0x00009106
+  FIFOTH          0x04c = 0x607f0080
+  CDETECT         0x050 = 0x00000000
+  WRTPRT          0x054 = 0x00000000
+  GPIO            0x058 = 0x00000000
+  TCBCNT          0x05c = 0x0000d000
+  TBBCNT          0x060 = 0x0000d000
+  DEBNCE          0x064 = 0x00ffffff
+  USRID           0x068 = 0x00000000
+  VERID           0x06c = 0x5342270a
+  HCON            0x070 = 0x04c434c1
+  UHS_REG         0x074 = 0x00000001
+  RST_N           0x078 = 0x00000001
+  BMOD            0x080 = 0x00000682
+  PLDMND          0x084 = 0x00000000
+  DBADDR          0x088 = 0x09a92000
+  IDSTS           0x08c = 0x00000000
+  IDINTEN         0x090 = 0x00000103
+  DSCADDR         0x094 = 0x09a920c0
+  BUFADDR         0x098 = 0x1c15d000
+  CARDTHRCTL      0x100 = 0x02000001
+  BACK_END_POWER  0x104 = 0x00000000
+  UHS_REG_EXT     0x108 = 0x00000000
+  EMMC_DDR        0x10c = 0x00000000
+  ENABLE_SHIFT    0x110 = 0x00000000
+# mmc@fe2c0000 (SDIO)
+  CTRL            0x000 = 0x02000030
+  PWREN           0x004 = 0x00000001
+  CLKDIV          0x008 = 0x00000000
+  CLKSRC          0x00c = 0x00000000
+  CLKENA          0x010 = 0x00010001
+  TMOUT           0x014 = 0xffffffff
+  CTYPE           0x018 = 0x00000001
+  BLKSIZ          0x01c = 0x00000040
+  BYTCNT          0x020 = 0x00000040
+  INTMASK         0x024 = 0x0000b7cf
+  CMDARG          0x028 = 0x12003e00
+  CMD             0x02c = 0x20000174
+  RESP0           0x030 = 0x00001000
+  RESP1           0x034 = 0x00000000
+  RESP2           0x038 = 0x00000000
+  RESP3           0x03c = 0x00000000
+  MINTSTS         0x040 = 0x00000000
+  RINTSTS         0x044 = 0x01000020
+  STATUS          0x048 = 0x0001a106
+  FIFOTH          0x04c = 0x300f0080
+  CDETECT         0x050 = 0x00000001
+  WRTPRT          0x054 = 0x00000000
+  GPIO            0x058 = 0x00000000
+  TCBCNT          0x05c = 0x00000040
+  TBBCNT          0x060 = 0x00000040
+  DEBNCE          0x064 = 0x00ffffff
+  USRID           0x068 = 0x00000000
+  VERID           0x06c = 0x5342270a
+  HCON            0x070 = 0x04c434c1
+  UHS_REG         0x074 = 0x00000001
+  RST_N           0x078 = 0x00000001
+  BMOD            0x080 = 0x00000382
+  PLDMND          0x084 = 0x00000000
+  DBADDR          0x088 = 0x0989c000
+  IDSTS           0x08c = 0x00000000
+  IDINTEN         0x090 = 0x00000103
+  DSCADDR         0x094 = 0x0989c000
+  BUFADDR         0x098 = 0x7bf70a80
+  CARDTHRCTL      0x100 = 0x00400001
+  BACK_END_POWER  0x104 = 0x00000000
+  UHS_REG_EXT     0x108 = 0x00000000
+  EMMC_DDR        0x10c = 0x00000000
+  ENABLE_SHIFT    0x110 = 0x00000000
+# CRU @ 0xfdd20000
+  0x170 = 0x00001001  CLKSEL_CON28 (cclk_emmc 14:12)
+  0x178 = 0x00002220  CLKSEL_CON30 (clk_sdmmc0 10:8, sdmmc1 14:12)
+  0x324 = 0x0000001f  CLKGATE_CON9 (emmc)
+  0x33c = 0x000011f0  CLKGATE_CON15 (hclk_sdmmc0 0, clk_sdmmc0 1)
+  0x434 = 0x00000000  SOFTRST_CON13 (SRST_SDMMC0 = 212 -> bit 4)
+  0x580 = 0x00000004  SDMMC0_CON0 (drive phase)
+  0x584 = 0x00000858  SDMMC0_CON1 (sample phase)
+  0x588 = 0x00000004  SDMMC1_CON0
+  0x58c = 0x000008a2  SDMMC1_CON1
+  0x598 = 0x00000004  EMMC_CON0
+  0x59c = 0x00000000  EMMC_CON1
+# mmc0/ios
+clock:		150000000 Hz
+actual clock:	148500000 Hz
+vdd:		21 (3.3 ~ 3.4 V)
+bus mode:	2 (push-pull)
+chip select:	0 (don't care)
+power mode:	2 (on)
+bus width:	2 (4 bits)
+timing spec:	6 (sd uhs SDR104)
+signal voltage:	1 (1.80 V)
+driver type:	0 (driver type B)
+# phases
+sdmmc0_drv 180 148500000
+sdmmc0_sample 35 148500000
+    tclk_emmc                        1       1        0        24000000    0          0     50000      Y      fe310000.mmc                    timer                    
+                hclk_sdmmc0          1       1        0        148500000   0          0     50000      Y                  fe2b0000.mmc                    biu                      
+                hclk_emmc            1       1        0        148500000   0          0     50000      Y                  fe310000.mmc                    bus                      
+             cclk_emmc               1       1        0        198000000   0          0     50000      Y               fe310000.mmc                    core                     
+                emmc_sample          0       0        0        99000000    0          0     50000      Y                  deviceless                      no_connection_id         
+                emmc_drv             0       0        0        99000000    0          180   50000      Y                  deviceless                      no_connection_id         
+             bclk_emmc               1       1        0        198000000   0          0     50000      Y               fe310000.mmc                    block                    
+                aclk_emmc            1       1        0        198000000   0          0     50000      Y                  fe310000.mmc                    axi                      
+             clk_sdmmc0              1       1        0        297000000   0          0     50000      Y               fe2b0000.mmc                    ciu                      
+                sdmmc0_sample        0       0        0        148500000   0          35    50000      Y                  fe2b0000.mmc                    ciu-sample               
+                sdmmc0_drv           0       0        0        148500000   0          180   50000      Y                  fe2b0000.mmc                    ciu-drive                
+# card
+fe3432534400000020000000280084f3
+400e00325b590001d1eb7f800a4000a1
+0205848300000000
+0x00300000
+SD
+SD
+Disk /dev/mmcblk0: 58.24 GiB, 62534975488 bytes, 122138624 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0x42f94570
+
+Device         Boot  Start       End   Sectors  Size Id Type
+/dev/mmcblk0p1       32768    557055    524288  256M ea Linux extended boot
+/dev/mmcblk0p2      557056 120913919 120356864 57.4G 83 Linux

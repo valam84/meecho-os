@@ -51,6 +51,10 @@ void blockdriver_announce(int UNUSED(t)) { }
 void blockdriver_task(struct blockdriver *UNUSED(b)) { }
 int fdt_node_is_compatible(const struct fdt_node *UNUSED(n),
 	const char *UNUSED(w)) { return 0; }
+/* Журнал в памяти (sdmmc_ring.c) стенду не нужен. */
+void sdmmc_ring_install(struct log *UNUSED(l)) { }
+int sdmmc_ring_ioctl(endpoint_t UNUSED(e), cp_grant_id_t UNUSED(g))
+	{ return ENOTTY; }
 
 /* Таблицу разделов стенд не разбирает: интересен не MBR, а нарезка. */
 static int partition_calls;

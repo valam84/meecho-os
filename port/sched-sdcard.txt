@@ -1,0 +1,6 @@
+# sdmmc: второй экземпляр на гнезде SD, корень на eMMC (board-cycle.sh -e -l).
+# Консоль только слушается; вопросы - по ssh. Ждать по порядку: ядро MEECHO,
+# приглашение, потом баннер загрузчика при /sbin/reboot по ssh.
+420 WAIT MEECHO/aarch64
+420 WAIT login:
+3000 WAIT U-Boot SPL

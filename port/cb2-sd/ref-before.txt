@@ -1,0 +1,8 @@
+Linux 6.1.115-btt-rockchip64
+Device         Boot  Start       End   Sectors  Size Id Type
+/dev/mmcblk0p1       32768    557055    524288  256M ea Linux extended boot
+/dev/mmcblk0p2      557056 120913919 120356864 57.4G 83 Linux
+sd 0-16M: 5a3f1bd91de74af364a6721581bfb408  -
+sd tail 59041+32M: 94f55245db2ef74e00b2eec1b2b6ceed  -
+sd tail 59100+64M: 915e0a55f10b983302d8133c51faf115  -
+emmc 2048+64M: 7f614da9329cd3aebf59b91aadc30bf0  -

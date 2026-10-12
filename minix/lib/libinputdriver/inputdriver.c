@@ -29,7 +29,15 @@ inputdriver_announce(unsigned int type)
 	if ((r = ds_retrieve_label_name(label, sef_self())) != OK)
 		panic("libinputdriver: unable to retrieve own label: %d", r);
 
-	snprintf(key, sizeof(key), "%s%s", driver_prefix, label);
+	/*
+	 * A label is at most RS_MAX_LABEL_LEN, so this always fits; but a
+	 * key cut short would be published under the wrong name and the
+	 * input server would never hear of us, so the length is checked
+	 * rather than assumed.
+	 */
+	if ((size_t)snprintf(key, sizeof(key), "%s%s", driver_prefix,
+	    label) >= sizeof(key))
+		panic("libinputdriver: label too long for a key: %s", label);
 	if ((r = ds_publish_u32(key, type, DSF_OVERWRITE)) != OK)
 		panic("libinputdriver: unable to publish up event: %d", r);
 

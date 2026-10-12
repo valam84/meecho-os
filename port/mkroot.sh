@@ -295,7 +295,15 @@ fi
 # выше, поэтому она подставляется здесь, а не лежит в дереве. Каталог
 # usr/pkg/etc в proto уже есть - из скелета hier(7); файл встаёт в него
 # тем же приёмом, что authorized_keys: awk находит "etc" сразу под "pkg".
-PKG_REPO_URL=${PKG_REPO_URL:-http://192.168.33.2:8080/All}
+#
+# Пустой PKG_REPO_URL= - файла нет вовсе: так собирается образ для
+# публикации, где адрес чужой площадки не значит ничего (`pkg_add` тогда
+# спрашивает PKG_PATH у пользователя, как на любой системе без настройки).
+PKG_REPO_URL=${PKG_REPO_URL-http://192.168.33.2:8080/All}
+if [ -z "${PKG_REPO_URL}" ]
+then
+	echo "pkg_install.conf: none (PKG_REPO_URL is empty)"
+else
 printf 'PKG_PATH=%s\n' "${PKG_REPO_URL}" > "${WORK}/pkg_install.conf"
 awk -v conf="${WORK}/pkg_install.conf" '
 	{ print }
@@ -313,6 +321,7 @@ then
 else
 	echo "$0: в proto нет usr/pkg/etc - PKG_PATH не задан" >&2
 	rm -f "${WORK}/proto.emmc.new"
+fi
 fi
 
 rm -f "${IMG}" "${IMG}.gz"

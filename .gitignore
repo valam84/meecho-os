@@ -82,6 +82,14 @@ port/cb2-usb/ref/*.h
 port/cb2-usb/ref/*.dts
 port/cb2-usb/ref/*.dtsi
 
+# And beside the display driver: the vendor kernel's VOP2 and dw-hdmi (GPL),
+# for register numbers and the order of operations only.  The NetBSD files
+# there are BSD and could be kept, but they are a download like the rest;
+# port/cb2-display/ref/README.md says where all of them come from.
+port/cb2-display/ref/*.c
+port/cb2-display/ref/*.h
+port/cb2-display/ref/*.dtsi
+
 # The CB2's bootloader and device tree as the vendor card has them
 # (port/mksdimg.sh puts them on a MEECHO card): U-Boot under the GPL with
 # Rockchip's binary DDR and TF-A blobs inside, not ours to redistribute.

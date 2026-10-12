@@ -159,6 +159,7 @@ struct xhci_device {
 	vir_bytes dev_ctx;		/* the context the controller keeps */
 	phys_bytes dev_ctx_phys;
 	struct xhci_ring ep0;		/* the control endpoint's ring */
+	int ep0_halted;			/* a request stalled; reset first */
 
 	vir_bytes buf;			/* the transfer buffer */
 	phys_bytes buf_phys;
@@ -357,6 +358,8 @@ phys_bytes xhci_transfer_start_buf(struct xhci_device *dev,
 	struct xhci_ep *ep, vir_bytes buf, phys_bytes buf_phys, size_t length,
 	struct xhci_td *td);
 int xhci_ep_reset(struct xhci_device *dev, struct xhci_ep *ep);
+int xhci_ep0_reset(struct xhci_device *dev);
+int xhci_cc_halts(unsigned cc);
 phys_bytes xhci_control_start(struct xhci_device *dev, uint8_t request_type,
 	uint8_t request, uint16_t value, uint16_t index, uint16_t length,
 	struct xhci_td *td);

@@ -650,11 +650,13 @@ intr_finish(struct intr *it, unsigned actual, unsigned cc)
 		 * (a transaction error) before the hub gets round to saying
 		 * so, so it is told, not shouted.
 		 */
-		it->ep->halted = 1;
+		if (xhci_cc_halts(cc))
+			it->ep->halted = 1;
 		status = EIO;
 		actual = 0;
 		log_info(&xhci_log, "slot %u: interrupt endpoint %u completed "
-		    "with %u; it is halted\n", it->dev->slot, it->ep->num, cc);
+		    "with %u%s\n", it->dev->slot, it->ep->num, cc,
+		    it->ep->halted ? "; it is halted" : "");
 	} else if (actual != 0) {
 		const uint8_t *b = (const uint8_t *)it->buf;
 
@@ -889,6 +891,18 @@ xhci_urb_transfer_event(const struct xhci_trb *ev)
 		if (cc != XHCI_CC_SUCCESS && cc != XHCI_CC_SHORT_PACKET) {
 			log_warn(&xhci_log, "a %u-byte transfer for %d "
 			    "completed with %u\n", out.length, out.client, cc);
+			/*
+			 * And the endpoint stopped with it: reset before the
+			 * next transfer on it (send_urb), which is not here -
+			 * this runs inside the event loop, and a command waits
+			 * in one of its own.
+			 */
+			if (xhci_cc_halts(cc)) {
+				if (out.ep != NULL)
+					out.ep->halted = 1;
+				else
+					out.dev->ep0_halted = 1;
+			}
 			finish(0, EIO);
 		} else
 			finish(actual, OK);
@@ -1025,6 +1039,18 @@ send_urb(message *m)
 		intr_start(m->m_source, gid, size, dev);
 		return;
 	}
+
+	/*
+	 * An endpoint the last transfer halted is reset before this one is
+	 * put on it - before this one is outstanding, too, since the reset
+	 * waits for its commands in the event loop.
+	 */
+	if (urb->type == USB_TRANSFER_CTL) {
+		if (dev->ep0_halted)
+			(void)xhci_ep0_reset(dev);
+	} else if ((ep = xhci_device_ep(dev, (unsigned)urb->endpoint,
+	    urb_dir_in(urb))) != NULL && ep->halted)
+		(void)xhci_ep_reset(dev, ep);
 
 	id = next_urb_id++;
 	if (next_urb_id == 0)

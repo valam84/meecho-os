@@ -356,6 +356,9 @@ xhci_control(struct xhci_device *dev, uint8_t request_type, uint8_t request,
 	if (cc != XHCI_CC_SUCCESS && cc != 13 /* short packet */) {
 		log_warn(&xhci_log, "request 0x%02x 0x%02x completed with "
 		    "%u\n", request_type, request, cc);
+		/* A stall halts EP0, and the next request would wait. */
+		if (xhci_cc_halts(cc))
+			(void)xhci_ep0_reset(dev);
 		return EIO;
 	}
 
@@ -676,35 +679,69 @@ xhci_transfer_start_buf(struct xhci_device *dev, struct xhci_ep *ep,
  * interrupt endpoint, and what halts it in practice is the wire - the
  * device unplugged, or a split transaction lost - so that part is not done
  * here.
+ *
+ * The control endpoint halts the same way, and there it is common: a
+ * request the device does not support is answered with a stall (many
+ * keyboards stall SET_IDLE), and after it every control request to the
+ * device sits behind the halt until its deadline.  For EP0 a stall is
+ * the end of that one request and nothing more on the device side, so
+ * the reset here is all it takes.
+ *
+ * The flag is cleared whatever happens: a reset the controller refuses
+ * (an endpoint that was not halted after all) must not turn into a reset
+ * attempted before every transfer for ever.
  */
-int
-xhci_ep_reset(struct xhci_device *dev, struct xhci_ep *ep)
+static int
+ring_reset(struct xhci_device *dev, unsigned dci, struct xhci_ring *ring,
+	unsigned num, int dir_in)
 {
 	phys_bytes deq;
 	int r;
 
 	if ((r = xhci_cmd(0, 0, 0, XHCI_TRB_TYPE(XHCI_TRB_RESET_EP) |
-	    XHCI_TRB_SLOT_ID(dev->slot) | XHCI_TRB_EP_ID(ep->dci), NULL))
-	    != OK) {
+	    XHCI_TRB_SLOT_ID(dev->slot) | XHCI_TRB_EP_ID(dci), NULL)) != OK) {
 		log_warn(&xhci_log, "slot %u: endpoint %u would not reset\n",
-		    dev->slot, ep->num);
+		    dev->slot, num);
 		return r;
 	}
 
-	deq = ep->ring.p + (phys_bytes)ep->ring.enq * XHCI_TRB_SIZE;
-	if ((r = xhci_cmd((uint32_t)deq | (ep->ring.cycle ? XHCI_EP_DCS : 0),
+	deq = ring->p + (phys_bytes)ring->enq * XHCI_TRB_SIZE;
+	if ((r = xhci_cmd((uint32_t)deq | (ring->cycle ? XHCI_EP_DCS : 0),
 	    0, 0, XHCI_TRB_TYPE(XHCI_TRB_SET_TR_DEQ) |
-	    XHCI_TRB_SLOT_ID(dev->slot) | XHCI_TRB_EP_ID(ep->dci), NULL))
-	    != OK) {
+	    XHCI_TRB_SLOT_ID(dev->slot) | XHCI_TRB_EP_ID(dci), NULL)) != OK) {
 		log_warn(&xhci_log, "slot %u: endpoint %u would not take a new "
-		    "dequeue pointer\n", dev->slot, ep->num);
+		    "dequeue pointer\n", dev->slot, num);
 		return r;
 	}
 
-	ep->halted = 0;
 	log_info(&xhci_log, "slot %u: endpoint %u %s reset after a halt\n",
-	    dev->slot, ep->num, ep->dir_in ? "in" : "out");
+	    dev->slot, num, dir_in ? "in" : "out");
 	return OK;
+}
+
+int
+xhci_ep_reset(struct xhci_device *dev, struct xhci_ep *ep)
+{
+	ep->halted = 0;
+	return ring_reset(dev, ep->dci, &ep->ring, ep->num, ep->dir_in);
+}
+
+int
+xhci_ep0_reset(struct xhci_device *dev)
+{
+	dev->ep0_halted = 0;
+	return ring_reset(dev, 1, &dev->ep0, 0, 0);
+}
+
+/*
+ * The completion codes an endpoint halts on (4.10.2): after these, and
+ * only these, a reset is owed.
+ */
+int
+xhci_cc_halts(unsigned cc)
+{
+	return cc == XHCI_CC_BABBLE || cc == XHCI_CC_TRANSACTION ||
+	    cc == XHCI_CC_STALL || cc == XHCI_CC_SPLIT;
 }
 
 int

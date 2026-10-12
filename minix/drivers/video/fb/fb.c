@@ -18,6 +18,7 @@
 
 #include "fb_edid.h"
 #include "fb.h"
+#include "fbcon.h"
 
 /*
  * Function prototypes for the fb driver.
@@ -37,6 +38,8 @@ static int do_put_varscreeninfo(int minor, endpoint_t ep, cp_grant_id_t gid);
 static int do_get_fixscreeninfo(int minor, endpoint_t ep, cp_grant_id_t gid);
 static int do_pan_display(int minor, endpoint_t ep, cp_grant_id_t gid);
 static int keep_displaying_restarted(void);
+static void fb_alarm(clock_t stamp);
+static void fb_other(message *m, int ipc_status);
 
 /* Entry points to the fb driver. */
 static struct chardriver fb_tab =
@@ -45,8 +48,20 @@ static struct chardriver fb_tab =
 	.cdr_close	= fb_close,
 	.cdr_read	= fb_read,
 	.cdr_write	= fb_write,
-	.cdr_ioctl	= fb_ioctl
+	.cdr_ioctl	= fb_ioctl,
+	.cdr_alarm	= fb_alarm,
+	.cdr_other	= fb_other
 };
+
+/*
+ * The console on the screen (fbcon.c): on unless fbcon=0, and shown after
+ * the test card has been up for card= seconds (10 by default; 0 shows the
+ * console at once) - long enough to photograph the card on a boot.  The
+ * kernel's messages are on it unless kmess=0.
+ */
+static long console_on = 1;
+static long card_seconds = 10;
+static long kmess_on = 1;
 
 /** Represents the /dev/fb device. */
 static int has_restarted = 0;
@@ -60,7 +75,9 @@ fb_open(devminor_t minor, int UNUSED(access), endpoint_t UNUSED(user_endpt))
 	if (minor < 0 || minor >= FB_DEV_NR) return ENXIO;
 
 	if (fb_init_display(minor) == OK) {
-		open_counter[minor]++;
+		/* A program takes the pixels over; the console waits. */
+		if (open_counter[minor]++ == 0)
+			fbcon_pause(1);
 		return OK;
 	}
 	return ENXIO;
@@ -102,8 +119,36 @@ fb_close(devminor_t minor)
 {
 	if (minor < 0 || minor >= FB_DEV_NR) return ENXIO;
 	assert(open_counter[minor] > 0);
-	open_counter[minor]--;
+	if (--open_counter[minor] == 0)
+		fbcon_pause(0);
 	return OK;
+}
+
+/*
+ * The first alarm ends the test card and attaches the console; every one
+ * is the console's tick (fbcon_tick: the kernel's new messages, and one
+ * drawing of whatever came since the last) and sets the next, a tenth of a
+ * second on.  A console that could not attach is not retried.
+ */
+static void
+fb_alarm(clock_t UNUSED(stamp))
+{
+	if (!console_on)
+		return;
+	if (fbcon_attach(0, (int)kmess_on) != OK) {
+		console_on = 0;
+		return;
+	}
+	fbcon_tick();
+	(void)sys_setalarm(sys_hz() / 10, 0);
+}
+
+static void
+fb_other(message *m, int ipc_status)
+{
+	/* tty's console grew (see fbcon.c). */
+	if (is_ipc_notify(ipc_status) && m->m_source == TTY_PROC_NR)
+		fbcon_pull();
 }
 
 static ssize_t
@@ -299,6 +344,22 @@ sef_cb_init(int type, sef_init_info_t *UNUSED(info))
 	 */
 	if (type != SEF_INIT_LU && fb_init_display(0) != OK)
 		return ENXIO;
+
+	/*
+	 * The console replaces the test card after card= seconds.  The switch
+	 * is fbcon=, not console=: env_parse() reads the boot parameters too
+	 * when the service arguments do not name a key, console=tty00 is one
+	 * of them, and a word where a number is expected is a panic - which
+	 * is how the first run of this on the board ended.
+	 */
+	if (type != SEF_INIT_LU) {
+		(void)env_parse("fbcon", "d", 0, &console_on, 0, 1);
+		(void)env_parse("card", "d", 0, &card_seconds, 0, 3600);
+		(void)env_parse("kmess", "d", 0, &kmess_on, 0, 1);
+		if (console_on)
+			(void)sys_setalarm(card_seconds > 0 ?
+			    card_seconds * sys_hz() : 1, 0);
+	}
 
 	/* Announce we are up when necessary. */
 	if (do_announce_driver) {

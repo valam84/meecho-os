@@ -212,6 +212,9 @@ int main(void)
 	case TTY_INPUT_EVENT:
 		do_input(&tty_mess);
 		continue;
+	case TTY_SCREEN_UP:		/* a screen wants the console's text */
+		do_screen_up(&tty_mess);
+		continue;
 	default:			/* should be a driver request */
 		;			/* do nothing; end switch */
 	}

@@ -509,6 +509,9 @@ rs_write(register tty_t *tp, int try)
 
 		tp->tty_reprint = TRUE;
 
+		/* What the line is about to send, for the screen (console.c). */
+		cons_mirror(tp, rs->obuf, rs->ohead, bufend(rs->obuf), ocount);
+
 		rs->ocount += ocount;
 		rs_ostart(rs);
 		if ((rs->ohead += ocount) >= bufend(rs->obuf))
@@ -553,6 +556,8 @@ rs_echo(tty_t *tp, int character)
 	out_process(tp, rs->obuf, rs->ohead, bufend(rs->obuf), &count, &ocount);
 	if (count == 0)
 		return;
+
+	cons_mirror(tp, rs->obuf, rs->ohead, bufend(rs->obuf), ocount);
 
 	rs->ocount += ocount;
 	rs_ostart(rs);

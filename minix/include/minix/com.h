@@ -907,6 +907,15 @@
 #define TTY_INPUT_UP		(TTY_RQ_BASE + 2) /* input server is up */
 #define TTY_INPUT_EVENT		(TTY_RQ_BASE + 3) /* relayed input event */
 
+/*
+ * A screen driver is up and wants what goes to the console (sendrec).  TTY
+ * keeps a copy of everything written to the console line in a ring and
+ * answers with a read-only grant to it: m_u32.data[0] the grant, [1] the
+ * size of the text area.  From then on it notifies the sender whenever the
+ * ring grows; the screen pulls, so TTY never waits for it.
+ */
+#define TTY_SCREEN_UP		(TTY_RQ_BASE + 4)
+
 /*===========================================================================*
  *			Messages for input server and drivers		     *
  *===========================================================================*/

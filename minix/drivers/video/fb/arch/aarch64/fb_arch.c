@@ -50,6 +50,7 @@
 #include <dev/videomode/edidreg.h>
 
 #include "fb.h"
+#include "fbcon.h"
 #include "display.h"
 #include "fb_ioc.h"
 
@@ -97,6 +98,9 @@ static const struct videomode mode_720p = {
 #define MAX_AUTO_KHZ	148500
 
 #define BYTES_PER_PIXEL	4
+
+/* The most one cache maintenance request covers (see arch_fb_flush()). */
+#define FLUSH_PIECE	(128 * 1024)
 
 static struct disp_info disp;
 static struct videomode mode;
@@ -391,7 +395,16 @@ alloc_frame_buffer(void)
 	}
 	fb_vir = (vir_bytes)v;
 	memset(v, 0, fb_size);
-	arch_fb_flush(0, 0, fb_size);
+	{
+		/* What a whole-frame clean costs: the console pays it per scroll. */
+		u64_t t0, t1;
+
+		read_frclock_64(&t0);
+		arch_fb_flush(0, 0, fb_size);
+		read_frclock_64(&t1);
+		log_info(&fb_log, "cleaning the whole frame out of the cache: "
+		    "%u us\n", frclock_64_to_micros(delta_frclock_64(t0, t1)));
+	}
 	log_info(&fb_log, "frame buffer %ux%u, stride %u, %zu bytes at "
 	    "physical 0x%lx\n", mode.hdisplay, mode.vdisplay, fb_stride,
 	    fb_size, (unsigned long)fb_phys);
@@ -402,12 +415,15 @@ static void
 report_state(void)
 {
 	unsigned line;
+	char stats[256];
 
 	log_info(&fb_log, "state: monitor %s, PHY %s, mode %dx%d\n",
 	    dwhdmi_hpd() ? "plugged in" : "absent",
 	    dwhdmi_phy_locked() ? "locked" : "NOT locked",
 	    mode.hdisplay, mode.vdisplay);
 	(void)vop2_scanning(&line);
+	fbcon_stats(stats, sizeof(stats));
+	log_info(&fb_log, "%s\n", stats);
 }
 
 static int
@@ -577,8 +593,23 @@ arch_fb_flush(int minor, size_t off, size_t len)
 		return;
 	if (len > fb_size - off)
 		len = fb_size - off;
-	if (len > 0)
-		(void)sys_cachectl(CACHE_CLEAN, (void *)(fb_vir + off), len);
+
+	/*
+	 * In pieces.  The kernel does the whole of one request under its big
+	 * lock, and every other core that enters the kernel meanwhile waits.
+	 * A whole 720p frame - 900 pages, 57600 cache lines - was measured at
+	 * about a millisecond on the board, which is tolerable; a 4K frame is
+	 * nine times that, and the console cleans the whole frame on every
+	 * scroll, up to ten times a second.  The total work is the same; no
+	 * single request holds the lock for more than a 128 KiB piece of it.
+	 */
+	while (len > 0) {
+		size_t n = len < FLUSH_PIECE ? len : FLUSH_PIECE;
+
+		(void)sys_cachectl(CACHE_CLEAN, (void *)(fb_vir + off), n);
+		off += n;
+		len -= n;
+	}
 }
 
 int

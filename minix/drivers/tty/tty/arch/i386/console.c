@@ -1231,3 +1231,25 @@ static void vid_vid_copy(int src_index, int dst_index, int count)
 		src_index += subcount;
 	}
 }
+
+/*===========================================================================*
+ *				do_screen_up				     *
+ *===========================================================================*/
+void do_screen_up(message *m)
+{
+/* A PC has its screen here, in this file; a second one is not offered. */
+  message reply;
+
+  memset(&reply, 0, sizeof(reply));
+  reply.m_type = ENOSYS;
+  (void) ipc_send(m->m_source, &reply);
+}
+
+/*===========================================================================*
+ *				cons_mirror				     *
+ *===========================================================================*/
+void cons_mirror(struct tty *UNUSED(tp), const char *UNUSED(bstart),
+	const char *UNUSED(bpos), const char *UNUSED(bend), int UNUSED(count))
+{
+/* Only AArch64's console needs its output copied to a screen driver. */
+}

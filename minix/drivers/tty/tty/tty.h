@@ -146,6 +146,11 @@ int con_loadfont(endpoint_t endpt, cp_grant_id_t grant);
 void select_console(int cons_line);
 void beep_x( unsigned freq, clock_t dur);
 void do_video(message *m, int ipc_status);
+void do_screen_up(message *m);
+void cons_mirror(struct tty *tp, const char *bstart, const char *bpos,
+	const char *bend, int count);
+
+extern u32_t consoleline;
 
 /* keyboard.c */
 void kb_init(struct tty *tp);

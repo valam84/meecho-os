@@ -3,7 +3,7 @@ PROG=	fb
 
 .include "arch/${MACHINE_ARCH}/Makefile.inc"
 
-SRCS+=	fb_edid.c fb.c
+SRCS+=	fb_edid.c fb.c fbcon.c
 
 # re-use EDID parsing/validation code from NetBSD.
 .PATH: ${NETBSDSRCDIR}/sys/dev/videomode

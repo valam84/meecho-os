@@ -10,6 +10,16 @@ int arch_put_varscreeninfo(int minor, struct fb_var_screeninfo *fbvs_copy);
 int arch_get_fixscreeninfo(int minor, struct fb_fix_screeninfo *fbfsp);
 int arch_pan_display(int minor, struct fb_var_screeninfo *fbvs_copy);
 
+/*
+ * After the CPU has written len bytes at off: make them visible to the
+ * display controller, which on AArch64 reads behind the data cache.
+ */
+void arch_fb_flush(int minor, size_t off, size_t len);
+
+/* Requests the generic part does not know; ENOTTY if the arch does not. */
+int arch_fb_ioctl(int minor, unsigned long request, endpoint_t ep,
+	cp_grant_id_t gid);
+
 #define FB_MESSAGE "Hello, world! From framebuffer!\n"
 #define FB_DEV_NR 1
 

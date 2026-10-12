@@ -17,6 +17,7 @@ RAMDISK_DEVICES="
 	boot
 	bpf
 	console
+	fb0
 	input
 	random
 	urandom

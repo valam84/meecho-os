@@ -311,6 +311,19 @@ arch_pan_display(int minor, struct fb_var_screeninfo *fbvsp)
 	return arch_put_varscreeninfo(minor, fbvsp);
 }
 
+void
+arch_fb_flush(int UNUSED(minor), size_t UNUSED(off), size_t UNUSED(len))
+{
+	/* The frame buffer was always written straight through here. */
+}
+
+int
+arch_fb_ioctl(int UNUSED(minor), unsigned long UNUSED(request),
+	endpoint_t UNUSED(ep), cp_grant_id_t UNUSED(gid))
+{
+	return ENOTTY;
+}
+
 int
 arch_fb_init(int minor, struct edid_info *info)
 {

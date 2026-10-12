@@ -70,6 +70,25 @@ minix-service up /service/random -dev /dev/random ||
 minix-service up /service/uds ||
     echo "WARNING: no local (AF_UNIX) sockets"
 
+# Экран. Драйвер сам ищет дисплей в дереве (VOP2 + HDMI на CB2) и, найдя,
+# сразу выводит тестовую таблицу; без монитора он всё равно поднимает весь
+# конвейер - это проверяемо по его журналу (fblog). Не нашёл или узлы
+# выключены в дереве - говорит об этом и не запускается. Аргументы - из
+# загрузки: fblog= уровень журнала, fbforce=0xRRGGBB - залить экран одним
+# цветом внутри HDMI-кодера, мимо контроллера дисплея.
+if [ -x /service/fb ]
+then
+	fbargs=
+	if sysenv fblog >/dev/null
+	then	fbargs="log=`sysenv fblog`"
+	fi
+	if sysenv fbforce >/dev/null
+	then	fbargs="$fbargs force=`sysenv fbforce`"
+	fi
+	minix-service up /service/fb -dev /dev/fb0 -args "$fbargs" ||
+	    echo "WARNING: no display"
+fi
+
 
 # Сеть. Этот скрипт живёт только на плате, поэтому по умолчанию здесь
 # драйвер платы, а не эмулятора; аргумент загрузки netdrv= его перекрывает.

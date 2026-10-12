@@ -82,6 +82,13 @@ port/cb2-usb/ref/*.h
 port/cb2-usb/ref/*.dts
 port/cb2-usb/ref/*.dtsi
 
+# The CB2's bootloader and device tree as the vendor card has them
+# (port/mksdimg.sh puts them on a MEECHO card): U-Boot under the GPL with
+# Rockchip's binary DDR and TF-A blobs inside, not ours to redistribute.
+# port/cb2-sd/README.md says how to take them off a vendor card.
+port/cb2-sd/uboot-area.bin
+port/cb2-sd/rk3566-bigtreetech-cb2.dtb
+
 # Scratch space and run logs that nothing cites.
 port/scratch/
 

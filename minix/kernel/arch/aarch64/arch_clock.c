@@ -36,6 +36,7 @@
 #include "kernel/ktrace.h"
 
 #include "bsp_timer.h"
+#include "hwwd.h"
 
 /*
  * How the system counter relates to the units the rest of the kernel counts
@@ -134,6 +135,13 @@ void
 arch_timer_int_handler(void)
 {
 	bsp_timer_int_handler();
+
+	/*
+	 * The SoC watchdog, from the one core that keeps its timer while
+	 * idle; see hwwd.c for why the tick and why this core.
+	 */
+	if (cpu_is_bsp(cpuid))
+		hwwd_pet();
 }
 
 /*===========================================================================*

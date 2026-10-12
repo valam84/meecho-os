@@ -1,0 +1,80 @@
+The CB2's SoC watchdog, read from the board under its vendor Linux
+(6.1.115-btt-rockchip64), 2026-10-12, before any MEECHO code for it existed.
+
+Device tree, /proc/device-tree/watchdog@fe600000
+  compatible   rockchip,rk3568-wdt snps,dw-wdt
+  reg          0xfe600000, size 0x100
+  interrupts   GIC_SPI 149 (0x95), level high      (unused: reset mode)
+  clocks       <&cru 0x116>, <&cru 0x115>  names "tclk", "pclk"
+  status       (absent - enabled)
+
+Clocks, /sys/kernel/debug/clk/clk_summary
+  tclk_wdt_ns   enabled  24000000 Hz
+  pclk_wdt_ns   enabled  99000000 Hz
+  The kernel cannot read these - "clocks" is a CRU phandle - so MEECHO
+  measures tclk against the generic timer when it starts the part.
+
+Linux: CONFIG_DW_WATCHDOG=y, CONFIG_WATCHDOG_NOWAYOUT not set, /dev/watchdog
+present, nothing opens it (systemd RebootWatchdogSec=off).
+
+Registers at rest (python3 mmap of /dev/mem, port of probe.py style)
+  CR             +0x00 = 0x00000008   WDT_EN 0, RMOD 0 (reset), RPL 2
+  TORR           +0x04 = 0x00000000
+  CCVR           +0x08 = 0x0000ffff
+  CRR            +0x0c = 0x00000000
+  STAT           +0x10 = 0x00000000
+  COMP_PARAMS_2  +0xf0 = 0x0000ffff
+  COMP_PARAMS_1  +0xf4 = 0x10000ac0   CNT_WIDTH 16+16 = 32 bits,
+                                      USE_FIX_TOP 1, PAUSE 1,
+                                      APB width 32, DFLT_RPL 2,
+                                      ALWAYS_EN 0, DUAL_TOP 0
+  COMP_VERSION   +0xf8 = 0x3131302a   "110*" = 1.10a
+  COMP_TYPE      +0xfc = 0x44570120   DW_apb_wdt
+  So: TOP n is 2^(16+n) cycles of 24 MHz, n = 0..15: 2.7 ms .. 89.5 s.
+  The 10-15 range: 2.8, 5.6, 11.2, 22.4, 44.7, 89.5 s.
+
+wdctl (which opens /dev/watchdog0, and opening arms it) left it running:
+  CR = 0x09, TORR = 0x0e (2^30 cycles, 44.7 s), the Linux watchdog core
+  feeding it every ~22 s (CCVR falls and jumps back). Measured rate from two
+  reads 5 s apart: about 24.0 million counts per second. Once enabled the
+  part does not disable - only a reset clears WDT_EN.
+
+The reset is wired. /dev/watchdog held open, WDIOC_SETTIMEOUT 10 s, one
+feed, then silence: the board stopped answering 11 s later and was up again
+25 s after that (uptime 25.06 at the first answer), the previous boot's
+journal ending without a shutdown. Nothing in the CRU was configured for it
+by Linux (dw_wdt does not touch the CRU), so the firmware's defaults carry
+the watchdog reset to the SoC.
+
+After that reset (and so, at boot, as MEECHO will find it):
+  WDT CR = 0x00000008, TORR = 0x00000000           off again
+  CRU +0x0c0 = 0x00004455
+  CRU +0x0d0 = 0x00640064
+  CRU +0x0dc = 0x00000103                          not a reset cause: the
+                                                    same value after a
+                                                    power cycle
+  CRU +0x0c4..0x0cc, 0x0d4, 0x0d8 = 0
+
+MEECHO on the board, 2026-10-12 (root on eMMC; console listened to at
+1500000 only - the hub -> board line of the console is dead, UART2 rx:0)
+
+  Boot line:  hwwd: dw-wdt, 24.0 MHz, resets after 11.1 s without a tick
+              (hwwd=10; the rate measured against CNTVCT matches tclk)
+  Fed:        uptime 29.80 at 15:39:00, 258.8 at 15:42:44 - no reset in
+              four minutes.
+  Probe, one core (no_smp), boot core hung in its tick at 120 s with
+  interrupts masked:
+              last ssh answer uptime 117.99 at 15:47:29; Armbian answering
+              at 15:48:21 with uptime 30.19. Console: the probe line, then
+              the loader's DDR training on the next line - nothing between.
+  Probe, four cores, hwwd=10: the same - reset before lockwd spoke.
+  Probe, four cores, hwwd=20 (22.3 s measured):
+              hwwdprobe: boot core hangs in its tick now
+              lock watchdog: cpu 1 has waited 10000 ms for the kernel lock
+              ... idle0 / -4 is its current process
+              SMP: CPU 0 did not stop
+              kernel panic: kernel lock held for over 10 s
+              MEECHO will now reset.
+              (loader)
+  So the default became 20: lockwd speaks first when another core can, the
+  SoC watchdog resets when none can.

@@ -41,6 +41,7 @@
 #include "trap.h"
 #include "bsp_serial.h"
 #include "bsp_intr.h"
+#include "hwwd.h"
 #include <minix/fdt.h>
 
 /* Section boundaries from kernel.lds; physical here, the MMU being off. */
@@ -704,6 +705,14 @@ pre_init(phys_bytes dtb)
 	 * kernel-virtual value by the callback loop in pre_init_high().
 	 */
 	bsp_intr_pre_init();
+
+	/*
+	 * The SoC watchdog, if the tree has one this kernel knows: its
+	 * registers join the maps the same way. Found here, started only in
+	 * arch_init(), when the command line has had its say - the part
+	 * cannot be stopped once it runs.
+	 */
+	hwwd_probe(dtb);
 
 	/*
 	 * Two maps. The identity map keeps this code addressable for the few

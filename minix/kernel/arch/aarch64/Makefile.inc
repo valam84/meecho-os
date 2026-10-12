@@ -60,6 +60,7 @@ SRCS+=	head.S arch_system.c memory.c cache.c direct_tty_utils.c \
 	gic.c gicv2.c gicv3.c \
 	generic_timer.c psci_reset.c \
 	serial.c pl011.c dw8250.c \
+	hwwd.c dw_wdt.c \
 	usercopy.S exception.c vectors.S trap.c hw_intr.c fpu_asm.S
 
 # CONFIG_SMP and CONFIG_MAX_CPUS are set for the whole tree in

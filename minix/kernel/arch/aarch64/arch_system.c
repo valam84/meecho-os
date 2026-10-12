@@ -9,6 +9,7 @@
 #include "archconst.h"
 #include "arch_proto.h"
 #include "trap.h"
+#include "hwwd.h"
 #include "kernel/proc.h"
 #include "kernel/debug.h"
 
@@ -316,6 +317,14 @@ arch_init(void)
 	 */
 	lockwd_cpu_init();
 #endif
+
+	/*
+	 * The SoC watchdog, from hwwd= on the command line: what lockwd
+	 * cannot see, one core or all of them stuck. See hwwd.c. Once, on
+	 * the boot core: it is the core that feeds it.
+	 */
+	if (cpu_is_bsp(cpuid))
+		hwwd_init();
 
 	/*
 	 * The per-CPU kernel stacks. exception.S reserves them and the EL0

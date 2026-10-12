@@ -330,12 +330,19 @@ struct sdmmc_clkctl_ops {
 /* sdmmc_clk_rk3568.c: the RK3566/RK3568 clock and reset unit. */
 extern const struct sdmmc_clkctl_ops sdmmc_rk3568_cru;
 
+/* sdmmc_clk_h616.c: the Allwinner H616/H313 clock control unit. */
+extern const struct sdmmc_clkctl_ops sdmmc_h616_ccu;
+
 /* sdmmc_sdhci.c: the SD Host Controller standard register set. */
 int sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	struct sdmmc_host *host);
 
 /* sdmmc_dwmshc.c: the Synopsys DesignWare Mobile Storage Host Controller. */
 int dwmshc_probe(const struct fdt_node *node,
+	const struct sdmmc_devinfo *info, struct sdmmc_host *host);
+
+/* sdmmc_sunxi.c: Allwinner's SD/MMC controller, A20 to H616/H313. */
+int sunxi_probe(const struct fdt_node *node,
 	const struct sdmmc_devinfo *info, struct sdmmc_host *host);
 
 /*

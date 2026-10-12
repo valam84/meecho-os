@@ -108,6 +108,14 @@ dwmshc_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 	return record("dwmshc", info);
 }
 
+int
+sunxi_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
+	struct sdmmc_host *host)
+{
+	(void)node; (void)host;
+	return record("sunxi", info);
+}
+
 /* Нужны sdmmc_clk.c, но этот стенд регистров не трогает. */
 void *vm_map_phys(int who, void *phys, size_t len)
 	{ (void)who; (void)phys; (void)len; return (void *)-1; }
@@ -128,12 +136,49 @@ find(long inst)
 	return sdmmc_host_find(&host);
 }
 
+/*
+ * Tanix TX1, H313 (дерево mainline, port/h313/h313-tanix-tx1.dtb). eMMC на
+ * mmc2, Wi-Fi SDIO на mmc1 - распаян и без "no-sd"/"no-mmc", только с узлом
+ * wifi@1 под ним; гнездо mmc0 выключено. Номер 0 обязан достаться eMMC, а
+ * не слоту Wi-Fi, который в порядке дерева идёт раньше.
+ */
+static void
+tx1(void)
+{
+	int r;
+
+	printf("H313: instance=0 - eMMC на mmc2, не Wi-Fi на mmc1\n");
+	r = find(0);
+	CHECK(r == OK && probes == 1, "r %d, проб %u", r, probes);
+	CHECK(probed_base == 0x4022000 && probed_by != NULL &&
+	    strcmp(probed_by, "sunxi") == 0,
+	    "достался 0x%lx пробе %s, ждали eMMC 0x4022000 у sunxi",
+	    (unsigned long)probed_base, probed_by ? probed_by : "-");
+	CHECK(probed_info.non_removable && probed_info.bus_width == 8 &&
+	    probed_info.max_freq == 100000000 && probed_info.nresets == 1 &&
+	    probed_info.reset[0].id == 16 && probed_info.irq == 32 + 37,
+	    "сведения eMMC: несъёмная %d, шина %u, %u Гц, сбросов %u (%u), "
+	    "линия %d", probed_info.non_removable, probed_info.bus_width,
+	    probed_info.max_freq, probed_info.nresets,
+	    probed_info.reset[0].id, probed_info.irq);
+
+	printf("H313: instance=1 - больше дисков нет\n");
+	r = find(1);
+	CHECK(r == ENXIO && probes == 0,
+	    "r %d, проб %u - mmc0 выключен, mmc1 - SDIO", r, probes);
+}
+
 int
 main(int argc, char **argv)
 {
 	int r;
 
 	dtb_file = (argc > 1) ? argv[1] : "live.dtb";
+	if (argc > 2 && strcmp(argv[2], "tx1") == 0) {
+		tx1();
+		printf("\n%u проверок, %u отказов\n", checks, failures);
+		return failures ? 1 : 0;
+	}
 
 	printf("instance=0: распаянная eMMC\n");
 	r = find(0);

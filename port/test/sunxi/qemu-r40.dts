@@ -1,0 +1,48 @@
+/*
+ * Дерево стенда sunxi: то, что QEMU "bpim2u" (Allwinner R40) действительно
+ * эмулирует, описанное так, как описывает свои платы mainline.
+ *
+ * Контроллер - вариант A64 ("allwinner,sun50i-a64-mmc"): QEMU для R40 берёт
+ * именно его модель (TYPE_AW_SDHOST_SUN50I_A64), и это то же поколение, что
+ * у H616/H313. Блок тактов назван своим именем R40, которого нет в таблице
+ * sdmmc_clk.c, - драйвер обязан это пережить: такты остаются как есть.
+ * Прерывание описано, но стенд линию не выдаёт - драйвер обязан перейти на
+ * опрос.
+ */
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	model = "QEMU bpim2u (Allwinner R40), sdmmc harness";
+	compatible = "minix,sunxi-harness";
+
+	ccu: clock@1c20000 {
+		compatible = "allwinner,sun8i-r40-ccu";
+		reg = <0x01c20000 0x400>;
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+	};
+
+	gic: interrupt-controller@1c81000 {
+		compatible = "arm,gic-400";
+		#interrupt-cells = <3>;
+		interrupt-controller;
+		reg = <0x01c81000 0x1000>, <0x01c82000 0x2000>;
+	};
+
+	mmc0: mmc@1c0f000 {
+		compatible = "allwinner,sun50i-a64-mmc";
+		reg = <0x01c0f000 0x1000>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 32 4>;
+		clocks = <&ccu 34>, <&ccu 98>;
+		clock-names = "ahb", "mmc";
+		resets = <&ccu 15>;
+		reset-names = "ahb";
+		bus-width = <4>;
+		cap-sd-highspeed;
+		max-frequency = <50000000>;
+		status = "okay";
+	};
+};

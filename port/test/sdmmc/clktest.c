@@ -49,17 +49,34 @@ static unsigned checks, failures;
 static uint8_t cru[CRU_SIZE] __attribute__((aligned(8)));
 static unsigned maps;
 
+/* CCU H616/H313 - из дерева Tanix TX1. */
+#define CCU_BASE	0x03001000UL
+#define CCU_SIZE	0x1000
+static uint8_t ccu[CCU_SIZE] __attribute__((aligned(8)));
+static unsigned ccu_maps;
+
 void *
 vm_map_phys(int who, void *phys, size_t len)
 {
 	(void)who;
-	maps++;
-	if ((unsigned long)phys == CRU_BASE && len == CRU_SIZE)
+	if ((unsigned long)phys == CRU_BASE && len == CRU_SIZE) {
+		maps++;
 		return cru;
-	printf("  ОТКАЗ: отображение 0x%lx+0x%zx - не CRU\n",
+	}
+	if ((unsigned long)phys == CCU_BASE && len == CCU_SIZE) {
+		ccu_maps++;
+		return ccu;
+	}
+	printf("  ОТКАЗ: отображение 0x%lx+0x%zx - ни CRU, ни CCU\n",
 	    (unsigned long)phys, len);
 	failures++;
 	return (void *)-1;
+}
+
+static uint32_t
+creg(unsigned off)
+{
+	return *(uint32_t *)(ccu + off);
 }
 
 int vm_unmap_phys(int who, void *vir, size_t len)
@@ -289,6 +306,111 @@ check_registers(void)
 	    "импульс eMMC: регистр 7 после - %08x", reg(0x41c));
 }
 
+/*
+ * H313/H616: eMMC на mmc2 - "ahb" = CLK_BUS_MMC2 (65), "mmc" = CLK_MMC2 (62),
+ * сброс RST_BUS_MMC2 (16). Регистры: модульный такт 0x838 (затвор 31,
+ * вход 25:24, N 9:8, M 3:0, после них деление на 2), затворы и сбросы шины
+ * 0x84c (2:0 и 18:16), без маски записи; бит сброса - «вышел из сброса».
+ */
+static struct sdmmc_line tx_ahb, tx_mmc, tx_rst;
+
+static void
+check_tx1_mmc2(const struct fdt_node *node)
+{
+	int r;
+
+	r = sdmmc_clk_get(node, "ahb", &tx_ahb);
+	CHECK(r == OK && tx_ahb.id == 65, "mmc2 ahb: r %d id %u", r, tx_ahb.id);
+	r = sdmmc_clk_get(node, "mmc", &tx_mmc);
+	CHECK(r == OK && tx_mmc.id == 62, "mmc2 mmc: r %d id %u", r, tx_mmc.id);
+	r = sdmmc_line_get(node, "resets", "reset-names", "ahb", 0, &tx_rst);
+	CHECK(r == OK && tx_rst.id == 16, "mmc2 сброс: r %d id %u", r,
+	    tx_rst.id);
+}
+
+/* Что даёт слово модульного такта: вход/(M+1)/2^N/2. */
+static uint32_t
+mmc_rate(uint32_t v)
+{
+	static const uint32_t in[] = { 24000000, 1200000000, 0, 0 };
+
+	return in[(v >> 24) & 3] / ((v & 0xf) + 1) / (1u << ((v >> 8) & 3)) /
+	    2;
+}
+
+static void
+check_h616_registers(void)
+{
+	uint32_t got;
+	int r;
+
+	memset(ccu, 0, sizeof(ccu));
+	r = sdmmc_clk_set_rate(&tx_mmc, 375000, &got);
+	CHECK(r == OK && got == 375000 && (creg(0x838) >> 31) &&
+	    ((creg(0x838) >> 24) & 3) == 0 && mmc_rate(creg(0x838)) == 375000,
+	    "mmc2 375k: r %d got %u reg %08x (%u Hz)", r, got, creg(0x838),
+	    mmc_rate(creg(0x838)));
+	r = sdmmc_clk_set_rate(&tx_mmc, 52000000, &got);
+	CHECK(r == OK && got == 50000000 && creg(0x838) == 0x8100000b,
+	    "mmc2 52M: r %d got %u reg %08x - ждали 0x8100000b "
+	    "(periph0-2x, M 12, N 0)", r, got, creg(0x838));
+	r = sdmmc_clk_set_rate(&tx_mmc, 150000000, &got);
+	CHECK(r == OK && got == 150000000 && mmc_rate(creg(0x838)) == got,
+	    "mmc2 150M: r %d got %u reg %08x", r, got, creg(0x838));
+	r = sdmmc_clk_set_rate(&tx_mmc, 1000, &got);
+	CHECK(r == OK && got == mmc_rate(creg(0x838)) && got > 1000,
+	    "mmc2 ниже всего: r %d got %u - самый медленный, делит хост", r,
+	    got);
+	/* Чужие поля регистра не трогаются. */
+	*(uint32_t *)(ccu + 0x838) = 0x00c00000;
+	(void)sdmmc_clk_set_rate(&tx_mmc, 50000000, &got);
+	CHECK((creg(0x838) & 0x00c00000) == 0x00c00000,
+	    "посторонние биты 0x838 сохранены: %08x", creg(0x838));
+
+	memset(ccu, 0, sizeof(ccu));
+	*(uint32_t *)(ccu + 0x84c) = 0x00010001;	/* mmc0 жив */
+	r = sdmmc_clk_enable(&tx_ahb);
+	CHECK(r == OK && creg(0x84c) == 0x00010005,
+	    "затвор шины mmc2: %08x, ждали 0x00010005", creg(0x84c));
+	r = sdmmc_reset_set(&tx_rst, 0);
+	CHECK(r == OK && creg(0x84c) == 0x00050005,
+	    "mmc2 из сброса: %08x, ждали 0x00050005", creg(0x84c));
+	r = sdmmc_reset_set(&tx_rst, 1);
+	CHECK(r == OK && creg(0x84c) == 0x00010005,
+	    "mmc2 в сброс: %08x, ждали 0x00010005 (mmc0 не задет)",
+	    creg(0x84c));
+	CHECK(sdmmc_clk_set_phase(&tx_mmc, 90) == ENOSYS,
+	    "фаз у этого блока нет - ENOSYS");
+}
+
+static int
+load(const char *path)
+{
+	FILE *f;
+	long n;
+	char *buf;
+
+	if ((f = fopen(path, "rb")) == NULL) {
+		perror(path);
+		return -1;
+	}
+	fseek(f, 0, SEEK_END);
+	n = ftell(f);
+	rewind(f);
+	buf = malloc((size_t)n);
+	if (buf == NULL || fread(buf, 1, (size_t)n, f) != (size_t)n) {
+		fprintf(stderr, "не прочитать %s\n", path);
+		return -1;
+	}
+	fclose(f);
+	if (!fdt_valid(buf)) {
+		fprintf(stderr, "%s - не дерево\n", path);
+		return -1;
+	}
+	dtb = buf;
+	return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -296,6 +418,19 @@ main(int argc, char **argv)
 	FILE *f;
 	long n;
 	char *buf;
+
+	if (argc > 2 && strcmp(argv[2], "tx1") == 0) {
+		if (load(path) != 0)
+			return 2;
+		printf("Линии eMMC H313 по дереву Tanix TX1\n");
+		with_node("mmc@4022000", check_tx1_mmc2);
+		printf("Слова в регистрах CCU H616\n");
+		check_h616_registers();
+		CHECK(ccu_maps == 1, "CCU отображён %u раз, ждали один",
+		    ccu_maps);
+		printf("\n%u проверок, %u отказов\n", checks, failures);
+		return failures ? 1 : 0;
+	}
 
 	if ((f = fopen(path, "rb")) == NULL) {
 		perror(path);

@@ -25,10 +25,11 @@
  * target board on c0d0 now that its SD socket is driven too; in tree order
  * the socket comes first.
  *
- * A node that says it carries neither an SD card nor an MMC ("no-sd" and
- * "no-mmc" both) is an SDIO slot - on the target board, the Wi-Fi chip on
- * the second dw-mshc - and is not a block device; it is skipped and counts
- * for nothing.
+ * An SDIO slot is not a block device; it is skipped and counts for nothing.
+ * Two things say a node is one: "no-sd" and "no-mmc" both (the Wi-Fi chip
+ * on the target board's second dw-mshc), or a device described under it
+ * (the Wi-Fi chip of an H313 box, which says nothing else - see
+ * collect_host()).
  */
 
 #include <minix/drivers.h>
@@ -60,14 +61,16 @@ static const struct host_driver drivers[] = {
 	 * part uses. sdmmc_dwmshc.c tells the two apart itself. */
 	{ "rockchip,rk3288-dw-mshc",	dwmshc_probe },
 	{ "snps,dw-mshc",		dwmshc_probe },
-};
-
-struct search {
-	struct sdmmc_host *host;
-	int skip;
-	int soldered;		/* this pass: soldered devices, or sockets */
-	int refused;		/* the instance's node was refused */
-	const struct host_driver *found;
+	/* Allwinner's controller - a Synopsys descendant with registers of
+	 * its own - from the A20 to the H616 and H313. sdmmc_sunxi.c picks
+	 * the variant (descriptor format, timing mode) itself. */
+	{ "allwinner,sun50i-h616-mmc",	sunxi_probe },
+	{ "allwinner,sun50i-h616-emmc",	sunxi_probe },
+	{ "allwinner,sun50i-a100-mmc",	sunxi_probe },
+	{ "allwinner,sun50i-a100-emmc",	sunxi_probe },
+	{ "allwinner,sun50i-a64-mmc",	sunxi_probe },
+	{ "allwinner,sun50i-a64-emmc",	sunxi_probe },
+	{ "allwinner,sun7i-a20-mmc",	sunxi_probe },
 };
 
 /* A node is usable unless it says otherwise. */
@@ -142,12 +145,44 @@ read_resets(const struct fdt_node *node, const char *name,
 		    "this driver does not know; not pulled\n", name, unknown);
 }
 
+/*
+ * The walk collects, and only collects: every enabled node the table has a
+ * driver for, with what the numbering needs to know about it. Deciding in
+ * the walk is not possible for the one property that is not on the node
+ * itself - whether a device sits *under* it - because a node's children come
+ * after it.
+ *
+ * One node is one entry whatever the number of lines in the table it
+ * matches. The eMMC node of the target board carries two strings the table
+ * has, and the first version of this walk counted the node once per
+ * matching line: instance 1 skipped the eMMC under the first string and took
+ * it under the second. Two drivers on one controller is not a slow disk but
+ * a root file system whose controller is reset under it, which is how this
+ * was found.
+ */
+#define MAX_CANDIDATES	16
+
+struct candidate {
+	struct fdt_node node;		/* valid while the blob is */
+	char name[40];
+	int depth;
+	int soldered;
+	int sdio;			/* a function device sits under it */
+	const struct host_driver *drv;
+};
+
+struct collect {
+	struct candidate c[MAX_CANDIDATES];
+	unsigned n;
+	int open;			/* the candidate whose children these are */
+};
+
 static int
-find_host(void *cookie, int depth, const char *name,
+collect_host(void *cookie, int depth, const char *name,
 	const struct fdt_node *node)
 {
-	struct search *s = cookie;
-	struct sdmmc_devinfo info;
+	struct collect *s = cookie;
+	struct candidate *c;
 	const struct host_driver *drv = NULL;
 	unsigned i;
 
@@ -155,14 +190,19 @@ find_host(void *cookie, int depth, const char *name,
 		return 0;
 
 	/*
-	 * One node, one count - whatever the number of lines in the table it
-	 * matches. The eMMC node of the target board carries two strings the
-	 * table has, and the first version of this walk counted the node once
-	 * per matching line: instance 1 skipped the eMMC under the first
-	 * string and took it under the second. Two drivers on one controller
-	 * is not a slow disk but a root file system whose controller is reset
-	 * under it, which is how this was found.
+	 * A child of a candidate is a device on its bus. The binding allows
+	 * exactly one kind of child on a memory card's bus, "mmc-card" (an
+	 * eMMC needing a quirk described); anything else is an SDIO function
+	 * - the Wi-Fi chip of the Tanix TX1 is "wifi@1" under mmc1, with no
+	 * "no-sd" or "no-mmc" to say so, and soldered on, which would make
+	 * it the machine's disk number 0.
 	 */
+	if (s->open >= 0 && depth <= s->c[s->open].depth)
+		s->open = -1;
+	if (s->open >= 0 && depth == s->c[s->open].depth + 1 &&
+	    !fdt_node_is_compatible(node, "mmc-card"))
+		s->c[s->open].sdio = 1;
+
 	for (i = 0; i < sizeof(drivers) / sizeof(drivers[0]); i++) {
 		if (fdt_node_is_compatible(node, drivers[i].compatible)) {
 			drv = &drivers[i];
@@ -171,81 +211,103 @@ find_host(void *cookie, int depth, const char *name,
 	}
 	if (drv == NULL)
 		return 0;
-
 	if (!node_enabled(node)) {
 		log_debug(&sdmmc_log, "%s: disabled in the tree\n", name);
 		return 0;
 	}
-	if (fdt_getprop(node, "no-sd", NULL) != NULL &&
-	    fdt_getprop(node, "no-mmc", NULL) != NULL) {
-		log_debug(&sdmmc_log, "%s: SDIO only; not a disk\n", name);
+	if (s->n == MAX_CANDIDATES)
 		return 0;
+
+	c = &s->c[s->n];
+	memset(c, 0, sizeof(*c));
+	c->node = *node;
+	strlcpy(c->name, name, sizeof(c->name));
+	c->depth = depth;
+	c->drv = drv;
+	c->soldered = (fdt_getprop(node, "non-removable", NULL) != NULL);
+	c->sdio = (fdt_getprop(node, "no-sd", NULL) != NULL &&
+	    fdt_getprop(node, "no-mmc", NULL) != NULL);
+	s->open = (int)s->n++;
+	return 0;
+}
+
+/*
+ * This node is the instance's, and only this one. A driver that refuses it
+ * fails the instance rather than moving on: the next node along is somebody
+ * else's number, possibly a device that another instance is already serving.
+ */
+static int
+take_host(const struct candidate *c, struct sdmmc_host *host)
+{
+	struct sdmmc_devinfo info;
+
+	read_devinfo(&c->node, &info);
+	read_resets(&c->node, c->name, &info);
+	if (c->drv->probe(&c->node, &info, host) != OK) {
+		log_warn(&sdmmc_log, "%s: %s does not take this node\n",
+		    c->name, c->drv->compatible);
+		return ENXIO;
 	}
 
-	read_devinfo(node, &info);
-	if (info.non_removable != s->soldered)
-		return 0;	/* the other pass's */
-	if (info.base == 0 || info.size == 0) {
-		log_warn(&sdmmc_log, "%s: no usable reg\n", name);
-		return 0;
-	}
-
-	if (s->skip > 0) {
-		s->skip--;
-		return 0;
-	}
-
-	/*
-	 * This node is the instance's, and only this one. A driver that
-	 * refuses it fails the instance rather than moving on: the next node
-	 * along is somebody else's number, possibly a device that another
-	 * instance is already serving.
-	 */
-	read_resets(node, name, &info);
-	if (drv->probe(node, &info, s->host) != OK) {
-		log_warn(&sdmmc_log, "%s: %s does not take this node\n", name,
-		    drv->compatible);
-		s->refused = 1;
-		return 1;	/* stops the walk */
-	}
-
-	s->host->name = drv->compatible;
-	s->host->sd_highspeed = info.cap_sd_hs;
+	host->name = c->drv->compatible;
+	host->sd_highspeed = info.cap_sd_hs;
 	log_info(&sdmmc_log, "%s: %s at 0x%lx (%u bytes), irq %d, "
 	    "%u-bit bus, up to %u Hz%s, %u reset lines\n",
-	    name, drv->compatible, (unsigned long)info.base,
+	    c->name, c->drv->compatible, (unsigned long)info.base,
 	    (unsigned)info.size, info.irq, info.bus_width,
 	    info.max_freq, info.non_removable ? ", soldered" : "",
 	    info.nresets);
-	s->found = drv;
-	return 1;	/* stops the walk */
+	return OK;
 }
 
 int
 sdmmc_host_find(struct sdmmc_host *host)
 {
-	struct search s;
+	static struct collect s;
+	struct sdmmc_devinfo info;
 	long instance = 0;
+	int pass, skip, r = ENXIO;
+	unsigned i;
 	void *dtb;
 
 	(void)env_parse("instance", "d", 0, &instance, 0, 3);
-
-	memset(&s, 0, sizeof(s));
-	s.host = host;
-	s.skip = (int)instance;
 
 	if ((dtb = fdt_fetch()) == NULL) {
 		log_warn(&sdmmc_log, "this machine has no device tree\n");
 		return ENXIO;
 	}
 
-	s.soldered = 1;
-	(void)fdt_walk(dtb, find_host, &s);
-	if (s.found == NULL && !s.refused) {
-		s.soldered = 0;
-		(void)fdt_walk(dtb, find_host, &s);
-	}
-	free(dtb);
+	memset(&s, 0, sizeof(s));
+	s.open = -1;
+	(void)fdt_walk(dtb, collect_host, &s);
 
-	return (s.found != NULL) ? OK : ENXIO;
+	/* Soldered first, then sockets; tree order within each. */
+	skip = (int)instance;
+	for (pass = 1; pass >= 0; pass--) {
+		for (i = 0; i < s.n; i++) {
+			struct candidate *c = &s.c[i];
+
+			if (c->soldered != pass)
+				continue;
+			if (c->sdio) {
+				log_debug(&sdmmc_log, "%s: an SDIO slot, not a "
+				    "disk\n", c->name);
+				continue;
+			}
+			read_devinfo(&c->node, &info);
+			if (info.base == 0 || info.size == 0) {
+				log_warn(&sdmmc_log, "%s: no usable reg\n",
+				    c->name);
+				continue;
+			}
+			if (skip-- > 0)
+				continue;
+
+			r = take_host(c, host);
+			goto done;
+		}
+	}
+done:
+	free(dtb);
+	return r;
 }

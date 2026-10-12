@@ -26,20 +26,30 @@ $CC $FLAGS -Dmain=sdmmc_main "$HERE/blocktest.c" -o "$OUT/sdmmc-blocktest"
 $CC -I "$HERE/clkstubs" $FLAGS -D__unused="__attribute__((unused))" \
 	-DREAL_FDT_H="\"$TREE/minix/include/minix/fdt.h\"" \
 	"$HERE/clktest.c" "$SRC/sdmmc_clk.c" "$SRC/sdmmc_clk_rk3568.c" \
-	"$TREE/minix/lib/libsys/fdt.c" -o "$OUT/sdmmc-clktest"
+	"$SRC/sdmmc_clk_h616.c" "$TREE/minix/lib/libsys/fdt.c" \
+	-o "$OUT/sdmmc-clktest"
 # Выбор контроллера по номеру экземпляра - на том же дереве.
 $CC -I "$HERE/clkstubs" $FLAGS -D__unused="__attribute__((unused))" \
 	-DREAL_FDT_H="\"$TREE/minix/include/minix/fdt.h\"" \
 	"$HERE/hosttest.c" "$SRC/sdmmc_host.c" "$SRC/sdmmc_clk.c" \
-	"$SRC/sdmmc_clk_rk3568.c" "$TREE/minix/lib/libsys/fdt.c" \
-	-o "$OUT/sdmmc-hosttest"
+	"$SRC/sdmmc_clk_rk3568.c" "$SRC/sdmmc_clk_h616.c" \
+	"$TREE/minix/lib/libsys/fdt.c" -o "$OUT/sdmmc-hosttest"
+
+# Две машины: CB2 (RK3566, дерево снято с платы) и Tanix TX1 (H313, дерево
+# mainline, собрано из исходников - port/h313/).
+CB2=$PORT/cb2-sd/live.dtb
+TX1=$PORT/h313/h313-tanix-tx1.dtb
 
 rc=0
 "$OUT/sdmmc-cardtest" "$@" || rc=1
 echo
 "$OUT/sdmmc-blocktest" "$@" || rc=1
 echo
-"$OUT/sdmmc-clktest" "$PORT/cb2-sd/live.dtb" || rc=1
+"$OUT/sdmmc-clktest" "$CB2" || rc=1
 echo
-"$OUT/sdmmc-hosttest" "$PORT/cb2-sd/live.dtb" || rc=1
+"$OUT/sdmmc-clktest" "$TX1" tx1 || rc=1
+echo
+"$OUT/sdmmc-hosttest" "$CB2" || rc=1
+echo
+"$OUT/sdmmc-hosttest" "$TX1" tx1 || rc=1
 exit $rc

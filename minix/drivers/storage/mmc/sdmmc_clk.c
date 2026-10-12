@@ -46,6 +46,7 @@ struct clkctl_driver {
 
 static const struct clkctl_driver clkctl_drivers[] = {
 	{ "rockchip,rk3568-cru",	&sdmmc_rk3568_cru },
+	{ "allwinner,sun50i-h616-ccu",	&sdmmc_h616_ccu },
 };
 
 /*

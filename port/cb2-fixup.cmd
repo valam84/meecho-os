@@ -183,9 +183,20 @@ if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}meecho.go; then
 			setenv meecho_mba_size ${filesize}
 		fi
 
-		# Дерево по сети не возят: оно не меняется и читается с карты
-		# за двадцать пять миллисекунд.
-		load ${devtype} ${devnum}:${distro_bootpart} 0x4a000000 ${prefix}dtb/rockchip/rk3566-bigtreetech-cb2.dtb
+		# Дерево - то, которое вендорский boot.cmd уже приготовил по
+		# ${fdt_addr_r}: базовое плюс оверлеи из armbianEnv.txt
+		# ("overlays=hdmi" и прочие). До 2026-10-12 здесь грузилось
+		# базовое .dtb с карты, и MEECHO видела плату не такой, какой
+		# её настроил владелец: в базовом дереве CB2 узлы дисплея
+		# (vop, hdmi) выключены, их включает именно оверлей hdmi.
+		# Конфигурация платы - одна на обе системы, и решает её
+		# armbianEnv.txt, а не этот скрипт.
+		#
+		# Копия, а не адрес как есть: 0x4a000000 описан в cb2-boot.cmd
+		# и уже вырезается ядром из свободной памяти. Мегабайт заведомо
+		# больше дерева (около 180 КБ, плюс 64 КБ запаса от fdt resize);
+		# сколько из него дерево, ядро читает в его заголовке.
+		cp.b ${fdt_addr_r} 0x4a000000 0x100000
 
 		echo "MEECHO: booting, archive ${meecho_mba_size} bytes"
 		booti 0x40200000 0x48000000:${meecho_mba_size} 0x4a000000

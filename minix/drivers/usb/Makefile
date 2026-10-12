@@ -13,5 +13,13 @@ SUBDIR+=	usb_storage usb_hub
 SUBDIR+=	xhci
 .endif
 
+# A keyboard, through the boot protocol.  Only where something above it
+# turns key events into characters: tty on aarch64 does since the screen
+# console (arch/aarch64/keyboard.c); i386 has pckbd for its keyboards and
+# earm no consumer at all.
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+=	usb_kbd
+.endif
+
 
 .include <bsd.subdir.mk>

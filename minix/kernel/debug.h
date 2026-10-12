@@ -96,6 +96,30 @@
  */
 #define KTRACE				0
 
+/*
+ * DEBUG_STOPRACE checks, where the kernel starts serving a process's own
+ * request - an IPC call, a kernel call, a page fault - that the process is
+ * still allowed to run.  On SMP a process can trap while another core holds
+ * the big kernel lock, and that core can stop it (smp_schedule_stop_proc(),
+ * served by smp_sched_handler() in context_stop()) before this one gets the
+ * lock; serving its request then is serving a process that PM believes
+ * stopped.  A line per offence - the first sixteen, then every 1024th - and
+ * the same for every entry the kernel undoes instead (trap.c).
+ *
+ * Set to 1, rebuild the kernel, and set it back afterwards, the same way
+ * DEBUG_DUMPIPC is used.  See port/PORTING-LOG.md, "Остановленный процесс
+ * не входит в ядро".
+ */
+#define DEBUG_STOPRACE			0
+
+#if DEBUG_STOPRACE
+#define STOPRACE_CHECK(p, what, nr)	stoprace_check((p), (what), (nr))
+#define STOPRACE_UNDONE(p, what, nr)	stoprace_undone((p), (what), (nr))
+#else
+#define STOPRACE_CHECK(p, what, nr)	((void)0)
+#define STOPRACE_UNDONE(p, what, nr)	((void)0)
+#endif
+
 #if !USE_SYSDEBUG
 #undef DEBUG_SERIAL
 #undef DEBUG_ENABLE_IPC_WARNINGS

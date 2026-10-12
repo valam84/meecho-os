@@ -234,6 +234,8 @@ pagefault(struct proc *pr, struct stackframe_s *frame, int is_nested,
 	}
 #endif
 
+	STOPRACE_CHECK(pr, "page fault", (int)ESR_EC(esr));
+
 	/* Do not schedule this process until the fault has been handled. */
 	RTS_SET(pr, RTS_PAGEFAULT);
 
@@ -432,6 +434,36 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 	 */
 	if (from_user || kind == EXC_EL1H_IRQ)
 		KTRACE_ENTER(ktrace_entry_class(kind, ec, esr));
+
+	/*
+	 * A process that trapped while another core held the lock may have
+	 * been stopped by that core before this one got it: PM stopping it to
+	 * deliver a signal, VM inhibiting it while it rewrites its tables,
+	 * sched moving it to another core. The stop is a scheduling IPI, and
+	 * context_stop() has just served it - so a process that ran into the
+	 * kernel can be one that may no longer run, and nothing else between
+	 * the trap and here can make it so.
+	 *
+	 * Its request is then not served, because the stop meant exactly
+	 * that: PM holds the process stopped and asserts it sends nothing,
+	 * and a reply to a call made behind its back lands in whatever frame
+	 * the signal handler was given. The entry is undone instead. An svc
+	 * is wound back onto itself; every other synchronous exception
+	 * already returns to the instruction that took it. When the process
+	 * runs again it traps again, as if the stop had come one instruction
+	 * earlier - and a signal handler run in between finds the call not
+	 * yet made and returns to make it.
+	 *
+	 * Interrupts and SError are not the process's requests and are served
+	 * whatever its state. See port/PORTING-LOG.md, "Остановленный процесс
+	 * не входит в ядро".
+	 */
+	if (kind == EXC_EL0_64_SYNC && !proc_is_runnable(pr)) {
+		if (ec == ESR_EC_SVC64)
+			pr->p_reg.pc -= 4;	/* the svc, one A64 instruction */
+		STOPRACE_UNDONE(pr, "entry with EC", (int)ec);
+		return;
+	}
 
 	switch (kind) {
 	case EXC_EL1H_IRQ:

@@ -561,3 +561,36 @@ void hook_ipc_clear(struct proc *p)
 #endif
 }
 #endif
+
+#if DEBUG_STOPRACE
+/*
+ * See DEBUG_STOPRACE in debug.h. Both run under the big kernel lock, so the
+ * counters need nothing more. Rate-limited because the first is reached in a
+ * loop when the race is open, and a console line costs milliseconds - enough
+ * to change the timing that opens it.
+ */
+static unsigned long stoprace_served, stoprace_undone_n;
+
+void stoprace_check(struct proc *p, const char *what, int nr)
+{
+	if (proc_is_runnable(p))
+		return;
+
+	stoprace_served++;
+	if (stoprace_served <= 16 || stoprace_served % 1024 == 0)
+		printf("KERNEL: stoprace %lu: %s %d served for %s / %d, which "
+		    "may not run (%s), on cpu %d\n", stoprace_served, what, nr,
+		    p->p_name, p->p_endpoint, rtsflagstr(p->p_rts_flags),
+		    cpuid);
+}
+
+void stoprace_undone(struct proc *p, const char *what, int nr)
+{
+	stoprace_undone_n++;
+	if (stoprace_undone_n <= 16 || stoprace_undone_n % 1024 == 0)
+		printf("KERNEL: stoprace: %s 0x%x by %s / %d undone (%s), "
+		    "%lu so far, on cpu %d\n", what, nr, p->p_name,
+		    p->p_endpoint, rtsflagstr(p->p_rts_flags),
+		    stoprace_undone_n, cpuid);
+}
+#endif

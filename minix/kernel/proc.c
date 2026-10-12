@@ -633,6 +633,7 @@ int do_ipc(reg_t r1, reg_t r2, reg_t r3)
   int call_nr = (int) r1;
 
   assert(!RTS_ISSET(caller_ptr, RTS_SLOT_FREE));
+  STOPRACE_CHECK(caller_ptr, "ipc", call_nr);
 
   /* bill kernel time to this process. */
   kbill_ipc = caller_ptr;

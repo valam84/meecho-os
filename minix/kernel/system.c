@@ -150,6 +150,7 @@ void kernel_call(message *m_user, struct proc * caller)
    */
   if (copy_msg_from_user(m_user, &msg) == 0) {
 	  msg.m_source = caller->p_endpoint;
+	  STOPRACE_CHECK(caller, "kernel call", msg.m_type);
 	  result = kernel_call_dispatch(caller, &msg);
   }
   else {

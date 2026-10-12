@@ -167,6 +167,10 @@ void hook_ipc_msgkcall(message *msg, struct proc *proc);
 void hook_ipc_msgkresult(message *msg, struct proc *proc);
 void hook_ipc_clear(struct proc *proc);
 #endif
+#if DEBUG_STOPRACE
+void stoprace_check(struct proc *p, const char *what, int nr);
+void stoprace_undone(struct proc *p, const char *what, int nr);
+#endif
 
 /* system/do_safecopy.c */
 struct cp_sfinfo; /* external callers may only provide NULL */

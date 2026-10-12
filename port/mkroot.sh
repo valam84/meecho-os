@@ -75,7 +75,8 @@ minix-service up /service/uds ||
 # конвейер - это проверяемо по его журналу (fblog). Не нашёл или узлы
 # выключены в дереве - говорит об этом и не запускается. Через fbcard=
 # секунд (10 по умолчанию) таблицу сменяет консоль: всё, что идёт на
-# консольную линию, начиная с загрузки, - ввод по-прежнему с линии или ssh.
+# консольную линию, начиная с загрузки; ввод - с линии, по ssh или с
+# USB-клавиатуры (ниже).
 # Аргументы - из загрузки: fblog= уровень журнала, fbcard= секунды таблицы,
 # fbforce=0xRRGGBB - залить экран одним цветом внутри HDMI-кодера, мимо
 # контроллера дисплея.
@@ -95,6 +96,38 @@ then
 	    echo "WARNING: no display"
 fi
 
+# Клавиатура. USB-клавиатура у платы печатает в ту же консольную линию, что
+# и последовательный порт, - getty, login и шелл их не различают, - а эхо
+# набранного видно и на линии, и на экране. Цепочка: xhci (контроллер, на
+# котором хаб платы; метка usbd) -> usb_hub -> usb_kbd (клавиатура по
+# загрузочному протоколу) -> input -> tty. Клавиатуру можно воткнуть и
+# после загрузки. Аргументы загрузки: usb=0 не поднимает ничего из этого,
+# usblog= - уровень журнала xhci (2 по умолчанию), kbdlog= - usb_kbd.
+if [ "`sysenv usb 2>/dev/null`" != 0 ] && [ -x /service/xhci ]
+then
+	usblog=2
+	if sysenv usblog >/dev/null
+	then	usblog="`sysenv usblog`"
+	fi
+	kbdlog=2
+	if sysenv kbdlog >/dev/null
+	then	kbdlog="`sysenv kbdlog`"
+	fi
+	minix-service up /service/input -dev /dev/kbdmux ||
+	    echo "WARNING: no input server"
+	if minix-service up /service/xhci -label usbd \
+	    -args "instance=0 log=$usblog"
+	then
+		minix-service up /service/usb_hub -label usb_hub ||
+		    echo "WARNING: no USB hub driver"
+		minix-service up /service/usb_kbd -label usb_kbd \
+		    -args "log=$kbdlog" ||
+		    echo "WARNING: no USB keyboard driver"
+	else
+		echo "WARNING: no USB host controller"
+	fi
+fi
+
 
 # Сеть. Этот скрипт живёт только на плате, поэтому по умолчанию здесь
 # драйвер платы, а не эмулятора; аргумент загрузки netdrv= его перекрывает.
@@ -107,10 +140,13 @@ if [ -x "/service/$netdrv" ]
 then
 	echo "Starting the network driver $netdrv"
 	# The driver's log level comes from the boot arguments, so a run that
-	# has to be looked at closely does not need a new root image.
+	# has to be looked at closely does not need a new root image.  The
+	# default is info, not debug: at debug the driver dumps its rings
+	# every second, and since the console has a screen and a keyboard
+	# (above) that dump is what a person at the board would be reading.
 	if sysenv netlog >/dev/null
 	then	netlog="`sysenv netlog`"
-	else	netlog=3
+	else	netlog=2
 	fi
 	minix-service up "/service/$netdrv" -label "${netdrv}_0" \
 	    -args "instance=0 log=$netlog" ||

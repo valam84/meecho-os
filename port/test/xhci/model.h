@@ -72,6 +72,14 @@ void model_ep_supply(unsigned slot, unsigned dci, const void *data,
 size_t model_ep_taken(unsigned slot, unsigned dci, void *out, size_t max);
 
 /*
+ * What the controller was last told about a slot: a word of its slot
+ * context (0 to 2), and the control endpoint's packet size - the two
+ * things a hub and a full-speed device need beyond Address Device.
+ */
+uint32_t model_slot_word(unsigned slot, unsigned word);
+unsigned model_ep0_max_packet(unsigned slot);
+
+/*
  * What a device answers to a control request.  The callback is given the
  * eight bytes of the setup packet and fills in the answer; returning zero
  * means the device stalls.

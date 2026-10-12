@@ -403,7 +403,14 @@ add_endpoint(struct xhci_device *dev, const uint8_t *d)
 	ep->num = num;
 	ep->dir_in = dir_in;
 	ep->dci = num * 2 + (dir_in ? 1 : 0);
-	ep->max_packet = d[4] | ((unsigned)d[5] << 8);
+	/*
+	 * wMaxPacketSize is two fields, not one: the packet size in bits
+	 * 10:0 and, on a high-speed periodic endpoint, how many more packets
+	 * go per microframe in bits 12:11.  Every endpoint so far had zero
+	 * up there; reading the word whole is right only by that accident.
+	 */
+	ep->max_packet = (d[4] | ((unsigned)d[5] << 8)) & 0x7ff;
+	ep->mult = (d[5] >> 3) & 0x3;
 	ep->interval = d[6];
 
 	if (attr == 2)
@@ -419,6 +426,42 @@ add_endpoint(struct xhci_device *dev, const uint8_t *d)
 	log_info(&xhci_log, "port %u: endpoint %u %s, %s, %u bytes "
 	    "(context %u)\n", dev->port + 1, num, dir_in ? "in" : "out",
 	    attr == 2 ? "bulk" : "interrupt", ep->max_packet, ep->dci);
+}
+
+/*
+ * How often the controller polls a periodic endpoint, in its own unit:
+ * 2^n microframes of 125 us.
+ *
+ * The descriptor's bInterval does not mean that.  At high speed it is
+ * already an exponent, off by one (2^(bInterval-1) microframes); at low
+ * and full speed it is plain milliseconds, 1 to 255.  The first version
+ * of this driver put bInterval into the context as it was, which for the
+ * hub's endpoint (high speed, 12) asked for half a second instead of a
+ * quarter and was never noticed because nothing ever polled it.  For a
+ * keyboard that says 10 ms it would have meant 2^10 microframes - every
+ * 128 ms, and typing that drops keys.  So the millisecond case is
+ * converted the way the specification's table does it (6.2.3.6): the
+ * largest power of two that does not exceed it, between 1 ms (n = 3) and
+ * 128 ms (n = 10).
+ */
+static unsigned
+ep_interval(const struct xhci_device *dev, const struct xhci_ep *ep)
+{
+	unsigned n = ep->interval, e;
+
+	if (dev->speed == 3 || dev->speed >= 4) {
+		if (n < 1)
+			n = 1;
+		if (n > 16)
+			n = 16;
+		return n - 1;
+	}
+
+	if (n < 1)
+		n = 1;
+	for (e = 3; e < 10 && (1u << (e + 1)) <= n * 8; e++)
+		;
+	return e;
 }
 
 /*
@@ -447,14 +490,34 @@ configure_endpoints(struct xhci_device *dev)
 			last = ep->dci;
 
 		w = ctx_word(dev->in_ctx, ep->dci + 1, 0);
-		w[0] = (ep->type == XHCI_EP_TYPE_INTR_IN ||
-		    ep->type == XHCI_EP_TYPE_INTR_OUT) ?
-		    XHCI_EP_INTERVAL(ep->interval) : 0;
 		w[1] = XHCI_EP_CERR(3) | XHCI_EP_TYPE(ep->type) |
 		    XHCI_EP_MAXPACKET(ep->max_packet);
 		w[2] = (uint32_t)ep->ring.p | XHCI_EP_DCS;
 		w[3] = 0;
 		w[4] = XHCI_EP_AVG_TRB(ep->max_packet);
+
+		/*
+		 * A periodic endpoint is also told how often to be served
+		 * and how much it moves each time.  The second number is
+		 * the bus time the controller sets aside for it; a zero
+		 * there is a reservation of nothing.  At high speed the
+		 * extra packets per microframe are its burst.
+		 */
+		if (ep->type == XHCI_EP_TYPE_INTR_IN ||
+		    ep->type == XHCI_EP_TYPE_INTR_OUT) {
+			unsigned burst = (dev->speed == 3) ? ep->mult : 0;
+
+			w[0] = XHCI_EP_INTERVAL(ep_interval(dev, ep));
+			w[1] |= XHCI_EP_MAXBURST(burst);
+			w[4] |= XHCI_EP_MAX_ESIT_LO(ep->max_packet *
+			    (burst + 1));
+
+			log_info(&xhci_log, "port %u: endpoint %u %s polled "
+			    "every %u us (bInterval %u)\n", dev->port + 1,
+			    ep->num, ep->dir_in ? "in" : "out",
+			    125u << ep_interval(dev, ep), ep->interval);
+		} else
+			w[0] = 0;
 	}
 
 	*ctx_word(dev->in_ctx, IN_CTRL, 0) = 0;
@@ -512,12 +575,26 @@ xhci_device_ep(struct xhci_device *dev, unsigned num, int dir_in)
  * waiting for it.  Answers the address of the last TRB, which is what the
  * completion event will name - that is how the answer is matched to the
  * question when several are outstanding.
+ *
+ * The buffer is the device's own unless the caller names another.  An
+ * interrupt transfer has to: it may sit on its ring for as long as nobody
+ * presses a key, and every control request to the same device - a
+ * keyboard's LEDs are set that way - goes through the device's buffer
+ * meanwhile.
  */
 phys_bytes
 xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	struct xhci_td *td)
 {
-	phys_bytes phys = dev->buf_phys, last = 0;
+	return xhci_transfer_start_buf(dev, ep, dev->buf, dev->buf_phys, length,
+	    td);
+}
+
+phys_bytes
+xhci_transfer_start_buf(struct xhci_device *dev, struct xhci_ep *ep,
+	vir_bytes buf, phys_bytes buf_phys, size_t length, struct xhci_td *td)
+{
+	phys_bytes phys = buf_phys, last = 0;
 	size_t left = length, done = 0;
 
 	td_reset(td, length);
@@ -532,7 +609,7 @@ xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	 * 13-byte status block, twice each, around every chunk of data.
 	 * That is work proportional to the buffer, not to the transfer.
 	 */
-	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)dev->buf,
+	xhci_cache(CACHE_CLEAN_INVALIDATE, (void *)buf,
 	    XHCI_CACHE_ROUND(length != 0 ? length : 1), "a transfer buffer");
 
 	do {
@@ -580,6 +657,54 @@ xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	xhci_wr(xhci.regs, xhci.dboff + XHCI_DB(dev->slot), ep->dci);
 
 	return last;
+}
+
+/*
+ * Bring a halted endpoint back (4.6.8, 4.6.10).
+ *
+ * An endpoint that completed a transfer with a stall, a transaction error
+ * or babble is stopped by the controller, and its ring is not looked at
+ * again until the driver says so: a transfer queued behind the halt never
+ * runs, never completes and never times out.  For a keyboard that is a
+ * device gone quiet with nothing anywhere to say why.  So: Reset Endpoint,
+ * and then move the controller's dequeue pointer up to where this driver
+ * will write next - whatever was left on the ring from the failed transfer
+ * is abandoned, and the next one starts clean.
+ *
+ * A stall is also the device's own state, cleared on the device with
+ * CLEAR_FEATURE(ENDPOINT_HALT); a boot keyboard does not stall its
+ * interrupt endpoint, and what halts it in practice is the wire - the
+ * device unplugged, or a split transaction lost - so that part is not done
+ * here.
+ */
+int
+xhci_ep_reset(struct xhci_device *dev, struct xhci_ep *ep)
+{
+	phys_bytes deq;
+	int r;
+
+	if ((r = xhci_cmd(0, 0, 0, XHCI_TRB_TYPE(XHCI_TRB_RESET_EP) |
+	    XHCI_TRB_SLOT_ID(dev->slot) | XHCI_TRB_EP_ID(ep->dci), NULL))
+	    != OK) {
+		log_warn(&xhci_log, "slot %u: endpoint %u would not reset\n",
+		    dev->slot, ep->num);
+		return r;
+	}
+
+	deq = ep->ring.p + (phys_bytes)ep->ring.enq * XHCI_TRB_SIZE;
+	if ((r = xhci_cmd((uint32_t)deq | (ep->ring.cycle ? XHCI_EP_DCS : 0),
+	    0, 0, XHCI_TRB_TYPE(XHCI_TRB_SET_TR_DEQ) |
+	    XHCI_TRB_SLOT_ID(dev->slot) | XHCI_TRB_EP_ID(ep->dci), NULL))
+	    != OK) {
+		log_warn(&xhci_log, "slot %u: endpoint %u would not take a new "
+		    "dequeue pointer\n", dev->slot, ep->num);
+		return r;
+	}
+
+	ep->halted = 0;
+	log_info(&xhci_log, "slot %u: endpoint %u %s reset after a halt\n",
+	    dev->slot, ep->num, ep->dir_in ? "in" : "out");
+	return OK;
 }
 
 int
@@ -699,11 +824,86 @@ xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
  * finished until this has run, and the interface numbers it collects are
  * what the client drivers are told about the device.
  */
+/*
+ * Tell the controller that a device is a hub: how many ports it has, and
+ * how long its transaction translator takes.
+ *
+ * Nothing needed this while the only things behind the hub were high
+ * speed.  A keyboard is low speed, and reaching it means split
+ * transactions through the hub's translator - which the controller
+ * schedules by these fields of the HUB's slot context (6.2.2), not of the
+ * keyboard's.  The specification asks for them to be set on any hub
+ * (4.6.6: Configure Endpoint, slot context only); Linux does it in
+ * xhci_update_hub_device() for the same reason.  The numbers come from
+ * the hub's own class descriptor, which is answered only now that the
+ * hub is configured.
+ *
+ * A failure here is reported and survived: the hub worked without these
+ * fields for every high-speed device so far, and a hub driver that is
+ * not told about its hub is worse than one whose slow devices do not
+ * work.
+ */
+static void
+hub_slot_update(struct xhci_device *dev)
+{
+	uint8_t *d;
+	uint32_t *in, *out;
+	unsigned actual, nports, ttt;
+	int r;
+
+	if ((r = xhci_control(dev, USB_REQ_DIR_IN | 0x20 /* class */,
+	    USB_REQ_GET_DESCRIPTOR, 0x29 << 8 /* hub */, 0, 9, &actual)) != OK
+	    || actual < 5 || ((uint8_t *)dev->buf)[1] != 0x29) {
+		log_warn(&xhci_log, "port %u: the hub descriptor did not come "
+		    "(%d, %u byte(s)); slow devices behind it may not work\n",
+		    dev->port + 1, r, actual);
+		return;
+	}
+
+	d = (uint8_t *)dev->buf;
+	nports = d[2];				/* bNbrPorts */
+	ttt = (d[3] >> 5) & 0x3;		/* wHubCharacteristics 6:5 */
+
+	/*
+	 * The slot context as the controller has it now - route, speed,
+	 * context entries, all of it - with the hub's fields added.  Words
+	 * 0 to 2 only: word 3 is the controller's own (address and state).
+	 */
+	memset((void *)dev->in_ctx, 0, XHCI_PAGE);
+	xhci_cache(CACHE_INVALIDATE, (void *)dev->dev_ctx, XHCI_PAGE,
+	    "a device context");
+	out = ctx_word(dev->dev_ctx, 0, 0);
+	in = ctx_word(dev->in_ctx, IN_SLOT, 0);
+	in[0] = out[0] | XHCI_SLOT_HUB;
+	in[1] = (out[1] & 0x00ffffff) | XHCI_SLOT_NPORTS(nports);
+	in[2] = out[2];
+	if (dev->speed == 3)
+		in[2] = (in[2] & ~XHCI_SLOT_TTT(3)) | XHCI_SLOT_TTT(ttt);
+
+	*ctx_word(dev->in_ctx, IN_CTRL, 0) = 0;
+	*ctx_word(dev->in_ctx, IN_CTRL, 1) = XHCI_INPUT_ADD_SLOT;
+
+	xhci_cache(CACHE_CLEAN, (void *)dev->in_ctx, XHCI_PAGE,
+	    "an input context");
+
+	if ((r = xhci_cmd((uint32_t)dev->in_ctx_phys, 0, 0,
+	    XHCI_TRB_TYPE(XHCI_TRB_CONFIGURE_EP) |
+	    XHCI_TRB_SLOT_ID(dev->slot), NULL)) != OK) {
+		log_warn(&xhci_log, "port %u: the controller would not take "
+		    "the hub's slot context (%d)\n", dev->port + 1, r);
+		return;
+	}
+
+	log_info(&xhci_log, "port %u: a hub of %u port(s), think time %u, "
+	    "slot context %08x %08x %08x\n", dev->port + 1, nports, ttt,
+	    in[0], in[1], in[2]);
+}
+
 static int
 configure(struct xhci_device *dev)
 {
 	uint8_t *cfg;
-	unsigned total, off, actual;
+	unsigned total, off, actual, alt = 0;
 	int r;
 
 	/*
@@ -731,6 +931,7 @@ configure(struct xhci_device *dev)
 	cfg = (uint8_t *)dev->buf;
 	dev->config = cfg[5];			/* bConfigurationValue */
 	dev->interfaces = 0;
+	dev->niface = 0;
 	dev->neps = 0;
 
 	/*
@@ -739,9 +940,18 @@ configure(struct xhci_device *dev)
 	 * - that set is what the client drivers are handed - and collect
 	 * the endpoints, which is what the controller has to be told about
 	 * before anything can be sent to them.
+	 *
+	 * Only alternate setting 0 counts, which is the one a configured
+	 * device is in.  An alternate setting repeats the endpoint numbers
+	 * of the first with other sizes, and configuring both would give
+	 * the controller two contexts for one endpoint.
 	 */
 	for (off = 0; off + 2 <= actual && cfg[off] != 0; off += cfg[off]) {
 		if (cfg[off + 1] == 4 && off + 6 <= actual) {	/* interface */
+			alt = cfg[off + 3];
+			if (alt != 0)
+				continue;
+
 			dev->interfaces |= 1U << (cfg[off + 2] & 0x1f);
 
 			/*
@@ -754,9 +964,25 @@ configure(struct xhci_device *dev)
 			 */
 			if (dev->iface_class == 0)
 				dev->iface_class = cfg[off + 5];
+
+			if (off + 8 <= actual &&
+			    dev->niface < XHCI_MAX_IFACES) {
+				struct xhci_iface *ifp =
+				    &dev->iface[dev->niface++];
+
+				ifp->num = cfg[off + 2];
+				ifp->class = cfg[off + 5];
+				ifp->subclass = cfg[off + 6];
+				ifp->protocol = cfg[off + 7];
+
+				log_info(&xhci_log, "port %u: interface %u is "
+				    "%u/%u/%u\n", dev->port + 1, ifp->num,
+				    ifp->class, ifp->subclass, ifp->protocol);
+			}
 		}
 
-		if (cfg[off + 1] == 5 && off + 7 <= actual)	/* endpoint */
+		if (cfg[off + 1] == 5 && off + 7 <= actual &&	/* endpoint */
+		    alt == 0)
 			add_endpoint(dev, cfg + off);
 	}
 
@@ -773,6 +999,69 @@ configure(struct xhci_device *dev)
 	log_info(&xhci_log, "port %u: configuration %u set, interfaces "
 	    "0x%x\n", dev->port + 1, dev->config, dev->interfaces);
 
+	if (dev->class == 9)
+		hub_slot_update(dev);
+
+	return OK;
+}
+
+/*
+ * Ask a full-speed device for the size of its control packets, and tell
+ * the controller when it is not the 8 the endpoint was set up with: an
+ * Evaluate Context on the control endpoint, of which the controller looks
+ * at the packet size and nothing else (6.2.3.3).
+ */
+static int
+ep0_fix_max_packet(struct xhci_device *dev)
+{
+	unsigned actual, mps;
+	uint32_t *in, *out;
+	int r;
+
+	if ((r = xhci_control(dev, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
+	    USB_DESC_DEVICE << 8, 0, 8, &actual)) != OK)
+		return r;
+	if (actual < 8) {
+		log_warn(&xhci_log, "port %u: %u byte(s) of a device "
+		    "descriptor\n", dev->port + 1, actual);
+		return EIO;
+	}
+
+	mps = ((uint8_t *)dev->buf)[7];		/* bMaxPacketSize0 */
+	if (mps == dev->max_packet0)
+		return OK;
+	if (mps != 8 && mps != 16 && mps != 32 && mps != 64) {
+		log_warn(&xhci_log, "port %u: control packets of %u bytes is "
+		    "not a full-speed size; staying at %u\n", dev->port + 1,
+		    mps, dev->max_packet0);
+		return OK;
+	}
+
+	memset((void *)dev->in_ctx, 0, XHCI_PAGE);
+	xhci_cache(CACHE_INVALIDATE, (void *)dev->dev_ctx, XHCI_PAGE,
+	    "a device context");
+	out = ctx_word(dev->dev_ctx, 1, 0);	/* EP0 in the device context */
+	in = ctx_word(dev->in_ctx, IN_EP0, 0);
+	memcpy(in, out, 5 * sizeof(uint32_t));
+	in[1] = (in[1] & 0x0000ffff) | XHCI_EP_MAXPACKET(mps);
+
+	*ctx_word(dev->in_ctx, IN_CTRL, 0) = 0;
+	*ctx_word(dev->in_ctx, IN_CTRL, 1) = XHCI_INPUT_ADD_EP0;
+
+	xhci_cache(CACHE_CLEAN, (void *)dev->in_ctx, XHCI_PAGE,
+	    "an input context");
+
+	if ((r = xhci_cmd((uint32_t)dev->in_ctx_phys, 0, 0,
+	    XHCI_TRB_TYPE(XHCI_TRB_EVALUATE_CTX) |
+	    XHCI_TRB_SLOT_ID(dev->slot), NULL)) != OK) {
+		log_warn(&xhci_log, "port %u: the controller would not take "
+		    "%u-byte control packets\n", dev->port + 1, mps);
+		return r;
+	}
+
+	log_info(&xhci_log, "port %u: control packets now %u bytes, not %u\n",
+	    dev->port + 1, mps, dev->max_packet0);
+	dev->max_packet0 = mps;
 	return OK;
 }
 
@@ -878,6 +1167,19 @@ device_attach(struct xhci_device *dev, unsigned port, unsigned speed,
 	    speed_word(dev->speed));
 
 	/*
+	 * A full-speed device may want 8, 16, 32 or 64-byte control packets,
+	 * and was given 8.  Asked for eighteen bytes, one that wants 64
+	 * sends them as one packet of eighteen - more than the controller
+	 * was told to expect, which is babble and a halted endpoint.  So the
+	 * first question is for eight bytes, which fit any packet size and
+	 * hold bMaxPacketSize0, and the controller is told the real size
+	 * before anything longer is asked (4.6.5; Linux does the same).
+	 * Low speed is always 8 and high speed always 64; neither asks.
+	 */
+	if (dev->speed == 1 && (r = ep0_fix_max_packet(dev)) != OK)
+		return r;
+
+	/*
 	 * And the first question anybody asks a USB device.  Eighteen bytes
 	 * is the whole device descriptor; a device that answers fewer is
 	 * answering something, and the length it reports is checked rather
@@ -906,13 +1208,11 @@ device_attach(struct xhci_device *dev, unsigned port, unsigned speed,
 	 * What the device says its control endpoint can carry, against what
 	 * it was given.  For a high-speed device the answer is required to
 	 * be 64 and a difference would mean this driver misread the speed;
-	 * for a slower one the difference is expected and is what an
-	 * Evaluate Context command is for, which arrives with the endpoints
-	 * of 10.4.
+	 * a full-speed one has been asked already, above.
 	 */
 	if (desc->bMaxPacketSize0 != dev->max_packet0)
 		log_warn(&xhci_log, "port %u wants %u-byte control packets, "
-		    "not %u; not changed yet\n", port + 1,
+		    "not %u; not changed\n", port + 1,
 		    desc->bMaxPacketSize0, dev->max_packet0);
 
 	dev->class = desc->bDeviceClass;

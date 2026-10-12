@@ -99,12 +99,30 @@ struct xhci_ep {
 	unsigned num;			/* the number USB gives it */
 	int dir_in;
 	unsigned type;			/* the xHCI endpoint type */
-	unsigned max_packet;
-	unsigned interval;
+	unsigned max_packet;		/* bytes per packet, bits 10:0 */
+	unsigned mult;			/* extra packets per microframe, HS */
+	unsigned interval;		/* bInterval, as the descriptor says */
+	int halted;			/* stopped on an error; reset first */
 	struct xhci_ring ring;
 };
 
 #define XHCI_MAX_EPS		8
+
+/*
+ * What each interface of the configuration says it is.  The first one's
+ * class was enough while the devices were a hub and a flash drive; a
+ * keyboard is told apart by subclass and protocol as well (3/1/1, the
+ * boot keyboard), and often not on its first interface - a receiver with
+ * a keyboard and a mouse behind it is two interfaces of class 3.
+ */
+#define XHCI_MAX_IFACES		8
+
+struct xhci_iface {
+	uint8_t num;
+	uint8_t class;
+	uint8_t subclass;
+	uint8_t protocol;
+};
 
 /*
  * The buffer a device's transfers go through, and so the most one transfer
@@ -132,6 +150,8 @@ struct xhci_device {
 	unsigned interfaces;		/* a bit per interface number it has */
 	unsigned class;			/* what the device says it is */
 	unsigned iface_class;		/* and what its first interface says */
+	struct xhci_iface iface[XHCI_MAX_IFACES];	/* alternate 0 of each */
+	unsigned niface;
 	int announced;			/* the drivers have been told about it */
 
 	vir_bytes in_ctx;		/* the input context for commands */
@@ -333,6 +353,10 @@ struct xhci_td {
 
 phys_bytes xhci_transfer_start(struct xhci_device *dev, struct xhci_ep *ep,
 	size_t length, struct xhci_td *td);
+phys_bytes xhci_transfer_start_buf(struct xhci_device *dev,
+	struct xhci_ep *ep, vir_bytes buf, phys_bytes buf_phys, size_t length,
+	struct xhci_td *td);
+int xhci_ep_reset(struct xhci_device *dev, struct xhci_ep *ep);
 phys_bytes xhci_control_start(struct xhci_device *dev, uint8_t request_type,
 	uint8_t request, uint16_t value, uint16_t index, uint16_t length,
 	struct xhci_td *td);
@@ -347,6 +371,7 @@ void xhci_urb_stats(unsigned every);
 int xhci_urb_transfer_event(const struct xhci_trb *ev);
 int xhci_urb_busy(void);
 void xhci_urb_tick(void);
+void xhci_urb_device_gone(struct xhci_device *dev);
 
 /* xhci.c */
 void xhci_defer(message *m, int ipc_status);

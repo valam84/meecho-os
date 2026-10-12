@@ -33,6 +33,14 @@
  *   device is announced to every driver that has said hello, and the
  *   driver decides.  With one driver running that is the same thing; with
  *   two it is not, and it is the next thing to fix in this area.
+ *
+ * (Both paragraphs describe the first version.  Transfers have since
+ * become asynchronous - see "out" below - and a device goes to the driver
+ * its class names, driver_for().)
+ *
+ * Interrupt IN transfers are the one kind that is not one-at-a-time, and
+ * see "intr" below for why: a keyboard's transfer finishes when a key is
+ * pressed, which may be never.
  */
 
 #include <minix/drivers.h>
@@ -180,6 +188,58 @@ static char urbmem[sizeof(struct usb_urb) + XHCI_DEV_BUF]
  */
 #define URB_HDR		(offsetof(struct usb_urb, buffer) - URB_SKIP)
 
+/*
+ * Interrupt IN transfers, which are the exception to one at a time.
+ *
+ * A bulk or control transfer finishes in milliseconds, so holding every
+ * other request until it does costs nothing.  An interrupt transfer on a
+ * keyboard finishes when somebody presses a key - which may be never - and
+ * holding the hub and the flash drive behind it for that long, or giving
+ * it the five-second deadline and failing it, would make the keyboard the
+ * thing that breaks USB.  In xHCI the waiting is the controller's: the TD
+ * sits on the endpoint's own ring, the controller polls the device every
+ * interval, and an event comes when the device has something to say.  So
+ * such a transfer is put on its ring, answered "taken", and then left
+ * alone, with no deadline, while everything else goes on.
+ *
+ * Three things make that safe, and each is here because the simpler
+ * version would fail in a way that looks like something else:
+ *
+ *   Its own buffer, a page per slot.  The device's buffer belongs to
+ *   whatever control request comes next - a keyboard's LEDs are set by
+ *   one - and the controller would write the next key report into it.
+ *
+ *   Its own copy of the request block, for the same reason: urbmem is the
+ *   next request's.
+ *
+ *   The completion is POSTED (asynsend), not sent.  The client of a
+ *   waiting transfer goes on talking to this driver - it sets LEDs, it
+ *   submits the next transfer - and a client blocked in sendrec waiting
+ *   for this driver's reply takes ANY message from this driver as the
+ *   reply.  libusb then panics with "illegal response from hcd" on a
+ *   completion it took for an answer.  A posted message with AMF_NOREPLY
+ *   is never delivered as a reply (proc.c), so it waits for the client's
+ *   next receive, which is where it belongs.
+ */
+#define MAX_INTR	4
+#define INTR_BUF	1024		/* the most one of them carries */
+
+static struct intr {
+	int busy;
+	endpoint_t client;		/* NONE: the client left; drop it */
+	cp_grant_id_t gid;
+	size_t gsize;
+	unsigned id;
+	struct xhci_device *dev;
+	struct xhci_ep *ep;
+	unsigned length;
+	struct xhci_td td;
+	vir_bytes buf;			/* allocated once, kept */
+	phys_bytes buf_phys;
+	char block[sizeof(struct usb_urb) + INTR_BUF]
+	    __attribute__((aligned(8)));
+} intr[MAX_INTR];
+
 struct xhci_device *
 xhci_device_by_id(unsigned id)
 {
@@ -205,23 +265,20 @@ reply(endpoint_t ep, long result, long urb_id)
 		log_warn(&xhci_log, "cannot answer %d\n", ep);
 }
 
-static void
+/*
+ * Answers the client's index in the table, or -1.
+ */
+static int
 client_add(endpoint_t ep, const char *name)
 {
+	char label[sizeof(clients[0].name)];
 	unsigned i;
 
 	for (i = 0; i < nclients; i++)
 		if (clients[i].ep == ep) {
 			log_debug(&xhci_log, "%d says hello again\n", ep);
-			return;
+			return (int)i;
 		}
-
-	if (nclients >= MAX_CLIENTS) {
-		log_warn(&xhci_log, "no room for another driver\n");
-		return;
-	}
-
-	clients[nclients].ep = ep;
 
 	/*
 	 * The name a client gives is not its own: every driver built on
@@ -230,14 +287,38 @@ client_add(endpoint_t ep, const char *name)
 	 * service knows - so that is what is asked for, and the name from
 	 * the message is kept only for when the answer does not come.
 	 */
-	if (ds_retrieve_label_name(clients[nclients].name, ep) != OK)
-		strncpy(clients[nclients].name, name,
-		    sizeof(clients[0].name) - 1);
-	clients[nclients].name[sizeof(clients[0].name) - 1] = '\0';
-	nclients++;
+	memset(label, 0, sizeof(label));
+	if (ds_retrieve_label_name(label, ep) != OK)
+		strncpy(label, name, sizeof(label) - 1);
+	label[sizeof(label) - 1] = '\0';
+
+	/*
+	 * A label that is already here is the same driver restarted: RS
+	 * gives the new instance a new endpoint and the old label.  It takes
+	 * over its old entry.  Adding it as one more instead filled the
+	 * table after a few restarts, and the restarted driver was then
+	 * never told about anything.
+	 */
+	for (i = 0; i < nclients; i++)
+		if (strcmp(clients[i].name, label) == 0)
+			break;
+
+	if (i == nclients) {
+		if (nclients >= MAX_CLIENTS) {
+			log_warn(&xhci_log, "no room for another driver\n");
+			return -1;
+		}
+		nclients++;
+	} else
+		log_info(&xhci_log, "driver \"%s\" is back, at %d instead of "
+		    "%d\n", label, ep, clients[i].ep);
+
+	clients[i].ep = ep;
+	memcpy(clients[i].name, label, sizeof(label));
 
 	log_info(&xhci_log, "driver \"%s\" at %d is listening\n",
-	    clients[nclients - 1].name, ep);
+	    clients[i].name, ep);
+	return (int)i;
 }
 
 /*
@@ -245,18 +326,28 @@ client_add(endpoint_t ep, const char *name)
  *
  * This is the job devman does in the system this stack came from: it reads
  * config files that match a device's class against a driver's binary.
- * There is no devman here yet, so the matching is a table of two lines -
+ * There is no devman here yet, so the matching is a table of three lines -
  * and it has to exist rather than announcing to everybody, because a
  * driver told about a device it does not handle does not politely decline.
  * The hub driver panics on the second device it is offered.
+ *
+ * A keyboard is an interface, not a device: class 3 (HID), subclass 1
+ * (boot interface), protocol 1 (keyboard), on whichever interface it is.
+ * The device's own class is 0 on every keyboard seen so far.
  */
 static const char *
 driver_for(struct xhci_device *dev)
 {
+	unsigned i;
+
 	if (dev->class == 9)
 		return "usb_hub";
 	if (dev->class == 8 || dev->iface_class == 8)
 		return "usb_storage";
+	for (i = 0; i < dev->niface; i++)
+		if (dev->iface[i].class == 3 && dev->iface[i].subclass == 1 &&
+		    dev->iface[i].protocol == 1)
+			return "usb_kbd";
 	return NULL;
 }
 
@@ -512,6 +603,238 @@ finish(unsigned actual, int status)
  * every bring-up.  The arithmetic is xhci_td_event()'s, where the stand
  * can reach it.
  */
+/*
+ * Give a client its request block back and post the completion - the
+ * interrupt path's finish(), and the answer to a request for a device
+ * that has gone.  Posted rather than sent; see "intr" above.
+ */
+static void
+complete_posted(endpoint_t client, cp_grant_id_t gid, size_t gsize,
+	char *block, unsigned id, int status, unsigned actual)
+{
+	struct usb_urb *urb = (struct usb_urb *)block;
+	message m;
+	int r;
+
+	urb->status = status;
+	urb->actual_length = status == OK ? actual : 0;
+	urb->urb_id = id;		/* the client's own; see finish() */
+
+	if ((r = sys_safecopyto(client, gid, 0, (vir_bytes)block + URB_SKIP,
+	    gsize)) != OK) {
+		log_warn(&xhci_log, "cannot write the request block back to "
+		    "%d: %d\n", client, r);
+		return;
+	}
+
+	memset(&m, 0, sizeof(m));
+	m.m_type = USB_COMPLETE_URB;
+	m.USB_URB_ID = (long)id;
+	if ((r = asynsend3(client, &m, AMF_NOREPLY)) != OK)
+		log_warn(&xhci_log, "the completion for urb %u did not go to "
+		    "%d: %d\n", id, client, r);
+}
+
+static void
+intr_finish(struct intr *it, unsigned actual, unsigned cc)
+{
+	struct usb_urb *urb = (struct usb_urb *)it->block;
+	int status = OK;
+
+	it->busy = 0;
+
+	if (cc != XHCI_CC_SUCCESS && cc != XHCI_CC_SHORT_PACKET) {
+		/*
+		 * The endpoint has stopped; the next transfer on it resets
+		 * it first.  This is what unplugging a keyboard looks like
+		 * (a transaction error) before the hub gets round to saying
+		 * so, so it is told, not shouted.
+		 */
+		it->ep->halted = 1;
+		status = EIO;
+		actual = 0;
+		log_info(&xhci_log, "slot %u: interrupt endpoint %u completed "
+		    "with %u; it is halted\n", it->dev->slot, it->ep->num, cc);
+	} else if (actual != 0) {
+		const uint8_t *b = (const uint8_t *)it->buf;
+
+		if (actual > it->length)
+			actual = it->length;
+		xhci_cache(CACHE_INVALIDATE, (void *)it->buf,
+		    XHCI_CACHE_ROUND(actual), "an interrupt buffer");
+		memcpy(urb->buffer, (void *)it->buf, actual);
+		log_debug(&xhci_log, "slot %u ep %u: %u byte(s): %02x %02x "
+		    "%02x %02x %02x %02x %02x %02x\n", it->dev->slot,
+		    it->ep->num, actual, b[0], b[1], b[2], b[3], b[4], b[5],
+		    b[6], b[7]);
+	}
+
+	/* A client that has left is not written to. */
+	if (it->client == NONE)
+		return;
+
+	complete_posted(it->client, it->gid, it->gsize, it->block, it->id,
+	    status, actual);
+}
+
+/*
+ * An interrupt IN transfer: on the ring, answered, left to the controller.
+ * The request block is in urbmem and the device has been found.
+ */
+static void
+intr_start(endpoint_t client, cp_grant_id_t gid, size_t size,
+	struct xhci_device *dev)
+{
+	struct usb_urb *urb = (struct usb_urb *)urbmem;
+	struct xhci_ep *ep;
+	struct intr *it = NULL;
+	unsigned i, id, length = (unsigned)urb->size;
+	int r;
+
+	ep = xhci_device_ep(dev, (unsigned)urb->endpoint, 1);
+	if (ep == NULL || ep->type != XHCI_EP_TYPE_INTR_IN) {
+		log_warn(&xhci_log, "device %d has no interrupt endpoint %d "
+		    "in\n", urb->dev_id, urb->endpoint);
+		reply(client, EINVAL, 0);
+		return;
+	}
+	if (length == 0 || length > INTR_BUF ||
+	    size > sizeof(it->block) - URB_SKIP) {
+		log_warn(&xhci_log, "an interrupt transfer of %u bytes, which "
+		    "is not a size this driver holds\n", length);
+		reply(client, EINVAL, 0);
+		return;
+	}
+
+	/*
+	 * One transfer per endpoint.  A second from the same client is the
+	 * client's mistake.  One from another client means the first one
+	 * left - restarted, most likely - and its transfer is still on the
+	 * ring, polling the same endpoint for the same kind of report: the
+	 * newcomer takes it over rather than queueing a second behind it.
+	 */
+	for (i = 0; i < MAX_INTR; i++)
+		if (intr[i].busy && intr[i].ep == ep) {
+			if (intr[i].client == client) {
+				log_warn(&xhci_log, "%d asks for a second "
+				    "transfer on endpoint %u\n", client,
+				    ep->num);
+				reply(client, EBUSY, 0);
+				return;
+			}
+			it = &intr[i];
+			break;
+		}
+
+	id = next_urb_id++;
+	if (next_urb_id == 0)
+		next_urb_id = 1;
+
+	if (it != NULL) {
+		log_info(&xhci_log, "%d takes over the transfer on endpoint "
+		    "%u from %d\n", client, ep->num, it->client);
+		it->client = client;
+		it->gid = gid;
+		it->gsize = size;
+		it->id = id;
+		memcpy(it->block, urbmem, URB_SKIP + size);
+		accept(client, id);
+		return;
+	}
+
+	for (i = 0; i < MAX_INTR; i++)
+		if (!intr[i].busy) {
+			it = &intr[i];
+			break;
+		}
+	if (it == NULL) {
+		log_warn(&xhci_log, "no room for another interrupt "
+		    "transfer\n");
+		reply(client, EBUSY, 0);
+		return;
+	}
+
+	if (it->buf == 0) {
+		void *v = xhci_alloc_dma(XHCI_PAGE, &it->buf_phys,
+		    "an interrupt buffer");
+
+		if (v == NULL) {
+			reply(client, ENOMEM, 0);
+			return;
+		}
+		it->buf = (vir_bytes)v;
+	}
+
+	it->client = client;
+	it->gid = gid;
+	it->gsize = size;
+	it->id = id;
+	it->dev = dev;
+	it->ep = ep;
+	it->length = length;
+	memcpy(it->block, urbmem, URB_SKIP + size);
+
+	/*
+	 * An endpoint that halted on the last transfer is reset before the
+	 * next is put on it; otherwise the next waits behind the halt for
+	 * ever.  If it cannot be, the client hears so from the completion.
+	 */
+	if (ep->halted && (r = xhci_ep_reset(dev, ep)) != OK) {
+		accept(client, id);
+		complete_posted(client, gid, size, it->block, id, EIO, 0);
+		return;
+	}
+
+	if (xhci_transfer_start_buf(dev, ep, it->buf, it->buf_phys, length,
+	    &it->td) == 0) {
+		reply(client, EINVAL, 0);
+		return;
+	}
+
+	it->busy = 1;
+	accept(client, id);
+}
+
+static int
+intr_event(const struct xhci_trb *ev)
+{
+	unsigned i, cc, actual;
+	int r;
+
+	for (i = 0; i < MAX_INTR; i++) {
+		if (!intr[i].busy)
+			continue;
+		r = xhci_td_event(&intr[i].td, ev, &actual, &cc);
+		if (r == 0)
+			continue;
+		if (r == 2)
+			intr_finish(&intr[i], actual, cc);
+		return 1;
+	}
+	return 0;
+}
+
+/*
+ * A device is going away: whoever was waiting on one of its interrupt
+ * endpoints is told now, with ENODEV, rather than never.
+ */
+void
+xhci_urb_device_gone(struct xhci_device *dev)
+{
+	unsigned i;
+
+	for (i = 0; i < MAX_INTR; i++) {
+		struct intr *it = &intr[i];
+
+		if (!it->busy || it->dev != dev)
+			continue;
+		it->busy = 0;
+		if (it->client != NONE)
+			complete_posted(it->client, it->gid, it->gsize,
+			    it->block, it->id, ENODEV, 0);
+	}
+}
+
 int
 xhci_urb_transfer_event(const struct xhci_trb *ev)
 {
@@ -520,6 +843,9 @@ xhci_urb_transfer_event(const struct xhci_trb *ev)
 
 	log_debug(&xhci_log, "event at 0x%08x, waiting for 0x%08x "
 	    "(busy %d)\n", ev->p0, (uint32_t)out.trb, out.busy);
+
+	if (intr_event(ev))
+		return 1;
 
 	if (!out.busy)
 		return 0;
@@ -676,10 +1002,27 @@ send_urb(message *m)
 	}
 	urbstat.t_copyin += since(t_mark);
 
+	/*
+	 * A device this driver does not have is, nearly always, one that
+	 * was just unplugged: its driver resubmitted before it heard.  The
+	 * request is taken and fails with ENODEV.  Refusing it instead would
+	 * be fatal to the client, since libusb panics on any refusal - which
+	 * made pulling a keyboard out the way to restart its driver.
+	 */
 	if ((dev = xhci_device_by_id((unsigned)urb->dev_id)) == NULL) {
-		log_warn(&xhci_log, "a request for device %d, which this "
-		    "driver does not have\n", urb->dev_id);
-		reply(m->m_source, EINVAL, 0);
+		log_info(&xhci_log, "a request for device %d, which this "
+		    "driver does not have (any more)\n", urb->dev_id);
+		id = next_urb_id++;
+		if (next_urb_id == 0)
+			next_urb_id = 1;
+		accept(m->m_source, id);
+		complete_posted(m->m_source, gid, size, urbmem, id, ENODEV, 0);
+		return;
+	}
+
+	/* An interrupt IN transfer waits on its own; see "intr". */
+	if (urb->type == USB_TRANSFER_INT && urb_dir_in(urb)) {
+		intr_start(m->m_source, gid, size, dev);
 		return;
 	}
 
@@ -850,8 +1193,10 @@ hub_news(message *m)
 		for (i = 0; i < XHCI_MAX_PORTS; i++)
 			if (xhci.dev[i].slot != 0 &&
 			    xhci.dev[i].parent_slot == hub->slot &&
-			    xhci.dev[i].parent_port == port)
+			    xhci.dev[i].parent_port == port) {
+				xhci_urb_device_gone(&xhci.dev[i]);
 				xhci_device_free(&xhci.dev[i]);
+			}
 		return;
 	}
 
@@ -887,11 +1232,14 @@ xhci_urb_message(message *m)
 	    m->m_source);
 
 	unsigned i;
+	int who;
 
 	switch (m->m_type) {
 	case USB_RQ_INIT:
-		client_add(m->m_source, m->USB_RB_INIT_NAME);
+		who = client_add(m->m_source, m->USB_RB_INIT_NAME);
 		reply(m->m_source, 0, 0);
+		if (who < 0)
+			break;
 
 		/*
 		 * A driver that arrives after the device did still has to
@@ -916,8 +1264,8 @@ xhci_urb_message(message *m)
 
 			want = driver_for(&xhci.dev[i]);
 			if (want != NULL &&
-			    strcmp(clients[nclients - 1].name, want) == 0)
-				announce_to(&xhci.dev[i], nclients - 1);
+			    strcmp(clients[who].name, want) == 0)
+				announce_to(&xhci.dev[i], (unsigned)who);
 		}
 		break;
 
@@ -927,6 +1275,10 @@ xhci_urb_message(message *m)
 				clients[i] = clients[--nclients];
 				break;
 			}
+		/* Its waiting transfers stay on the ring, unanswered. */
+		for (i = 0; i < MAX_INTR; i++)
+			if (intr[i].busy && intr[i].client == m->m_source)
+				intr[i].client = NONE;
 		reply(m->m_source, 0, 0);
 		break;
 

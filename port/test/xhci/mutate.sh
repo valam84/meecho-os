@@ -166,8 +166,67 @@ mut_tdsize() {
 	changed xhci_dev.c tdsize
 }
 
+#
+# The next five came with the keyboard (2026-10-12), and unlike the ones
+# above they were not found on the board first: they are the ways the
+# keyboard's code would be wrong if it were wrong, put in before the board
+# could show them, because each is silent there.
+#
+# interval: bInterval written into the context as it stands.  At full and
+#           low speed it is milliseconds and the context wants 2^n
+#           microframes - a 10 ms keyboard polled every 128 ms.
+#
+mut_interval() {
+	perl -0pi -e 's/XHCI_EP_INTERVAL\(ep_interval\(dev, ep\)\)/XHCI_EP_INTERVAL(ep->interval)/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c interval
+}
+
+#
+# trdeq: an endpoint reset without moving the dequeue pointer.  The next
+#        transfer is read into whatever the halt left on the ring, and the
+#        one waiting for the report waits for ever.
+#
+mut_trdeq() {
+	perl -0pi -e 's/XHCI_TRB_TYPE\(XHCI_TRB_SET_TR_DEQ\)/XHCI_TRB_TYPE(XHCI_TRB_NOOP_CMD)/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c trdeq
+}
+
+#
+# ownbuf: an interrupt transfer into the device's buffer after all - the
+#         one the next LED request goes through.
+#
+mut_ownbuf() {
+	perl -0pi -e 's/phys_bytes phys = buf_phys, last = 0;/phys_bytes phys = dev->buf_phys, last = 0;/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c ownbuf
+}
+
+#
+# ep0mps: a full-speed device left on 8-byte control packets.  One that
+#         wants 64 answers eighteen bytes in one packet: babble.
+#
+mut_ep0mps() {
+	perl -0pi -e 's/if \(dev->speed == 1 \&\& \(r = ep0_fix_max_packet/if (0 \&\& (r = ep0_fix_max_packet/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c ep0mps
+}
+
+#
+# hubslot: a hub never described as one in its slot context; the split
+#          transactions to a slow device behind it are scheduled by those
+#          fields.
+#
+mut_hubslot() {
+	perl -0pi -e 's/\tif \(dev->class == 9\)\n\t\thub_slot_update\(dev\);\n//' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c hubslot
+}
+
 bad=0
-for m in link first isp doorbell ack wake td ehb tdsize; do
+for m in link first isp doorbell ack wake td ehb tdsize \
+    interval trdeq ownbuf ep0mps hubslot; do
 	run_one "$m" "mut_$m" || bad=$((bad + 1))
 done
 

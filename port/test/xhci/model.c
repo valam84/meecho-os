@@ -260,6 +260,8 @@ struct mslot {
 	int used;
 	phys_bytes out_ctx;
 	unsigned address;
+	uint32_t slot_ctx[3];		/* the slot context, as last given */
+	unsigned ep0_mps;		/* the control packet size, ditto */
 	struct mep ep[MODEL_MAX_DCI];
 };
 
@@ -616,6 +618,45 @@ ctx_word(phys_bytes base, unsigned ctx, unsigned word)
 }
 
 /*
+ * The output context: what the controller keeps of a device, in memory
+ * the driver gave it (DCBAA entry N) and may read but never writes.  A
+ * real controller copies what each command added into it - the slot
+ * context to entry 0, endpoint context i+1 of the input to entry i -
+ * and a driver that updates a context the way Linux does (read the
+ * output, change a field, hand it back as input) depends on that.  The
+ * first version of this model left it zero, and the driver's hub update
+ * read a slot with no context entries and no root port.
+ */
+static void
+put_output_context(unsigned slot, phys_bytes in_ctx, int address)
+{
+	phys_bytes out = slots[slot].out_ctx;
+	uint32_t add = ctx_word(in_ctx, 0, 1);
+	unsigned i, w;
+
+	for (i = 0; i < MODEL_MAX_DCI; i++) {
+		uint8_t *p;
+
+		if (!(add & (1u << i)))
+			continue;
+		p = model_dev_ptr(out + i * ctx_size, ctx_size);
+		if (p == NULL)
+			continue;
+		for (w = 0; w < 8; w++) {
+			uint32_t v = ctx_word(in_ctx, i + 1, w);
+
+			memcpy(p + w * 4, &v, 4);
+		}
+		/* Word 3 of the slot: the address and the state, its own. */
+		if (i == 0) {
+			uint32_t v = (address ? slot : 0) | (2u << 27);
+
+			memcpy(p + 12, &v, 4);
+		}
+	}
+}
+
+/*
  * Take the endpoints an input context adds, and remember where their
  * rings are.  This is the only way the model ever learns about a transfer
  * ring, which is deliberate: a driver that moves a ring without saying so
@@ -736,8 +777,67 @@ command_run(void)
 			slots[slot].out_ctx = out_ctx;
 
 			take_input_context(slot, trb.p0);
+			put_output_context(slot, trb.p0,
+			    type == XHCI_TRB_ADDRESS_DEVICE);
+			if (ctx_word(trb.p0, 0, 1) & XHCI_INPUT_ADD_SLOT) {
+				unsigned w;
+
+				for (w = 0; w < 3; w++)
+					slots[slot].slot_ctx[w] =
+					    ctx_word(trb.p0, 1, w);
+			}
+			if (ctx_word(trb.p0, 0, 1) & XHCI_INPUT_ADD_EP0)
+				slots[slot].ep0_mps =
+				    ctx_word(trb.p0, 2, 1) >> 16;
 			if (type == XHCI_TRB_ADDRESS_DEVICE)
 				slots[slot].address = slot;
+			ev_slot = slot;
+			break;
+		}
+
+		/*
+		 * Of an Evaluate Context the model keeps what the driver
+		 * uses it for: the control endpoint's packet size.
+		 */
+		case XHCI_TRB_EVALUATE_CTX:
+			if (slot == 0 || slot >= MODEL_MAX_SLOTS ||
+			    !slots[slot].used) {
+				cc = XHCI_CC_PARAMETER_ERROR;
+				break;
+			}
+			if (ctx_word(trb.p0, 0, 1) & XHCI_INPUT_ADD_EP0)
+				slots[slot].ep0_mps =
+				    ctx_word(trb.p0, 2, 1) >> 16;
+			ev_slot = slot;
+			break;
+
+		/*
+		 * Reset Endpoint has nothing to do here - the model never
+		 * halts an endpoint - but Set TR Dequeue Pointer moves where
+		 * the controller reads next, and a driver that gets it wrong
+		 * finds its next transfer behind whatever it meant to skip.
+		 */
+		case XHCI_TRB_RESET_EP:
+		case XHCI_TRB_SET_TR_DEQ: {
+			unsigned dci = (trb.control >> 16) & 0x1f;
+			struct mep *ep;
+
+			if (slot == 0 || slot >= MODEL_MAX_SLOTS ||
+			    !slots[slot].used || dci == 0 ||
+			    dci >= MODEL_MAX_DCI ||
+			    !slots[slot].ep[dci].valid) {
+				cc = XHCI_CC_PARAMETER_ERROR;
+				break;
+			}
+			ep = &slots[slot].ep[dci];
+			if (type == XHCI_TRB_SET_TR_DEQ) {
+				ep->ptr = (phys_bytes)(trb.p0 & ~0xfu) |
+				    ((phys_bytes)trb.p1 << 32);
+				ep->ccs = trb.p0 & 1;
+				ep->active = 0;
+				ep->td_len = ep->td_done = 0;
+				ep->td_short = 0;
+			}
 			ev_slot = slot;
 			break;
 		}
@@ -1134,6 +1234,22 @@ model_ep_taken(unsigned slot, unsigned dci, void *out, size_t max)
 	n = ep->sink_len < max ? ep->sink_len : max;
 	memcpy(out, ep->sink, n);
 	return n;
+}
+
+uint32_t
+model_slot_word(unsigned slot, unsigned word)
+{
+	if (slot >= MODEL_MAX_SLOTS || word >= 3)
+		return 0;
+	return slots[slot].slot_ctx[word];
+}
+
+unsigned
+model_ep0_max_packet(unsigned slot)
+{
+	if (slot >= MODEL_MAX_SLOTS)
+		return 0;
+	return slots[slot].ep0_mps;
 }
 
 int

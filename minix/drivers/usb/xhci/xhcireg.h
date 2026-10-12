@@ -136,6 +136,9 @@
 #define XHCI_TRB_ENABLE_SLOT	9
 #define XHCI_TRB_ADDRESS_DEVICE	11
 #define XHCI_TRB_CONFIGURE_EP	12
+#define XHCI_TRB_EVALUATE_CTX	13
+#define XHCI_TRB_RESET_EP	14
+#define XHCI_TRB_SET_TR_DEQ	16
 #define XHCI_TRB_NOOP_CMD	23
 #define XHCI_TRB_TRANSFER_EVENT	32
 #define XHCI_TRB_CMD_COMPLETION	33
@@ -147,6 +150,17 @@
 #define XHCI_CC_TRB_ERROR	5
 #define XHCI_CC_SHORT_PACKET	13
 #define XHCI_CC_PARAMETER_ERROR	17
+
+/*
+ * Completion codes an endpoint halts on.  After any of them the controller
+ * stops that endpoint, and nothing more on its ring runs until the driver
+ * resets it (4.8.3) - a keyboard whose next report is queued behind a
+ * halt is a keyboard that has gone quiet, not one that has failed.
+ */
+#define XHCI_CC_BABBLE		3
+#define XHCI_CC_TRANSACTION	4
+#define XHCI_CC_STALL		6
+#define XHCI_CC_SPLIT		18
 
 /*
  * The port a Port Status Change Event is about.  It is in the FIRST word of
@@ -249,6 +263,15 @@
  */
 #define XHCI_SLOT_TT_SLOT(s)	((s) & 0xff)
 #define XHCI_SLOT_TT_PORT(p)	(((p) & 0xff) << 8)
+/*
+ * And what the controller is told about a device that IS a hub: that it
+ * is one (word 0), how many ports it has (word 1), and how long its
+ * translator needs between two transactions (word 2) - which is what the
+ * split transactions of the slow devices below it are scheduled by.
+ */
+#define XHCI_SLOT_HUB		(1u << 26)
+#define XHCI_SLOT_NPORTS(n)	(((n) & 0xffu) << 24)
+#define XHCI_SLOT_TTT(t)	(((t) & 0x3u) << 16)
 
 /* Endpoint context, word 1: error count, type, maximum packet size. */
 #define XHCI_EP_CERR(n)		(((n) & 0x3) << 1)
@@ -267,8 +290,13 @@
 
 /* Endpoint context, word 2: where its transfer ring starts, and its cycle. */
 #define XHCI_EP_DCS		(1u << 0)
-/* Endpoint context, word 4: how long an average transfer is. */
+/*
+ * Endpoint context, word 4: how long an average transfer is, and - for a
+ * periodic endpoint - the most it moves in one service interval, which is
+ * what the controller reserves bus time for.
+ */
 #define XHCI_EP_AVG_TRB(n)	((n) & 0xffff)
+#define XHCI_EP_MAX_ESIT_LO(n)	(((n) & 0xffffu) << 16)
 
 /* Input control context: which contexts of the input this command means. */
 #define XHCI_INPUT_ADD_SLOT	(1u << 0)
@@ -280,6 +308,8 @@
 /* Address Device, control word: the slot, and whether to skip SET_ADDRESS. */
 #define XHCI_TRB_SLOT_ID(s)	(((s) & 0xffu) << 24)
 #define XHCI_TRB_BSR		(1u << 9)
+/* Reset Endpoint and Set TR Dequeue Pointer: which endpoint, by its DCI. */
+#define XHCI_TRB_EP_ID(e)	(((e) & 0x1fu) << 16)
 
 /*===========================================================================*
  *    USB itself: the few requests enumeration needs                         *

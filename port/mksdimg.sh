@@ -57,16 +57,45 @@ T=$WORK/sdimg
 rm -rf "$T"
 mkdir -p "$T"
 
+# Дерево с экраном. В базовом дереве CB2 узлы дисплея выключены; на
+# вендорской карте их включает оверлей "hdmi" (armbianEnv.txt), и только
+# этим живое дерево Armbian отличается от базового, кроме того, что U-Boot
+# правит при каждой загрузке сам (chosen, memory). Здесь Armbian нет, и то
+# же делается заранее: ровно эти узлы - в "okay". Список снят сравнением
+# базового дерева с port/cb2-display/live.dtb; если живое дерево рядом,
+# сравнение повторяется, и расхождение - отказ, а не тихий образ без экрана.
+HDMI_NODES="/display-subsystem /vop@fe040000 /iommu@fe043e00 /hdmi@fe0a0000
+	/hdmi@fe0a0000/ports/port@0/endpoint@0 /gpu@fde60000 /i2s@fe400000
+	/hdmi-sound"
+cp "$DTB" "$T/cb2-hdmi.dtb"
+for n in $HDMI_NODES; do
+	fdtput -t s "$T/cb2-hdmi.dtb" "$n" status okay
+done
+LIVE=$PORT/cb2-display/live.dtb
+if [ -f "$LIVE" ]; then
+	for n in $HDMI_NODES; do
+		[ "$(fdtget "$LIVE" "$n" status)" = okay ] || {
+			echo "$0: $n не включён в $LIVE" >&2; exit 1; }
+	done
+	dtc -q -s -I dtb -O dts "$T/cb2-hdmi.dtb" | grep -c 'status = "okay"' \
+		> "$T/n-ours"
+	dtc -q -s -I dtb -O dts "$LIVE" | grep -c 'status = "okay"' > "$T/n-live"
+	cmp -s "$T/n-ours" "$T/n-live" || {
+		echo "$0: включённых узлов $(cat "$T/n-ours"), а в живом дереве" \
+		    "$(cat "$T/n-live")" >&2; exit 1; }
+fi
+
 # Первый раздел: FAT32, его U-Boot (bootstd) читает первым и находит boot.scr.
 mkimage -C none -A arm64 -T script -d "$PORT/cb2-sdcard.cmd" "$T/boot.scr" \
 	> /dev/null
 mkfs.vfat -F 32 -n MEECHO -C "$T/fat.img" $((FAT_SECTORS / 2)) > /dev/null
 export MTOOLS_SKIP_CHECK=1
-mmd -i "$T/fat.img" ::meecho ::dtb ::dtb/rockchip
+mmd -i "$T/fat.img" ::meecho ::dtb ::dtb/rockchip ::dtb/meecho
 mcopy -i "$T/fat.img" "$T/boot.scr" ::boot.scr
 mcopy -i "$T/fat.img" "$PORT/cb2-sdcard.cmd" ::boot.cmd
 mcopy -i "$T/fat.img" "$WORK/kernel.bin" "$WORK/boot.mba" ::meecho/
 mcopy -i "$T/fat.img" "$DTB" ::dtb/rockchip/rk3566-bigtreetech-cb2.dtb
+mcopy -i "$T/fat.img" "$T/cb2-hdmi.dtb" ::dtb/meecho/cb2-hdmi.dtb
 cat > "$T/README.txt" <<'END'
 MEECHO for the BIGTREETECH CB2 - boot partition of a self-contained card.
 
@@ -76,13 +105,15 @@ its source. Switches - create an empty file in meecho/:
 
   root_ramdisk   root in memory (rescue: the card's root is not touched)
   root_emmc      root on the board's eMMC (c0d0) instead of this card
+  no_hdmi        the vendor's base device tree, with the display off
   no_smp         one CPU instead of four
   verbose        the kernel says what it is initialising
   bootwd         reset after 15 minutes (for unattended test runs)
   slow_console   console at 115200 instead of 1500000 (U-Boot then waits
                  for Enter on the console after switching)
 
-The console is uart2 at 1500000 8N1. root has no password on the console;
+The console is uart2 at 1500000 8N1, and also the HDMI screen (with a USB
+keyboard plugged into the board). root has no password on the console;
 ssh accepts the keys in /etc/ssh/authorized_keys of the root partition.
 END
 mcopy -i "$T/fat.img" "$T/README.txt" ::README.txt

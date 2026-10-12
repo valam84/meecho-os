@@ -1,7 +1,12 @@
 # MEECHO на BIGTREETECH CB2 с самостоятельной SD-карты: загрузчик, ядро и
 # корень - всё на ней (port/mksdimg.sh). Компилируется в boot.scr первого
-# раздела, как cb2-boot.cmd, и отличается от него в трёх местах:
+# раздела, как cb2-boot.cmd, и отличается от него в четырёх местах:
 #
+#  - дерево устройств - с включённым экраном (dtb/meecho/cb2-hdmi.dtb): в
+#    базовом дереве CB2 узлы vop и hdmi выключены, на вендорской карте их
+#    включает оверлей "hdmi" из armbianEnv.txt, а здесь Armbian нет, и
+#    mksdimg.sh кладёт дерево, в котором ровно эти узлы уже включены.
+#    Файл meecho/no_hdmi возвращает базовое дерево - без экрана;
 #  - корень по умолчанию - второй раздел этой карты, /dev/c1d0p1. Гнездо SD
 #    на CB2 - второй экземпляр sdmmc (распаянная eMMC нумеруется первой,
 #    даже без системы на ней), а p1 у MINIX - второй раздел MBR;
@@ -55,7 +60,12 @@ echo "MEECHO: loading from mmc ${devnum}:${distro_bootpart}"
 load mmc ${devnum}:${distro_bootpart} 0x40200000 meecho/kernel.bin
 load mmc ${devnum}:${distro_bootpart} 0x48000000 meecho/boot.mba
 setenv meecho_mba_size ${filesize}
-load mmc ${devnum}:${distro_bootpart} 0x4a000000 dtb/rockchip/rk3566-bigtreetech-cb2.dtb
+if test -e mmc ${devnum}:${distro_bootpart} meecho/no_hdmi; then
+	load mmc ${devnum}:${distro_bootpart} 0x4a000000 dtb/rockchip/rk3566-bigtreetech-cb2.dtb
+	echo "MEECHO: base tree, no screen (meecho/no_hdmi present)"
+else
+	load mmc ${devnum}:${distro_bootpart} 0x4a000000 dtb/meecho/cb2-hdmi.dtb
+fi
 
 echo "MEECHO: booting, archive ${meecho_mba_size} bytes"
 

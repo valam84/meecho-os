@@ -62,6 +62,10 @@ void model_hang(int slot, int ignore_stop);
 void model_fail(int slot, uint32_t js_status);
 /* Вариант железа: задание падает сразу при отказе, обе линии вместе. */
 void model_fail_at_once(int on);
+/* Заданий исполнено в слоте с последнего START (и после повторов). */
+unsigned model_slot_done(int s);
+/* Отказ не от задания: биты MMU_INT, FAULTSTATUS, адрес. */
+void model_mmu_raise(int as, uint32_t bits, uint32_t status, uint64_t va);
 /* Доставить линию, как irq_handle() в mali.c: 1, если она поднята. */
 int model_line(int line);
 extern unsigned lines_job, lines_mmu;

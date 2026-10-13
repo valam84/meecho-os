@@ -12,6 +12,15 @@
  *     опустошает TLB, а без таблиц - выключает окно, и стоящее в нём на
  *     отказе задание падает (JOB_BUS_FAULT), снова поднимая бит отказа:
  *     так на плате (port/cb2-gpu/ref-fault.txt, meecho-fault.txt);
+ *   - отказ: задание стоит на нём, пока FLUSH_PT, FLUSH_MEM или UNLOCK -
+ *     любого окна - не повторит доступ (kbase: «flush L2 and unlock the
+ *     VA (resumes the MMU)», и что FLUSH повторяет стоящие доступы и в
+ *     других окнах).  Повтор - сразу, внутри команды: так же быстро, как
+ *     на железе, где ускоритель идёт дальше, пока служба ещё в
+ *     обработчике.  Бит, поднятый и не сброшенный, держит адрес и
+ *     состояние первого отказа: новый отказ под ним не виден (kbase:
+ *     «a new IRQ might not be raised when the GPU finds a MMU IRQ is
+ *     already pending»);
  *   - TLB: у каждого окна свой; перевод, раз найденный, берётся из него,
  *     пока его не выбросят.  Служба, забывшая сброс после того, как сняла
  *     буфер с таблиц, получит ускоритель, пишущий в страницу, которую она
@@ -438,12 +447,16 @@ static struct {
 	int busy;		/* задание дано и не кончилось */
 	int pending;		/* START записан, модель его не исполнила */
 	int stalled, stall_as;
+	uint64_t stall_jc;	/* дескриптор, на котором стоит */
+	unsigned done;		/* исполнено с START */
 	int hang, ignore_stop;
 	int fail;		/* упасть с fail_status, не исполняясь */
 	uint32_t fail_status;
 } sl[MALI_NR_SLOTS];
 
 static int fail_at_once;
+
+static void retry_stalled(void);
 
 static void
 tlb_drop(int as, uint64_t start, uint64_t size)
@@ -488,6 +501,7 @@ as_command(int as, uint32_t cmd)
 		break;
 	case AS_COMMAND_UNLOCK:
 		locked[as] = 0;
+		retry_stalled();
 		break;
 	case AS_COMMAND_FLUSH_PT:
 	case AS_COMMAND_FLUSH_MEM:
@@ -504,6 +518,7 @@ as_command(int as, uint32_t cmd)
 			nflushes++;
 		}
 		locked[as] = 0;
+		retry_stalled();
 		break;
 	case AS_COMMAND_UPDATE:
 		active_tt[as] = G(AS_TRANSTAB_LO(as)) |
@@ -583,6 +598,7 @@ model_wr(const struct mali_regs *r, unsigned off, uint32_t v)
 			G(JS_CONFIG(s)) = G(JS_CONFIG_NEXT(s));
 			G(off) = 0;	/* «следующее» стало текущим */
 			sl[s].busy = sl[s].pending = 1;
+			sl[s].done = 0;
 			return;
 		}
 		if (off == (unsigned)JS_COMMAND(s) &&
@@ -704,21 +720,27 @@ xlate(int as, uint64_t va, int write, uint64_t *pa, uint32_t *exc)
 	return 0;
 }
 
-/* Отказ MMU: бит окна, состояние, адрес; задание стоит (или падает). */
+/*
+ * Отказ MMU: бит окна, состояние, адрес; задание стоит на дескрипторе jc
+ * (или падает).  Под поднятым битом состояние и адрес - первого отказа.
+ */
 static void
-mmu_fault(int s, int as, uint64_t va, int write, uint32_t exc)
+mmu_fault(int s, int as, uint64_t jc, uint64_t va, int write, uint32_t exc)
 {
+	if (!(G(MMU_INT_RAWSTAT) & MMU_INT_AS(as))) {
+		G(AS_FAULTSTATUS(as)) = exc |
+		    (uint32_t)(write ? AS_ACCESS_WRITE : AS_ACCESS_READ) << 8 |
+		    0x7c10u << 16;
+		G(AS_FAULTADDRESS_LO(as)) = (uint32_t)va;
+		G(AS_FAULTADDRESS_HI(as)) = (uint32_t)(va >> 32);
+	}
 	G(MMU_INT_RAWSTAT) |= MMU_INT_PAGE_FAULT(as);
-	G(AS_FAULTSTATUS(as)) = exc |
-	    (uint32_t)(write ? AS_ACCESS_WRITE : AS_ACCESS_READ) << 8 |
-	    0x7c10u << 16;
-	G(AS_FAULTADDRESS_LO(as)) = (uint32_t)va;
-	G(AS_FAULTADDRESS_HI(as)) = (uint32_t)(va >> 32);
 	if (fail_at_once)
 		job_fail(s, 0x48);
 	else {
 		sl[s].stalled = 1;
 		sl[s].stall_as = as;
+		sl[s].stall_jc = jc;
 		sl[s].pending = 0;
 	}
 }
@@ -743,38 +765,15 @@ rd32(const unsigned char *p, unsigned off)
 
 char why[256];
 
-int
-model_run(int s)
+/* Цепочка слота s в окне as с дескриптора va: сколько исполнено, -1. */
+static int
+run_chain(int s, int as, uint64_t va)
 {
-	uint64_t va, pa, dst;
+	uint64_t pa, dst;
 	unsigned char *d, *t;
 	unsigned seen[1024] = { 0 }, idx;
 	uint32_t exc;
-	int as, n = 0;
-
-	if (!sl[s].busy || !sl[s].pending) {
-		snprintf(why, sizeof(why), "nothing started on slot %d", s);
-		return -1;
-	}
-	if (sl[s].hang)
-		return 0;
-	sl[s].pending = 0;
-	if (sl[s].fail) {
-		sl[s].fail = 0;
-		job_fail(s, sl[s].fail_status);
-		return 0;
-	}
-	as = (int)(G(JS_CONFIG(s)) & 0xf);
-	if ((active_tt[as] & 3) != 3) {
-		snprintf(why, sizeof(why), "slot %d started in address space "
-		    "%d, which has no tables", s, as);
-		model_error("%s", why);
-		return -1;
-	}
-	if ((G(JS_CONFIG(s)) & 0xff00) != 0x7300 &&
-	    (G(JS_CONFIG(s)) & 0xff00) != 0x7b00)
-		model_error("slot %d config 0x%x", s, G(JS_CONFIG(s)));
-	va = G(JS_HEAD_LO(s)) | ((uint64_t)G(JS_HEAD_HI(s)) << 32);
+	int n = 0;
 
 	while (va != 0) {
 		if (n >= 1024) {
@@ -784,7 +783,7 @@ model_run(int s)
 		if (xlate(as, va, 0, &pa, &exc) != 0) {
 			if (exc == 0)
 				return -1;
-			mmu_fault(s, as, va, 0, exc);
+			mmu_fault(s, as, va, va, 0, exc);
 			return n;
 		}
 		if ((d = model_ram(pa, JOB_DESC_SIZE)) == NULL) {
@@ -821,7 +820,7 @@ model_run(int s)
 		if (xlate(as, rd64(d, 32), 1, &dst, &exc) != 0) {
 			if (exc == 0)
 				return -1;
-			mmu_fault(s, as, rd64(d, 32), 1, exc);
+			mmu_fault(s, as, va, rd64(d, 32), 1, exc);
 			return n;
 		}
 		if ((t = model_ram(dst, 4)) == NULL)
@@ -838,11 +837,68 @@ model_run(int s)
 		d[0] = JOB_STATUS_DONE;
 		va = rd64(d, 24);
 		n++;
+		sl[s].done++;
 	}
 	G(JOB_INT_RAWSTAT) |= JOB_INT_DONE(s);
 	G(JS_STATUS(s)) = JS_STATUS_DONE;
 	sl[s].busy = 0;
 	return n;
+}
+
+int
+model_run(int s)
+{
+	int as;
+
+	if (!sl[s].busy || !sl[s].pending) {
+		snprintf(why, sizeof(why), "nothing started on slot %d", s);
+		return -1;
+	}
+	if (sl[s].hang)
+		return 0;
+	sl[s].pending = 0;
+	if (sl[s].fail) {
+		sl[s].fail = 0;
+		job_fail(s, sl[s].fail_status);
+		return 0;
+	}
+	as = (int)(G(JS_CONFIG(s)) & 0xf);
+	if ((active_tt[as] & 3) != 3) {
+		snprintf(why, sizeof(why), "slot %d started in address space "
+		    "%d, which has no tables", s, as);
+		model_error("%s", why);
+		return -1;
+	}
+	if ((G(JS_CONFIG(s)) & 0xff00) != 0x7300 &&
+	    (G(JS_CONFIG(s)) & 0xff00) != 0x7b00)
+		model_error("slot %d config 0x%x", s, G(JS_CONFIG(s)));
+	return run_chain(s, as, G(JS_HEAD_LO(s)) |
+	    ((uint64_t)G(JS_HEAD_HI(s)) << 32));
+}
+
+/*
+ * Команда окна, которая повторяет стоящие доступы: каждое задание, стоящее
+ * на отказе в окне с таблицами, пробует снова с того же дескриптора -
+ * сразу.  Не нашло перевода опять - снова стоит.
+ */
+static void
+retry_stalled(void)
+{
+	int s;
+
+	for (s = 0; s < MALI_NR_SLOTS; s++) {
+		if (!sl[s].stalled || (active_tt[sl[s].stall_as] & 3) != 3)
+			continue;
+		sl[s].stalled = 0;
+		if (run_chain(s, sl[s].stall_as, sl[s].stall_jc) < 0)
+			model_error("slot %d after the retry: %s", s, why);
+	}
+}
+
+unsigned
+model_slot_done(int s)
+{
+	return sl[s].done;
 }
 
 int
@@ -927,6 +983,19 @@ model_pte(int as, uint64_t va)
 	return NULL;
 }
 
+/*
+ * Отказ, которого задания не делали: бит (страницы или шины), состояние и
+ * адрес - как их оставило бы железо.  Никто на нём не стоит.
+ */
+void
+model_mmu_raise(int as, uint32_t bits, uint32_t status, uint64_t va)
+{
+	G(AS_FAULTSTATUS(as)) = status;
+	G(AS_FAULTADDRESS_LO(as)) = (uint32_t)va;
+	G(AS_FAULTADDRESS_HI(as)) = (uint32_t)(va >> 32);
+	G(MMU_INT_RAWSTAT) |= bits;
+}
+
 /* ---- линии, как irq_handle() в mali.c ------------------------------------ */
 
 unsigned lines_job, lines_mmu;
@@ -944,11 +1013,11 @@ model_line(int line)
 		mali_sched_job_irq(s);
 		return 1;
 	}
+	/* Линию MMU служба сбрасывает сама, внутри обработчика. */
 	if ((s = G(MMU_INT_RAWSTAT) & G(MMU_INT_MASK)) == 0)
 		return 0;
 	lines_mmu++;
 	mali_mmu_irq(s);
-	model_wr(NULL, MMU_INT_CLEAR, s);
 	return 1;
 }
 

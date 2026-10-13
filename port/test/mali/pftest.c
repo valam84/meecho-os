@@ -13,7 +13,14 @@
  *			64 WRITE_VALUE с проверкой, отказ задания, куча
  *	pftest two	два клиента (два процесса, два открытия узла) гоняют
  *			цепочки разом, один на середине - задание с отказом
+ *	pftest heap	куча растёт по отказам: запись в первый кусок, в тот же,
+ *			одно задание через 16 новых кусков, последний кусок,
+ *			за концом кучи (отказ), цепочка после
  *	pftest chain [n]  одна цепочка из 64, n раз
+ *	pftest cost [n]	цена обслуживания кэша: та же цепочка n раз с большим
+ *			буфером в списке задания - не отображённым и
+ *			отображённым процессором (служба чистит его целиком
+ *			до задания и после)
  *
  * Заголовки - libdrm (drm.h) и ядра Linux (panfrost_drm.h), из
  * /usr/include/libdrm, как у Mesa; номера запросов - кодировки MINIX.
@@ -655,6 +662,187 @@ two(void)
 	return 0;
 }
 
+/* ---- heap --------------------------------------------------------------- */
+
+#define HEAP_SIZE	0x4000000u	/* 64 MiB: 32 куска */
+#define PIECE		0x200000u
+
+/* Цепочка из n WRITE_VALUE: задание i пишет tag<<24|i по адресу at[i]. */
+static void
+chain_to(struct bo *b, unsigned n, const uint64_t *at, unsigned tag)
+{
+	unsigned i;
+
+	for (i = 0; i < n; i++)
+		write_value_job(b->m, JOB_SIZE * i, i + 1, i + 1 < n ?
+		    b->va + JOB_SIZE * (i + 1) : 0, at[i],
+		    (uint32_t)tag << 24 | i);
+}
+
+/* Сколько заголовков цепочки из n говорят «сделано» (1). */
+static unsigned
+headers_done(struct bo *b, unsigned n)
+{
+	unsigned i, k = 0;
+
+	for (i = 0; i < n; i++)
+		k += *(uint32_t *)(b->m + JOB_SIZE * i) == 1;
+	return k;
+}
+
+static int
+heap(void)
+{
+	struct bo b, h;
+	uint64_t at[16];
+	uint32_t hs[2], so;
+	int64_t t;
+	unsigned i;
+	int fd, e;
+
+	fd = open_node();
+	printf("render node %s, mode heap\n", NODE);
+	if (create(fd, 0x4000, 0, &b) != 0 || (e = map_bo(fd, &b)) != 0 ||
+	    create(fd, HEAP_SIZE, PANFROST_BO_NOEXEC | PANFROST_BO_HEAP,
+	    &h) != 0)
+		return 1;
+	hs[0] = b.handle;
+	hs[1] = h.handle;
+	so = sync_create(fd, 0);
+
+	/* Цепочка до кучи (зонд берёт из неё номер адресного пространства). */
+	chain_into(&b, 64, 0x5a);
+	e = submit(fd, b.va, hs, 1, so, 0);
+	(void)sync_wait(fd, &so, 1, 0, now_ns() + 2000000000LL, NULL);
+	printf("chain before: submit %s, %u wrong word(s)\n", ename(e),
+	    wrong(&b, 64, 0x5a));
+
+	/* Первый кусок, тот же кусок, последний кусок - по заданию. */
+	{
+		static const uint32_t offs[] = { 0x1000, 0x1ff040,
+		    HEAP_SIZE - 0x40 };
+		static const char *const what[] = { "", " (same piece)",
+		    " (last piece)" };
+
+		for (i = 0; i < 3; i++) {
+			at[0] = h.va + offs[i];
+			chain_to(&b, 1, at, 0x40 + i);
+			e = submit(fd, b.va, hs, 2, so, 0);
+			printf("heap write at +0x%x%s: submit %s, syncobj %s, "
+			    "header status 0x%x\n", offs[i], what[i], ename(e),
+			    sync_wait(fd, &so, 1, 0, now_ns() + 2000000000LL,
+			    NULL), *(uint32_t *)b.m);
+		}
+	}
+
+	/* Одно задание через 16 новых кусков (с 1 по 16), каждый - отказ. */
+	for (i = 0; i < 16; i++)
+		at[i] = h.va + (i + 1) * (uint64_t)PIECE + 0x40 * (i + 1);
+	chain_to(&b, 16, at, 0x50);
+	t = now_ns();
+	e = submit(fd, b.va, hs, 2, so, 0);
+	{
+		const char *sw = sync_wait(fd, &so, 1, 0, now_ns() +
+		    2000000000LL, NULL);
+
+		printf("chain of 16 through pieces 1-16: submit %s, syncobj %s, "
+		    "%u of 16 header(s) done\n", ename(e), sw, headers_done(&b,
+		    16));
+		printf("(16 pieces in %.1f ms)\n", (double)(now_ns() - t) / 1e6);
+	}
+
+	/* За концом кучи: отказ, которого кучей не решить. */
+	at[0] = h.va + HEAP_SIZE + 0x40;
+	chain_to(&b, 1, at, 0x60);
+	*(uint32_t *)b.m = 0xdeadbeef;
+	e = submit(fd, b.va, hs, 2, so, 0);
+	printf("write past the heap (+0x%x): submit %s, wait_bo %s, syncobj "
+	    "%s, header status 0x%x\n", HEAP_SIZE + 0x40, ename(e),
+	    wait_bo(fd, b.handle, now_ns() + 2000000000LL), sync_wait(fd, &so,
+	    1, 0, now_ns() + 2000000000LL, NULL), *(uint32_t *)b.m);
+
+	/* Жив ли: цепочка в b после отказа (у panfrost - через секунду). */
+	sleep(1);
+	chain_into(&b, 64, 0x6b);
+	e = submit(fd, b.va, hs, 2, so, 0);
+	(void)sync_wait(fd, &so, 1, 0, now_ns() + 2000000000LL, NULL);
+	printf("chain after: submit %s, %u wrong word(s)\n", ename(e),
+	    wrong(&b, 64, 0x6b));
+	close(fd);
+	return 0;
+}
+
+/* ---- cost --------------------------------------------------------------- */
+
+/* n цепочек из 64 в b с буферами hs: миллисекунд на цепочку, плохих в bad. */
+static double
+chains(int fd, struct bo *b, uint32_t *hs, unsigned nh, uint32_t so,
+	unsigned n, unsigned *bad)
+{
+	int64_t t0 = now_ns();
+	unsigned k;
+
+	*bad = 0;
+	for (k = 0; k < n; k++) {
+		chain_into(b, 64, 0x5a);
+		if (submit(fd, b->va, hs, nh, so, 0) != 0 ||
+		    strcmp(sync_wait(fd, &so, 1, 0, now_ns() + 2000000000LL,
+		    NULL), "ok") != 0 || wrong(b, 64, 0x5a) != 0)
+			(*bad)++;
+	}
+	return (double)(now_ns() - t0) / 1e6 / n;
+}
+
+/*
+ * Цена обслуживания кэша: служба чистит каждый буфер задания, который
+ * отображал процессор, целиком до задания и после.  Цепочка та же, в
+ * списке задания - ещё один буфер размера S: не отображённый (его не
+ * чистят) и отображённый (чистят).  Разница - цена S.
+ */
+static int
+cost(unsigned n)
+{
+	static const uint32_t sizes[] = { 0x4000, 0x100000, 0x400000,
+	    0x1000000, 0x4000000 };
+	struct bo b, big;
+	struct drm_gem_close gc;
+	uint32_t hs[2], so;
+	double plain, cold, mapped;
+	unsigned i, bad1, bad2, bad3;
+	int fd;
+
+	fd = open_node();
+	if (create(fd, 0x4000, 0, &b) != 0 || map_bo(fd, &b) != 0)
+		return 1;
+	hs[0] = b.handle;
+	so = sync_create(fd, 0);
+	plain = chains(fd, &b, hs, 1, so, n, &bad1);
+	printf("cost: %u chain(s) of 64, alone: %.3f ms each, %u bad\n", n,
+	    plain, bad1);
+	for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+		if (create(fd, sizes[i], PANFROST_BO_NOEXEC, &big) != 0)
+			break;
+		hs[1] = big.handle;
+		cold = chains(fd, &b, hs, 2, so, n, &bad2);
+		if (map_bo(fd, &big) != 0) {
+			printf("cost: no map of 0x%x\n", sizes[i]);
+			break;
+		}
+		big.m[0] = 1;		/* процессор его коснулся */
+		mapped = chains(fd, &b, hs, 2, so, n, &bad3);
+		printf("cost: + %5u KiB buffer: %.3f ms unmapped, %.3f ms "
+		    "mapped (+%.3f ms, %.2f ms per MiB), %u bad\n",
+		    sizes[i] / 1024, cold, mapped, mapped - cold,
+		    (mapped - cold) * 1048576.0 / sizes[i], bad2 + bad3);
+		munmap(big.m, big.size);
+		memset(&gc, 0, sizeof(gc));
+		gc.handle = big.handle;
+		(void)xioctl(fd, DRM_IOCTL_GEM_CLOSE, &gc);
+	}
+	close(fd);
+	return 0;
+}
+
 /* ---- chain -------------------------------------------------------------- */
 
 static int
@@ -696,8 +884,13 @@ main(int argc, char *argv[])
 		return api();
 	if (argc >= 2 && strcmp(argv[1], "two") == 0)
 		return two();
+	if (argc >= 2 && strcmp(argv[1], "heap") == 0)
+		return heap();
 	if (argc >= 2 && strcmp(argv[1], "chain") == 0)
 		return chain(argc >= 3 ? (unsigned)atoi(argv[2]) : 1);
-	fprintf(stderr, "usage: pftest api | two | chain [n]\n");
+	if (argc >= 2 && strcmp(argv[1], "cost") == 0)
+		return cost(argc >= 3 ? (unsigned)atoi(argv[2]) : 50);
+	fprintf(stderr, "usage: pftest api | two | heap | chain [n] | "
+	    "cost [n]\n");
 	return 2;
 }

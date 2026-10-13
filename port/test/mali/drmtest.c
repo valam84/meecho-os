@@ -844,6 +844,261 @@ test_memory(void)
 	CHECK(model_errors == 0, "model: %s", model_error_text);
 }
 
+/* ---- куча ------------------------------------------------------------------ */
+
+#define PIECE		0x200000ull
+
+/* Слово, которое видит ускоритель по адресу va окна as; ~0, если нет. */
+static uint32_t
+gpu_word(int as, uint64_t va)
+{
+	uint64_t *pte = model_pte(as, va), pa;
+	unsigned char *p;
+	uint32_t v;
+
+	if (pte == NULL || (*pte & 3) != 1)
+		return ~0u;
+	pa = (*pte & 0x000ffffffffff000ull) | (va & 0xfff);
+	if ((p = model_ram(pa, 4)) == NULL)
+		return ~0u;
+	memcpy(&v, p, 4);
+	return v;
+}
+
+/* Цепочка из n WRITE_VALUE: задание i пишет value(i) по адресу at[i]. */
+static void
+write_to(struct bo *b, unsigned n, const uint64_t *at, uint32_t tag)
+{
+	unsigned i;
+	char *d;
+
+	for (i = 0; i < n; i++) {
+		d = b->cpu + 64 * i;
+		memset(d, 0, 64);
+		*(uint32_t *)(d + 16) = 1 | (2 << 1) | ((i + 1) << 16);
+		*(uint64_t *)(d + 24) = i + 1 < n ? b->va + 64 * (i + 1) : 0;
+		*(uint64_t *)(d + 32) = at[i];
+		*(uint32_t *)(d + 40) = 6;
+		*(uint64_t *)(d + 48) = VALUE(tag, i);
+	}
+}
+
+/* Линии MMU, пока они поднимаются (не больше max): сколько было. */
+static unsigned
+mmu_lines(unsigned max)
+{
+	unsigned k = 0;
+
+	while (k < max && model_line(MALI_IRQ_MMU))
+		k++;
+	return k;
+}
+
+/*
+ * Куча (PANFROST_BO_HEAP) растёт по отказу, как у panfrost: создание
+ * берёт только место; отказ трансляции внутри - кусок 2 МиБ, вычищенный,
+ * в таблицах, сброс кэшей MMU по куску, и доступ идёт дальше без
+ * выключения окна.  Модель повторяет стоящий доступ прямо в команде
+ * сброса, так что следующий отказ той же цепочки поднимается, пока служба
+ * ещё в обработчике: сброс бита после сброса кэшей его бы съел.
+ */
+static void
+test_heap(void)
+{
+	struct bo b, h, h2;
+	uint64_t at[4];
+	uint32_t hs[3], so;
+	size_t total0;
+	unsigned allocs0, lines, mark, i, k;
+	int a, r;
+
+	printf("куча: растёт по отказу кусками 2 МиБ, окно не выключается\n");
+	start();
+	a = open_ctx(USER_A);
+	CHECK(create(a, USER_A, 0x4000, 0, &b) == OK && map(a, USER_A, &b,
+	    PROT_READ | PROT_WRITE, MAP_SHARED, 0) == OK, "b");
+	so = syncobj(a, USER_A, 0);
+	allocs0 = model_allocs_live();
+	total0 = mali_bo_total();
+
+	/* Создание: место, и ничего за ним. */
+	CHECK(create(a, USER_A, 0x1000000, PANFROST_BO_NOEXEC | PANFROST_BO_HEAP,
+	    &h) == OK && h.va % PIECE == 0, "heap at 0x%llx",
+	    (unsigned long long)h.va);
+	CHECK(model_allocs_live() == allocs0 && mali_bo_total() == total0,
+	    "the heap took memory at creation: %u allocation(s), %zu bytes",
+	    model_allocs_live() - allocs0, mali_bo_total() - total0);
+	hs[0] = b.handle;
+	hs[1] = h.handle;
+
+	/* Первая запись: отказ, кусок 0, задание дописывает. */
+	at[0] = h.va + 0x1000;
+	write_to(&b, 1, at, 0x31);
+	mark = model_flush_mark();
+	CHECK(submit(a, USER_A, b.va, hs, 2, so, 0) == OK, "submit");
+	CHECK(model_run(1) == 0 && G(MMU_INT_RAWSTAT) == MMU_INT_PAGE_FAULT(0) &&
+	    (G(AS_FAULTSTATUS(0)) & 0xf8) == 0xc0, "no translation fault in the "
+	    "empty heap: raw 0x%x status 0x%x", G(MMU_INT_RAWSTAT),
+	    G(AS_FAULTSTATUS(0)));
+	lines = mmu_lines(8);
+	CHECK(lines == 1 && G(MMU_INT_RAWSTAT) == 0, "%u mmu line(s), raw 0x%x "
+	    "after the growth", lines, G(MMU_INT_RAWSTAT));
+	CHECK(model_slot_done(1) == 1 && model_line(MALI_IRQ_JOB) == 1,
+	    "the job did not go on after the growth: %u done", model_slot_done(1));
+	CHECK(wait_sync(a, USER_A, &so, 1, 0, mono()) == OK, "fence");
+	CHECK(gpu_word(0, at[0]) == VALUE(0x31, 0), "the heap holds 0x%x",
+	    gpu_word(0, at[0]));
+	CHECK(*(uint32_t *)b.cpu == JOB_STATUS_DONE, "header status 0x%x",
+	    *(uint32_t *)b.cpu);
+	{
+		size_t len;
+
+		/* Кусок - одна область 2 МиБ (и таблица последнего уровня). */
+		(void)model_last_mmap(&len);
+		CHECK(mali_bo_total() == total0 + PIECE && len == PIECE &&
+		    model_allocs_live() == allocs0 + 2, "the growth: %zu "
+		    "bytes, last mmap %zu, %u allocation(s)",
+		    mali_bo_total() - total0, len,
+		    model_allocs_live() - allocs0);
+	}
+	CHECK(model_flushed(0, h.va, PIECE, mark), "the piece went into the "
+	    "tables without the window's caches flushed");
+	CHECK((model_as_active(0) & 3) == 3 && (G(MMU_INT_MASK) &
+	    MMU_INT_AS(0)) == MMU_INT_AS(0), "a heap fault switched the window "
+	    "off: 0x%llx, mask 0x%x", (unsigned long long)model_as_active(0),
+	    G(MMU_INT_MASK));
+	CHECK(warnings == 0 && !said("line 73"), "a heap fault was reported: "
+	    "%s", logbuf);
+
+	/* Тот же кусок, его последняя страница: отказа нет. */
+	at[0] = h.va + PIECE - 0x1000 + 0x40;
+	write_to(&b, 1, at, 0x32);
+	lines = lines_mmu;
+	CHECK(submit(a, USER_A, b.va, hs, 2, so, 0) == OK && model_run(1) == 1 &&
+	    model_line(MALI_IRQ_JOB) == 1 && lines_mmu == lines,
+	    "the same piece faulted again: %s", why);
+	CHECK(gpu_word(0, at[0]) == VALUE(0x32, 0) && mali_bo_total() ==
+	    total0 + PIECE, "the same piece: 0x%x, %zu bytes",
+	    gpu_word(0, at[0]), mali_bo_total() - total0);
+
+	/*
+	 * Одно задание - три куска: каждый отказ поднимается, пока служба
+	 * ещё в обработчике предыдущего (повтор - в её сбросе кэшей).
+	 */
+	for (i = 0; i < 3; i++)
+		at[i] = h.va + (i + 1) * PIECE + 0x40 * (i + 1);
+	at[3] = b.va + 0x1000;
+	write_to(&b, 4, at, 0x33);
+	mark = model_flush_mark();
+	CHECK(submit(a, USER_A, b.va, hs, 2, so, 0) == OK && model_run(1) == 0,
+	    "submit three");
+	lines = mmu_lines(16);
+	CHECK(lines == 3, "%u mmu line(s) for three pieces (raw 0x%x)", lines,
+	    G(MMU_INT_RAWSTAT));
+	CHECK(model_slot_done(1) == 4 && model_line(MALI_IRQ_JOB) == 1,
+	    "the chain through three new pieces: %u of 4 done",
+	    model_slot_done(1));
+	CHECK(wait_sync(a, USER_A, &so, 1, 0, mono()) == OK, "fence three");
+	for (i = 0, k = 0; i < 4; i++)
+		k += gpu_word(0, at[i]) == VALUE(0x33, i);
+	CHECK(k == 4, "%u of 4 words", k);
+	for (i = 1; i <= 3; i++)
+		CHECK(model_flushed(0, h.va + i * PIECE, PIECE, mark), "piece %u "
+		    "not flushed", i);
+	CHECK(mali_bo_total() == total0 + 4 * PIECE, "%zu bytes after four "
+	    "pieces", mali_bo_total() - total0);
+	CHECK(warnings == 0, "warnings: %s", logbuf);
+
+	/*
+	 * Отказ в куске, который уже есть (второй доступ отказал раньше, чем
+	 * первому сбросили кэши): не растёт, но сброс по куску - всё равно,
+	 * как у kbase: доступ, может быть, ещё его ждёт.
+	 */
+	mark = model_flush_mark();
+	model_mmu_raise(0, MMU_INT_PAGE_FAULT(0), 0x7c1003c3u, h.va + 0x2040);
+	CHECK(model_line(MALI_IRQ_MMU) == 1 && G(MMU_INT_RAWSTAT) == 0 &&
+	    mali_bo_total() == total0 + 4 * PIECE && (model_as_active(0) & 3) ==
+	    3 && warnings == 0, "a fault in a piece already there: raw 0x%x, "
+	    "%zu bytes, window 0x%llx, %s", G(MMU_INT_RAWSTAT),
+	    mali_bo_total() - total0, (unsigned long long)model_as_active(0),
+	    logbuf);
+	CHECK(model_flushed(0, h.va, PIECE, mark), "no flush for a fault in a "
+	    "piece already there");
+
+	/*
+	 * Задание упало по своей причине, пока его отказ в куче ждал линии
+	 * MMU (линия заданий обслуживается раньше): рост - его вторая
+	 * половина, ждать больше нечего.
+	 */
+	at[0] = h.va + 5 * PIECE - 0x40;
+	at[1] = b.va + 0x1000;
+	write_to(&b, 2, at, 0x36);
+	CHECK(submit(a, USER_A, b.va, hs, 2, so, 0) == OK && model_run(1) == 0 &&
+	    G(MMU_INT_RAWSTAT) == MMU_INT_PAGE_FAULT(0), "submit, stall");
+	model_advance(100);		/* секунда: HARD_STOP */
+	CHECK(model_line(MALI_IRQ_JOB) == 1, "no job line after the stop");
+	CHECK(model_line(MALI_IRQ_MMU) == 1, "no mmu line");
+	r = wait_sync(a, USER_A, &so, 1, 0, mono());
+	CHECK(r == EIO && !said("never came"), "the stopped job's fence: %d, "
+	    "%s", r, logbuf);
+	log_clear();
+
+	/*
+	 * Предел: куча, которой расти некуда, - отказ как всякий другой:
+	 * задание падает, его забор - EIO, окно выключено; следующее
+	 * задание идёт.
+	 */
+	CHECK(create(a, USER_A, 0x400000, PANFROST_BO_NOEXEC | PANFROST_BO_HEAP,
+	    &h2) == OK, "h2");
+	mali_bo_limits(768u << 20, mali_bo_total());
+	hs[2] = h2.handle;
+	at[0] = h2.va + 0x80;
+	write_to(&b, 1, at, 0x34);
+	CHECK(submit(a, USER_A, b.va, hs, 3, so, 0) == OK && model_run(1) == 0,
+	    "submit h2");
+	CHECK(model_line(MALI_IRQ_MMU) == 1 && model_line(MALI_IRQ_JOB) == 1,
+	    "lines h2");
+	CHECK(said("cannot grow") && said("line 73 (mmu)"), "the limit: %s",
+	    logbuf);
+	r = wait_sync(a, USER_A, &so, 1, 0, mono());
+	CHECK(r == EIO && mali_bo_total() == total0 + 5 * PIECE &&
+	    (model_as_active(0) & 3) != 3, "past the limit: %d, %zu bytes, "
+	    "window 0x%llx", r, mali_bo_total() - total0,
+	    (unsigned long long)model_as_active(0));
+	mali_bo_limits(768u << 20, 512u << 20);
+	write_chain(&b, 2, 0x35);
+	CHECK(submit(a, USER_A, b.va, hs, 1, so, 0) == OK && model_run(1) == 2 &&
+	    model_line(MALI_IRQ_JOB) == 1 && wait_sync(a, USER_A, &so, 1, 0,
+	    mono()) == OK && wrong_words(&b, 2, 0x35) == 0, "after the limit");
+
+	/*
+	 * В куче - но не отказ трансляции: ошибка шины, отказ прав.  Куча
+	 * от них не растёт; окно - как при всяком другом отказе.
+	 */
+	log_clear();
+	model_mmu_raise(0, MMU_INT_BUS_ERROR(0), 0x7c1003c2u, h2.va + 0x40);
+	CHECK(model_line(MALI_IRQ_MMU) == 1 && mali_bo_total() == total0 +
+	    5 * PIECE && (model_as_active(0) & 3) != 3 && said("bus error"),
+	    "a bus error in the heap: %zu bytes, %s", mali_bo_total() - total0,
+	    logbuf);
+	CHECK(submit(a, USER_A, b.va, hs, 1, so, 0) == OK && model_run(1) == 2 &&
+	    model_line(MALI_IRQ_JOB) == 1, "the window back");
+	log_clear();
+	model_mmu_raise(0, MMU_INT_PAGE_FAULT(0), 0x7c1003cbu, h2.va + 0x40);
+	CHECK(model_line(MALI_IRQ_MMU) == 1 && mali_bo_total() == total0 +
+	    5 * PIECE && (model_as_active(0) & 3) != 3 &&
+	    said("permission fault"), "a permission fault in the heap: %zu "
+	    "bytes, %s", mali_bo_total() - total0, logbuf);
+	CHECK(G(MMU_INT_RAWSTAT) == 0, "raw 0x%x", G(MMU_INT_RAWSTAT));
+
+	/* Закрыт: все куски - назад. */
+	CHECK(mali_chardriver.cdr_close(a) == OK, "close");
+	CHECK(model_live_pages() == 0 && model_allocs_live() == 0 &&
+	    mali_bo_total() == 0, "left: %u page(s), %u allocation(s), %zu "
+	    "bytes", model_live_pages(), model_allocs_live(), mali_bo_total());
+	CHECK(model_errors == 0, "model: %s", model_error_text);
+}
+
 /* ---- зависание ------------------------------------------------------------ */
 
 static void
@@ -897,6 +1152,7 @@ main(int argc, char *argv[])
 	test_fault(0);
 	test_fault(1);
 	test_memory();
+	test_heap();
 	test_hang();
 
 	printf("mali drm: %u проверок, отказов %u\n", checks, failures);

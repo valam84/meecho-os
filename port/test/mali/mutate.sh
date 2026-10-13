@@ -65,6 +65,17 @@ mmap-part@mali_drm.c@if (len != bo->size ||@if (
 version-name@mali_drm.c@"panfrost", \&v->name_len@"mali", \&v->name_len
 remap-self@mali_bo.c@v = vm_remap(who, sef_self(),@v = vm_remap(who, SELF,
 param-rev@mali_drm.c@return mali.gpu_id \& 0xffff;@return mali.gpu_id >> 12;
+heap-prealloc@mali_bo.c@		return heap_new(bo, err);@		;
+grow-clear-after@mali_mmu.c@	r = mali_bo_grow(bo, addr, \&piece);@	r = mali_bo_grow(bo, addr, \&piece); mali_wr(gpu(), MMU_INT_CLEAR, bits);
+grow-no-clear@mali_mmu.c@	mali_wr(gpu(), MMU_INT_CLEAR, MMU_INT_PAGE_FAULT(as));@	;
+grow-bus-error@mali_mmu.c@if (vm == NULL || bits != MMU_INT_PAGE_FAULT(as) ||@if (vm == NULL ||
+grow-permission@mali_mmu.c@    !MALI_EXC_TRANSLATION(AS_FAULT_EXCEPTION(fs)) ||@    0 ||
+grow-dup-no-flush@mali_mmu.c@		(void)as_flush(as, piece, MALI_HEAP_PIECE, AS_COMMAND_FLUSH_PT);@		;
+grow-await@mali_mmu.c@	mali_sched_mmu_fault(as, bo->vm);@	;
+grow-leak@mali_bo.c@				munmap(bo->pieces\[i\], MALI_HEAP_PIECE);@				;
+grow-no-clean@mali_bo.c@	cache(CACHE_CLEAN_INVALIDATE, p, MALI_HEAP_PIECE);@	;
+grow-no-limit@mali_bo.c@	if (total + MALI_HEAP_PIECE > limit_total ||@	if (0 \&\&
+grow-read-only@mali_bo.c@MALI_PTE_READ | MALI_PTE_WRITE | MALI_PTE_XN)) != OK) {@MALI_PTE_READ | MALI_PTE_XN)) != OK) {
 '
 
 echo "$MUTATIONS" | while IFS='@' read -r name file from to; do

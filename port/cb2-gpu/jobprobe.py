@@ -413,6 +413,185 @@ def probe_fault():
     return 0 if failures == 0 else 1
 
 
+# ---- режимы heap и cost (веха 11.6, куча и кэши) --------------------------
+#
+#	python3 jobprobe.py heap > ref-heap.txt
+#	python3 jobprobe.py cost > ref-cost.txt
+#
+# Режим heap - эталон роста кучи (PANFROST_BO_HEAP): panfrost не даёт ей
+# памяти при создании и добавляет по 2 МиБ на каждый отказ трансляции
+# внутри (panfrost_mmu_map_fault_addr()), не выключая адресного
+# пространства.  Задания пишут в первый кусок, в тот же, в последний,
+# одно задание - через 16 новых кусков, потом за конец кучи (отказ,
+# которого кучей не решить) и цепочка после.  Строки без «#» -
+# те же, что печатает pftest heap на MEECHO; с «#» - только здесь:
+# регистры MMU, слота и окна во время первого роста (каждое изменение,
+# время от SUBMIT), строки dmesg (с dynamic debug для
+# panfrost_mmu_map_fault_addr: «mapped page fault @ AS0 ...»).
+#
+# Режим cost - то же, что pftest cost: цепочка с большим буфером в
+# списке задания, не отображённым и отображённым.  Под Linux отображение
+# буфера panfrost без WB_MMAP - write-combine, и чистить нечего; разница
+# здесь - эталон «ничего», с которым сравнивается чистка службы.
+
+HEAP_SIZE = 0x4000000           # 64 МиБ: 32 куска
+PIECE = 0x200000
+DDBG = "/sys/kernel/debug/dynamic_debug/control"
+
+
+def chain_to(m, va, ats, tag):
+    """Цепочка: задание i пишет tag<<24|i по адресу ats[i]."""
+    n = len(ats)
+    for i, at in enumerate(ats):
+        nxt = va + JOB_SIZE * (i + 1) if i + 1 < n else 0
+        write_value_job(m, JOB_SIZE * i, i + 1, nxt, at, (tag << 24) | i)
+
+
+def headers_done(m, n):
+    return sum(1 for i in range(n)
+               if struct.unpack_from("<I", m, JOB_SIZE * i)[0] == 1)
+
+
+def dyndbg(on):
+    """dev_dbg() отказа кучи в dmesg; True, если удалось."""
+    try:
+        if not os.path.exists(DDBG):
+            os.system("mount -t debugfs none /sys/kernel/debug "
+                      "2>/dev/null")
+        with open(DDBG, "w") as f:
+            f.write("func panfrost_mmu_map_fault_addr %sp\n" %
+                    ("+" if on else "-"))
+        return True
+    except OSError as e:
+        print("# dynamic debug: %s" % e)
+        return False
+
+
+def show_timeline(tl, a):
+    names = [nm for nm, _ in timeline_regs(a)]
+    print("#   %9s  %s" % ("t, us", " ".join("%-10s" % nm for nm in names)))
+    for e in tl:
+        if e[1] is None:
+            print("#   (%d polls in %.3f s)" % (e[2], e[0]))
+            continue
+        print("#   %9.0f  %s" % (e[0] * 1e6,
+              " ".join("0x%08x" % v for v in e[1])))
+
+
+def probe_heap():
+    node = render_node()
+    fd = os.open(node, os.O_RDWR)
+    print("render node %s, mode heap" % node)
+    g = gpu_regs()
+    dmesg0 = os.popen("dmesg").read().splitlines()
+    dbg = dyndbg(True)
+
+    hb, vab = create(fd, 0x4000, 0)
+    off, m = map_bo(fd, hb, 0x4000)
+    hh, vah = create(fd, HEAP_SIZE, BO_NOEXEC | BO_HEAP)
+    so = sync_create(fd)
+
+    # Цепочка до кучи: проверка, и номер адресного пространства.
+    chain_into(m, vab, 64, 0x5a)
+    r, e = submit(fd, vab, [hb], out=so)
+    sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+    print("chain before: submit %s, %d wrong word(s)" % (e or "ok",
+          wrong(m, 64, 0x5a)))
+    a = rd(g, 0x1818 + 0x80) & 0xf
+    dump_mmu(g, "address space %d before the heap is touched" % a)
+
+    tl = []
+    for i, (at, what) in enumerate(((0x1000, ""),
+                                    (0x1ff040, " (same piece)"),
+                                    (HEAP_SIZE - 0x40, " (last piece)"))):
+        chain_to(m, vab, [vah + at], 0x40 + i)
+        r, e = submit(fd, vab, [hb, hh], out=so)
+        if i == 0:
+            timeline(g, a, 0.3, tl)
+        sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+        print("heap write at +0x%x%s: submit %s, syncobj %s, header status "
+              "0x%x" % (at, what, e or "ok", sw,
+                        struct.unpack_from("<I", m, 0)[0]))
+
+    ats = [vah + (i + 1) * PIECE + 0x40 * (i + 1) for i in range(16)]
+    chain_to(m, vab, ats, 0x50)
+    t = now_ns()
+    r, e = submit(fd, vab, [hb, hh], out=so)
+    sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+    dt = (now_ns() - t) / 1e6
+    print("chain of 16 through pieces 1-16: submit %s, syncobj %s, %d of 16 "
+          "header(s) done" % (e or "ok", sw, headers_done(m, 16)))
+    print("(16 pieces in %.1f ms)" % dt)
+    dump_mmu(g, "address space %d after 19 pieces" % a)
+
+    chain_to(m, vab, [vah + HEAP_SIZE + 0x40], 0x60)
+    m[0:4] = struct.pack("<I", 0xdeadbeef)
+    r, e = submit(fd, vab, [hb, hh], out=so)
+    wb = wait_bo(fd, hb, now_ns() + 2 * 10**9)
+    sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+    print("write past the heap (+0x%x): submit %s, wait_bo %s, syncobj %s, "
+          "header status 0x%x" % (HEAP_SIZE + 0x40, e or "ok", wb, sw,
+                                  struct.unpack_from("<I", m, 0)[0]))
+
+    time.sleep(1)
+    chain_into(m, vab, 64, 0x6b)
+    r, e = submit(fd, vab, [hb, hh], out=so)
+    sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+    print("chain after: submit %s, %d wrong word(s)" % (e or "ok",
+          wrong(m, 64, 0x6b)))
+
+    print("\n# registers during the first heap write, every change "
+          "(t from SUBMIT):")
+    show_timeline(tl, a)
+    m.close()
+    os.close(fd)
+    if dbg:
+        dyndbg(False)
+    dmesg1 = os.popen("dmesg").read().splitlines()
+    new = dmesg1[len(dmesg0):] if dmesg1[:len(dmesg0)] == dmesg0 else \
+        [l for l in dmesg1 if l not in set(dmesg0)]
+    print("\n# dmesg, new lines:\n" + "\n".join("# " + l for l in new))
+    return 0
+
+
+def chains(fd, m, va, handles, so, n):
+    """n цепочек из 64: (мс на цепочку, плохих)."""
+    t0 = now_ns()
+    bad = 0
+    for k in range(n):
+        chain_into(m, va, 64, 0x5a)
+        r, e = submit(fd, va, handles, out=so)
+        sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+        if e or sw != "ok" or wrong(m, 64, 0x5a):
+            bad += 1
+    return (now_ns() - t0) / 1e6 / n, bad
+
+
+def probe_cost(n=50):
+    fd = os.open(render_node(), os.O_RDWR)
+    hb, vab = create(fd, 0x4000, 0)
+    off, m = map_bo(fd, hb, 0x4000)
+    so = sync_create(fd)
+    plain, bad = chains(fd, m, vab, [hb], so, n)
+    print("cost: %d chain(s) of 64, alone: %.3f ms each, %d bad" % (n, plain,
+          bad))
+    for size in (0x4000, 0x100000, 0x400000, 0x1000000, 0x4000000):
+        hg, vag = create(fd, size, BO_NOEXEC)
+        cold, bad2 = chains(fd, m, vab, [hb, hg], so, n)
+        offg, mg = map_bo(fd, hg, size)
+        mg[0] = 1
+        mapped, bad3 = chains(fd, m, vab, [hb, hg], so, n)
+        print("cost: + %5d KiB buffer: %.3f ms unmapped, %.3f ms mapped "
+              "(+%.3f ms, %.2f ms per MiB), %d bad" % (size // 1024, cold,
+              mapped, mapped - cold, (mapped - cold) * 1048576.0 / size,
+              bad2 + bad3))
+        mg.close()
+        ioctl(fd, GEM_CLOSE, "<II", hg, 0)
+    m.close()
+    os.close(fd)
+    return 0
+
+
 # ---- режимы api и two (веха 11.6) -----------------------------------------
 
 import ctypes
@@ -735,6 +914,15 @@ if __name__ == "__main__":
         open(pc, "w").write("on")
         try:
             sys.exit(probe_two())
+        finally:
+            open(pc, "w").write(orig)
+    if sys.argv[1:] in (["heap"], ["cost"]):
+        pc = DEV + "/power/control"
+        orig = open(pc).read().strip()
+        open(pc, "w").write("on")
+        time.sleep(0.2)
+        try:
+            sys.exit(probe_heap() if sys.argv[1] == "heap" else probe_cost())
         finally:
             open(pc, "w").write(orig)
     sys.exit(main())

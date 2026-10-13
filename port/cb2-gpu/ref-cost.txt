@@ -1,0 +1,12 @@
+create 0x4000 flags 0: handle 1 va 0x2000000
+cost: 200 chain(s) of 64, alone: 0.782 ms each, 0 bad
+create 0x4000 flags 1: handle 2 va 0x2004000
+cost: +    16 KiB buffer, 200 chains: 0.768 ms unmapped, 0.785 ms mapped (+0.017 ms, 1.08 ms per MiB), 0 bad
+create 0x100000 flags 1: handle 2 va 0x2004000
+cost: +  1024 KiB buffer, 200 chains: 0.751 ms unmapped, 0.766 ms mapped (+0.015 ms, 0.02 ms per MiB), 0 bad
+create 0x400000 flags 1: handle 2 va 0x2200000
+cost: +  4096 KiB buffer, 200 chains: 0.759 ms unmapped, 0.738 ms mapped (+-0.020 ms, -0.01 ms per MiB), 0 bad
+create 0x1000000 flags 1: handle 2 va 0x2200000
+cost: + 16384 KiB buffer, 20 chains: 0.841 ms unmapped, 0.812 ms mapped (+-0.029 ms, -0.00 ms per MiB), 0 bad
+create 0x4000000 flags 1: handle 2 va 0x2200000
+cost: + 65536 KiB buffer, 20 chains: 0.738 ms unmapped, 0.654 ms mapped (+-0.084 ms, -0.00 ms per MiB), 0 bad

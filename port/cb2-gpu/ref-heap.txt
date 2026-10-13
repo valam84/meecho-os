@@ -1,0 +1,72 @@
+render node /dev/dri/renderD130, mode heap
+create 0x4000 flags 0: handle 1 va 0x2000000
+create 0x4000000 flags 3: handle 2 va 0x2200000
+chain before: submit ok, 0 wrong word(s)
+# address space 0 before the heap is touched
+  0x0020 GPU_IRQ_RAWSTAT        0x00000600
+  0x0034 GPU_STATUS             0x00000000
+  0x1000 JOB_IRQ_RAWSTAT        0x00000000
+  0x1010 JOB_IRQ_JS_STATE       0x00000000
+  0x2000 MMU_IRQ_RAWSTAT        0x00000000
+  0x0f00 JM_CONFIG              0x000f0000
+  0x0f04 SHADER_CONFIG          0x00000000
+  0x0f08 TILER_CONFIG           0x00000000
+  0x0f0c L2_MMU_CONFIG          0x00000000
+  JS0 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS1 head 0000000002000fc0 tail 0000000002000fc0 affinity 0000000000000001 config 00007b00 status 00000000
+  JS2 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  AS0 transtab 0x00000000068f6007 memattr 0x0000000000888d88 transcfg 0x0000000000000000 status 0x0 faultstatus 0x0 faultaddr 0x0000000000000000
+heap write at +0x1000: submit ok, syncobj ok, header status 0x1
+heap write at +0x1ff040 (same piece): submit ok, syncobj ok, header status 0x1
+heap write at +0x3ffffc0 (last piece): submit ok, syncobj ok, header status 0x1
+chain of 16 through pieces 1-16: submit ok, syncobj ok, 16 of 16 header(s) done
+(16 pieces in 53.5 ms)
+# address space 0 after 19 pieces
+  0x0020 GPU_IRQ_RAWSTAT        0x00000600
+  0x0034 GPU_STATUS             0x00000000
+  0x1000 JOB_IRQ_RAWSTAT        0x00000000
+  0x1010 JOB_IRQ_JS_STATE       0x00000000
+  0x2000 MMU_IRQ_RAWSTAT        0x00000000
+  0x0f00 JM_CONFIG              0x000f0000
+  0x0f04 SHADER_CONFIG          0x00000000
+  0x0f08 TILER_CONFIG           0x00000000
+  0x0f0c L2_MMU_CONFIG          0x00000000
+  JS0 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS1 head 00000000020003c0 tail 00000000020003c0 affinity 0000000000000001 config 00007b00 status 00000000
+  JS2 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  AS0 transtab 0x00000000068f6007 memattr 0x0000000000888d88 transcfg 0x0000000000000000 status 0x0 faultstatus 0x7c1003c2 faultaddr 0x0000000004200400
+write past the heap (+0x4000040): submit ok, wait_bo ok, syncobj ok, header status 0x0
+chain after: submit ok, 0 wrong word(s)
+
+# registers during the first heap write, every change (t from SUBMIT):
+#       t, us  MMU_RAW    MMU_MASK   JOB_RAW    JOB_MASK   JS_STATE   JS1_STATUS JS1_HEAD   AS_STATUS  AS_FSTAT   AS_FADDR   AS_TTAB    AS_MATTR   GPU_RAW   
+#           4  0x00000000 0x00ff00ff 0x00000000 0x00070007 0x00000000 0x00000000 0x02000000 0x00000000 0x7c1003c2 0x02201000 0x068f6007 0x00888d88 0x00000600
+#   (14604 polls in 0.300 s)
+
+# dmesg, new lines:
+# [  112.022705] panfrost fde60000.gpu: mapped page fault @ AS0 2200000
+# [  112.324373] panfrost fde60000.gpu: mapped page fault @ AS0 6000000
+# [  112.328646] panfrost fde60000.gpu: mapped page fault @ AS0 2400000
+# [  112.331912] panfrost fde60000.gpu: mapped page fault @ AS0 2600000
+# [  112.335235] panfrost fde60000.gpu: mapped page fault @ AS0 2800000
+# [  112.338524] panfrost fde60000.gpu: mapped page fault @ AS0 2a00000
+# [  112.341869] panfrost fde60000.gpu: mapped page fault @ AS0 2c00000
+# [  112.345123] panfrost fde60000.gpu: mapped page fault @ AS0 2e00000
+# [  112.348434] panfrost fde60000.gpu: mapped page fault @ AS0 3000000
+# [  112.351744] panfrost fde60000.gpu: mapped page fault @ AS0 3200000
+# [  112.355061] panfrost fde60000.gpu: mapped page fault @ AS0 3400000
+# [  112.358416] panfrost fde60000.gpu: mapped page fault @ AS0 3600000
+# [  112.361615] panfrost fde60000.gpu: mapped page fault @ AS0 3800000
+# [  112.364883] panfrost fde60000.gpu: mapped page fault @ AS0 3a00000
+# [  112.368093] panfrost fde60000.gpu: mapped page fault @ AS0 3c00000
+# [  112.371334] panfrost fde60000.gpu: mapped page fault @ AS0 3e00000
+# [  112.374388] panfrost fde60000.gpu: mapped page fault @ AS0 4000000
+# [  112.377932] panfrost fde60000.gpu: mapped page fault @ AS0 4200000
+# [  112.380125] panfrost fde60000.gpu: Unhandled Page fault in AS0 at VA 0x0000000006200040
+#                Reason: TODO
+#                raw fault status: 0x7C1003C2
+#                decoded fault status: SLAVE FAULT
+#                exception type 0xC2: TRANSLATION_FAULT_2
+#                access type 0x3: WRITE
+#                source id 0x7C10
+# [  112.380261] panfrost fde60000.gpu: js fault, js=1, status=JOB_BUS_FAULT, head=0x2000000, tail=0x2000000

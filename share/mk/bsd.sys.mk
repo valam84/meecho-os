@@ -35,9 +35,13 @@ CPPFLAGS+=	-Wp,-iremap,${X11SRCDIR}:/usr/xsrc
 .endif
 
 # NetBSD sources use C99 style, with some GCC extensions.
-CFLAGS+=	${${ACTIVE_CC} == "clang":? -std=gnu99 :}
-CFLAGS+=	${${ACTIVE_CC} == "gcc":? -std=gnu99 :}
-CFLAGS+=	${${ACTIVE_CC} == "pcc":? -std=gnu99 :}
+# MEECHO: as NetBSD-current, a Makefile may ask for another standard -
+# CSTD=c18 for the Wayland stack's imports, whose static_assert and the
+# like gnu99 hides.  A -std in COPTS would come before this one, and lose.
+CSTD?=		gnu99
+CFLAGS+=	${${ACTIVE_CC} == "clang":? -std=${CSTD} :}
+CFLAGS+=	${${ACTIVE_CC} == "gcc":? -std=${CSTD} :}
+CFLAGS+=	${${ACTIVE_CC} == "pcc":? -std=${CSTD} :}
 
 .if defined(WARNS)
 CFLAGS+=	${${ACTIVE_CC} == "clang":? -Wno-sign-compare -Wno-pointer-sign :}

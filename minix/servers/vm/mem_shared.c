@@ -70,19 +70,26 @@ static int getsrc(struct vir_region *region,
 		return EINVAL;
 	}
 
-        if(vm_isokendpt((endpoint_t) region->param.shared.ep, &srcproc) != OK) {
-		printf("VM: shared memory with missing source process.\n");
-		util_stacktrace();
+	/*
+	 * The source may be gone, and that is no fault of VM's: its process
+	 * exited or was restarted (a driver), or it unmapped the region (a
+	 * GPU buffer freed while a client still maps it, stage 11.6).  The
+	 * pages this region has linked already stay its own; the others can
+	 * not be found any more, which a page fault turns into SIGSEGV.  No
+	 * console line for it: any process can ask for one as often as it
+	 * likes.  A region at the same address that is not the source is the
+	 * same thing (the id below), and so is quiet too.
+	 */
+        if(vm_isokendpt((endpoint_t) region->param.shared.ep, &srcproc) != OK)
                 return EINVAL;
-	}
 
 	*vmp = &vmproc[srcproc];
 
-	if(!(*r=map_lookup(*vmp, region->param.shared.vaddr, NULL))) {
-		printf("VM: shared memory with missing vaddr 0x%lx.\n",
-			region->param.shared.vaddr);
+	if(!(*r=map_lookup(*vmp, region->param.shared.vaddr, NULL)))
                 return EINVAL;
-	}
+
+	if(region->param.shared.id != (*r)->id)
+		return EINVAL;
 
 	/*
 	 * Anonymous memory, or physically contiguous anonymous memory: the
@@ -97,11 +104,6 @@ static int getsrc(struct vir_region *region,
 	    (*r)->def_memtype != &mem_type_anon_contig) {
 		printf("source region hasn't anon type but %s.\n",
 			(*r)->def_memtype->name);
-		return EINVAL;
-	}
-
-	if(region->param.shared.id != (*r)->id) {
-		printf("source region has no matching id\n");
 		return EINVAL;
 	}
 
@@ -208,8 +210,18 @@ static int shared_copy(struct vir_region *vr, struct vir_region *newvr)
 	struct vmproc *vmp;
 	struct vir_region *srcvr;
 
-	if(getsrc(vr, &vmp, &srcvr) != OK)
-		panic("copy: original getsrc failed");
+	/*
+	 * The source gone (see getsrc()): the copy is as blind as the
+	 * original.  The pages the original has, the copy has too -
+	 * map_copy_region() links them after this - and the others fault in
+	 * both.  This was a panic of VM, and any process could ask for it:
+	 * map a buffer a driver lends (fb's frames, a GPU buffer), let the
+	 * driver free it or restart, fork.
+	 */
+	if(getsrc(vr, &vmp, &srcvr) != OK) {
+		newvr->param.shared = vr->param.shared;
+		return OK;
+	}
 
 	shared_setsource(newvr, vr->param.shared.ep, srcvr);
 

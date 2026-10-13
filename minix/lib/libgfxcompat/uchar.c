@@ -1,7 +1,7 @@
 /*
  * C11 mbrtoc32/c32rtomb, UTF-8 on the multibyte side whatever the locale
  * (see uchar.h for why), and the 16-bit pair over them, without surrogate
- * pairs.  For the gfx sysroot.
+ * pairs.  For the Wayland stack (libgfxcompat).
  *
  * A sequence cut short by the end of the input is kept in the mbstate_t -
  * the bytes so far and how many - and finished by the next call, which
@@ -12,7 +12,7 @@
 #include <string.h>
 #include <wchar.h>
 
-#include "uchar.h"
+#include <uchar.h>
 
 struct u8state {
 	unsigned char held;		/* bytes of a sequence so far, 0-3 */

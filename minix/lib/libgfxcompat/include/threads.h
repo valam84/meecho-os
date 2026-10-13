@@ -1,13 +1,10 @@
 /*
- * <threads.h> (C11) for the gfx sysroot only: over the POSIX thread names
- * that libmthread gives (port/gfx/build-stack.sh, "sysroot").  MEECHO has
- * no kernel threads; libmthread's are user-level and switch only in its
- * own calls, so a program that starts threads to use more cores gains
- * nothing from them - foot is run with workers=0 - but one that only takes
- * locks (fcft) works as written.
+ * <threads.h> (C11) for the Wayland stack (libgfxcompat): over the POSIX
+ * thread names that libmthread gives (see pthread.h here for what such a
+ * thread is worth).
  */
-#ifndef _GFX_THREADS_H
-#define _GFX_THREADS_H
+#ifndef _GFXCOMPAT_THREADS_H_
+#define _GFXCOMPAT_THREADS_H_
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -68,9 +65,9 @@ static inline int tss_set(tss_t k, void *v)
 { return pthread_setspecific(k, v) ? thrd_error : thrd_success; }
 static inline void tss_delete(tss_t k) { (void)pthread_key_delete(k); }
 
-/* thrd_create/thrd_join: in libpthread.a of the sysroot (compat.c). */
-int thrd_create(thrd_t *t, thrd_start_t fn, void *arg);
-int thrd_join(thrd_t t, int *res);
+/* In libgfxcompat (threads.c). */
+int thrd_create(thrd_t *, thrd_start_t, void *);
+int thrd_join(thrd_t, int *);
 static inline thrd_t thrd_current(void)
 { return THRD_FROM_PTHREAD(pthread_self()); }
 static inline int thrd_equal(thrd_t a, thrd_t b) { return a == b; }

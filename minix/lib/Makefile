@@ -31,6 +31,13 @@ SUBDIR+=	libvtreefs
 SUBDIR+=	libepoll-shim
 .endif
 
+# Threads over libmthread under the POSIX and C11 names, <uchar.h>: what
+# the same stack asks of the system and it has not got (libgfxcompat's
+# Makefile says why not in libc or libmthread).
+.if (${MACHINE_ARCH} == "aarch64")
+SUBDIR+=	libgfxcompat
+.endif
+
 .if (${HAVE_LIBGCC} == "no")
 SUBDIR+=	libgcc_s_empty
 .endif

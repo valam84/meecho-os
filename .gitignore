@@ -16,6 +16,9 @@ lib*.so*
 *.so.*
 *.d
 !etc/*.d
+# fontconfig's conf.d is a directory of its configuration files, not make's
+# dependency output, which is what the rule above is for.
+!external/mit/fontconfig/dist/conf.d/
 .depend
 *.gcno
 *.gcda

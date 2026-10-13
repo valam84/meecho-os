@@ -195,6 +195,19 @@ report_event(unsigned page, unsigned code, int value, int rel, void *arg)
 static void
 report(const uint8_t *rep, size_t len)
 {
+	char hex[3 * 8 + 1];
+	size_t i;
+
+	/* log=4: the report as it came, for a mouse that sends what the
+	 * boot protocol does not say (a button outside the first three bits,
+	 * a report ID in front). */
+	if (mouse_log.log_level >= LEVEL_TRACE) {
+		for (i = 0; i < len && i < 8; i++)
+			snprintf(hex + 3 * i, sizeof(hex) - 3 * i, " %02x",
+			    rep[i]);
+		hex[3 * i] = '\0';
+		log_trace(&mouse_log, "report %zu byte(s):%s\n", len, hex);
+	}
 	mouse.buttons = mouse_report(mouse.buttons, rep, len, wheel,
 	    report_event, NULL);
 }

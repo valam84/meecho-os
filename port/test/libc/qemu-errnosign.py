@@ -8,7 +8,8 @@ WITHOUT _SYSTEM and asks, after each failing call, what errno holds.
 
 Without arguments it builds errnosign.c against DESTDIR's libc (so: after
 libc was rebuilt and installed) and runs it.  Arguments NAME=PATH name
-ready-made binaries instead (a NAME with "ipcrm" in it is run as
+ready-made binaries instead ("NAME=" alone: build errnosign.c under that
+name; for the installed ipcrm: ipcrm=$DESTDIR/usr/bin/ipcrm) (a NAME with "ipcrm" in it is run as
 "ipcrm -m 1" and must say "Function not implemented"); one whose NAME
 starts with "before" is
 expected to FAIL - it is the defect, reproduced - and counts as ok only if
@@ -132,10 +133,10 @@ def main():
 
     binaries = []
     for b in a.bins:
-        name, _, path = b.partition("=")
-        if not path:
+        name, eq, path = b.partition("=")
+        if not eq:
             sys.exit("not NAME=PATH: " + b)
-        binaries.append((name, path))
+        binaries.append((name, path or None))	# NAME= : build errnosign.c
     if not binaries:
         binaries = [("errnosign", None)]
     stage(binaries)

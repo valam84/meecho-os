@@ -1,0 +1,38 @@
+The Wayland stack of stage 11, as a prototype (PLAN.md, "Этап 11").
+
+Each package is built by its own build system (meson, autotools) with the
+port's cross toolchain, against a sysroot that is a copy of DESTDIR - to
+find what it needs from the system and what it needs patched before it
+goes into external/ with reachover Makefiles.
+
+  cross-meecho.ini   meson cross file; sysroot ~/gfx-sysroot
+  cc.sh              the cross compiler, with -pthread mapped to libmthread
+                     (the port's GCC refuses -pthread on purpose)
+  build-stack.sh     sysroot | native | PKG... | all
+  patches/PKG.patch  what each package needs on MEECHO, under __minix
+  test/wlhello.c     the smallest client: a window of one colour in a
+                     memfd buffer, waits for the compositor's frame
+  test/qemu-gfx.py   tinywl (headless backend, pixman) and wlhello on QEMU
+
+Sources (~/gfx-src, shallow clones of these tags):
+
+  wayland 1.26.0             gitlab.freedesktop.org/wayland/wayland
+  wayland-protocols 1.49     gitlab.freedesktop.org/wayland/wayland-protocols
+  libffi v3.8.0              github.com/libffi/libffi
+  pixman-0.46.4              gitlab.freedesktop.org/pixman/pixman
+  libdrm-2.4.134             gitlab.freedesktop.org/mesa/drm
+  xkbcommon-1.13.2           github.com/xkbcommon/libxkbcommon
+  xkeyboard-config-2.48      gitlab.freedesktop.org/xkeyboard-config/xkeyboard-config
+  wlroots 0.20.2             gitlab.freedesktop.org/wlroots/wlroots
+  foot 1.28.0, fcft 3.3.3, tllist 1.1.0   codeberg.org/dnkl
+  freetype VER-2-15-0        gitlab.freedesktop.org/freetype/freetype
+  fontconfig 2.18.3          gitlab.freedesktop.org/fontconfig/fontconfig
+  freebsd-evdev              sys/dev/evdev/input-event-codes.h of FreeBSD
+                             (BSD-2), as <linux/input-event-codes.h>
+
+Host tools (WSL, apt): meson, ninja-build, autoconf, automake, libtool,
+libtool-bin, libltdl-dev, bison, gperf, libexpat1-dev; wayland-scanner
+1.26 is built from the wayland source ("build-stack.sh native") because
+the distribution's 1.24 rejects the XML of wayland-protocols 1.49.
+
+All licences MIT or BSD-like; nothing GPL is used.

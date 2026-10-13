@@ -1,0 +1,21 @@
+diff --git a/pixman/pixman-compiler.h b/pixman/pixman-compiler.h
+index 6394156..70220ca 100644
+--- a/pixman/pixman-compiler.h
++++ b/pixman/pixman-compiler.h
+@@ -106,6 +106,16 @@
+     ((type *)(((uint8_t *)data) - offsetof (type, member)))
+ 
+ /* TLS */
++#if defined(__minix) && !defined(PIXMAN_NO_TLS)
++/*
++ * MEECHO: a static binary is given no TLS block - nothing sets up the
++ * thread pointer, and a thread-local variable is read at address 0 plus
++ * its offset.  Processes have no kernel threads either, so the plain
++ * variable that PIXMAN_NO_TLS gives is exact.
++ */
++#   define PIXMAN_NO_TLS
++#endif
++
+ #if defined(PIXMAN_NO_TLS)
+ 
+ #   define PIXMAN_DEFINE_THREAD_LOCAL(type, name)			\

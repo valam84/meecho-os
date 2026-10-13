@@ -27,4 +27,10 @@ for a in "$@"; do
 	fi
 	args+=("$a")
 done
+# And C11 <uchar.h>'s conversions, which the libc predates: an archive of
+# the sysroot, pulled in only by a program that calls them.
+if [ $link -eq 1 ] && [ -f "${GFX_SYSROOT:-$HOME/gfx-sysroot}/usr/lib/libuchar.a" ]
+then
+	args+=(-luchar)
+fi
 exec "${TOOLS}gcc" "${args[@]}"

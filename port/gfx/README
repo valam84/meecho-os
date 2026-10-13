@@ -7,12 +7,31 @@ goes into external/ with reachover Makefiles.
 
   cross-meecho.ini   meson cross file; sysroot ~/gfx-sysroot
   cc.sh              the cross compiler, with -pthread mapped to libmthread
-                     (the port's GCC refuses -pthread on purpose)
+                     (the port's GCC refuses -pthread on purpose), and
+                     -luchar on every link
   build-stack.sh     sysroot | native | PKG... | all
   patches/PKG.patch  what each package needs on MEECHO, under __minix
+                     (the tree's .gitignore has *.patch: git add -f)
+  compat/            for the sysroot only, what the libc does not have:
+                     <threads.h> and sem_* over libmthread (compat.c,
+                     threads.h), <uchar.h> with UTF-8 conversions whatever
+                     the locale (uchar.c, uchar.h)
+  meechowm/          the compositor of 11.4: tinywl with MEECHO's screen
+                     (fbout.c, the fb driver's scanout buffers) and input
+                     (input.c, the input server's devices)
+
   test/wlhello.c     the smallest client: a window of one colour in a
                      memfd buffer, waits for the compositor's frame
   test/qemu-gfx.py   tinywl (headless backend, pixman) and wlhello on QEMU
+  test/qemu-meechowm.py
+                     meechowm on QEMU's fb (virtual=1), the screen read back
+                     through /dev/fb0: window, cursor, foot, console back
+  test/board-meechowm.sh
+                     the same on the board, over ssh, left running for
+                     whoever is at the monitor
+  test/fcftprobe.c   what foot asks of fcft, alone, with fcft's debug log
+  test/uchartest.sh  compat/uchar.c against glibc in C.UTF-8, on the host
+  ../test/fb/fbart.c the screen (or an area of it) as text, from /dev/fb0
 
 Sources (~/gfx-src, shallow clones of these tags):
 
@@ -27,12 +46,16 @@ Sources (~/gfx-src, shallow clones of these tags):
   foot 1.28.0, fcft 3.3.3, tllist 1.1.0   codeberg.org/dnkl
   freetype VER-2-15-0        gitlab.freedesktop.org/freetype/freetype
   fontconfig 2.18.3          gitlab.freedesktop.org/fontconfig/fontconfig
+  expat                      the tree's (external/mit/expat), built by hand
   freebsd-evdev              sys/dev/evdev/input-event-codes.h of FreeBSD
                              (BSD-2), as <linux/input-event-codes.h>
 
 Host tools (WSL, apt): meson, ninja-build, autoconf, automake, libtool,
 libtool-bin, libltdl-dev, bison, gperf, libexpat1-dev; wayland-scanner
 1.26 is built from the wayland source ("build-stack.sh native") because
-the distribution's 1.24 rejects the XML of wayland-protocols 1.49.
+the distribution's 1.24 rejects the XML of wayland-protocols 1.49; meson
+1.12 from a venv in ~/gfx-native (fontconfig wants 1.11).
 
-All licences MIT or BSD-like; nothing GPL is used.
+All licences MIT or BSD-like (FreeType under its FTL, not the GPL);
+nothing GPL is used.  The stands take the font from the host
+(DejaVu Sans Mono, Bitstream Vera licence); it is not in the tree.

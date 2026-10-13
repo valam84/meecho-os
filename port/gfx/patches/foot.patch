@@ -1,0 +1,128 @@
+diff --git a/char32.c b/char32.c
+index be5bf22..9f28dbc 100644
+--- a/char32.c
++++ b/char32.c
+@@ -34,7 +34,8 @@ _Static_assert(
+ #if !defined(__STDC_UTF_32__) || !__STDC_UTF_32__
+  #error "char32_t does not use UTF-32"
+ #endif
+-#if (!defined(__STDC_ISO_10646__) || !__STDC_ISO_10646__) && !defined(__FreeBSD__) && !defined(__OpenBSD__)
++/* MEECHO (__minix), as NetBSD: wchar_t is the code point in UTF-8 locales. */
++#if (!defined(__STDC_ISO_10646__) || !__STDC_ISO_10646__) && !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__minix)
+  #error "wchar_t does not use UTF-32"
+ #endif
+ 
+diff --git a/fdm.h b/fdm.h
+index 2ccff95..cc30644 100644
+--- a/fdm.h
++++ b/fdm.h
+@@ -2,6 +2,12 @@
+ 
+ #include <stdbool.h>
+ 
++#include <signal.h>
++#if defined(__minix) && !defined(SIGRTMAX)
++/* MEECHO: no real-time signals; every signal there is is below NSIG. */
++#define SIGRTMAX NSIG
++#endif
++
+ struct fdm;
+ 
+ typedef bool (*fdm_fd_handler_t)(struct fdm *fdm, int fd, int events, void *data);
+diff --git a/input.c b/input.c
+index f6ba9de..66e4532 100644
+--- a/input.c
++++ b/input.c
+@@ -1,5 +1,6 @@
+ #include "input.h"
+ 
++#include <limits.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <signal.h>
+@@ -1178,7 +1179,7 @@ legacy_kbd_protocol(struct seat *seat, struct terminal *term,
+         else if (term->meta.eight_bit && count == 1) {
+             const char32_t wc = 0x80 | utf8[0];
+ 
+-            char utf8_meta[MB_CUR_MAX];
++            char utf8_meta[MB_LEN_MAX];  /* MEECHO: see unicode-mode.c */
+             size_t chars = c32rtomb(utf8_meta, wc, &(mbstate_t){0});
+ 
+             if (chars != (size_t)-1)
+diff --git a/render.c b/render.c
+index 2bc4414..7c5bf5f 100644
+--- a/render.c
++++ b/render.c
+@@ -2195,8 +2195,10 @@ render_worker_thread(void *_ctx)
+     char proc_title[16];
+     snprintf(proc_title, sizeof(proc_title), "foot:render:%d", my_id);
+ 
++#if !defined(__minix)	/* MEECHO: user-level threads have no names */
+     if (pthread_setname_np(pthread_self(), proc_title) < 0)
+         LOG_ERRNO("render worker %d: failed to set process title", my_id);
++#endif
+ 
+     sem_t *start = &term->render.workers.start;
+     sem_t *done = &term->render.workers.done;
+diff --git a/server.c b/server.c
+index 2596332..dc97bca 100644
+--- a/server.c
++++ b/server.c
+@@ -446,8 +446,19 @@ fdm_server(struct fdm *fdm, int fd, int events, void *data)
+ 
+     struct sockaddr_un addr;
+     socklen_t addr_size = sizeof(addr);
++#if defined(__minix)
++    /* MEECHO: no accept4(2); accept(2) and the two flags after it. */
++    int client_fd = accept(server->fd, (struct sockaddr *)&addr, &addr_size);
++    if (client_fd != -1 &&
++        (fcntl(client_fd, F_SETFD, FD_CLOEXEC) == -1 ||
++         fcntl(client_fd, F_SETFL, fcntl(client_fd, F_GETFL) | O_NONBLOCK) == -1)) {
++        close(client_fd);
++        client_fd = -1;
++    }
++#else
+     int client_fd = accept4(
+         server->fd, (struct sockaddr *)&addr, &addr_size, SOCK_CLOEXEC | SOCK_NONBLOCK);
++#endif
+ 
+     if (client_fd == -1) {
+         LOG_ERRNO("failed to accept client connection");
+@@ -527,9 +538,16 @@ prepare_socket(int fd)
+         return false;
+     }
+ 
++#if defined(__minix)
++    /* MEECHO, as NetBSD: no SO_DOMAIN to ask; the other two are asked. */
++    int const socket_options[] = { SO_ACCEPTCONN, SO_TYPE };
++    int const socket_options_values[] = { NON_ZERO_OPT, SOCK_STREAM};
++    char const * const socket_options_names[] = { "SO_ACCEPTCONN", "SO_TYPE" };
++#else
+     int const socket_options[] = { SO_DOMAIN, SO_ACCEPTCONN, SO_TYPE };
+     int const socket_options_values[] = { AF_UNIX, NON_ZERO_OPT, SOCK_STREAM};
+     char const * const socket_options_names[] = { "SO_DOMAIN", "SO_ACCEPTCONN", "SO_TYPE" };
++#endif
+ 
+     xassert(ALEN(socket_options) == ALEN(socket_options_values));
+     xassert(ALEN(socket_options) == ALEN(socket_options_names));
+diff --git a/unicode-mode.c b/unicode-mode.c
+index 81f9245..d83d84e 100644
+--- a/unicode-mode.c
++++ b/unicode-mode.c
+@@ -1,4 +1,5 @@
+ #include "unicode-mode.h"
++#include <limits.h>
+ 
+ #define LOG_MODULE "unicode-input"
+ #define LOG_ENABLE_DBG 0
+@@ -49,7 +50,9 @@ unicode_mode_input(struct seat *seat, struct terminal *term,
+         sym == XKB_KEY_KP_Enter ||
+         sym == XKB_KEY_KP_Space)
+     {
+-        char utf8[MB_CUR_MAX];
++        /* MEECHO: MB_CUR_MAX is the locale's, 1 in "C", and c32rtomb()
++         * there writes UTF-8 whatever the locale: room for any. */
++        char utf8[MB_LEN_MAX];
+         size_t chars = c32rtomb(
+             utf8, term->unicode_mode.character, &(mbstate_t){0});
+ 

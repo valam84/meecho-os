@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# On the board, over ssh: the compositor on the monitor (stage 11.4).
+#
+# Starts meechowm on the frame buffer (FBIOC_MAP: the scanout buffers of
+# the display driver) with foot in it, waits, and prints the screen's top
+# left corner as text, read back through /dev/fb0 (fbart) - the same check
+# as port/gfx/test/qemu-meechowm.py, on the real display controller this
+# time.  Then it leaves the compositor running, for whoever is at the
+# monitor to look and to use the mouse and the keyboard;
+# "board-meechowm.sh stop" ends it, and the console has the screen back.
+#
+#   sh board-meechowm.sh [stop]
+#
+# Expects /usr/tests/gfx (meechowm, foot, fbart, xkb/, fonts/, fonts.conf,
+# staged as qemu-meechowm.py stages them), the input server, xhci,
+# usb_kbd and usb_mouse running (the eMMC root's rc starts them), and fb.
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export PATH
+G=/usr/tests/gfx
+
+if [ "$1" = stop ]; then
+	kill `cat /tmp/mwm.pid 2>/dev/null` 2>/dev/null
+	sleep 3
+	echo "stopped; the console should be back on the monitor"
+	exit 0
+fi
+
+mkdir -p -m 700 /tmp/xdg
+XDG_RUNTIME_DIR=/tmp/xdg
+XKB_CONFIG_ROOT=$G/xkb
+FONTCONFIG_FILE=$G/fonts.conf
+export XDG_RUNTIME_DIR XKB_CONFIG_ROOT FONTCONFIG_FILE
+
+$G/meechowm -s "$G/foot -o main.workers=0 -f 'DejaVu Sans Mono:size=14' \
+    -e /bin/sh -c 'echo FOOT-OK on MEECHO; exec /bin/sh -i'" \
+    > /tmp/mwm.log 2>&1 &
+echo $! > /tmp/mwm.pid
+sleep 15
+
+echo "== meechowm"
+grep -E "INFO|ERROR" /tmp/mwm.log | tail -12
+echo "== the screen's top left"
+$G/fbart -w 320 -h 64 -s 2
+echo "left running (pid `cat /tmp/mwm.pid`): look at the monitor;"
+echo "sh board-meechowm.sh stop ends it"

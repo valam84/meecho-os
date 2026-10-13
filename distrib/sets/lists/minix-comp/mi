@@ -329,6 +329,7 @@
 ./usr/include/evutil.h                                  minix-comp
 ./usr/include/execinfo.h                                minix-comp
 ./usr/include/expat.h                                   minix-comp
+./usr/include/expat_config.h                            minix-comp
 ./usr/include/expat_external.h                          minix-comp
 ./usr/include/fcntl.h                                   minix-comp
 ./usr/include/fenv.h                                    minix-comp

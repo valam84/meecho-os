@@ -6,6 +6,11 @@ LIB=		expat
 
 .PATH:	${EXPATSRCDIR}/lib
 SRCS=	random_arc4random.c random_arc4random_buf.c random_dev_urandom.c random_getentropy.c random_getrandom.c xmlparse.c xmlrole.c xmltok.c
+.if defined(__MINIX)
+# MEECHO: no getentropy(3) or getrandom(2) in MINIX's libc, and
+# expat_config.h says so; these two would call what is not there.
+SRCS:=	${SRCS:Nrandom_getentropy.c:Nrandom_getrandom.c}
+.endif
 
 INCS=		expat.h expat_config.h expat_external.h
 INCSDIR=	/usr/include

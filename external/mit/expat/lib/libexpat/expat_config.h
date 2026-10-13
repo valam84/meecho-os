@@ -25,11 +25,19 @@
 /* Define to 1 if you have the `getpagesize' function. */
 #define HAVE_GETPAGESIZE 1
 
+/*
+ * MEECHO: MINIX's libc has neither getrandom(2) nor getentropy(3), nor
+ * SYS_getrandom below; expat takes its hash salt from arc4random_buf(3)
+ * first anyway.  The host's nbwayland-scanner compiles this same file
+ * and keeps them.
+ */
+#if !defined(__minix)
 /* Define to 1 if you have the `getrandom' function. */
 #define HAVE_GETRANDOM 1
 
 /* Define to 1 if you have the `getentropy' function. */
 #define HAVE_GETENTROPY 1
+#endif
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #define HAVE_INTTYPES_H 1
@@ -55,8 +63,10 @@
 /* Define to 1 if you have the <string.h> header file. */
 #define HAVE_STRING_H 1
 
+#if !defined(__minix)
 /* Define to 1 if you have `syscall' and `SYS_getrandom'. */
 #define HAVE_SYSCALL_GETRANDOM 1
+#endif
 
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #define HAVE_SYS_STAT_H 1
@@ -76,8 +86,13 @@
 /* Define to the full name of this package. */
 #define PACKAGE_NAME "expat"
 
+/*
+ * MEECHO: dist/ is 2.8.5, NetBSD-current's copy of this file still says
+ * 2.8.1; expat.pc takes its Version from PACKAGE_VERSION.
+ */
+
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "expat 2.8.1"
+#define PACKAGE_STRING "expat 2.8.5"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "expat"
@@ -86,13 +101,13 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.8.1"
+#define PACKAGE_VERSION "2.8.5"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
 
 /* Version number of package */
-#define VERSION "2.8.1"
+#define VERSION "2.8.5"
 
 /* whether byteorder is bigendian */
 #if defined AC_APPLE_UNIVERSAL_BUILD

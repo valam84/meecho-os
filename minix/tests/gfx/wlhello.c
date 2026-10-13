@@ -15,7 +15,12 @@
  *
  * and exits after SECONDS (default 3), or at once with -1.
  *
- *   wlhello [-c 0xAARRGGBB] [-t seconds]
+ * With -f the window fills the size the compositor gives it, and draws
+ * itself again at each new one, printing "WLHELLO resized WxH": a
+ * compositor that lays windows out (meechowm's strip, 11.7) can then be
+ * seen doing it, a colour per window, on the screen.  -T names the window.
+ *
+ *   wlhello [-f] [-c 0xAARRGGBB] [-t seconds] [-T title]
  */
 #include <sys/mman.h>
 
@@ -40,6 +45,9 @@ static struct wl_shm *shm;
 static struct xdg_wm_base *wm_base;
 static int configured, frames;
 static uint32_t colour = 0xff3060c0;
+
+/* -f: the size asked for, the size drawn, and whether they differ. */
+static int fill, want_w, want_h, cur_w = W, cur_h = H, resize;
 
 static void
 global(void *data, struct wl_registry *reg, uint32_t name,
@@ -77,6 +85,9 @@ surface_configure(void *data, struct xdg_surface *s, uint32_t serial)
 {
 	xdg_surface_ack_configure(s, serial);
 	configured = 1;
+	if (fill && want_w > 0 && want_h > 0 &&
+	    (want_w != cur_w || want_h != cur_h))
+		resize = 1;
 }
 
 static const struct xdg_surface_listener surface_listener = {
@@ -87,6 +98,11 @@ static void
 toplevel_configure(void *data, struct xdg_toplevel *t, int32_t w, int32_t h,
 	struct wl_array *states)
 {
+	/* Zero: the client's choice - it keeps the size it has. */
+	if (w > 0 && h > 0) {
+		want_w = w;
+		want_h = h;
+	}
 }
 
 static void
@@ -111,13 +127,34 @@ static const struct wl_callback_listener frame_listener = {
 	.done = frame_done,
 };
 
+/* A buffer's memory goes when the compositor lets go of the buffer. */
+struct mapping {
+	void *px;
+	size_t size;
+};
+
+static void
+buffer_release(void *data, struct wl_buffer *buf)
+{
+	struct mapping *m = data;
+
+	munmap(m->px, m->size);
+	free(m);
+	wl_buffer_destroy(buf);
+}
+
+static const struct wl_buffer_listener buffer_listener = {
+	.release = buffer_release,
+};
+
 static struct wl_buffer *
-make_buffer(void)
+make_buffer(int w, int h)
 {
 	struct wl_shm_pool *pool;
 	struct wl_buffer *buf;
+	struct mapping *m;
 	uint32_t *px;
-	size_t size = W * H * 4, i;
+	size_t size = (size_t)w * h * 4, i;
 	int fd;
 
 	if ((fd = memfd_create("wlhello", MFD_CLOEXEC)) < 0 ||
@@ -126,18 +163,33 @@ make_buffer(void)
 		exit(1);
 	}
 	px = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	if (px == MAP_FAILED) {
+	if (px == MAP_FAILED || (m = malloc(sizeof(*m))) == NULL) {
 		perror("wlhello: mmap");
 		exit(1);
 	}
-	for (i = 0; i < W * H; i++)
+	for (i = 0; i < (size_t)w * h; i++)
 		px[i] = colour;
 	pool = wl_shm_create_pool(shm, fd, size);
-	buf = wl_shm_pool_create_buffer(pool, 0, W, H, W * 4,
+	buf = wl_shm_pool_create_buffer(pool, 0, w, h, w * 4,
 	    WL_SHM_FORMAT_ARGB8888);
 	wl_shm_pool_destroy(pool);
 	close(fd);
+	m->px = px;
+	m->size = size;
+	wl_buffer_add_listener(buf, &buffer_listener, m);
 	return buf;
+}
+
+static void
+draw(struct wl_surface *surface)
+{
+	struct wl_callback *cb;
+
+	wl_surface_attach(surface, make_buffer(cur_w, cur_h), 0, 0);
+	wl_surface_damage(surface, 0, 0, cur_w, cur_h);
+	cb = wl_surface_frame(surface);
+	wl_callback_add_listener(cb, &frame_listener, NULL);
+	wl_surface_commit(surface);
 }
 
 int
@@ -148,15 +200,19 @@ main(int argc, char **argv)
 	struct wl_surface *surface;
 	struct xdg_surface *xs;
 	struct xdg_toplevel *top;
-	struct wl_callback *cb;
+	const char *title = "wlhello";
 	time_t end;
 	int c, secs = 3;
 
-	while ((c = getopt(argc, argv, "c:t:")) != -1) {
+	while ((c = getopt(argc, argv, "c:ft:T:")) != -1) {
 		if (c == 'c')
 			colour = (uint32_t)strtoul(optarg, NULL, 0);
+		else if (c == 'f')
+			fill = 1;
 		else if (c == 't')
 			secs = atoi(optarg);
+		else if (c == 'T')
+			title = optarg;
 	}
 
 	if ((dpy = wl_display_connect(NULL)) == NULL) {
@@ -179,21 +235,23 @@ main(int argc, char **argv)
 	xdg_surface_add_listener(xs, &surface_listener, NULL);
 	top = xdg_surface_get_toplevel(xs);
 	xdg_toplevel_add_listener(top, &toplevel_listener, NULL);
-	xdg_toplevel_set_title(top, "wlhello");
+	xdg_toplevel_set_title(top, title);
+	xdg_toplevel_set_app_id(top, "wlhello");
 	wl_surface_commit(surface);
 
 	while (!configured && wl_display_dispatch(dpy) != -1)
 		;
 
-	wl_surface_attach(surface, make_buffer(), 0, 0);
-	wl_surface_damage(surface, 0, 0, W, H);
-	cb = wl_surface_frame(surface);
-	wl_callback_add_listener(cb, &frame_listener, NULL);
-	wl_surface_commit(surface);
+	if (resize) {
+		cur_w = want_w;
+		cur_h = want_h;
+		resize = 0;
+	}
+	draw(surface);
 
 	while (frames == 0 && wl_display_dispatch(dpy) != -1)
 		;
-	printf("WLHELLO drawn %dx%d colour 0x%08x frames %d\n", W, H,
+	printf("WLHELLO drawn %dx%d colour 0x%08x frames %d\n", cur_w, cur_h,
 	    (unsigned)colour, frames);
 	fflush(stdout);
 
@@ -201,6 +259,14 @@ main(int argc, char **argv)
 	while (time(NULL) < end) {
 		struct pollfd p = { wl_display_get_fd(dpy), POLLIN, 0 };
 
+		if (resize) {
+			cur_w = want_w;
+			cur_h = want_h;
+			resize = 0;
+			draw(surface);
+			printf("WLHELLO resized %dx%d\n", cur_w, cur_h);
+			fflush(stdout);
+		}
 		wl_display_flush(dpy);
 		if (poll(&p, 1, 200) > 0 && wl_display_dispatch(dpy) == -1)
 			break;

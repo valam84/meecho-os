@@ -1,0 +1,61 @@
+render node /dev/dri/renderD130
+GPU_PROD_ID 0x7402, SHADER_PRESENT 0x1
+# before any job
+  0x0020 GPU_IRQ_RAWSTAT        0x00000600
+  0x0034 GPU_STATUS             0x00000000
+  0x1000 JOB_IRQ_RAWSTAT        0x00000000
+  0x1010 JOB_IRQ_JS_STATE       0x00000000
+  0x2000 MMU_IRQ_RAWSTAT        0x00000000
+  0x0f00 JM_CONFIG              0x000f0000
+  0x0f04 SHADER_CONFIG          0x00000000
+  0x0f08 TILER_CONFIG           0x00000000
+  0x0f0c L2_MMU_CONFIG          0x00000000
+  JS0 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS1 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS2 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+BO handle 1, GPU VA 0x2000000
+
+one WRITE_VALUE: done=True in 0.351 ms, target 0xc0ffee42 0xdeadbeef (want 0xc0ffee42 0xdeadbeef), header status 0x1
+# after one job, the file still open
+  0x0020 GPU_IRQ_RAWSTAT        0x00000600
+  0x0034 GPU_STATUS             0x00000000
+  0x1000 JOB_IRQ_RAWSTAT        0x00000000
+  0x1010 JOB_IRQ_JS_STATE       0x00000000
+  0x2000 MMU_IRQ_RAWSTAT        0x00000000
+  0x0f00 JM_CONFIG              0x000f0000
+  0x0f04 SHADER_CONFIG          0x00000000
+  0x0f08 TILER_CONFIG           0x00000000
+  0x0f0c L2_MMU_CONFIG          0x00000000
+  JS0 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS1 head 0000000002000000 tail 0000000002000000 affinity 0000000000000001 config 00007b00 status 00000000
+  JS2 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  AS0 transtab 0x000000007bdc6007 memattr 0x0000000000888d88 transcfg 0x0000000000000000 status 0x0 faultstatus 0x0 faultaddr 0x0000000000000000
+
+chain of 64: done=True in 0.242 ms, 0 wrong word(s); header status first 0x1 last 0x1
+# after the chain
+  0x0020 GPU_IRQ_RAWSTAT        0x00000600
+  0x0034 GPU_STATUS             0x00000000
+  0x1000 JOB_IRQ_RAWSTAT        0x00000000
+  0x1010 JOB_IRQ_JS_STATE       0x00000000
+  0x2000 MMU_IRQ_RAWSTAT        0x00000000
+  0x0f00 JM_CONFIG              0x000f0000
+  0x0f04 SHADER_CONFIG          0x00000000
+  0x0f08 TILER_CONFIG           0x00000000
+  0x0f0c L2_MMU_CONFIG          0x00000000
+  JS0 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS1 head 0000000002000fc0 tail 0000000002000fc0 affinity 0000000000000001 config 00007300 status 00000000
+  JS2 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  AS0 transtab 0x000000007bdc6007 memattr 0x0000000000888d88 transcfg 0x0000000000000000 status 0x0 faultstatus 0x0 faultaddr 0x0000000000000000
+
+AS0 table root 0x7bdc6000: not readable ([Errno 1] Operation not permitted)
+
+dmesg (panfrost, last lines):
+[   18.712672] panfrost fde60000.gpu: mali-g52 id 0x7402 major 0x1 minor 0x0 status 0x0
+[   18.712706] panfrost fde60000.gpu: features: 00000000,00000cf7, issues: 00000000,00000400
+[   18.712714] panfrost fde60000.gpu: Features: L2:0x07110206 Shader:0x00000002 Tiler:0x00000209 Mem:0x1 MMU:0x00002823 AS:0xff JS:0x7
+[   18.712723] panfrost fde60000.gpu: shader_present=0x1 l2_present=0x1
+[   18.745317] [drm] Initialized panfrost 1.2.0 20180908 for fde60000.gpu on minor 2
+
+ALL JOBS OK
+
+power/control restored: auto

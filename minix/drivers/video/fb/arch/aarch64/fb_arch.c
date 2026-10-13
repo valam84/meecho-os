@@ -24,7 +24,10 @@
  * Without a monitor the mode is 1280x720 at 60 Hz, the one the reference
  * was taken at; a sink must accept it (CEA-861 VIC 4).  With one, its
  * preferred mode, if the pixel clock can be made and the controller's
- * window can reach the frame buffer.
+ * window can reach the frame buffer; else the largest of its list that can
+ * be, the CEA-861 extension's modes included.  fbmode=WIDTHxHEIGHT[@HZ]
+ * (service argument or boot parameter) picks one of that list instead, and
+ * fblog's report shows the list.
  */
 
 #include <minix/chardriver.h>
@@ -341,19 +344,241 @@ mode_usable(const struct videomode *m)
 	    m->hdisplay <= 1920 && m->vdisplay <= 1080;
 }
 
+/*
+ * The modes a CEA-861 extension block names by number (VIC, CTA-861-G
+ * table 1) that this driver can make, timings from the same table.  A
+ * television lists its 720p and 1080p there and only there: the base block
+ * has room for four detailed timings, and a 4K set spends them on 4K - the
+ * one on this board's bench ("TV-Station") offers 640x480, 800x600,
+ * 1024x768, 2160p60 and 1440p120 in the base block, nothing in between.
+ */
+#define NELEM(a)	(sizeof(a) / sizeof((a)[0]))
+
+static const struct {
+	uint8_t vic;
+	struct videomode m;
+} cea_modes[] = {
+#define PHV	(VID_PHSYNC | VID_PVSYNC)
+#define CEA(v, clk, h, hs, he, ht, vd, vs, ve, vt, fl, nm) \
+	{ v, { .dot_clock = clk, .hdisplay = h, .hsync_start = hs, \
+	    .hsync_end = he, .htotal = ht, .vdisplay = vd, .vsync_start = vs, \
+	    .vsync_end = ve, .vtotal = vt, .flags = fl, .name = nm } }
+	CEA(1, 25175, 640, 656, 752, 800, 480, 490, 492, 525,
+	    VID_NHSYNC | VID_NVSYNC, "640x480x60"),
+	CEA(2, 27000, 720, 736, 798, 858, 480, 489, 495, 525,
+	    VID_NHSYNC | VID_NVSYNC, "720x480x60"),
+	CEA(3, 27000, 720, 736, 798, 858, 480, 489, 495, 525,
+	    VID_NHSYNC | VID_NVSYNC, "720x480x60"),
+	CEA(4, 74250, 1280, 1390, 1430, 1650, 720, 725, 730, 750, PHV,
+	    "1280x720x60"),
+	CEA(16, 148500, 1920, 2008, 2052, 2200, 1080, 1084, 1089, 1125, PHV,
+	    "1920x1080x60"),
+	CEA(17, 27000, 720, 732, 796, 864, 576, 581, 586, 625,
+	    VID_NHSYNC | VID_NVSYNC, "720x576x50"),
+	CEA(18, 27000, 720, 732, 796, 864, 576, 581, 586, 625,
+	    VID_NHSYNC | VID_NVSYNC, "720x576x50"),
+	CEA(19, 74250, 1280, 1720, 1760, 1980, 720, 725, 730, 750, PHV,
+	    "1280x720x50"),
+	CEA(31, 148500, 1920, 2448, 2492, 2640, 1080, 1084, 1089, 1125, PHV,
+	    "1920x1080x50"),
+	CEA(32, 74250, 1920, 2558, 2602, 2750, 1080, 1084, 1089, 1125, PHV,
+	    "1920x1080x24"),
+	CEA(33, 74250, 1920, 2448, 2492, 2640, 1080, 1084, 1089, 1125, PHV,
+	    "1920x1080x25"),
+	CEA(34, 74250, 1920, 2008, 2052, 2200, 1080, 1084, 1089, 1125, PHV,
+	    "1920x1080x30"),
+#undef CEA
+#undef PHV
+};
+
+/* Append a mode to the monitor's list, unless it is there already. */
+static void
+add_mode(const struct videomode *m)
+{
+	int j;
+
+	for (j = 0; j < edid.edid_nmodes; j++)
+		if (edid.edid_modes[j].hdisplay == m->hdisplay &&
+		    edid.edid_modes[j].vdisplay == m->vdisplay &&
+		    edid.edid_modes[j].htotal == m->htotal &&
+		    edid.edid_modes[j].vtotal == m->vtotal &&
+		    edid.edid_modes[j].dot_clock == m->dot_clock)
+			return;
+	if (edid.edid_nmodes < (int)NELEM(edid.edid_modes))
+		edid.edid_modes[edid.edid_nmodes++] = *m;
+}
+
+/*
+ * An 18-byte detailed timing descriptor (EDID 1.3, 3.10.2), as the base
+ * block's are read by edid_parse(): 0 if it is a timing, -1 if it is a
+ * display descriptor (pixel clock 0) or interlaced.
+ */
+static int
+dtd_mode(const uint8_t *p, struct videomode *m)
+{
+	unsigned ha, hb, va, vb, hso, hsw, vso, vsw;
+
+	if ((p[0] | p[1] << 8) == 0 || (p[17] & 0x80))
+		return -1;
+	ha = p[2] | (p[4] & 0xf0) << 4;
+	hb = p[3] | (p[4] & 0x0f) << 8;
+	va = p[5] | (p[7] & 0xf0) << 4;
+	vb = p[6] | (p[7] & 0x0f) << 8;
+	hso = p[8] | (p[11] & 0xc0) << 2;
+	hsw = p[9] | (p[11] & 0x30) << 4;
+	vso = (p[10] >> 4) | (p[11] & 0x0c) << 2;
+	vsw = (p[10] & 0x0f) | (p[11] & 0x03) << 4;
+	memset(m, 0, sizeof(*m));
+	m->dot_clock = (p[0] | p[1] << 8) * 10;
+	m->hdisplay = (int)ha;
+	m->hsync_start = (int)(ha + hso);
+	m->hsync_end = (int)(ha + hso + hsw);
+	m->htotal = (int)(ha + hb);
+	m->vdisplay = (int)va;
+	m->vsync_start = (int)(va + vso);
+	m->vsync_end = (int)(va + vso + vsw);
+	m->vtotal = (int)(va + vb);
+	if ((p[17] & 0x18) == 0x18) {		/* digital separate sync */
+		m->flags |= (p[17] & 0x04) ? VID_PVSYNC : VID_NVSYNC;
+		m->flags |= (p[17] & 0x02) ? VID_PHSYNC : VID_NHSYNC;
+	}
+	return 0;
+}
+
+/*
+ * The first extension block, if it is CEA-861: the modes its Video Data
+ * Blocks name and cea_modes[] knows, and its own detailed timings - a set
+ * keeps its 1080p60 there as often as among the numbers - added to the
+ * base block's list.  A monitor without one, or one this cannot read,
+ * keeps the base list.
+ */
+static void
+add_cea_modes(void)
+{
+	uint8_t b[128];
+	unsigned d, i, k, len, sum, v, n0 = (unsigned)edid.edid_nmodes;
+	struct videomode m;
+	int t;
+
+	if (edid.edid_ext_block_count < 1 || dwhdmi_read_edid(1, b) != OK)
+		return;
+	for (sum = 0, i = 0; i < sizeof(b); i++)
+		sum += b[i];
+	if (b[0] != 0x02 || (sum & 0xff) != 0) {
+		log_info(&fb_log, "extension block: tag 0x%02x, sum 0x%02x; "
+		    "not CEA-861, not used\n", b[0], sum & 0xff);
+		return;
+	}
+	d = b[2] >= 4 && b[2] <= 127 ? b[2] : 4;
+	for (i = 4; i < d; i += 1 + len) {
+		len = b[i] & 0x1f;
+		if (i + 1 + len > d)
+			break;
+		if ((b[i] >> 5) != 2)		/* not a Video Data Block */
+			continue;
+		for (k = 1; k <= len; k++) {
+			v = b[i + k];
+			if (v >= 129 && v <= 192)	/* "native" flag */
+				v &= 0x7f;
+			for (t = 0; t < (int)NELEM(cea_modes); t++)
+				if (cea_modes[t].vic == v)
+					break;
+			if (t < (int)NELEM(cea_modes))
+				add_mode(&cea_modes[t].m);
+		}
+	}
+	/* The detailed timings from offset d to the checksum (b[2] 0: none). */
+	for (i = b[2] >= 4 && b[2] <= 127 ? d : 128; i + 18 <= 127; i += 18)
+		if (dtd_mode(&b[i], &m) == 0)
+			add_mode(&m);
+	log_info(&fb_log, "CEA-861 extension: %u mode(s) more\n",
+	    (unsigned)edid.edid_nmodes - n0);
+}
+
+/* A mode's refresh rate in Hz, rounded. */
+static unsigned
+mode_hz(const struct videomode *m)
+{
+	unsigned long t = (unsigned long)m->htotal * m->vtotal;
+
+	if (t == 0)
+		return 0;
+	return (unsigned)(((unsigned long)m->dot_clock * 1000 + t / 2) / t);
+}
+
+/*
+ * fbmode=WIDTHxHEIGHT or WIDTHxHEIGHT@HZ - an argument of the service, or a
+ * boot parameter of that name (env_get_param() looks at both): the mode to
+ * show instead of the monitor's preferred one.  It is looked for in the
+ * monitor's own list only - a monitor shows what it says it can, and
+ * anything else is a gamble on its scaler - with the rate nearest to HZ
+ * (60 when not given).  1 and the numbers if asked for, 0 if not or not
+ * understood.
+ */
+static int
+asked_mode(unsigned *w, unsigned *h, unsigned *hz)
+{
+	char buf[32], *e;
+
+	if (env_get_param("fbmode", buf, sizeof(buf)) != OK)
+		return 0;
+	*w = (unsigned)strtoul(buf, &e, 10);
+	if (*e == 'x') {
+		*h = (unsigned)strtoul(e + 1, &e, 10);
+		*hz = 60;
+		if (*e == '@')
+			*hz = (unsigned)strtoul(e + 1, &e, 10);
+		if (*e == '\0' && *w > 0 && *h > 0 && *hz > 0)
+			return 1;
+	}
+	log_warn(&fb_log, "fbmode=%s: not WIDTHxHEIGHT[@HZ], ignored\n", buf);
+	return 0;
+}
+
+/*
+ * The monitor's modes this driver can show, "1024x768@60*" for the one on
+ * the screen: the choice fbmode= has, in the report fblog prints (the
+ * journal of bring-up scrolls away within minutes).
+ */
+static void
+modes_line(char *buf, size_t len)
+{
+	size_t n;
+	int i;
+
+	n = (size_t)snprintf(buf, len, "modes:");
+	for (i = 0; i < edid.edid_nmodes && n < len; i++) {
+		const struct videomode *m = &edid.edid_modes[i];
+
+		if (!mode_usable(m))
+			continue;
+		n += (size_t)snprintf(buf + n, len - n, " %dx%d@%u%s",
+		    m->hdisplay, m->vdisplay, mode_hz(m),
+		    m->hdisplay == mode.hdisplay &&
+		    m->vdisplay == mode.vdisplay &&
+		    m->htotal == mode.htotal && m->vtotal == mode.vtotal &&
+		    mode_hz(m) == mode_hz(&mode) ? "*" : "");
+	}
+}
+
 static void
 choose_mode(void)
 {
 	uint8_t block[128];
-	int i, best;
+	unsigned w, h, hz, d, dbest = 0;
+	int i, best, asked;
 	const char *why;
 
 	mode = mode_720p;
 	hdmi_mode = 0;
+	asked = asked_mode(&w, &h, &hz);
 
 	if (!dwhdmi_hpd()) {
 		log_info(&fb_log, "no monitor on the connector (hot plug low); "
 		    "%s, as in the reference\n", mode.name);
+		if (asked && (w != 1280 || h != 720))
+			log_warn(&fb_log, "fbmode=%ux%u: without a monitor "
+			    "there is no list to choose from\n", w, h);
 		return;
 	}
 	if (dwhdmi_read_edid(0, block) != OK || edid_is_valid(block) != 0 ||
@@ -366,20 +591,61 @@ choose_mode(void)
 	log_info(&fb_log, "monitor: %s %s (%s), EDID %d.%d, %d mode(s)\n",
 	    edid.edid_vendorname, edid.edid_productname, edid.edid_serial,
 	    edid.edid_version, edid.edid_revision, edid.edid_nmodes);
+	add_cea_modes();
+	for (i = 0; i < edid.edid_nmodes; i++)
+		log_info(&fb_log, "  %dx%d@%u, %d kHz%s%s\n",
+		    edid.edid_modes[i].hdisplay, edid.edid_modes[i].vdisplay,
+		    mode_hz(&edid.edid_modes[i]), edid.edid_modes[i].dot_clock,
+		    &edid.edid_modes[i] == edid.edid_preferred_mode ?
+		    ", preferred" : "",
+		    mode_usable(&edid.edid_modes[i]) ? "" : ", not made here");
+
+	if (asked) {
+		best = -1;
+		for (i = 0; i < edid.edid_nmodes; i++) {
+			if (!mode_usable(&edid.edid_modes[i]) ||
+			    edid.edid_modes[i].hdisplay != (int)w ||
+			    edid.edid_modes[i].vdisplay != (int)h)
+				continue;
+			d = mode_hz(&edid.edid_modes[i]);
+			d = d > hz ? d - hz : hz - d;
+			if (best < 0 || d < dbest) {
+				best = i;
+				dbest = d;
+			}
+		}
+		if (best >= 0) {
+			mode = edid.edid_modes[best];
+			why = "asked for (fbmode)";
+			goto chosen;
+		}
+		log_warn(&fb_log, "fbmode=%ux%u: not among the monitor's "
+		    "modes that this driver makes; choosing as usual\n", w, h);
+	}
 
 	if (edid.edid_preferred_mode != NULL &&
 	    mode_usable(edid.edid_preferred_mode)) {
 		mode = *edid.edid_preferred_mode;
 		why = "its preferred mode";
 	} else {
+		/* The largest; of one size, the rate nearest to 60 Hz. */
 		best = -1;
-		for (i = 0; i < edid.edid_nmodes; i++)
-			if (mode_usable(&edid.edid_modes[i]) && (best < 0 ||
-			    edid.edid_modes[i].hdisplay *
-			    edid.edid_modes[i].vdisplay >
-			    edid.edid_modes[best].hdisplay *
-			    edid.edid_modes[best].vdisplay))
+		for (i = 0; i < edid.edid_nmodes; i++) {
+			const struct videomode *m = &edid.edid_modes[i];
+			int a, abest;
+
+			if (!mode_usable(m))
+				continue;
+			d = mode_hz(m);
+			d = d > 60 ? d - 60 : 60 - d;
+			a = m->hdisplay * m->vdisplay;
+			abest = best < 0 ? 0 : edid.edid_modes[best].hdisplay *
+			    edid.edid_modes[best].vdisplay;
+			if (best < 0 || a > abest || (a == abest && d < dbest)) {
 				best = i;
+				dbest = d;
+			}
+		}
 		if (best < 0) {
 			log_info(&fb_log, "no mode of the monitor's is one "
 			    "this driver chooses; %s\n", mode.name);
@@ -388,6 +654,7 @@ choose_mode(void)
 		mode = edid.edid_modes[best];
 		why = "the largest it lists that this driver makes";
 	}
+chosen:
 	if (mode.name == NULL)
 		mode.name = "(edid)";
 	log_info(&fb_log, "mode %dx%d, %d kHz: %s\n", mode.hdisplay,
@@ -591,11 +858,15 @@ report_state(void)
 		log_info(&fb_log, "%s\n", stats);
 		return;
 	}
-	log_info(&fb_log, "state: monitor %s, PHY %s, mode %dx%d, buffer %d of "
-	    "%d shown, owner %d\n",
+	log_info(&fb_log, "state: monitor %s, PHY %s, mode %dx%d@%u, buffer %d "
+	    "of %d shown, owner %d\n",
 	    dwhdmi_hpd() ? "plugged in" : "absent",
 	    dwhdmi_phy_locked() ? "locked" : "NOT locked",
-	    mode.hdisplay, mode.vdisplay, shown, nbuf, owner);
+	    mode.hdisplay, mode.vdisplay, mode_hz(&mode), shown, nbuf, owner);
+	if (have_edid) {
+		modes_line(stats, sizeof(stats));
+		log_info(&fb_log, "%s\n", stats);
+	}
 	(void)vop2_scanning(&line);
 	report_window();
 	fbcon_stats(stats, sizeof(stats));

@@ -144,6 +144,9 @@
 #define MMU_INT_CLEAR		0x2004
 #define MMU_INT_MASK		0x2008
 #define MMU_INT_STAT		0x200c
+#define  MMU_INT_PAGE_FAULT(as)	(1u << (as))
+#define  MMU_INT_BUS_ERROR(as)	(1u << ((as) + 16))
+#define  MMU_INT_AS(as)		(MMU_INT_PAGE_FAULT(as) | MMU_INT_BUS_ERROR(as))
 
 #define AS_BASE(as)		(0x2400 + 0x40 * (as))
 #define AS_TRANSTAB_LO(as)	(AS_BASE(as) + 0x00)
@@ -166,6 +169,22 @@
 #define  AS_TRANSTAB_ADRMODE_TABLE	0x3
 #define  AS_TRANSTAB_READ_INNER		(1u << 2)
 #define  AS_LOCKADDR_ALL		63	/* log2 of the region minus one */
+
+/*
+ * FAULTSTATUS: the exception in 7:0 - a translation fault is 0xc0 plus
+ * the level of the walk that found nothing, a permission fault 0xc8 plus
+ * the level - the access in 9:8, and the unit that made it in 31:16.
+ */
+#define  AS_FAULT_EXCEPTION(x)		((x) & 0xff)
+#define  AS_FAULT_ACCESS(x)		(((x) >> 8) & 3)
+#define  AS_FAULT_SOURCE(x)		((x) >> 16)
+#define  AS_FAULT_DECODER		(1u << 10)
+#define  AS_ACCESS_ATOMIC		0
+#define  AS_ACCESS_EXECUTE		1
+#define  AS_ACCESS_READ			2
+#define  AS_ACCESS_WRITE		3
+#define  MALI_EXC_TRANSLATION(e)	(((e) & 0xf8) == 0xc0)
+#define  MALI_EXC_PERMISSION(e)		(((e) & 0xf8) == 0xc8)
 
 /*
  * MEMATTR: eight one-byte attributes, indexed by a page entry's AttrIndx.

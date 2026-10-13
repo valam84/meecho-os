@@ -35,6 +35,17 @@ next-ptr@mali_job.c@JOB_VA + (i + 1) \* JOB_DESC_SIZE : 0@JOB_VA + i * JOB_DESC_
 no-clean@mali_job.c@cache(CACHE_CLEAN_INVALIDATE, DESC, NBUF \* PAGE, "the job buffer");@;
 no-inval@mali_job.c@cache(CACHE_INVALIDATE, DESC, NBUF \* PAGE, "the job buffer");@;
 flush-red@mali_job.c@JS_CONFIG_ENABLE_FLUSH_REDUCTION |@
+no-disable@mali_job.c@^	as_disable();$@	;
+no-reenable@mali_job.c@if (as_enable() != OK) {@if (0) {
+no-unmask@mali_job.c@mali_rd(gpu(), MMU_INT_MASK) |@mali_rd(gpu(), MMU_INT_MASK) \&
+no-mask@mali_job.c@~MMU_INT_AS(AS_JOBS));@MMU_INT_AS(AS_JOBS));
+recover-early@mali_job.c@	if (mj.failed)@	if (1)
+recover-alone@mali_job.c@		if (mj.faulted)@		if (1)
+fault-va@mali_job.c@(JOB_VA + 0x10040u)@(JOB_VA + 0x1040u)
+fault-clean@mali_job.c@cache(CACHE_CLEAN_INVALIDATE, DESC, JOB_DESC_SIZE, "the fault job");@;
+exc-mask@malireg.h@AS_FAULT_EXCEPTION(x)		((x) \& 0xff)@AS_FAULT_EXCEPTION(x)		((x) \& 0x7f)
+access-shift@malireg.h@(((x) >> 8) \& 3)@(((x) >> 9) \& 3)
+asked@mali_job.c@asked = mj.busy \&\& mj.run == RUN_FAULT;@asked = 1;
 '
 
 echo "$MUTATIONS" | while IFS='@' read -r name file from to; do

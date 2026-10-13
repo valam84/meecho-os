@@ -23,7 +23,8 @@
  *      proved end to end, before anything waits on it.
  *
  * The job and MMU lines are taken too and report whatever arrives on them;
- * they are proved by the first job (the second half of 11.5).
+ * the job line is proved by the first job (the second half of 11.5), the
+ * MMU line by a job that faults on purpose ("faulttest=1", mali_job.c).
  */
 
 #include <minix/drivers.h>
@@ -49,6 +50,7 @@ static const char *const irq_names[MALI_NR_IRQS] = { "gpu", "job", "mmu" };
 
 static int probe_only;
 static int selftest = 1;		/* "selftest=0": no job at start */
+static int faulttest;			/* "faulttest=1": and a fault after */
 
 /*
  * The notification bit of each line.  Not the line number: the kernel
@@ -422,7 +424,8 @@ mali_init(int type, sef_init_info_t *UNUSED(info))
 	 * A failure here is reported and does not stop the service: the GPU
 	 * is up, and what failed is the test.
 	 */
-	if (selftest && (mali_job_setup() != OK || mali_job_start() != OK))
+	if (selftest && (mali_job_setup() != OK ||
+	    mali_job_start(faulttest) != OK))
 		log_warn(&mali_log, "the job test did not start\n");
 	return OK;
 }
@@ -461,6 +464,8 @@ main(int argc, char *argv[])
 		probe_only = (int)v;
 	if (env_parse("selftest", "d", 0, &v, 0, 1) == EP_SET)
 		selftest = (int)v;
+	if (env_parse("faulttest", "d", 0, &v, 0, 1) == EP_SET)
+		faulttest = (int)v;
 
 	sef_setcb_init_fresh(mali_init);
 	sef_setcb_init_restart(mali_init);

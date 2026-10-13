@@ -119,7 +119,7 @@ unsigned mali_rk_compare(void);
 
 /* mali_job.c */
 int mali_job_setup(void);
-int mali_job_start(void);
+int mali_job_start(int faulttest);
 void mali_job_irq(uint32_t status);
 void mali_mmu_irq(uint32_t status);
 void mali_job_alarm(void);

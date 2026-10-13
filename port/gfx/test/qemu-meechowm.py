@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """meechowm on QEMU (stage 11.4): the compositor on the frame buffer.
 
-Stages ~/gfx-build/bin (meechowm, wlhello, foot, fbart), the XKB data, a
-font (DejaVu Sans Mono) and a fonts.conf into DESTDIR/usr/tests/gfx, boots
-the disk root in its own WORK_DIR (~/obj-evbarm64/work-mwm), and then, with
+Runs what the tree builds and installs into DESTDIR - /usr/bin/meechowm,
+/usr/bin/foot, /usr/tests/gfx/wlhello, the keymaps in /usr/share/X11/xkb,
+fontconfig's /etc/fonts - built and installed by port/build-dirs.sh over
+the stack's directories (port/gfx/README).  Only two things are the
+stand's own, staged into DESTDIR/usr/tests/gfx: fbart (port/test/fb/fbart.c,
+the screen read back as text) and a font (DejaVu Sans Mono from the host -
+the tree carries none), with a fonts.conf that includes the system's
+/etc/fonts/fonts.conf and adds the font's directory.
+
+Boots the disk root in its own WORK_DIR (~/obj-evbarm64/work-mwm) and, with
 no display controller - the frame buffer driver started with virtual=1,
 the scanout buffers only - looks at the screen through /dev/fb0 (fbart,
 which reads the buffer on display):
@@ -36,30 +43,49 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser("~")
 RAMIMAGE = os.path.join(HERE, "..", "..", "ramimage.sh")
+FBART = os.path.join(HERE, "..", "..", "test", "fb", "fbart.c")
 WORK = os.path.join(HOME, "obj-evbarm64/work-mwm")
 DEST = os.environ.get("DESTDIR", os.path.join(HOME, "dest-evbarm64"))
-BIN = os.path.join(HOME, "gfx-build/bin")
-XKB = os.path.join(HOME, "gfx-sysroot/usr/share/X11/xkb")
+XCC = os.path.join(HOME, "xtools-aarch64/bin/aarch64-elf64-minix-gcc")
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 GUESTDIR = "/usr/tests/gfx"
 COLOUR = 0x3060c0
 
+# What the tree must have installed: without them the run would test
+# whatever an earlier build left in DESTDIR.
+INSTALLED = ["usr/bin/meechowm", "usr/bin/foot", "usr/tests/gfx/wlhello",
+             "usr/share/X11/xkb/rules/evdev", "etc/fonts/fonts.conf"]
+# What the prototype (port/gfx before the stack moved into the tree) staged
+# here, and nothing installs any more.
+STALE = ["meechowm", "foot", "tinywl", "fc-list", "fc-match", "fc-query",
+         "fcftprobe", "xkb"]
+
 
 def stage():
+    for f in INSTALLED:
+        if not os.path.exists(os.path.join(DEST, f)):
+            sys.exit("not in DESTDIR: /%s (port/build-dirs.sh first)" % f)
     out = os.path.join(DEST, GUESTDIR.lstrip("/"))
     os.makedirs(out, exist_ok=True)
-    for prog in ("meechowm", "wlhello", "foot", "fbart"):
-        shutil.copy2(os.path.join(BIN, prog), out)
-    xkb = os.path.join(out, "xkb")
-    if os.path.exists(xkb):
-        shutil.rmtree(xkb)
-    shutil.copytree(XKB, xkb, symlinks=False)
+    for f in STALE:
+        p = os.path.join(out, f)
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+        elif os.path.exists(p):
+            os.remove(p)
+    if subprocess.call([XCC, "-O2", "-static", "-Wall", "-Wextra",
+                        "--sysroot=" + DEST, "-o",
+                        os.path.join(out, "fbart"), FBART]) != 0:
+        sys.exit("build failed: fbart")
     fonts = os.path.join(out, "fonts")
     os.makedirs(fonts, exist_ok=True)
     shutil.copy2(FONT, fonts)
     with open(os.path.join(out, "fonts.conf"), "w") as f:
-        f.write('<?xml version="1.0"?>\n<fontconfig>\n'
-                '  <dir>%s/fonts</dir>\n  <cachedir>/tmp/fc</cachedir>\n'
+        f.write('<?xml version="1.0"?>\n'
+                '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n'
+                '<fontconfig>\n'
+                '  <include>/etc/fonts/fonts.conf</include>\n'
+                '  <dir>%s/fonts</dir>\n'
                 '</fontconfig>\n' % GUESTDIR)
 
 
@@ -131,7 +157,13 @@ def main():
         expect(r"# ", 60)
         send("G=%s; mkdir -p -m 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg"
              % GUESTDIR)
-        send("export XKB_CONFIG_ROOT=$G/xkb FONTCONFIG_FILE=$G/fonts.conf")
+        send("export FONTCONFIG_FILE=$G/fonts.conf")
+        # The installed configuration and data, as the image has them.
+        send("ls /etc/fonts/conf.d | wc -l; ls /usr/share/X11/xkb; "
+             "fc-match 'DejaVu Sans Mono'; echo FC''DONE")
+        out = expect(r"FCDONE", 300)
+        print("      " + "\n      ".join(
+            l for l in out.splitlines()[-4:-1] if l.strip()))
         send("minix-service up /service/input -dev /dev/kbdmux; "
              "minix-service up /service/fb -dev /dev/fb0 -args virtual=1; "
              "echo UP''DONE")
@@ -139,7 +171,7 @@ def main():
 
         # By pid, not %1: ash's kill %N signals the job's process group,
         # and PM has no groups apart from sessions - "No such process".
-        send("MEECHOWM_DEBUG=1 $G/meechowm -s \"$G/wlhello -t 900\" "
+        send("MEECHOWM_DEBUG=1 meechowm -s \"$G/wlhello -t 900\" "
              "> /tmp/mwm.log 2>&1 & MWM=$!")
         # Until a frame has the window's rows in it.
         send("n=0; while [ $n -lt 150 ] && ! grep -q 'rows 0..256' "
@@ -173,7 +205,7 @@ def main():
                    was == " " and ink >= 10,
                    "before %r, now %d pixel(s) of it" % (was, ink))
 
-        send("$G/foot -o main.workers=0 -f 'DejaVu Sans Mono:size=14' "
+        send("foot -o main.workers=0 -f 'DejaVu Sans Mono:size=14' "
              "-e /bin/sh -c 'echo FOOT-OK; sleep 900' > /tmp/foot.log 2>&1 &")
         send("sleep 120; echo FO''OTED")
         expect(r"FOOTED", 400)

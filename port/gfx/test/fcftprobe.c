@@ -6,6 +6,11 @@
  *   fcftprobe ['font name']        default 'DejaVu Sans Mono:size=14'
  *
  * Prints FCFTPROBE ok <height> <glyph w>x<h> or FCFTPROBE fail <step>.
+ *
+ * Built against the stack in DESTDIR (D=~/dest-evbarm64):
+ *   aarch64-elf64-minix-gcc --sysroot=$D -static -o fcftprobe fcftprobe.c \
+ *     -I$D/usr/include/pixman-1 -lfcft -lfontconfig -lfreetype -lexpat \
+ *     -lz -lpixman-1 -lgfxcompat -lmthread -lm
  */
 #include <stdio.h>
 #include <stdlib.h>

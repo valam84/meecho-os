@@ -1,61 +1,66 @@
-The Wayland stack of stage 11, as a prototype (PLAN.md, "Этап 11").
+The Wayland stack of stage 11 lives in the tree (PLAN.md, "Этап 11";
+PORTING-LOG.md, "Стек Wayland в дереве").  This directory keeps what is
+not part of the system: the import script and the stands.
 
-Each package is built by its own build system (meson, autotools) with the
-port's cross toolchain, against a sysroot that is a copy of DESTDIR - to
-find what it needs from the system and what it needs patched before it
-goes into external/ with reachover Makefiles.
+Where things are:
 
-  cross-meecho.ini   meson cross file; sysroot ~/gfx-sysroot
-  cc.sh              the cross compiler, with -pthread mapped to libmthread
-                     (the port's GCC refuses -pthread on purpose), and
-                     -luchar on every link
-  build-stack.sh     sysroot | native | PKG... | all
-  patches/PKG.patch  what each package needs on MEECHO, under __minix
-                     (the tree's .gitignore has *.patch: git add -f)
-  compat/            for the sysroot only, what the libc does not have:
-                     <threads.h> and sem_* over libmthread (compat.c,
-                     threads.h), <uchar.h> with UTF-8 conversions whatever
-                     the locale (uchar.c, uchar.h)
-  meechowm/          the compositor of 11.4: tinywl with MEECHO's screen
-                     (fbout.c, the fb driver's scanout buffers) and input
-                     (input.c, the input server's devices)
+  external/mit/<pkg>/dist    the sources, as imported by import-stack.sh
+  external/mit/<pkg>/...     reachover Makefiles (bsd.lib.mk, bsd.prog.mk),
+                             config headers and generated files beside them
+  external/bsd/evdev/dist    FreeBSD's input-event-codes.h (BSD-2)
+  tools/wayland-scanner      nbwayland-scanner, the host's protocol compiler
+                             (TOOL_WAYLAND_SCANNER)
+  minix/lib/libgfxcompat     what the stack needs of the system that the
+                             system has not got: <pthread.h> and <threads.h>
+                             over libmthread, sem_*, <uchar.h> (UTF-8 always)
+                             - headers in /usr/include/gfxcompat
+  minix/usr.bin/meechowm     the compositor (tinywl with MEECHO's screen and
+                             input)
+  minix/tests/gfx            wlhello, the smallest client, /usr/tests/gfx
 
-  test/wlhello.c     the smallest client: a window of one colour in a
-                     memfd buffer, waits for the compositor's frame
-  test/qemu-gfx.py   tinywl (headless backend, pixman) and wlhello on QEMU
+Packages: libffi 3.8.0, wayland 1.26.0, wayland-protocols 1.49, pixman
+0.46.4 and libdrm 2.4.134 (NetBSD-current's xsrc dists), libxkbcommon
+1.13.2, xkeyboard-config 2.38 (NetBSD's), wlroots 0.20.2, FreeType 2.15.0,
+fontconfig 2.18.3, tllist 1.1.0, fcft 3.3.3, foot 1.28.0; expat is the
+tree's (external/mit/expat).  Licences MIT or BSD-like, FreeType under its
+FTL; nothing GPL is imported (import-stack.sh says what is left out).
+
+Building, in this order (the first line once per tools build):
+
+  nbmake-evbarm64-el -C tools/wayland-scanner obj dependall install
+  port/build-dirs.sh minix/lib/libgfxcompat minix/lib/libepoll-shim \
+      external/mit/expat external/mit/libffi external/mit/wayland \
+      external/mit/wayland-protocols external/mit/pixman external/mit/libdrm \
+      external/mit/libxkbcommon external/mit/xkeyboard-config \
+      external/mit/wlroots external/mit/freetype external/mit/fontconfig \
+      external/mit/tllist external/mit/fcft external/mit/foot \
+      minix/usr.bin/meechowm minix/tests/gfx
+
+New directories under /usr/include, /usr/share and /etc go into
+etc/mtree/NetBSD.dist.base, and DESTDIR gets them from
+"nbmake-evbarm64-el do-distrib-dirs".
+
+  import-stack.sh    every dist from its source (~/gfx-src: shallow clones
+                     of the upstream tags; ~/gfxport/nb-xsrc: NetBSD's xsrc)
+
+  test/qemu-gfx.py   meechowm with no screen (headless) and wlhello, QEMU
   test/qemu-meechowm.py
                      meechowm on QEMU's fb (virtual=1), the screen read back
                      through /dev/fb0: window, cursor, foot, console back
   test/board-meechowm.sh
                      the same on the board, over ssh, left running for
                      whoever is at the monitor
+  test/board-cursorload.sh
+                     what moving the cursor costs on the board
   test/fcftprobe.c   what foot asks of fcft, alone, with fcft's debug log
-  test/uchartest.sh  compat/uchar.c against glibc in C.UTF-8, on the host
+  test/uchartest.sh  libgfxcompat's uchar.c against glibc in C.UTF-8, on
+                     the host
   ../test/fb/fbart.c the screen (or an area of it) as text, from /dev/fb0
 
-Sources (~/gfx-src, shallow clones of these tags):
+The stands take the font from the host (DejaVu Sans Mono, Bitstream Vera
+licence); it is not in the tree.
 
-  wayland 1.26.0             gitlab.freedesktop.org/wayland/wayland
-  wayland-protocols 1.49     gitlab.freedesktop.org/wayland/wayland-protocols
-  libffi v3.8.0              github.com/libffi/libffi
-  pixman-0.46.4              gitlab.freedesktop.org/pixman/pixman
-  libdrm-2.4.134             gitlab.freedesktop.org/mesa/drm
-  xkbcommon-1.13.2           github.com/xkbcommon/libxkbcommon
-  xkeyboard-config-2.48      gitlab.freedesktop.org/xkeyboard-config/xkeyboard-config
-  wlroots 0.20.2             gitlab.freedesktop.org/wlroots/wlroots
-  foot 1.28.0, fcft 3.3.3, tllist 1.1.0   codeberg.org/dnkl
-  freetype VER-2-15-0        gitlab.freedesktop.org/freetype/freetype
-  fontconfig 2.18.3          gitlab.freedesktop.org/fontconfig/fontconfig
-  expat                      the tree's (external/mit/expat), built by hand
-  freebsd-evdev              sys/dev/evdev/input-event-codes.h of FreeBSD
-                             (BSD-2), as <linux/input-event-codes.h>
-
-Host tools (WSL, apt): meson, ninja-build, autoconf, automake, libtool,
-libtool-bin, libltdl-dev, bison, gperf, libexpat1-dev; wayland-scanner
-1.26 is built from the wayland source ("build-stack.sh native") because
-the distribution's 1.24 rejects the XML of wayland-protocols 1.49; meson
-1.12 from a venv in ~/gfx-native (fontconfig wants 1.11).
-
-All licences MIT or BSD-like (FreeType under its FTL, not the GPL);
-nothing GPL is used.  The stands take the font from the host
-(DejaVu Sans Mono, Bitstream Vera licence); it is not in the tree.
+Until 2026-10-13 this directory held the prototype: every package built by
+its own meson or autotools against a copy of DESTDIR (build-stack.sh,
+cc.sh, cross-meecho.ini), its changes in patches/, the compat code in
+compat/ - in git history from c507a9bbe to the commit that moved it.

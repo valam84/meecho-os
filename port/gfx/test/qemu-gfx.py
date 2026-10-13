@@ -2,18 +2,19 @@
 """The Wayland stack on QEMU (stage 11.4): a compositor and a client, with
 no screen.
 
-Takes what port/gfx/build-stack.sh built (~/gfx-build/bin) and the XKB
-data it installed (~/gfx-sysroot/usr/share/X11/xkb), puts them into
-DESTDIR/usr/tests/gfx so that the disk image has them, boots the disk root
-in its own WORK_DIR (~/obj-evbarm64/work-gfx), and runs
+Runs what the tree installs into DESTDIR (port/build-dirs.sh over the
+stack's directories, port/gfx/README): boots the disk root in its own
+WORK_DIR (~/obj-evbarm64/work-gfx) and, with no frame buffer driver
+started, runs
 
-    tinywl -s 'wlhello ...'
+    meechowm -s 'wlhello ...'
 
-with wlroots' headless backend and its pixman renderer: tinywl makes an
-output in memory, starts wlhello, which connects over the Wayland socket,
+- meechowm finds no screen and draws into a headless output in memory,
+with wlroots' pixman renderer; wlhello connects over the Wayland socket,
 passes a memfd buffer, and waits until the compositor has drawn its frame.
-The check is wlhello's own line, "WLHELLO drawn ...", and tinywl's log
-around it (~/qemu-gfx.log).
+The check is wlhello's own line, "WLHELLO drawn ...", its exit status, and
+meechowm's log around it (~/qemu-gfx.log).  The quick half of
+qemu-meechowm.py: no fb, no input, no fonts.
 
     python3 port/gfx/test/qemu-gfx.py [-k] [-s cores] [-t seconds]
 """
@@ -22,7 +23,6 @@ import argparse
 import os
 import re
 import select
-import shutil
 import signal
 import subprocess
 import sys
@@ -33,20 +33,8 @@ HOME = os.path.expanduser("~")
 RAMIMAGE = os.path.join(HERE, "..", "..", "ramimage.sh")
 WORK = os.path.join(HOME, "obj-evbarm64/work-gfx")
 DEST = os.environ.get("DESTDIR", os.path.join(HOME, "dest-evbarm64"))
-BIN = os.path.join(HOME, "gfx-build/bin")
-XKB = os.path.join(HOME, "gfx-sysroot/usr/share/X11/xkb")
-GUESTDIR = "/usr/tests/gfx"
-
-
-def stage():
-    out = os.path.join(DEST, GUESTDIR.lstrip("/"))
-    os.makedirs(out, exist_ok=True)
-    for prog in os.listdir(BIN):
-        shutil.copy2(os.path.join(BIN, prog), out)
-    xkb = os.path.join(out, "xkb")
-    if os.path.exists(xkb):
-        shutil.rmtree(xkb)
-    shutil.copytree(XKB, xkb, symlinks=False)
+INSTALLED = ["usr/bin/meechowm", "usr/tests/gfx/wlhello",
+             "usr/share/X11/xkb/rules/evdev"]
 
 
 def main():
@@ -56,8 +44,9 @@ def main():
     ap.add_argument("-t", type=int, default=90, help="seconds for the run")
     a = ap.parse_args()
 
-    if not a.k:
-        stage()
+    for f in INSTALLED:
+        if not os.path.exists(os.path.join(DEST, f)):
+            sys.exit("not in DESTDIR: /%s (port/build-dirs.sh first)" % f)
     os.makedirs(WORK, exist_ok=True)
     env = dict(os.environ, WORK_DIR=WORK, QEMU_TIMEOUT="1500",
                QEMU_SMP=str(a.s))
@@ -97,20 +86,21 @@ def main():
         send("root")
         expect(r"# ", 60)
         # Short lines: tty's canonical buffer cuts at 255 bytes.
-        send("G=%s; mkdir -p -m 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg"
-             % GUESTDIR)
-        send("export WLR_BACKENDS=headless WLR_RENDERER=pixman")
-        send("export WLR_HEADLESS_OUTPUTS=1 XKB_CONFIG_ROOT=$G/xkb")
-        send("$G/tinywl -s \"$G/wlhello -t 3; echo HELLO-RC=\\$?\" "
-             "> /tmp/tinywl.log 2>&1 &")
-        send("sleep %d; tail -40 /tmp/tinywl.log; echo LOG''END" % a.t)
+        send("mkdir -p -m 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg")
+        # By pid, not %1: ash's kill %N signals the job's process group,
+        # and PM has no groups apart from sessions.
+        send("meechowm -s \"/usr/tests/gfx/wlhello -t 3; "
+             "echo HELLO-RC=\\$?\" > /tmp/mwm.log 2>&1 & MWM=$!")
+        send("sleep %d; tail -40 /tmp/mwm.log; echo LOG''END" % a.t)
         out = expect(r"LOGEND", a.t + 300)
         drawn = re.search(r"WLHELLO drawn .*", out)
         hello_rc = re.search(r"HELLO-RC=(\d+)", out)
+        print("meechowm: %s" % ("headless" if "no screen: headless" in out
+                                else "screen?"))
         print("wlhello: %s" % (drawn.group(0) if drawn else "no WLHELLO line"))
         print("wlhello exit: %s" % (hello_rc.group(1) if hello_rc else "?"))
         rc = 0 if drawn and hello_rc and hello_rc.group(1) == "0" else 1
-        send("kill %1; sleep 2; /sbin/poweroff")
+        send("kill $MWM; sleep 2; /sbin/poweroff")
         time.sleep(5)
     except RuntimeError as e:
         print("FAIL: %s" % e)

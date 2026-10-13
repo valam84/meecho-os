@@ -12,9 +12,10 @@
 #
 #   sh board-meechowm.sh [stop]
 #
-# Expects /usr/tests/gfx (meechowm, foot, fbart, xkb/, fonts/, fonts.conf,
-# staged as qemu-meechowm.py stages them), the input server, xhci,
-# usb_kbd and usb_mouse running (the eMMC root's rc starts them), and fb.
+# Expects the stack as the tree installs it (/usr/bin/meechowm, /usr/bin/foot,
+# the keymaps, /etc/fonts), /usr/tests/gfx as qemu-meechowm.py stages it
+# (fbart, fonts/, fonts.conf), the input server, xhci, usb_kbd and
+# usb_mouse running (the eMMC root's rc starts them), and fb.
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export PATH
 G=/usr/tests/gfx
@@ -28,16 +29,15 @@ fi
 
 mkdir -p -m 700 /tmp/xdg
 XDG_RUNTIME_DIR=/tmp/xdg
-XKB_CONFIG_ROOT=$G/xkb
 FONTCONFIG_FILE=$G/fonts.conf
-export XDG_RUNTIME_DIR XKB_CONFIG_ROOT FONTCONFIG_FILE
+export XDG_RUNTIME_DIR FONTCONFIG_FILE
 
 # SIGHUP ignored: started from ssh, the compositor is in the session's
 # process group, and the end of the ssh session hangs it up - on the first
 # run it died the moment this script returned, and foot after it ("Broken
 # pipe"), while the monitor went back to the console.
 trap '' HUP
-$G/meechowm -s "$G/foot -o main.workers=0 -f 'DejaVu Sans Mono:size=14' \
+meechowm -s "foot -o main.workers=0 -f 'DejaVu Sans Mono:size=14' \
     -e /bin/sh -c 'echo FOOT-OK on MEECHO; exec /bin/sh -i'" \
     < /dev/null > /tmp/mwm.log 2>&1 &
 echo $! > /tmp/mwm.pid

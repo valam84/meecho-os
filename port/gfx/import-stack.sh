@@ -13,7 +13,10 @@
 #
 # Sources: ~/gfx-src (shallow clones of the tags in port/gfx/README; the
 # working trees may carry the prototype's patches - "git archive HEAD" takes
-# the tag, not them), ~/gfxport/nb-xsrc (a sparse clone of NetBSD's xsrc).
+# the tag, not them), ~/gfxport/nb-xsrc (NB_XSRC: a sparse clone of NetBSD's
+# xsrc - git clone --filter=blob:none --no-checkout
+# https://github.com/NetBSD/xsrc, then sparse-checkout set
+# /external/mit/pixman /external/mit/libdrm /external/mit/xkeyboard-config).
 # The MEECHO changes are separate commits on top of the import, so that the
 # next import is a diff against this one.
 set -u

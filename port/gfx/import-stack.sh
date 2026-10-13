@@ -143,6 +143,35 @@ imp_fuzzel() {
 	    grep -E '\.[ch]$' | grep -v '^nanosvg')
 }
 
+# libyaml 0.2.5 (MIT), what yambar reads its configuration with: the
+# library's sources and its one public header, not its tests or tools.
+imp_libyaml() {
+	from_git external/mit/libyaml/dist libyaml License ReadMe.md \
+	    Changes include/yaml.h src &&
+	rm -f "$TREE"/external/mit/libyaml/dist/src/Makefile.am
+}
+
+# yambar (stage 11.7: the panel), the Wayland back end only (no xcb.c),
+# with the modules that have something to read on MEECHO - clock, label,
+# script, foreign-toplevel; the rest read Linux's /proc and /sys, netlink,
+# udev, ALSA, PulseAudio, PipeWire, MPD or a compositor's IPC.  Every
+# particle and decoration; map's grammar is generated at build time.
+imp_yambar() {
+	local m
+	from_git external/mit/yambar/dist yambar LICENSE README.md \
+	    CHANGELOG.md external/wlr-layer-shell-unstable-v1.xml \
+	    external/wlr-foreign-toplevel-management-unstable-v1.xml \
+	    bar/bar.c bar/bar.h bar/backend.h bar/private.h bar/wayland.c \
+	    bar/wayland.h decorations particles \
+	    modules/clock.c modules/label.c modules/script.c \
+	    modules/foreign-toplevel.c \
+	    $(git -C "$SRC/yambar" ls-tree --name-only HEAD |
+	    grep -E '\.[ch]$' | grep -v '^xcb\.') &&
+	for m in decorations particles; do
+		rm -f "$TREE"/external/mit/yambar/dist/$m/meson.build
+	done
+}
+
 # One header of FreeBSD's (sys/dev/evdev, BSD-2): the key and button codes
 # Linux keeps in its GPL <linux/input-event-codes.h>, same numbers.
 imp_evdev() {
@@ -153,7 +182,7 @@ imp_evdev() {
 
 ALL="libffi wayland wayland_protocols pixman libdrm libxkbcommon
 	xkeyboard_config wlroots freetype fontconfig tllist fcft foot fuzzel
-	evdev"
+	libyaml yambar evdev"
 [ $# -gt 0 ] || set -- $ALL
 for p in "$@"; do
 	p=${p//-/_}

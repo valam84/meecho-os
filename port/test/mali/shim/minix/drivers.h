@@ -18,6 +18,13 @@
 #define OK		0
 #define SELF		0x8ace
 #define VFS_PROC_NR	1
+#define NONE		0x6ace
+/*
+ * cdevfd(2): ошибки - отрицательные, как у VFS на машине (там все коды
+ * ошибок отрицательны); стенд сравнивает их по модулю.
+ */
+int cdevfd_new(endpoint_t endpt, devminor_t minor, int flags, uint64_t size);
+int cdevfd_get(endpoint_t endpt, int fd);
 #define UNUSED(x)	x __attribute__((unused))
 #define EDONTREPLY	9203	/* у MINIX - _SIGN 203 */
 void *vm_map_phys(endpoint_t who, void *phaddr, size_t len);

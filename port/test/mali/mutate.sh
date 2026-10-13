@@ -35,8 +35,8 @@ job-index@mali_job.c@JOB_CTL_INDEX(i + 1)@JOB_CTL_INDEX(i)
 next-ptr@mali_job.c@JOB_VA + (i + 1) \* JOB_DESC_SIZE : 0@JOB_VA + i * JOB_DESC_SIZE : 0
 no-clean@mali_sched.c@mali_bo_for_gpu(j->bos\[i\]);@;
 no-inval@mali_sched.c@mali_bo_for_cpu(j->bos\[i\]);@;
-new-bo-dirty@mali_bo.c@cache(CACHE_CLEAN_INVALIDATE, bo->cpu, size);@;
-map-no-cache@mali_bo.c@	bo->cpu_access = 1;@	;
+new-bo-dirty@mali_bo.c@cache(CACHE_CLEAN_INVALIDATE, mem->cpu, size);@;
+map-no-cache@mali_bo.c@	mem->cpu_access = 1;@	;
 flush-red@mali_sched.c@JS_CONFIG_ENABLE_FLUSH_REDUCTION |@
 no-disable@mali_mmu.c@^	as_disable(as);$@	;
 no-enable@mali_mmu.c@if (as_enable(pick, vm) != OK) {@if (0) {
@@ -61,11 +61,11 @@ wait-bo-past@mali_drm.c@		return EBUSY;@		return ETIMEDOUT;
 fence-ok@mali_drm.c@p->out->error = j->result == OK ? 0 : EIO;@p->out->error = 0;
 wait-error@mali_drm.c@return f->error != 0 ? EIO : OK;@return OK;
 no-out-fence@mali_drm.c@		syncobj_set(out, p->out);@		;
-mmap-part@mali_drm.c@if (len != bo->size ||@if (
+mmap-part@mali_drm.c@if (len != mem->size ||@if (
 version-name@mali_drm.c@"panfrost", \&v->name_len@"mali", \&v->name_len
 remap-self@mali_bo.c@v = vm_remap(who, sef_self(),@v = vm_remap(who, SELF,
 param-rev@mali_drm.c@return mali.gpu_id \& 0xffff;@return mali.gpu_id >> 12;
-heap-prealloc@mali_bo.c@		return heap_new(bo, err);@		;
+heap-prealloc@mali_bo.c@^	if (flags \& PANFROST_BO_HEAP) {$@	if (0) {
 grow-clear-after@mali_mmu.c@	r = mali_bo_grow(bo, addr, \&piece);@	r = mali_bo_grow(bo, addr, \&piece); mali_wr(gpu(), MMU_INT_CLEAR, bits);
 grow-no-clear@mali_mmu.c@	mali_wr(gpu(), MMU_INT_CLEAR, MMU_INT_PAGE_FAULT(as));@	;
 grow-bus-error@mali_mmu.c@if (vm == NULL || bits != MMU_INT_PAGE_FAULT(as) ||@if (vm == NULL ||
@@ -77,6 +77,24 @@ grow-no-clean@mali_bo.c@	cache(CACHE_CLEAN_INVALIDATE, p, MALI_HEAP_PIECE);@	;
 grow-no-limit@mali_bo.c@	if (total + MALI_HEAP_PIECE > limit_total ||@	if (0 \&\&
 inval-drops@mali_bo.c@cache(CACHE_CLEAN_INVALIDATE, \(\w*\)->cpu, \(\w*\)->size); /\* not INVALIDATE \*/@cache(CACHE_INVALIDATE, \1->cpu, \2->size);
 grow-read-only@mali_bo.c@MALI_PTE_READ | MALI_PTE_WRITE | MALI_PTE_XN)) != OK) {@MALI_PTE_READ | MALI_PTE_XN)) != OK) {
+no-open-minor@mali_drm.c@if ((r = chardriver_open_minor(obj_minor(o))) == OK \&\&@if ((r = OK) == OK \&\&
+export-endpt@mali_drm.c@(r = cdevfd_new(c->user, obj_minor(o)@(r = cdevfd_new(c->endpt, obj_minor(o)
+import-endpt@mali_drm.c@if ((minor = cdevfd_get(c->user, fd)) < 0)@if ((minor = cdevfd_get(c->endpt, fd)) < 0)
+obj-kind@mali_drm.c@return o->kind == kind || (kind == OBJ_FREE \&\& o->kind != OBJ_FREE) ?@return o->kind != OBJ_FREE ?
+obj-never-freed@mali_drm.c@if (o->opens > 0 \&\& --o->opens == 0)@if (o->opens > 0 \&\& --o->opens == 99)
+dmabuf-size@mali_drm.c@(uint64_t)bo->mem->size, \&a->fd);@0, \&a->fd);
+dmabuf-cloexec@mali_drm.c@(c, OBJ_DMABUF, bo->mem, (a->flags \& DRM_CLOEXEC) |@(c, OBJ_DMABUF, bo->mem,
+import-new-handle@mali_drm.c@if ((bo = bo_get(c->ctx, i)) != NULL \&\& bo->mem == o->u.mem) {@if (0) {
+no-implicit@mali_drm.c@(void)pjob_wait_for(p, p->bos\[i\]->mem->fence, max);@;
+held-ignored@mali_drm.c@if (!TAILQ_EMPTY(\&c->ctx->held) || !pjob_ready(p))@if (0)
+held-overtaken@mali_drm.c@if (!TAILQ_EMPTY(\&c->ctx->held) || !pjob_ready(p))@if (!pjob_ready(p))
+held-leak@mali_drm.c@^	cancel_held(c);$@	;
+merge-any@mali_drm.c@		if (!f->child\[i\]->signaled)@		if (0)
+no-select-reply@mali_drm.c@			chardriver_reply_select(objs\[i\].sel_endpt,@			if (0) chardriver_reply_select(objs[i].sel_endpt,
+status-sign@mali_drm.c@return e < 0 ? e : -e;@return e < 0 ? -e : e;
+sync-start-no-wait@mali_drm.c@	return wait_mem(c, c->obj->u.mem, INT64_MAX);@	return OK;
+import-fence-lost@mali_drm.c@if ((f = fence_merge(mem->fence, o->u.fence)) == NULL)@if ((f = fence_merge(mem->fence, NULL)) == NULL)
+place-pages@mali_bo.c@if ((r = mali_vm_map(bo->vm, va, bo->mem->pages,@if ((r = mali_vm_map(bo->vm, va, bo->mem->pages + 1,
 '
 
 echo "$MUTATIONS" | while IFS='@' read -r name file from to; do

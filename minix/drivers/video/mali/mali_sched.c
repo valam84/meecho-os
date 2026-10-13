@@ -83,7 +83,7 @@ mali_job_submit(struct mali_job *j)
 	j->await_mmu = 0;
 	j->stopping = 0;
 	for (i = 0; i < j->nbos; i++)
-		j->bos[i]->busy++;
+		j->bos[i]->mem->busy++;
 	TAILQ_INSERT_TAIL(&queue, j, link);
 	mali_sched_kick();
 }
@@ -121,7 +121,7 @@ complete(struct mali_job *j, int result)
 	for (i = 0; i < j->nbos; i++) {
 		if (ran)
 			mali_bo_for_cpu(j->bos[i]);
-		j->bos[i]->busy--;
+		j->bos[i]->mem->busy--;
 	}
 	j->done(j);
 	mali_sched_kick();

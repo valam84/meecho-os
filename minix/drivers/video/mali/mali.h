@@ -168,30 +168,54 @@ void mali_mmu_irq(uint32_t status);
 void mali_mmu_reset(void);
 
 /*
- * A buffer object: memory the GPU and the processor share.  The service
- * owns the memory (anonymous memory of its own, page by page, so that no
- * large buffer needs contiguous RAM), places it in one GPU address space,
- * and maps it into the client that asks (vm_remap).
+ * A buffer: memory the GPU and the processor share, in two parts.
+ *
+ * The memory (struct mali_mem) is one, whoever has it: the service owns
+ * it (anonymous memory of its own, page by page, so that no large buffer
+ * needs contiguous RAM), and maps it into a client that asks (vm_remap).
+ * A buffer object (struct mali_bo) is that memory placed in one GPU
+ * address space, at an address of its own there.  A buffer made by a
+ * context has one placement; given to another context as a descriptor
+ * (PRIME, stage 11.6) it gets a second one - the same pages, the
+ * importer's own address - as under panfrost, where a GEM object has a
+ * mapping per DRM file.  What is the memory's - its pages, the
+ * processor's caches around it, the jobs that use it - is counted on the
+ * memory, so a job of one context and a wait of another see the same.
  *
  * A heap (PANFROST_BO_HEAP) is the exception: only its place in the
  * address space is taken at creation, and its memory comes 2 MiB at a time
- * as the GPU faults on it (mali_bo_grow()); no processor ever maps it.
+ * as the GPU faults on it (mali_bo_grow()); no processor ever maps it, and
+ * it never leaves its context (panfrost will not export one either), so
+ * its pieces are its placement's.
  */
 #define MALI_HEAP_PIECE	0x200000u	/* what a fault in a heap brings in */
+
+struct fence;
+
+struct mali_mem {
+	uint32_t flags;			/* PANFROST_BO_* it was made with */
+	size_t size;			/* a whole number of pages */
+	void *cpu;			/* this service's mapping; NULL: a heap */
+	phys_bytes *pages;		/* the physical address of each page */
+	unsigned refs;			/* placements, descriptors */
+	unsigned busy;			/* jobs queued or running with it */
+	int cpu_access;			/* written or read by a processor */
+
+	/* The device's (mali_drm.c): */
+	struct fence *fence;		/* the last job that uses it, or NULL */
+	int minor;			/* as a dma-buf descriptor, or -1 */
+};
 
 struct mali_bo {
 	TAILQ_ENTRY(mali_bo) link;	/* in its address space, by address */
 	struct mali_vm *vm;
+	struct mali_mem *mem;
 	uint32_t flags;			/* PANFROST_BO_* */
 	size_t size;			/* a whole number of pages */
-	size_t mem;			/* bytes of memory behind it */
-	void *cpu;			/* this service's mapping; NULL: a heap */
+	size_t backed;			/* bytes of memory it counts in vm */
 	void **pieces;			/* a heap's, NULL until a fault */
-	phys_bytes *pages;		/* the physical address of each page */
 	uint64_t va;			/* in the GPU address space */
 	unsigned refs;			/* a handle, a job, a wait each hold one */
-	unsigned busy;			/* jobs queued or running with it */
-	int cpu_access;			/* written or read by a processor */
 	uint64_t mmap_offset;		/* the token mmap(2) is given */
 };
 
@@ -203,9 +227,16 @@ struct mali_bo *mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags,
 	int *err);
 void mali_bo_ref(struct mali_bo *bo);
 void mali_bo_unref(struct mali_bo *bo);
+struct mali_bo *mali_bo_import(struct mali_vm *vm, struct mali_mem *mem,
+	int *err);
+void mali_mem_ref(struct mali_mem *mem);
+void mali_mem_unref(struct mali_mem *mem);
+extern void (*mali_mem_gone)(struct mali_mem *mem);
 void mali_bo_for_gpu(struct mali_bo *bo);
 void mali_bo_for_cpu(struct mali_bo *bo);
 int mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
+	int writable, void **where);
+int mali_mem_map_into(struct mali_mem *mem, endpoint_t who, void *addr,
 	int writable, void **where);
 struct mali_bo *mali_bo_at(struct mali_vm *vm, uint64_t va);
 int mali_bo_grow(struct mali_bo *bo, uint64_t va, uint64_t *piece);

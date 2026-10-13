@@ -13,6 +13,10 @@ FILESDIR= /etc/system.conf.d
 CPPFLAGS+=	-I${NETBSDSRCDIR}/external/mit/libdrm/dist/include/drm \
 		-I${NETBSDSRCDIR}/external/mit/libdrm/lib/libdrm/drm
 
+# Buffers and fences as descriptors: <linux/dma-buf.h> and
+# <linux/sync_file.h>, MEECHO's own, installed in /usr/include/gfxcompat.
+CPPFLAGS+=	-I${NETBSDSRCDIR}/minix/lib/libgfxcompat
+
 DPADD+=	${LIBCHARDRIVER} ${LIBSYS} ${LIBTIMERS}
 LDADD+=	-lchardriver -lsys -ltimers
 

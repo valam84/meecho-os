@@ -8,6 +8,9 @@
 #   <uchar.h>      C11 char32_t conversions, UTF-8 whatever the locale
 #   <poll.h>       poll() that lets the other threads run (poll.c)
 #   <linux/input-event-codes.h>  FreeBSD's header (external/bsd/evdev)
+#   <linux/dma-buf.h>, <linux/sync_file.h>  not stand-ins: the GPU
+#                  service's buffers and fences as descriptors, under the
+#                  names Linux software includes (linux/, written here)
 #
 # The headers go to /usr/include/gfxcompat, not /usr/include, and the code
 # is not in libc or libmthread, on purpose: both halves are stand-ins.
@@ -26,11 +29,15 @@ SRCS=	threads.c poll.c semaphore.c sigmask.c uchar.c
 
 CPPFLAGS+=	-I${.CURDIR}/include
 
-.PATH:	${.CURDIR}/include ${NETBSDSRCDIR}/external/bsd/evdev/dist
+.PATH:	${.CURDIR}/include ${.CURDIR}/linux \
+	${NETBSDSRCDIR}/external/bsd/evdev/dist
 
-INCS=		pthread.h threads.h uchar.h poll.h input-event-codes.h
+INCS=		pthread.h threads.h uchar.h poll.h input-event-codes.h \
+		dma-buf.h sync_file.h
 INCSDIR=	/usr/include/gfxcompat
 INCSDIR_input-event-codes.h=	/usr/include/gfxcompat/linux
+INCSDIR_dma-buf.h=		/usr/include/gfxcompat/linux
+INCSDIR_sync_file.h=		/usr/include/gfxcompat/linux
 
 WARNS?=	5
 

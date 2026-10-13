@@ -26,6 +26,7 @@ $CC -std=gnu99 -Wall -Wextra -Wno-unused-parameter -O1 -g \
 MODEL_CFLAGS="-std=gnu99 -Wall -Wextra -Wno-unused-parameter -O1 -g \
 	-I $HERE/shim -I $SRC \
 	-I $TREE/external/mit/libdrm/lib/libdrm/drm \
+	-I $TREE/minix/lib/libgfxcompat \
 	-include $HERE/shim/regs-hook.h \
 	-DREAL_DRM_H=\"$TREE/external/mit/libdrm/dist/include/drm/drm.h\" \
 	-DREAL_IOC_MMAP_H=\"$TREE/minix/include/sys/ioc_mmap.h\" \
@@ -42,10 +43,16 @@ $CC $MODEL_CFLAGS "$HERE/jobtest.c" "$HERE/model.c" "$SRC/mali_job.c" \
 $CC $MODEL_CFLAGS "$HERE/drmtest.c" "$HERE/model.c" "$SRC/mali_drm.c" \
 	$CORE -o "$OUT/mali-drmtest"
 
+# Дескрипторы: PRIME и sync file, порядок между контекстами, VFS
+# (cdevfd(2)) и libchardriver моделью (primetest.c).
+$CC $MODEL_CFLAGS "$HERE/primetest.c" "$HERE/model.c" "$SRC/mali_drm.c" \
+	$CORE -o "$OUT/mali-primetest"
+
 rc=0
 "$OUT/mali-test" "$PORT/cb2-display/live.dtb" \
 	"$PORT/cb2-sd/rk3566-bigtreetech-cb2.dtb" \
 	"$PORT/h313/h313-tanix-tx1.dtb" "$@" || rc=1
 "$OUT/mali-jobtest" "$@" || rc=1
 "$OUT/mali-drmtest" "$@" || rc=1
+"$OUT/mali-primetest" "$@" || rc=1
 exit $rc

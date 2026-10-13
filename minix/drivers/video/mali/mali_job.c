@@ -83,8 +83,8 @@ static struct {
 	int fault_seen;
 } st;
 
-#define DESC		((char *)st.bo->cpu)
-#define TARGET		((uint32_t *)((char *)st.bo->cpu + PAGE))
+#define DESC		((char *)st.bo->mem->cpu)
+#define TARGET		((uint32_t *)((char *)st.bo->mem->cpu + PAGE))
 #define JOB_VA		(st.bo->va)
 
 /* One WRITE_VALUE descriptor: store value at addr, then go to next. */
@@ -181,7 +181,7 @@ mali_job_setup(void)
 	}
 	st.bos[0] = st.bo;
 	/* This service writes the descriptors and reads the result. */
-	st.bo->cpu_access = 1;
+	st.bo->mem->cpu_access = 1;
 	st.fault_va = JOB_VA + FAULT_OFF;
 	return OK;
 }

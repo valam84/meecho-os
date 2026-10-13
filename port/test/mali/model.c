@@ -47,6 +47,7 @@
  * vm_remap(), отложенные ответы, таймеры libsys по часам модели.
  */
 
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1352,4 +1353,293 @@ model_reset(void)
 	mali.shader_present = 1;
 	mali.as_present = 0xff;
 	mali.js_present = 7;
+}
+
+/* ---- дескрипторы: cdevfd(2) VFS, открытые minor libchardriver ------------ */
+
+/*
+ * Таблицы дескрипторов процессов, как их держит VFS: дескриптор - файл
+ * (filp), общий у dup, fork и передачи через сокет; последнее закрытие
+ * файла устройства службы - закрытие его minor (cdr_close()).  Дать или
+ * назвать дескриптор можно только процессу, от которого идёт вызов
+ * (model_user): это проверка VFS, что процесс ждёт этого драйвера.
+ * libchardriver не отвечает на запрос к minor, которого не видел
+ * открытым: модель требует chardriver_open_minor() до cdevfd_new().
+ */
+#define MFILES		1024
+#define MPROCS		8
+#define MFDS		256
+
+static struct mfile {
+	unsigned count;			/* дескрипторов на него; 0 - свободен */
+	int minor;			/* -1: файл чужого устройства (труба) */
+	int flags;
+	uint64_t size;
+} mfiles[MFILES];
+
+static struct {
+	endpoint_t who;
+	int fd[MFDS];			/* номер файла + 1, или 0 */
+} mprocs[MPROCS];
+
+static int open_minors[512];
+static unsigned nopen_minors;
+static unsigned sel_reply[4096];	/* последнее уведомление select */
+int (*model_cdev_close)(devminor_t minor);
+
+static int
+mproc(endpoint_t who)
+{
+	int i;
+
+	for (i = 0; i < MPROCS; i++)
+		if (mprocs[i].who == who)
+			return i;
+	for (i = 0; i < MPROCS; i++)
+		if (mprocs[i].who == 0) {
+			mprocs[i].who = who;
+			return i;
+		}
+	model_error("too many processes in the model");
+	return 0;
+}
+
+static int
+mfd_install(endpoint_t who, int file)
+{
+	int p = mproc(who), fd;
+
+	for (fd = 3; fd < MFDS; fd++)
+		if (mprocs[p].fd[fd] == 0) {
+			mprocs[p].fd[fd] = file + 1;
+			mfiles[file].count++;
+			return fd;
+		}
+	return -1;
+}
+
+static int
+mfd_file(endpoint_t who, int fd)
+{
+	int p = mproc(who);
+
+	if (fd < 0 || fd >= MFDS || mprocs[p].fd[fd] == 0)
+		return -1;
+	return mprocs[p].fd[fd] - 1;
+}
+
+int
+chardriver_open_minor(devminor_t minor)
+{
+	unsigned i;
+
+	for (i = 0; i < nopen_minors; i++)
+		if (open_minors[i] == minor)
+			return OK;
+	/* libchardriver помнит 256, и 17 из них - контексты и узел. */
+	if (nopen_minors >= 256 - 17)
+		return -ENFILE;
+	open_minors[nopen_minors++] = minor;
+	return OK;
+}
+
+int
+model_minor_seen(devminor_t minor)
+{
+	unsigned i;
+
+	for (i = 0; i < nopen_minors; i++)
+		if (open_minors[i] == minor)
+			return 1;
+	return 0;
+}
+
+unsigned
+model_minors_seen(void)
+{
+	return nopen_minors;
+}
+
+int
+cdevfd_new(endpoint_t endpt, devminor_t minor, int flags, uint64_t size)
+{
+	int f, fd;
+
+	if (endpt != model_user) {
+		model_error("cdevfd_new for %d, which does not wait on the "
+		    "driver (%d does)", endpt, model_user);
+		return -EPERM;
+	}
+	if (!model_minor_seen(minor))
+		model_error("cdevfd_new of minor %d that libchardriver never "
+		    "saw opened: its requests would be dropped", minor);
+	if (flags & ~(O_ACCMODE | O_CLOEXEC))
+		return -EINVAL;
+	for (f = 0; f < MFILES && mfiles[f].count != 0; f++)
+		;
+	if (f == MFILES)
+		return -ENFILE;
+	mfiles[f].minor = minor;
+	mfiles[f].flags = flags;
+	mfiles[f].size = size;
+	if ((fd = mfd_install(endpt, f)) < 0)
+		return -EMFILE;
+	return fd;
+}
+
+int
+cdevfd_get(endpoint_t endpt, int fd)
+{
+	int f;
+
+	if (endpt != model_user) {
+		model_error("cdevfd_get for %d, which does not wait on the "
+		    "driver (%d does)", endpt, model_user);
+		return -EPERM;
+	}
+	if ((f = mfd_file(endpt, fd)) < 0)
+		return -EBADF;
+	if (mfiles[f].minor < 0)
+		return -EINVAL;
+	return mfiles[f].minor;
+}
+
+/* Дескриптор чужого устройства (труба) у процесса who. */
+int
+model_fd_foreign(endpoint_t who)
+{
+	int f;
+
+	for (f = 0; f < MFILES && mfiles[f].count != 0; f++)
+		;
+	mfiles[f].minor = -1;
+	mfiles[f].flags = O_RDWR;
+	mfiles[f].size = 0;
+	return mfd_install(who, f);
+}
+
+/* Тот же файл у процесса to (dup, fork, SCM_RIGHTS): новый дескриптор. */
+int
+model_fd_pass(endpoint_t from, int fd, endpoint_t to)
+{
+	int f = mfd_file(from, fd);
+
+	if (f < 0) {
+		model_error("pass of a closed descriptor %d of %d", fd, from);
+		return -1;
+	}
+	return mfd_install(to, f);
+}
+
+/* close(2): последний дескриптор файла службы - закрытие minor. */
+int
+model_fd_close(endpoint_t who, int fd)
+{
+	int p = mproc(who), f = mfd_file(who, fd);
+
+	if (f < 0)
+		return EBADF;
+	mprocs[p].fd[fd] = 0;
+	if (--mfiles[f].count == 0 && mfiles[f].minor >= 0) {
+		if (model_cdev_close == NULL)
+			model_error("no device to close minor %d on",
+			    mfiles[f].minor);
+		else
+			(void)model_cdev_close(mfiles[f].minor);
+	}
+	return OK;
+}
+
+/* Процесс уходит: все его дескрипторы закрываются. */
+void
+model_proc_exit(endpoint_t who)
+{
+	int p = mproc(who), fd;
+
+	for (fd = 0; fd < MFDS; fd++)
+		if (mprocs[p].fd[fd] != 0)
+			(void)model_fd_close(who, fd);
+	mprocs[p].who = 0;
+}
+
+int
+model_fd_minor(endpoint_t who, int fd)
+{
+	int f = mfd_file(who, fd);
+
+	return f < 0 ? -1 : mfiles[f].minor;
+}
+
+int
+model_fd_flags(endpoint_t who, int fd)
+{
+	int f = mfd_file(who, fd);
+
+	return f < 0 ? -1 : mfiles[f].flags;
+}
+
+/* lseek(fd, 0, SEEK_END), как VFS: размер, который дал драйвер. */
+int64_t
+model_fd_size(endpoint_t who, int fd)
+{
+	int f = mfd_file(who, fd);
+
+	return f < 0 ? -1 : (int64_t)mfiles[f].size;
+}
+
+/* Открытых файлов службы во всех процессах. */
+unsigned
+model_files_open(void)
+{
+	unsigned f, n = 0;
+
+	for (f = 0; f < MFILES; f++)
+		if (mfiles[f].count != 0 && mfiles[f].minor >= 0)
+			n++;
+	return n;
+}
+
+void
+chardriver_reply_select(endpoint_t endpt, devminor_t minor, int ops)
+{
+	if (endpt != VFS_EP)
+		model_error("a select reply to %d, not VFS", endpt);
+	if (minor < 0 || minor >= 4096)
+		model_error("a select reply for minor %d", minor);
+	else
+		sel_reply[minor] |= (unsigned)ops;
+}
+
+/* Что служба сказала о select на minor с прошлого раза. */
+unsigned
+model_select_reply(devminor_t minor)
+{
+	unsigned r = sel_reply[minor];
+
+	sel_reply[minor] = 0;
+	return r;
+}
+
+void
+model_fds_reset(void)
+{
+	memset(mfiles, 0, sizeof(mfiles));
+	memset(mprocs, 0, sizeof(mprocs));
+	memset(sel_reply, 0, sizeof(sel_reply));
+	nopen_minors = 0;
+	model_cdev_close = NULL;
+}
+
+/* Дескриптор minor устройства службы, как его сделал open(2) (контекст). */
+int
+model_fd_device(endpoint_t who, devminor_t minor)
+{
+	int f;
+
+	for (f = 0; f < MFILES && mfiles[f].count != 0; f++)
+		;
+	mfiles[f].minor = minor;
+	mfiles[f].flags = O_RDWR;
+	mfiles[f].size = 0;
+	return mfd_install(who, f);
 }

@@ -126,4 +126,22 @@ extern unsigned nremaps;
 
 extern unsigned model_recovers;
 
+/* ---- дескрипторы (PRIME, sync file): VFS и libchardriver ---------------- */
+
+/* Закрытие minor устройства службы, когда закрыт последний дескриптор. */
+extern int (*model_cdev_close)(devminor_t minor);
+void model_fds_reset(void);
+int model_fd_foreign(endpoint_t who);
+int model_fd_device(endpoint_t who, devminor_t minor);
+int model_fd_pass(endpoint_t from, int fd, endpoint_t to);
+int model_fd_close(endpoint_t who, int fd);
+void model_proc_exit(endpoint_t who);
+int model_fd_minor(endpoint_t who, int fd);
+int model_fd_flags(endpoint_t who, int fd);
+int64_t model_fd_size(endpoint_t who, int fd);
+unsigned model_files_open(void);
+int model_minor_seen(devminor_t minor);
+unsigned model_minors_seen(void);
+unsigned model_select_reply(devminor_t minor);
+
 #endif

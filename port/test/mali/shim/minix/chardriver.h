@@ -24,4 +24,10 @@ struct chardriver {
 	void (*cdr_other)(void *m_ptr, int ipc_status);
 };
 void chardriver_reply_task(endpoint_t endpt, cdev_id_t id, int r);
+void chardriver_reply_select(endpoint_t endpt, devminor_t minor, int ops);
+int chardriver_open_minor(devminor_t minor);
+#define CDEV_OP_RD	0x01
+#define CDEV_OP_WR	0x02
+#define CDEV_OP_ERR	0x04
+#define CDEV_NOTIFY	0x08
 #endif

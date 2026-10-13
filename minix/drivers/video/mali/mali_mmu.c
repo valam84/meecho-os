@@ -528,7 +528,7 @@ heap_fault(int as, struct mali_vm *vm, uint32_t bits, uint32_t fs,
 		log_warn(&mali_log, "%s: the heap at 0x%08llx cannot grow at "
 		    "0x%08llx (%zu KiB of %zu): %d\n", vm->name,
 		    (unsigned long long)bo->va, (unsigned long long)addr,
-		    bo->mem / 1024, bo->size / 1024, r);
+		    bo->backed / 1024, bo->size / 1024, r);
 		return r;
 	} else {
 		vm->grows++;
@@ -537,7 +537,7 @@ heap_fault(int as, struct mali_vm *vm, uint32_t bits, uint32_t fs,
 		    "%zu\n", vm->name, (unsigned long long)addr, fs,
 		    (unsigned long long)piece,
 		    frclock_64_to_micros(delta_frclock_64(t0, t1)),
-		    bo->mem / 1024, bo->size / 1024);
+		    bo->backed / 1024, bo->size / 1024);
 	}
 	/*
 	 * A job of this window that failed meanwhile, for a reason of its

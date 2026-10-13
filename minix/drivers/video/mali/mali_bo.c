@@ -232,6 +232,37 @@ va_alloc(struct mali_vm *vm, size_t size, uint32_t flags, uint64_t *va,
 	return ENOSPC;
 }
 
+/* ---- memory ----------------------------------------------------------- */
+
+/* The device's word when a buffer's memory goes (mali_drm.c: its fence). */
+void (*mali_mem_gone)(struct mali_mem *mem);
+
+static void
+mem_destroy(struct mali_mem *mem)
+{
+	if (mali_mem_gone != NULL)
+		mali_mem_gone(mem);
+	if (mem->cpu != NULL && mem->cpu != MAP_FAILED)
+		munmap(mem->cpu, mem->size);
+	if (!(mem->flags & PANFROST_BO_HEAP))
+		total -= mem->size;
+	free(mem->pages);
+	free(mem);
+}
+
+void
+mali_mem_ref(struct mali_mem *mem)
+{
+	mem->refs++;
+}
+
+void
+mali_mem_unref(struct mali_mem *mem)
+{
+	if (--mem->refs == 0)
+		mem_destroy(mem);
+}
+
 /* ---- buffers ---------------------------------------------------------- */
 
 static void
@@ -241,47 +272,46 @@ bo_destroy(struct mali_bo *bo)
 
 	/*
 	 * Out of the GPU's tables first, and out of the MMU's caches: the
-	 * pages go back to VM next, and the GPU must not reach them after.
+	 * pages go back to VM next (if this was the memory's last
+	 * placement), and the GPU must not reach them after.
 	 */
 	if (bo->va != 0) {
 		mali_vm_unmap(bo->vm, bo->va, npages);
 		TAILQ_REMOVE(&bo->vm->bos, bo, link);
 	}
-	if (bo->cpu != NULL && bo->cpu != MAP_FAILED)
-		munmap(bo->cpu, bo->size);
 	if (bo->pieces != NULL)
 		for (i = 0; i < bo->size / MALI_HEAP_PIECE; i++)
 			if (bo->pieces[i] != NULL)
 				munmap(bo->pieces[i], MALI_HEAP_PIECE);
-	bo->vm->mem -= bo->mem;
-	total -= bo->mem;
+	bo->vm->mem -= bo->backed;
+	if (bo->flags & PANFROST_BO_HEAP)
+		total -= bo->backed;
 	free(bo->pieces);
-	free(bo->pages);
+	if (bo->mem != NULL)
+		mali_mem_unref(bo->mem);
 	free(bo);
 }
 
 /*
- * A heap: its place, and nothing behind it yet - no memory, no entries in
- * the tables; the GPU's first access to each 2 MiB of it faults, and the
- * fault brings the piece in (mali_bo_grow()).
+ * Place bo in its address space: an address as panfrost picks one, and
+ * the memory's pages in the tables - a heap's come later, by its faults.
  */
-static struct mali_bo *
-heap_new(struct mali_bo *bo, int *err)
+static int
+place(struct mali_bo *bo)
 {
 	struct mali_bo *before;
-	uint64_t va;
+	uint64_t va, prot;
 	int r;
 
-	if ((bo->pieces = calloc(bo->size / MALI_HEAP_PIECE,
-	    sizeof(*bo->pieces))) == NULL) {
-		bo_destroy(bo);
-		*err = ENOMEM;
-		return NULL;
-	}
-	if ((r = va_alloc(bo->vm, bo->size, bo->flags, &va, &before)) != OK) {
-		bo_destroy(bo);
-		*err = r;
-		return NULL;
+	if ((r = va_alloc(bo->vm, bo->size, bo->flags, &va, &before)) != OK)
+		return r;
+	if (!(bo->flags & PANFROST_BO_HEAP)) {
+		prot = MALI_PTE_READ | MALI_PTE_WRITE;
+		if (bo->flags & PANFROST_BO_NOEXEC)
+			prot |= MALI_PTE_XN;
+		if ((r = mali_vm_map(bo->vm, va, bo->mem->pages,
+		    bo->size / MALI_PAGE, prot)) != OK)
+			return r;
 	}
 	bo->va = va;
 	if (before != NULL)
@@ -289,20 +319,37 @@ heap_new(struct mali_bo *bo, int *err)
 	else
 		TAILQ_INSERT_TAIL(&bo->vm->bos, bo, link);
 	bo->mmap_offset = MMAP_OFFSET_BASE + va;
+	return OK;
+}
+
+/* A placement of mem in vm, not yet placed; mem gains a reference. */
+static struct mali_bo *
+bo_alloc(struct mali_vm *vm, struct mali_mem *mem)
+{
+	struct mali_bo *bo;
+
+	if ((bo = calloc(1, sizeof(*bo))) == NULL)
+		return NULL;
+	bo->vm = vm;
+	bo->mem = mem;
+	mem->refs++;
+	bo->flags = mem->flags;
+	bo->size = mem->size;
+	bo->refs = 1;
 	return bo;
 }
 
 /*
- * A new buffer of size bytes in vm, with PANFROST_BO_* flags, placed and
- * mapped on the GPU.  The caller checks the flags.  A heap is placed and
- * left empty (heap_new()).
+ * A new buffer of size bytes in vm, with PANFROST_BO_* flags: its memory,
+ * and its placement on the GPU.  The caller checks the flags.  A heap is
+ * placed and left empty: its memory comes as the GPU faults on it.
  */
 struct mali_bo *
 mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
 {
-	struct mali_bo *bo, *before;
+	struct mali_mem *mem;
+	struct mali_bo *bo;
 	size_t npages, k;
-	uint64_t va, prot;
 	int r;
 
 	if (flags & PANFROST_BO_HEAP)
@@ -313,73 +360,106 @@ mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
 		*err = EINVAL;
 		return NULL;
 	}
-	if ((bo = calloc(1, sizeof(*bo))) == NULL) {
+	if (!(flags & PANFROST_BO_HEAP) && (total + size > limit_total ||
+	    vm->mem + size > limit_vm)) {
 		*err = ENOMEM;
 		return NULL;
 	}
-	bo->vm = vm;
-	bo->flags = flags;
-	bo->size = size;
-	bo->refs = 1;
-	if (flags & PANFROST_BO_HEAP)
-		return heap_new(bo, err);
-
-	if (total + size > limit_total || vm->mem + size > limit_vm) {
-		free(bo);
+	if ((mem = calloc(1, sizeof(*mem))) == NULL) {
 		*err = ENOMEM;
 		return NULL;
 	}
-	npages = size / MALI_PAGE;
-	if ((bo->pages = calloc(npages, sizeof(*bo->pages))) == NULL) {
-		free(bo);
+	mem->flags = flags;
+	mem->size = size;
+	mem->minor = -1;
+	if (!(flags & PANFROST_BO_HEAP))
+		total += size;
+	if ((bo = bo_alloc(vm, mem)) == NULL) {
+		mem_destroy(mem);
 		*err = ENOMEM;
-		return NULL;
-	}
-	bo->mem = size;
-	vm->mem += size;
-	total += size;
-
-	if ((r = va_alloc(vm, size, flags, &va, &before)) != OK) {
-		bo_destroy(bo);
-		*err = r;
 		return NULL;
 	}
 
-	bo->cpu = mmap(NULL, size, PROT_READ | PROT_WRITE,
-	    MAP_ANON | MAP_PRIVATE | MAP_PREALLOC, -1, 0);
-	if (bo->cpu == MAP_FAILED) {
-		bo->cpu = NULL;
-		bo_destroy(bo);
-		*err = ENOMEM;
-		return NULL;
-	}
-	for (k = 0; k < npages; k++) {
-		if ((r = sys_umap(SELF, VM_D, (vir_bytes)bo->cpu +
-		    k * MALI_PAGE, MALI_PAGE, &bo->pages[k])) != OK) {
-			log_warn(&mali_log, "no physical address for page %zu "
-			    "of a buffer: %d\n", k, r);
+	if (flags & PANFROST_BO_HEAP) {
+		if ((bo->pieces = calloc(size / MALI_HEAP_PIECE,
+		    sizeof(*bo->pieces))) == NULL) {
 			bo_destroy(bo);
 			*err = ENOMEM;
 			return NULL;
 		}
+	} else {
+		bo->backed = size;
+		vm->mem += size;
+		npages = size / MALI_PAGE;
+		if ((mem->pages = calloc(npages, sizeof(*mem->pages))) ==
+		    NULL) {
+			bo_destroy(bo);
+			*err = ENOMEM;
+			return NULL;
+		}
+		mem->cpu = mmap(NULL, size, PROT_READ | PROT_WRITE,
+		    MAP_ANON | MAP_PRIVATE | MAP_PREALLOC, -1, 0);
+		if (mem->cpu == MAP_FAILED) {
+			mem->cpu = NULL;
+			bo_destroy(bo);
+			*err = ENOMEM;
+			return NULL;
+		}
+		for (k = 0; k < npages; k++) {
+			if ((r = sys_umap(SELF, VM_D, (vir_bytes)mem->cpu +
+			    k * MALI_PAGE, MALI_PAGE, &mem->pages[k])) != OK) {
+				log_warn(&mali_log, "no physical address for "
+				    "page %zu of a buffer: %d\n", k, r);
+				bo_destroy(bo);
+				*err = ENOMEM;
+				return NULL;
+			}
+		}
+		/* VM's zeros to RAM, before the GPU can read the pages. */
+		cache(CACHE_CLEAN_INVALIDATE, mem->cpu, size);
 	}
-	/* VM's zeros to RAM, before the GPU can read the pages. */
-	cache(CACHE_CLEAN_INVALIDATE, bo->cpu, size);
 
-	prot = MALI_PTE_READ | MALI_PTE_WRITE;
-	if (flags & PANFROST_BO_NOEXEC)
-		prot |= MALI_PTE_XN;
-	if ((r = mali_vm_map(vm, va, bo->pages, npages, prot)) != OK) {
+	if ((r = place(bo)) != OK) {
 		bo_destroy(bo);
 		*err = r;
 		return NULL;
 	}
-	bo->va = va;
-	if (before != NULL)
-		TAILQ_INSERT_BEFORE(before, bo, link);
-	else
-		TAILQ_INSERT_TAIL(&vm->bos, bo, link);
-	bo->mmap_offset = MMAP_OFFSET_BASE + va;
+	return bo;
+}
+
+/*
+ * The memory of another context's buffer placed in vm too (PRIME): the
+ * same pages at an address of vm's own, chosen as for a buffer made here,
+ * with the flags it was made with - as panfrost maps a GEM object into
+ * each file that has a handle to it.  It counts against vm's limit: what
+ * a context holds placed is what it can keep alive.  A heap never comes
+ * here (it is never exported).
+ */
+struct mali_bo *
+mali_bo_import(struct mali_vm *vm, struct mali_mem *mem, int *err)
+{
+	struct mali_bo *bo;
+	int r;
+
+	if (mem->flags & PANFROST_BO_HEAP) {
+		*err = EINVAL;
+		return NULL;
+	}
+	if (vm->mem + mem->size > limit_vm) {
+		*err = ENOMEM;
+		return NULL;
+	}
+	if ((bo = bo_alloc(vm, mem)) == NULL) {
+		*err = ENOMEM;
+		return NULL;
+	}
+	bo->backed = mem->size;
+	vm->mem += mem->size;
+	if ((r = place(bo)) != OK) {
+		bo_destroy(bo);
+		*err = r;
+		return NULL;
+	}
 	return bo;
 }
 
@@ -458,7 +538,7 @@ mali_bo_grow(struct mali_bo *bo, uint64_t va, uint64_t *piece)
 		return r;
 	}
 	bo->pieces[i] = p;
-	bo->mem += MALI_HEAP_PIECE;
+	bo->backed += MALI_HEAP_PIECE;
 	bo->vm->mem += MALI_HEAP_PIECE;
 	total += MALI_HEAP_PIECE;
 	return OK;
@@ -468,8 +548,10 @@ mali_bo_grow(struct mali_bo *bo, uint64_t va, uint64_t *piece)
 void
 mali_bo_for_gpu(struct mali_bo *bo)
 {
-	if (bo->cpu_access)
-		cache(CACHE_CLEAN_INVALIDATE, bo->cpu, bo->size);
+	struct mali_mem *mem = bo->mem;
+
+	if (mem->cpu_access)
+		cache(CACHE_CLEAN_INVALIDATE, mem->cpu, mem->size);
 }
 
 /*
@@ -479,30 +561,35 @@ mali_bo_for_gpu(struct mali_bo *bo)
 void
 mali_bo_for_cpu(struct mali_bo *bo)
 {
-	if (bo->cpu_access)
-		cache(CACHE_CLEAN_INVALIDATE, bo->cpu, bo->size); /* not INVALIDATE */
+	struct mali_mem *mem = bo->mem;
+
+	if (mem->cpu_access)
+		cache(CACHE_CLEAN_INVALIDATE, mem->cpu, mem->size); /* not INVALIDATE */
 }
 
 /*
- * Map the buffer into process who, at addr if not NULL: VM links who's
+ * Map the memory into process who, at addr if not NULL: VM links who's
  * new region to this service's pages (vm_remap), so who sees the very
- * pages the GPU does.  From now on a processor may touch it.
+ * pages the GPU does.  The whole buffer: VM lends a region whole or not
+ * at all.  From now on a processor may touch it.
  */
 int
-mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
+mali_mem_map_into(struct mali_mem *mem, endpoint_t who, void *addr,
 	int writable, void **where)
 {
 	void *v;
 
+	if (mem->cpu == NULL)
+		return EINVAL;		/* a heap's is nobody's to map */
 	/*
 	 * The source by its own endpoint, not SELF: VM checks both ends with
 	 * vm_isokendpt(), and SELF is no endpoint there - the call fails
 	 * without a word (the board said ENOMEM to the first mmap).
 	 */
 	if (writable)
-		v = vm_remap(who, sef_self(), addr, bo->cpu, bo->size);
+		v = vm_remap(who, sef_self(), addr, mem->cpu, mem->size);
 	else
-		v = vm_remap_ro(who, sef_self(), addr, bo->cpu, bo->size);
+		v = vm_remap_ro(who, sef_self(), addr, mem->cpu, mem->size);
 	if (v == MAP_FAILED)
 		return ENOMEM;
 	/*
@@ -510,9 +597,16 @@ mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
 	 * hold lines of it it fetched before; unless a job is about to end
 	 * (which invalidates), drop them now.
 	 */
-	if (!bo->cpu_access && bo->busy == 0)
-		cache(CACHE_INVALIDATE, bo->cpu, bo->size);
-	bo->cpu_access = 1;
+	if (!mem->cpu_access && mem->busy == 0)
+		cache(CACHE_INVALIDATE, mem->cpu, mem->size);
+	mem->cpu_access = 1;
 	*where = v;
 	return OK;
+}
+
+int
+mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
+	int writable, void **where)
+{
+	return mali_mem_map_into(bo->mem, who, addr, writable, where);
 }

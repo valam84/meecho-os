@@ -34,6 +34,7 @@
 #include <lib.h>
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <sys/poll.h>
@@ -56,6 +57,26 @@
  * VFS вместе с SELECT и согласования с PM - это работа не в libc.
  */
 #define PPOLL_MASK_CAP_MS	1000
+
+/*
+ * MEECHO: POLLHUP у трубы. select(2) говорит про трубу без пишущих только
+ * «готова к чтению» (read вернёт 0), и poll(2) молчал про обрыв - а по
+ * POSIX и у NetBSD опустевшая труба без пишущих даёт POLLHUP (NetBSD - вместе
+ * с POLLIN). Программы, что узнают конец трубы только по POLLHUP, крутились:
+ * модуль script у yambar делал poll и read, получал 0 и спрашивал снова,
+ * тысячу раз в секунду. Отличить конец от данных можно без чтения: в PFS
+ * размер трубы - это число непрочитанных байтов (st_size), так что готовая к
+ * чтению пустая труба - это труба без пишущих. Данные, пришедшие между
+ * select и fstat, дают ненулевой размер, то есть ложного обрыва не бывает.
+ * Стоит один fstat(2) на готовый к чтению дескриптор.
+ */
+static int
+fifo_hung_up(int fd)
+{
+	struct stat st;
+
+	return fstat(fd, &st) == 0 && S_ISFIFO(st.st_mode) && st.st_size == 0;
+}
 
 static int
 poll_common(struct pollfd *p, nfds_t nfds, int timout)
@@ -130,8 +151,11 @@ poll_common(struct pollfd *p, nfds_t nfds, int timout)
 	for (i = 0; i < nfds; i++) {
 		if (p[i].fd < 0)
 			continue;
-		if (FD_ISSET(p[i].fd, &rd))
+		if (FD_ISSET(p[i].fd, &rd)) {
 			p[i].revents |= p[i].events & (POLLIN|POLLRDNORM);
+			if (fifo_hung_up(p[i].fd))
+				p[i].revents |= POLLHUP;
+		}
 		if (FD_ISSET(p[i].fd, &wr))
 			p[i].revents |=
 			    p[i].events & (POLLOUT|POLLWRNORM|POLLWRBAND);

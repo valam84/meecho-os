@@ -5,6 +5,8 @@
  * process in it.  These are the shapes in which that stops a program -
  * each the shape of a real one - and what gfx_poll() must make of them:
  *
+ *   hup      libc's poll(2) itself: POLLHUP of a pipe with no writer left
+ *            (yambar's script module knows a script's end by nothing else)
  *   before   poll(2) before any thread: the plain call, its timeout kept
  *   ring     three threads pass a byte round a ring of pipes, each waiting
  *            in poll() on its own; the main thread waits for the end in
@@ -140,6 +142,37 @@ main(void)
 	long t0, took;
 	int i, r, ep, res;
 	char c;
+
+	/*
+	 * hup: libc's poll(2) - select(2) underneath - says POLLHUP of a pipe
+	 * with no writer left, as POSIX and NetBSD do: open and empty is a
+	 * timeout; data and no writer is POLLIN; drained, POLLHUP.
+	 */
+	{
+		struct pollfd hp;
+		int hu[2];
+
+		if (pipe(hu) != 0) {
+			perror("pipe");
+			return 2;
+		}
+		hp.fd = hu[0];
+		hp.events = POLLIN;
+		r = poll(&hp, 1, 0);
+		CHECK(r == 0, "hup: an open, empty pipe is not ready: %d", r);
+		if (write(hu[1], "ab", 2) != 2)
+			return 2;
+		close(hu[1]);
+		r = poll(&hp, 1, 0);
+		CHECK(r == 1 && (hp.revents & POLLIN), "hup: data, no writer: "
+		    "%d, revents 0x%x", r, hp.revents);
+		if (read(hu[0], &c, 1) != 1 || read(hu[0], &c, 1) != 1)
+			return 2;
+		r = poll(&hp, 1, 0);
+		CHECK(r == 1 && (hp.revents & POLLHUP), "hup: drained, no "
+		    "writer: POLLHUP: %d, revents 0x%x", r, hp.revents);
+		close(hu[0]);
+	}
 
 	/* before: no thread yet. */
 	if (pipe(epipe) != 0) {

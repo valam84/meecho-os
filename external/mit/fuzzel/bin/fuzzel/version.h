@@ -1,0 +1,1 @@
+#define FUZZEL_VERSION "1.15.0"

@@ -810,6 +810,17 @@ matches_selected_next_page(struct matches *matches, bool scrolling)
     return false;
 }
 
+#if defined(__minix)
+/*
+ * MEECHO: matches that compare equal - all of them, with nothing typed -
+ * are left to qsort(3) to order, and the C library does not promise to
+ * keep their order.  glibc's merge sort happens to; NetBSD's quicksort
+ * does not, and the dmenu list came up shuffled (the first entry gone
+ * from the first page, the last one on top).  The list's own order
+ * (application->index, the line number in dmenu mode) decides the ties.
+ */
+#define match_compar match_compar_dist
+#endif
 static int
 match_compar(const void *_a, const void *_b)
 {
@@ -850,6 +861,21 @@ match_compar(const void *_a, const void *_b)
     } else
         return 0;
 }
+#if defined(__minix)
+#undef match_compar
+static int
+match_compar(const void *_a, const void *_b)
+{
+    const struct match *a = _a;
+    const struct match *b = _b;
+    int r = match_compar_dist(_a, _b);
+
+    if (r != 0)
+        return r;
+    return (a->application->index > b->application->index) -
+        (a->application->index < b->application->index);
+}
+#endif
 
 static void
 match_app(struct matches *matches, struct application *app,
@@ -1386,8 +1412,10 @@ match_thread(void *_ctx)
     char proc_title[16];
     xsnprintf(proc_title, sizeof(proc_title), "fuzzel:mtch:%d", my_id);
 
+#if !defined(__minix)	/* MEECHO: user-level threads have no names */
     if (pthread_setname_np(pthread_self(), proc_title) < 0)
         LOG_ERRNO("render worker %d: failed to set process title", my_id);
+#endif
 
     const enum match_fields fields = matches->fields;
     const bool match_name = fields & MATCH_NAME;

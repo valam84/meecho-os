@@ -32,7 +32,8 @@ _Static_assert(
 #if !defined(__STDC_UTF_32__) || !__STDC_UTF_32__
  #error "char32_t does not use UTF-32"
 #endif
-#if (!defined(__STDC_ISO_10646__) || !__STDC_ISO_10646__) && !defined(__FreeBSD__) && !defined(__OpenBSD__)
+/* MEECHO (__minix), as NetBSD: wchar_t is the code point in UTF-8 locales. */
+#if (!defined(__STDC_ISO_10646__) || !__STDC_ISO_10646__) && !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__minix)
  #error "wchar_t does not use UTF-32"
 #endif
 

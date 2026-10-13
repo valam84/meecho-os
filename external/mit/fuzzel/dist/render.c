@@ -1938,8 +1938,10 @@ render_worker_thread(void *_ctx)
     char proc_title[16];
     xsnprintf(proc_title, sizeof(proc_title), "fuzzel:rend:%d", my_id);
 
+#if !defined(__minix)	/* MEECHO: user-level threads have no names */
     if (pthread_setname_np(pthread_self(), proc_title) < 0)
         LOG_ERRNO("render worker %d: failed to set process title", my_id);
+#endif
 
     sem_t *start = &render->workers.start;
     sem_t *done = &render->workers.done;

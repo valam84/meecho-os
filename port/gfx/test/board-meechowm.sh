@@ -32,9 +32,14 @@ XKB_CONFIG_ROOT=$G/xkb
 FONTCONFIG_FILE=$G/fonts.conf
 export XDG_RUNTIME_DIR XKB_CONFIG_ROOT FONTCONFIG_FILE
 
+# SIGHUP ignored: started from ssh, the compositor is in the session's
+# process group, and the end of the ssh session hangs it up - on the first
+# run it died the moment this script returned, and foot after it ("Broken
+# pipe"), while the monitor went back to the console.
+trap '' HUP
 $G/meechowm -s "$G/foot -o main.workers=0 -f 'DejaVu Sans Mono:size=14' \
     -e /bin/sh -c 'echo FOOT-OK on MEECHO; exec /bin/sh -i'" \
-    > /tmp/mwm.log 2>&1 &
+    < /dev/null > /tmp/mwm.log 2>&1 &
 echo $! > /tmp/mwm.pid
 sleep 15
 

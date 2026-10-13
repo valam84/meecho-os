@@ -305,27 +305,59 @@ vop2_set_mode(const struct videomode *m, phys_bytes fb, unsigned stride)
 }
 
 /*
- * Show another frame buffer of the same mode: a new address for the window,
- * committed, and taken at the next frame start - which is when the buffer
- * shown before stops being read, and so what the caller waits for.  Polled
- * at a quarter of a millisecond: at 60 Hz the wait is at most a frame, and
- * the commit bit is the one register that says when it is over.
+ * Until the port has taken what was committed: the commit bit reads one
+ * until a frame start has applied the new values.  Polled at a quarter of
+ * a millisecond - busily, which is why the callers wait only when they must.
  */
-int
-vop2_scanout(phys_bytes fb)
+static int
+wait_taken(void)
 {
 	unsigned spins;
 
-	if (fb > 0xffffffffUL)
-		return EINVAL;
-	wr(SMART0_REGION0_YRGB_MST, (uint32_t)fb);
-	wr(VOP_REG_CFG_DONE, CFG_DONE_EN | CFG_DONE_VP0);
 	for (spins = 0; spins < 400; spins++) {
 		if (!(rd(VOP_REG_CFG_DONE) & CFG_DONE_VP0))
 			return OK;
 		micro_delay(250);
 	}
 	return ETIMEDOUT;
+}
+
+/*
+ * Show another frame buffer of the same mode: a new address for the window,
+ * committed, taken at the next frame start - which is when the buffer shown
+ * before stops being read.
+ *
+ * A commit not taken yet is waited for first: an address written over it
+ * would be taken in its place, and the buffer it named would never have
+ * been on the screen.  Waiting for this commit too ("wait") is for a caller
+ * with two buffers, who draws into the one shown before as soon as this
+ * returns.  With three there is no need: the next frame goes into the
+ * buffer shown two commits ago, and the next call waits for this one.  The
+ * wait cost a busy frame per flip - a quarter of a core while the cursor
+ * moved, on the board.
+ */
+int
+vop2_scanout(phys_bytes fb, int wait)
+{
+	if (fb > 0xffffffffUL)
+		return EINVAL;
+	if (wait_taken() != OK)
+		return ETIMEDOUT;
+	wr(SMART0_REGION0_YRGB_MST, (uint32_t)fb);
+	wr(VOP_REG_CFG_DONE, CFG_DONE_EN | CFG_DONE_VP0);
+	return wait ? wait_taken() : OK;
+}
+
+/*
+ * The window's address as the controller has it, and whether a commit is
+ * still waiting for a frame start: the hardware's side of "which buffer is
+ * on the screen", for the driver's report.
+ */
+uint32_t
+vop2_window_addr(int *pending)
+{
+	*pending = (rd(VOP_REG_CFG_DONE) & CFG_DONE_VP0) != 0;
+	return rd(SMART0_REGION0_YRGB_MST);
 }
 
 /*

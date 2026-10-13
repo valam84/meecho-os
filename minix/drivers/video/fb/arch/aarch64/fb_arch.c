@@ -455,13 +455,18 @@ flush_rows(int b, unsigned y0, unsigned y1)
 	}
 }
 
-/* Put buffer b on the screen; the call returns when it is there. */
+/*
+ * Put buffer b on the screen at the next frame start.  With three buffers
+ * the call does not wait for it (see vop2_scanout() and FBIOC_FLIP); with
+ * fewer it returns when b is there.
+ */
 static int
 show(int b)
 {
 	int r = OK;
 
-	if (!virtual_mode && (r = vop2_scanout(buf_phys[b])) != OK)
+	if (!virtual_mode &&
+	    (r = vop2_scanout(buf_phys[b], nbuf < FB_MAX_BUFFERS)) != OK)
 		log_warn(&fb_log, "buffer %d did not reach the screen: %d\n",
 		    b, r);
 	if (r == OK)
@@ -553,6 +558,25 @@ arch_fb_release(int minor)
 		(void)show(0);
 }
 
+/* Which buffer the controller's window names, by its address register. */
+static void
+report_window(void)
+{
+	uint32_t a;
+	int i, pending;
+
+	a = vop2_window_addr(&pending);
+	for (i = 0; i < nbuf; i++)
+		if (buf_phys[i] == (phys_bytes)a)
+			break;
+	if (i < nbuf)
+		log_info(&fb_log, "window at 0x%08x: buffer %d%s\n", a, i,
+		    pending ? " (commit pending)" : "");
+	else
+		log_info(&fb_log, "window at 0x%08x: none of the buffers%s\n",
+		    a, pending ? " (commit pending)" : "");
+}
+
 static void
 report_state(void)
 {
@@ -573,6 +597,7 @@ report_state(void)
 	    dwhdmi_phy_locked() ? "locked" : "NOT locked",
 	    mode.hdisplay, mode.vdisplay, shown, nbuf, owner);
 	(void)vop2_scanning(&line);
+	report_window();
 	fbcon_stats(stats, sizeof(stats));
 	log_info(&fb_log, "%s\n", stats);
 }

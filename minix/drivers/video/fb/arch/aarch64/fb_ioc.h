@@ -46,10 +46,14 @@ typedef char fb_logdump_fits[(sizeof(struct fb_logdump) <= 4095) ? 1 : -1];
  * 0x00RRGGBB), DRM's fourcc 'XR24'.
  *
  * FBIOC_FLIP shows buffer "buf": its lines are cleaned out of the
- * processor's caches (the controller reads behind them), its address goes
- * into the window, and the call returns once the controller has taken it at
- * a frame start - so the buffer shown before may be drawn into as soon as
- * it returns.  Rows y0..y1-1 only are cleaned if y1 > y0: damage.
+ * processor's caches (the controller reads behind them), and its address
+ * goes into the window, taken at the next frame start.  With three buffers
+ * the call returns at once, after waiting only for the previous FLIP to have
+ * been taken: the buffer shown before stays on the screen until the next
+ * frame start, and the one to draw into next is the one shown two FLIPs ago
+ * - (shown + 1) % 3, cycling.  With two, it returns once "buf" is on the
+ * screen, so the other may be drawn into.  Rows y0..y1-1 only are cleaned
+ * if y1 > y0: damage.
  */
 #define FB_MAX_BUFFERS	3
 #define FB_FORMAT_XRGB8888	0x34325258u	/* fourcc 'XR24' */

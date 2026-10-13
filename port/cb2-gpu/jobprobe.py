@@ -18,6 +18,7 @@
 #	python3 jobprobe.py fault > ref-fault.txt
 #	python3 jobprobe.py api > ref-api.txt
 #	python3 jobprobe.py two > ref-two.txt
+#	python3 jobprobe.py prime > ref-prime.txt
 #
 # Режим api (веха 11.6) - эталон интерфейса, который служба mali отдаёт
 # клиентам: что panfrost отвечает на каждый вызов, который служба
@@ -907,7 +908,415 @@ def probe_two():
     return 0
 
 
+# ---- режим prime (веха 11.6, вторая часть) -------------------------------
+#
+# Буферы и заборы дескрипторами - то, чем Mesa передаёт кадр композитору:
+# PRIME (буфер - дескриптор dma-buf, через сокет в другой процесс, импорт в
+# другой контекст: тот же объект, своё место в адресном пространстве
+# импортёра) и sync file (забор - дескриптор: poll, слияние, импорт в
+# объект синхронизации другого контекста, задание после чужого задания).
+# Что зовёт Mesa (Gallium Panfrost, JM), снято с её исходников:
+# drmPrimeHandleToFD/FDToHandle и lseek(SEEK_END) - размер импорта;
+# SYNCOBJ_HANDLE_TO_FD с EXPORT_SYNC_FILE и FD_TO_HANDLE с
+# IMPORT_SYNC_FILE - на каждом panfrost_fence_create(), то есть на каждом
+# кадре; SYNC_IOC_MERGE (sync_accumulate) и poll (sync_wait).  TRANSFER и
+# DMA_BUF_IOCTL_*_SYNC_FILE зовут только panthor и Vulkan - здесь они для
+# полноты картины: что panfrost платы на них отвечает.
+#
+# Контексты A и B - два открытия узла в одном процессе, C - ребёнок,
+# получающий буфер через сокет (SCM_RIGHTS).  Вывод - строка в строку с
+# pftest prime (port/test/mali/pftest.c); номера дескрипторов не печатаются
+# (у Python их берёт себе и mmap), только то, что от них зависит.
+
+import select, socket
+
+PRIME_HANDLE_TO_FD = IOC(IOWR, 0x2d, 12)
+PRIME_FD_TO_HANDLE = IOC(IOWR, 0x2e, 12)
+SYNCOBJ_HANDLE_TO_FD = IOC(IOWR, 0xc1, 16)
+SYNCOBJ_FD_TO_HANDLE = IOC(IOWR, 0xc2, 16)
+SYNCOBJ_TRANSFER = IOC(IOWR, 0xcc, 32)
+SYNC_FILE_FLAG = 1          # EXPORT_SYNC_FILE / IMPORT_SYNC_FILE
+
+
+def IOCG(d, g, nr, size):
+    return (d << 30) | (size << 16) | (ord(g) << 8) | nr
+
+
+SYNC_IOC_MERGE = IOCG(IOWR, '>', 3, 48)
+SYNC_IOC_FILE_INFO = IOCG(IOWR, '>', 4, 56)
+DMA_BUF_IOCTL_SYNC = IOCG(IOW, 'b', 0, 8)
+DMA_BUF_EXPORT_SYNC_FILE = IOCG(IOWR, 'b', 2, 8)
+DMA_BUF_IMPORT_SYNC_FILE = IOCG(IOW, 'b', 3, 8)
+DMA_SYNC_READ, DMA_SYNC_WRITE, DMA_SYNC_END = 1, 2, 4
+
+LONG = 65000                # заданий в долгой цепочке: ~40 мс на плате
+LONG_WORD = 0x3ff000 + 4 * ((LONG - 1) % 1024)    # слово последнего
+PRIME_FAULT_VA = 0x10000040  # в A ничего нет на 256 МиБ
+
+
+def prime_export(fd, handle, flags=os.O_CLOEXEC | os.O_RDWR):
+    v, e = try_ioctl(fd, PRIME_HANDLE_TO_FD, "<IIi", handle, flags, -1)
+    return (v[2] if v else None), e
+
+
+def prime_import(fd, dfd):
+    v, e = try_ioctl(fd, PRIME_FD_TO_HANDLE, "<IIi", 0, 0, dfd)
+    return (v[0] if v else None), e
+
+
+def so_export(fd, so, flags):
+    v, e = try_ioctl(fd, SYNCOBJ_HANDLE_TO_FD, "<IIiI", so, flags, -1, 0)
+    return (v[2] if v else None), e
+
+
+def so_import(fd, sfd, flags, so=0):
+    v, e = try_ioctl(fd, SYNCOBJ_FD_TO_HANDLE, "<IIiI", so, flags, sfd, 0)
+    return (v[0] if v else None), e
+
+
+def readiness(sfd, ms=0):
+    p = select.poll()
+    p.register(sfd, select.POLLIN)
+    ev = p.poll(ms)
+    return "ready" if ev and ev[0][1] & select.POLLIN else "not ready"
+
+
+def file_info(sfd):
+    v, e = try_ioctl(sfd, SYNC_IOC_FILE_INFO, "<32siIIIQ", b"", 0, 0, 0, 0,
+                     0)
+    return e or "status %d, %d fence(s)" % (v[1], v[3])
+
+
+def merge(f1, f2):
+    v, e = try_ioctl(f1, SYNC_IOC_MERGE, "<32siiII", b"merged", f2, -1, 0, 0)
+    return (v[2] if v else None), e
+
+
+def cloexec(f):
+    return fcntl.fcntl(f, fcntl.F_GETFD) & fcntl.FD_CLOEXEC
+
+
+def long_chain(m, va):
+    """LONG заданий WRITE_VALUE, каждое - в своё слово с 0x3ff000."""
+    for i in range(LONG):
+        nxt = va + JOB_SIZE * (i + 1) if i + 1 < LONG else 0
+        write_value_job(m, JOB_SIZE * i, (i % 65535) + 1, nxt,
+                        va + 0x3ff000 + 4 * (i % 1024), i)
+
+
+def offset_of(fd, handle):
+    r, e = try_ioctl(fd, GET_BO_OFFSET, "<IIQ", handle, 0, 0)
+    return e or "0x%x" % r[2]
+
+
+def pattern_in(m):
+    return "equal" if m[0x2000:0x2100] == bytes(range(256)) else "differs"
+
+
+def prime_child(node, sock):
+    """Ребёнок C: буфер через сокет, импорт в свой контекст, запись GPU."""
+    msg, fds, _, _ = socket.recv_fds(sock, 16, 1)
+    d = fds[0]
+    fc = os.open(node, os.O_RDWR)
+    h, e = prime_import(fc, d)
+    size = os.lseek(d, 0, os.SEEK_END)
+    v = ioctl(fc, CREATE_BO, "<IIIIQ", 0x4000, 0, 0, 0, 0)
+    hc, vac = v[2], v[4]
+    mc = map_bo(fc, hc, 0x4000)[1]
+    vai = ioctl(fc, GET_BO_OFFSET, "<IIQ", h, 0, 0)[2]
+    mi = map_bo(fc, h, 0x4000)[1]
+    for i in range(64):
+        nxt = vac + JOB_SIZE * (i + 1) if i + 1 < 64 else 0
+        write_value_job(mc, JOB_SIZE * i, i + 1, nxt, vai + 0x1000 + 4 * i,
+                        (0xc1 << 24) | i)
+    so = sync_create(fc)
+    r, e2 = submit(fc, vac, [hc, h], out=so)
+    sw, _ = sync_wait(fc, [so], 0, now_ns() + 2 * 10**9)
+    line = ("child: import %s, size 0x%x, address %s, the pattern %s; its "
+            "GPU writes 64 words: submit %s, wait %s" % (
+                e or "handle %d" % h, size, "0x%x" % vai, pattern_in(mi),
+                e2 or "ok", sw))
+    sock.send(line.encode())
+    mi.close()
+    mc.close()
+    os.close(fc)
+
+
+def probe_prime():
+    node = render_node()
+    fa = os.open(node, os.O_RDWR)
+    fb = os.open(node, os.O_RDWR)
+    pr, pw = os.pipe()
+    print("render node %s, mode prime" % node)
+    dmesg0 = os.popen("dmesg").read().splitlines()
+    r, e = try_ioctl(fa, GET_CAP, "<QQ", 0x5, 0)
+    print("cap prime: %s" % (e or r[1]))
+
+    # A: буфер, который разделяется (код - цепочка с 0, слова - с 0x1000,
+    # узор - с 0x2000), буфер долгих цепочек и куча.  B: сначала свой
+    # буфер - импорт встанет не туда же, где у A, - код и долгий буфер.
+    ha, vaa = create(fa, 0x4000, 0)
+    hl, val = create(fa, 0x400000, 0)
+    hh, vah = create(fa, 0x200000, BO_NOEXEC | BO_HEAP)
+    hb, vab = create(fb, 0x100000, BO_NOEXEC)
+    hc, vac = create(fb, 0x4000, 0)
+    hbl, vabl = create(fb, 0x400000, 0)
+    ma = map_bo(fa, ha, 0x4000)[1]
+    ml = map_bo(fa, hl, 0x400000)[1]
+    mc = map_bo(fb, hc, 0x4000)[1]
+    mbl = map_bo(fb, hbl, 0x400000)[1]
+    ma[0x2000:0x2100] = bytes(range(256))
+
+    # Вывоз: дескриптор, его флаги, размер через lseek - так его узнаёт Mesa.
+    d1, e = prime_export(fa, ha)
+    print("export %d: %s; close-on-exec %d, lseek to the end 0x%x, back to "
+          "%d" % (ha, e or "ok", cloexec(d1), os.lseek(d1, 0, os.SEEK_END),
+                  os.lseek(d1, 0, os.SEEK_SET)))
+    d2, e = prime_export(fa, ha, 0)
+    print("export %d again, no flags: %s; close-on-exec %d" % (ha, e or "ok",
+          cloexec(d2)))
+    print("export 99: %s" % (prime_export(fa, 99)[1] or "ok"))
+    print("export %d, flags 0x1234: %s" % (ha, prime_export(fa, ha,
+          0x1234)[1] or "ok"))
+    d3, e = prime_export(fa, hh)
+    print("export the heap %d: %s" % (hh, e or "ok"))
+    if d3 is not None:
+        os.close(d3)
+
+    # Ввоз: в тот же контекст - тот же номер; в другой - новый, тот же
+    # объект на своём месте; вторая выдача - тот же буфер.
+    h, e = prime_import(fa, d1)
+    print("import into the exporter: %s" % (e or "handle %d" % h))
+    hi, e = prime_import(fb, d1)
+    print("import into B: %s, address %s (A's 0x%x)" % (
+          e or "handle %d" % hi, offset_of(fb, hi), vaa))
+    h, e = prime_import(fb, d2)
+    print("import the second export into B: %s" % (e or "handle %d" % h))
+    for what, f in (("-1", -1), ("a pipe", pr), ("the render node", fa)):
+        print("import %s: %s" % (what, prime_import(fb, f)[1] or "ok"))
+
+    # Память одна: отображение импорта и mmap(2) самого дескриптора.
+    mi = map_bo(fb, hi, 0x4000)[1]
+    print("B's mapping of the import: the pattern %s" % pattern_in(mi))
+    md = mmap.mmap(d1, 0x4000, mmap.MAP_SHARED,
+                   mmap.PROT_READ | mmap.PROT_WRITE)
+    eq = pattern_in(md)
+    md[0x2100:0x2104] = b"\xa5\x5a\xc3\x3c"
+    print("mmap of the descriptor: the pattern %s, a write through it %s "
+          "to A" % (eq, "visible" if ma[0x2100:0x2104] ==
+                    b"\xa5\x5a\xc3\x3c" else "NOT visible"))
+    md.close()
+
+    # GPU: задания B пишут в импорт, задания A - в свой буфер, и каждый
+    # видит, что написал другой.
+    ma[0x1000:0x1100] = bytes(0x100)
+    vai = int(offset_of(fb, hi), 16)
+    for i in range(64):
+        nxt = vac + JOB_SIZE * (i + 1) if i + 1 < 64 else 0
+        write_value_job(mc, JOB_SIZE * i, i + 1, nxt, vai + 0x1000 + 4 * i,
+                        (0xb1 << 24) | i)
+    sob = sync_create(fb)
+    r, e = submit(fb, vac, [hc, hi], out=sob)
+    sw, _ = sync_wait(fb, [sob], 0, now_ns() + 2 * 10**9)
+    print("B's GPU writes 64 words into the import: submit %s, wait %s; A "
+          "sees %d wrong" % (e or "ok", sw, wrong(ma, 64, 0xb1)))
+    chain_into(ma, vaa, 64, 0xa1)
+    soa = sync_create(fa)
+    r, e = submit(fa, vaa, [ha], out=soa)
+    sw, _ = sync_wait(fa, [soa], 0, now_ns() + 2 * 10**9)
+    print("A's GPU writes 64 words into it: submit %s, wait %s; B sees %d "
+          "wrong" % (e or "ok", sw, wrong(mi, 64, 0xa1)))
+
+    # Неявная синхронизация: долгое задание B называет общий буфер - A
+    # ждёт его через WAIT_BO своего номера.
+    long_chain(mbl, vabl)
+    r, e = submit(fb, vabl, [hbl, hi])
+    a = wait_bo(fa, ha, 0)
+    c = wait_bo(fa, ha, now_ns() + 5 * 10**9)
+    print("B's long chain names the shared buffer: submit %s; A's wait_bo, "
+          "deadline past: %s; then: %s" % (e or "ok", a, c))
+
+    # Жизнь буфера: A закрывает свой номер и дескрипторы - буфер жив у B;
+    # B вывозит свой импорт (тот же буфер) - A ввозит его обратно.
+    r, e = try_ioctl(fa, GEM_CLOSE, "<II", ha, 0)
+    os.close(d1)
+    os.close(d2)
+    ma.close()
+    print("A closes handle %d and both descriptors: %s; B's mapping: the "
+          "pattern %s" % (ha, e or "ok", pattern_in(mi)))
+    d4, e = prime_export(fb, hi)
+    print("B exports its import: %s" % (e or "ok"))
+    h5, e = prime_import(fa, d4)
+    print("A imports it back: %s, address %s" % (e or "handle %d" % h5,
+          offset_of(fa, h5)))
+    m5 = map_bo(fa, h5, 0x4000)[1]
+    print("A's new mapping: the pattern %s" % pattern_in(m5))
+
+    # Другой процесс: дескриптор через сокет (SCM_RIGHTS).
+    sp, sc = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    m5[0x1000:0x1100] = bytes(0x100)
+    pid = os.fork()
+    if pid == 0:
+        sp.close()
+        try:
+            prime_child(node, sc)
+        finally:
+            os._exit(0)
+    sc.close()
+    socket.send_fds(sp, [b"x"], [d4])
+    line = sp.recv(4096).decode()
+    os.waitpid(pid, 0)
+    sp.close()
+    print(line)
+    print("A sees the child's words: %d wrong" % wrong(m5, 64, 0xc1))
+
+    # Sync file: без забора - ошибка; забор долгого задания A - дескриптор,
+    # poll, сведения; B ввозит его и ставит задание после - и его слово
+    # последнее.
+    so = sync_create(fa)
+    print("sync file of a sync object without a fence: %s" % (
+          so_export(fa, so, SYNC_FILE_FLAG)[1] or "ok"))
+    dl, e = prime_export(fa, hl)
+    hli, e2 = prime_import(fb, dl)
+    vali = int(offset_of(fb, hli), 16)
+    long_chain(ml, val)
+    r, e = submit(fa, val, [hl], out=so)
+    sf, e3 = so_export(fa, so, SYNC_FILE_FLAG)
+    print("long chain in A: submit %s, sync file %s; at once: %s, %s" % (
+          e or "ok", e3 or "ok", readiness(sf), file_info(sf)))
+    sin = sync_create(fb)
+    print("B imports the sync file into sync object %d: %s" % (sin,
+          so_import(fb, sf, SYNC_FILE_FLAG, sin)[1] or "ok"))
+    write_value_job(mc, 0, 1, 0, vali + LONG_WORD, 0xb0b0b0b0)
+    sout = sync_create(fb)
+    r, e = submit(fb, vac, [hc, hli], out=sout, in_syncs=[sin])
+    print("B's job after it: submit %s; its sync object at once: %s" % (
+          e or "ok", sync_wait(fb, [sout], 0, now_ns())[0]))
+    print("the sync file within 5 s: %s, %s" % (readiness(sf, 5000),
+          file_info(sf)))
+    sw, _ = sync_wait(fb, [sout], 0, now_ns() + 2 * 10**9)
+    print("B's job: %s; the word both write: 0x%08x (B's 0xb0b0b0b0, A's "
+          "0x%x)" % (sw, struct.unpack_from("<I", ml, LONG_WORD)[0],
+                     LONG - 1))
+
+    # Забор Mesa: panfrost_fence_create() - вывоз и ввоз в новый объект.
+    snap = sync_create(fa)
+    s2, e = so_export(fa, so, SYNC_FILE_FLAG)
+    e2 = so_import(fa, s2, SYNC_FILE_FLAG, snap)[1]
+    os.close(s2)
+    print("Mesa's fence: export %s, import %s, wait %s" % (e or "ok",
+          e2 or "ok", sync_wait(fa, [snap], 0, now_ns() + 10**9)[0]))
+
+    # Слияние: готовый с идущим - не готов, пока идёт второй.
+    sig = sync_create(fa, 1)
+    fsig, e = so_export(fa, sig, SYNC_FILE_FLAG)
+    print("sync file of a signaled sync object: %s, %s, %s" % (e or "ok",
+          readiness(fsig), file_info(fsig)))
+    long_chain(ml, val)
+    submit(fa, val, [hl], out=so)
+    frun = so_export(fa, so, SYNC_FILE_FLAG)[0]
+    fm, e = merge(fsig, frun)
+    print("merged with a running one: %s; at once: %s, %s" % (e or "ok",
+          readiness(fm), file_info(fm)))
+    print("  within 5 s: %s, %s" % (readiness(fm, 5000), file_info(fm)))
+    print("merge with a pipe: %s" % (merge(fsig, pr)[1] or "ok"))
+    os.close(fm)
+    os.close(frun)
+
+    for what, f in (("a pipe", pr), ("a dma-buf", d4), ("-1", -1)):
+        print("import %s as a sync file: %s" % (what, so_import(fa, f,
+              SYNC_FILE_FLAG, snap)[1] or "ok"))
+    print("import a sync file into sync object 99: %s" % (so_import(fa,
+          fsig, SYNC_FILE_FLAG, 99)[1] or "ok"))
+    print("export sync object 99 as a sync file: %s" % (so_export(fa, 99,
+          SYNC_FILE_FLAG)[1] or "ok"))
+    print("export with flags 2: %s" % (so_export(fa, so, 2)[1] or "ok"))
+
+    # Объект синхронизации целиком (без флагов): один объект в двух
+    # контекстах.
+    x = sync_create(fa)
+    fo, e = so_export(fa, x, 0)
+    y, e2 = so_import(fb, fo, 0)
+    print("sync object %d as a descriptor: %s; into B: %s" % (x, e or "ok",
+          e2 or "handle %d" % y))
+    print("A signals it: %s; B's wait: %s" % (sync_array(fa, SYNCOBJ_SIGNAL,
+          [x]), sync_wait(fb, [y], 0, now_ns())[0]))
+    print("B resets it: %s; A's wait: %s" % (sync_array(fb, SYNCOBJ_RESET,
+          [y]), sync_wait(fa, [x], 0, now_ns())[0]))
+    z, e = so_import(fa, fo, 0)
+    print("into A itself: %s" % (e or "handle %d" % z))
+    print("a sync file as a sync object: %s" % (so_import(fa, fsig, 0)[1] or
+          "ok"))
+    print("a dma-buf as a sync object: %s" % (so_import(fa, d4, 0)[1] or
+          "ok"))
+    r, e = try_ioctl(fa, SYNCOBJ_TRANSFER, "<IIQQII", x, snap, 0, 0, 0, 0)
+    print("transfer: %s" % (e or "ok"))
+    os.close(fo)
+
+    # Ioctl самого dma-buf: синхронизация доступа процессора, заборы буфера.
+    for fl in (DMA_SYNC_READ, DMA_SYNC_END | DMA_SYNC_READ,
+               DMA_SYNC_WRITE | DMA_SYNC_READ, DMA_SYNC_END | 3, 0, 8):
+        r, e = try_ioctl(dl, DMA_BUF_IOCTL_SYNC, "<Q", fl)
+        print("dma-buf sync 0x%x: %s" % (fl, e or "ok"))
+    long_chain(ml, val)
+    submit(fa, val, [hl])
+    v, e = try_ioctl(dl, DMA_BUF_EXPORT_SYNC_FILE, "<Ii", DMA_SYNC_READ, -1)
+    if v:
+        print("dma-buf export sync file of the busy buffer: ok; at once: "
+              "%s, %s; within 5 s: %s" % (readiness(v[1]), file_info(v[1]),
+                                          readiness(v[1], 5000)))
+        os.close(v[1])
+    else:
+        print("dma-buf export sync file of the busy buffer: %s" % e)
+    long_chain(ml, val)
+    submit(fa, val, [hl])
+    r, e = try_ioctl(dl, DMA_BUF_IOCTL_SYNC, "<Q", DMA_SYNC_READ)
+    print("dma-buf sync start, the buffer busy: %s; then the buffer: %s" % (
+          e or "ok", wait_bo(fa, hl, 0)))
+    v, e = try_ioctl(dl, DMA_BUF_EXPORT_SYNC_FILE, "<Ii", 0, -1)
+    print("dma-buf export sync file, flags 0: %s" % (e or "ok"))
+    long_chain(ml, val)
+    submit(fa, val, [hl], out=so)
+    frun = so_export(fa, so, SYNC_FILE_FLAG)[0]
+    r, e = try_ioctl(d4, DMA_BUF_IMPORT_SYNC_FILE, "<Ii", DMA_SYNC_WRITE,
+                     frun)
+    print("dma-buf import sync file into the shared buffer: %s; A's wait_bo "
+          "on it, deadline past: %s; then: %s" % (e or "ok", wait_bo(fa, h5,
+          0), wait_bo(fa, h5, now_ns() + 5 * 10**9)))
+    r, e = try_ioctl(d4, DMA_BUF_IMPORT_SYNC_FILE, "<Ii", DMA_SYNC_WRITE, pr)
+    print("dma-buf import of a pipe: %s" % (e or "ok"))
+    os.close(frun)
+
+    # Упавшее задание: что говорит его sync file, и задание после него.
+    write_value_job(m5, 0, 1, 0, PRIME_FAULT_VA, FAULT_VALUE)
+    r, e = submit(fa, int(offset_of(fa, h5), 16), [h5], out=so)
+    ff, e2 = so_export(fa, so, SYNC_FILE_FLAG)
+    print("a job that faults: submit %s, sync file %s; within 5 s: %s, %s" %
+          (e or "ok", e2 or "ok", readiness(ff, 5000), file_info(ff)))
+    sin2 = sync_create(fb)
+    so_import(fb, ff, SYNC_FILE_FLAG, sin2)
+    write_value_job(mc, 0, 1, 0, vali + 0x3fe000, 0xb2b2b2b2)
+    r, e = submit(fb, vac, [hc, hli], out=sout, in_syncs=[sin2])
+    sw, _ = sync_wait(fb, [sout], 0, now_ns() + 2 * 10**9)
+    print("B's job after the failed one: submit %s, wait %s, its word "
+          "0x%08x" % (e or "ok", sw, struct.unpack_from("<I", ml,
+                                                        0x3fe000)[0]))
+    os.close(ff)
+
+    for m in (mi, m5, ml, mc, mbl):
+        m.close()
+    for f in (dl, d4, fsig, sf, pr, pw, fa, fb):
+        os.close(f)
+    dmesg1 = os.popen("dmesg").read().splitlines()
+    new = dmesg1[len(dmesg0):] if dmesg1[:len(dmesg0)] == dmesg0 else \
+        [l for l in dmesg1 if l not in set(dmesg0)]
+    print("\ndmesg, new lines:\n" + "\n".join(new))
+    return 0
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["prime"]:
+        sys.exit(probe_prime())
     if sys.argv[1:] == ["api"]:
         sys.exit(probe_api())
     if sys.argv[1:] == ["two"]:

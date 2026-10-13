@@ -784,6 +784,7 @@ struct
 	{ "CLEARCACHE",		VM_CLEARCACHE },
 	{ "VFS_MMAP",		VM_VFS_MMAP },
 	{ "VFS_REPLY",		VM_VFS_REPLY },
+	{ "MEMFD",		VM_MEMFD },
 	{ "GETRUSAGE",		VM_GETRUSAGE },
 	{ "RS_PREPARE",		VM_RS_PREPARE },
 	{ NULL,			0 },

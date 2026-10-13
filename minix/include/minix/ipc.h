@@ -840,6 +840,13 @@ typedef struct {
 _ASSERT_MSG_SIZE(mess_lc_vfs_pipe2);
 
 typedef struct {
+	int flags;		/* MFD_* */
+
+	uint8_t padding[116];
+} mess_lc_vfs_memfd;
+_ASSERT_MSG_SIZE(mess_lc_vfs_memfd);
+
+typedef struct {
 	vir_bytes name;		/* const char * */
 	size_t namelen;
 	vir_bytes buf;
@@ -2585,6 +2592,7 @@ typedef struct noxfer_message {
 		mess_lc_vfs_mount	m_lc_vfs_mount;
 		mess_lc_vfs_path	m_lc_vfs_path;
 		mess_lc_vfs_pipe2	m_lc_vfs_pipe2;
+		mess_lc_vfs_memfd	m_lc_vfs_memfd;
 		mess_lc_vfs_readlink	m_lc_vfs_readlink;
 		mess_lc_vfs_readwrite	m_lc_vfs_readwrite;
 		mess_lc_vfs_select	m_lc_vfs_select;

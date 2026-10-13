@@ -741,6 +741,14 @@
 #	define VMV_FD			m10_l2
 #	define VMV_SIZE_PAGES		m10_l3
 
+/*
+ * VMV_DEV of a memory object (memfd_create(2)) rather than a file: its
+ * pages are VM's own, VMV_INO names the object, and it is the one kind
+ * of descriptor that may be mapped shared and writable.  No device has
+ * this number: majors stop well below it.
+ */
+#define VMV_DEV_MEMFD		0x7ffffff0
+
 #define VM_REMAP		(VM_RQ_BASE+33)
 
 #define VM_SHM_UNMAP		(VM_RQ_BASE+34)
@@ -793,8 +801,19 @@
 
 #define VM_RS_PREPARE		(VM_RQ_BASE+48)
 
+/*
+ * VFS tells VM about a memory object (memfd_create(2)) whose pages VM
+ * keeps: the object is gone, or its size changed.  VFS only.
+ */
+#define VM_MEMFD		(VM_RQ_BASE+49)
+#	define VMMF_OP			m10_i1	/* VMMF_FREE, VMMF_TRUNC */
+#	define VMMF_INO			m10_l1	/* the object: its PFS inode */
+#	define VMMF_SIZE		m10_ull1 /* VMMF_TRUNC: the new size */
+#define VMMF_FREE		1
+#define VMMF_TRUNC		2
+
 /* Total. */
-#define NR_VM_CALLS				49
+#define NR_VM_CALLS				50
 #define VM_CALL_MASK_SIZE			BITMAP_CHUNKS(NR_VM_CALLS)
 
 /* not handled as a normal VM call, thus at the end of the reserved rage */

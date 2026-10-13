@@ -278,6 +278,10 @@ void put_vnode(struct vnode *vp)
   if (vp->v_fs_count <= 0)
 	panic("put_vnode failed: bad v_fs_count %d\n", vp->v_fs_count);
 
+  /* A memory object's pages go first; see memfd_release(). */
+  if (is_memfd(vp))
+	memfd_release(vp);
+
   /* Tell FS we don't need this inode to be open anymore. */
   r = req_putnode(vp->v_fs_e, vp->v_inode_nr, vp->v_fs_count);
 

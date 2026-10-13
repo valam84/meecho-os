@@ -189,6 +189,13 @@ int get_name(struct vnode *dirp, struct vnode *entry, char _name[NAME_MAX + 1]);
 int canonical_path(char orig_path[PATH_MAX], struct fproc *rfp);
 int do_socketpath(void);
 
+/* memfd.c */
+int do_memfd_create(void);
+int is_memfd(struct vnode *vp);
+void memfd_release(struct vnode *vp);
+int memfd_truncate(struct vnode *vp, off_t newsize);
+int memfd_seals(struct filp *f, int req, int seals);
+
 /* pipe.c */
 int do_pipe2(void);
 int map_vnode(struct vnode *vp, endpoint_t fs_e);

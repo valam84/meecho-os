@@ -25,6 +25,7 @@ int fcntl(int fd, int cmd, ...)
      case F_SETFD:
      case F_SETFL:
      case F_SETNOSIGPIPE:
+     case F_ADD_SEALS:
 	m.m_lc_vfs_fcntl.arg_int = va_arg(argp, int);
 	break;
      case F_GETLK:

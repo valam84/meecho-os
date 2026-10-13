@@ -194,10 +194,21 @@
 #define	F_DUPFD_CLOEXEC	12		/* close on exec duplicated fd */
 #define	F_GETNOSIGPIPE	13		/* get SIGPIPE disposition */
 #define	F_SETNOSIGPIPE	14		/* set SIGPIPE disposition */
+#define	F_ADD_SEALS	16		/* set seals */
+#define	F_GET_SEALS	17		/* get seals */
 #endif
 
 /* file descriptor flags (F_GETFD, F_SETFD) */
 #define	FD_CLOEXEC	1		/* close-on-exec flag */
+
+#if defined(_NETBSD_SOURCE)
+/* types of seals (F_ADD_SEALS, F_GET_SEALS); NetBSD-current's values */
+#define	F_SEAL_SEAL		0x0001	/* prevent further seals from being set */
+#define	F_SEAL_SHRINK		0x0002	/* prevent file from shrinking */
+#define	F_SEAL_GROW		0x0004	/* prevent file from growing */
+#define	F_SEAL_WRITE		0x0008	/* prevent writes */
+#define	F_SEAL_FUTURE_WRITE	0x0010	/* prevent future writes while mapped */
+#endif
 
 /* record locking flags (F_GETLK, F_SETLK, F_SETLKW) */
 #define	F_RDLCK		1		/* shared or read lock */

@@ -2,7 +2,7 @@
 .include <bsd.own.mk>
 
 PROG=	vfs
-SRCS=	main.c open.c read.c write.c pipe.c dmap.c \
+SRCS=	main.c open.c read.c write.c pipe.c memfd.c dmap.c \
 	path.c device.c mount.c link.c exec.c \
 	filedes.c stadir.c protect.c time.c \
 	lock.c misc.c utility.c select.c table.c \

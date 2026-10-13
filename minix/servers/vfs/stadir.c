@@ -338,7 +338,15 @@ int do_fstatvfs(void)
 
   /* Is the file descriptor valid? */
   if ((rfilp = get_filp(rfd, VNODE_READ)) == NULL) return(err_code);
-  r = fill_statvfs(rfilp->filp_vno->v_vmnt, who_e, statbuf, flags);
+  /*
+   * A pipe, a socket or a memory object is on no mounted file system, and
+   * its vnode has no vmnt to describe: reading through the NULL was a
+   * crash of VFS that any user could ask for.
+   */
+  if (rfilp->filp_vno->v_vmnt == NULL)
+	r = EINVAL;
+  else
+	r = fill_statvfs(rfilp->filp_vno->v_vmnt, who_e, statbuf, flags);
 
   unlock_filp(rfilp);
 

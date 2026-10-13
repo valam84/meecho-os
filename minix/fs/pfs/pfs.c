@@ -120,7 +120,10 @@ pfs_findnode(ino_t ino_nr)
 }
 
 /*
- * Create a new, unlinked node.  It must be either a pipe or a device file.
+ * Create a new, unlinked node.  It must be a pipe, a device file, or a
+ * regular file - the last being a memory object (memfd_create(2)), whose
+ * contents VM keeps: this node holds only its size, times and owner, for
+ * fstat(2) and ftruncate(2), and is never read or written here.
  */
 static int
 pfs_newnode(mode_t mode, uid_t uid, gid_t gid, dev_t dev,
@@ -128,13 +131,14 @@ pfs_newnode(mode_t mode, uid_t uid, gid_t gid, dev_t dev,
 {
 	struct inode *rip;
 	char *data;
-	int isfifo, isdev;
+	int isfifo, isdev, isreg;
 
 	/* Check the file type.  Do we support it at all? */
 	isfifo = S_ISFIFO(mode);
 	isdev = S_ISBLK(mode) || S_ISCHR(mode) || S_ISSOCK(mode);
+	isreg = S_ISREG(mode);
 
-	if (!isfifo && !isdev)
+	if (!isfifo && !isdev && !isreg)
 		return EINVAL;	/* this means VFS is misbehaving.. */
 
 	/* Is there a free inode? */
@@ -293,15 +297,32 @@ pfs_write(ino_t ino_nr, struct fsdriver_data * data, size_t bytes,
 }
 
 /*
- * Truncate a pipe.
+ * Truncate a pipe, or set the size of a memory object.
  */
 static int
 pfs_trunc(ino_t ino_nr, off_t start_pos, off_t end_pos)
 {
 	struct inode *rip;
 
-	/* The target node must be a pipe. */
-	if ((rip = pfs_findnode(ino_nr)) == NULL || !S_ISFIFO(rip->i_mode))
+	if ((rip = pfs_findnode(ino_nr)) == NULL)
+		return EINVAL;
+
+	/*
+	 * A memory object: ftruncate(2) sets its size, larger or smaller -
+	 * VFS gives the new size as the start and nothing as the end.
+	 * Freeing a hole in the middle (F_FREESP) means nothing for it.
+	 */
+	if (S_ISREG(rip->i_mode)) {
+		if (start_pos < 0 || end_pos != 0 ||
+		    (uintmax_t)start_pos > SIZE_MAX)
+			return EINVAL;
+		rip->i_size = (size_t)start_pos;
+		rip->i_update |= CTIME | MTIME;
+		return OK;
+	}
+
+	/* Otherwise the target node must be a pipe. */
+	if (!S_ISFIFO(rip->i_mode))
 		return EINVAL;
 
 	/* We only support full truncation of pipes. */

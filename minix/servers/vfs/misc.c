@@ -128,7 +128,8 @@ int do_fcntl(void)
   addr = job_m_in.m_lc_vfs_fcntl.arg_ptr;
 
   /* Is the file descriptor valid? */
-  locktype = (fcntl_req == F_FREESP) ? VNODE_WRITE : VNODE_READ;
+  locktype = (fcntl_req == F_FREESP || fcntl_req == F_ADD_SEALS) ?
+	VNODE_WRITE : VNODE_READ;
   if ((f = get_filp(fd, locktype)) == NULL)
 	return(err_code);
 
@@ -187,8 +188,10 @@ int do_fcntl(void)
 	off_t start, end, offset;
 	struct flock flock_arg;
 
-	/* Check if it's a regular file. */
-	if (!S_ISREG(f->filp_vno->v_mode)) r = EINVAL;
+	/* Check if it's a regular file.  A memory object is regular, but
+	 * its size is set by ftruncate(2) alone (memfd.c).
+	 */
+	if (!S_ISREG(f->filp_vno->v_mode) || is_memfd(f->filp_vno)) r = EINVAL;
 	else if (!(f->filp_mode & W_BIT)) r = EBADF;
 	else {
 		/* Copy flock data from userspace. */
@@ -237,6 +240,10 @@ int do_fcntl(void)
      }
     case F_GETNOSIGPIPE:
 	r = !!(f->filp_flags & O_NOSIGPIPE);
+	break;
+    case F_ADD_SEALS:
+    case F_GET_SEALS:
+	r = memfd_seals(f, fcntl_req, fcntl_argx);
 	break;
     case F_SETNOSIGPIPE:
 	if (fcntl_argx)
@@ -338,7 +345,16 @@ int dupvm(struct fproc *rfp, int pfd, int *vmfd, struct filp **newfilp)
 		return EBADF;
 	}
 
-	if(!(f->filp_vno->v_vmnt->m_fs_flags & RES_HASPEEK)) {
+	/*
+	 * A memory object has no file system behind it to peek at: VM
+	 * keeps its pages itself.  Anything else without one - a pipe, a
+	 * socket - cannot be mapped at all, and must be refused here
+	 * rather than looked up: v_vmnt is NULL for them, and reading
+	 * through it was a crash of VFS that any user could ask for with
+	 * mmap(2) on a pipe.
+	 */
+	if (!is_memfd(f->filp_vno) && (f->filp_vno->v_vmnt == NULL ||
+	    !(f->filp_vno->v_vmnt->m_fs_flags & RES_HASPEEK))) {
 		unlock_filp(f);
 #if 0	/* Noisy diagnostic for mmap() by ld.so */
 		printf("VFS dupvm: no peek available\n");
@@ -347,7 +363,6 @@ int dupvm(struct fproc *rfp, int pfd, int *vmfd, struct filp **newfilp)
 	}
 
 	assert(f->filp_vno);
-	assert(f->filp_vno->v_vmnt);
 
 	if (!S_ISREG(f->filp_vno->v_mode) && !S_ISBLK(f->filp_vno->v_mode)) {
 		printf("VFS: mmap regular/blockdev only; dev 0x%llx ino %llu has mode 0%o\n",
@@ -433,7 +448,13 @@ int do_vm_call(void)
 				goto reqdone;
 			}
 
-			if(S_ISBLK(f->filp_vno->v_mode)) {
+			if (is_memfd(f->filp_vno)) {
+				job_m_out.VMV_DEV = VMV_DEV_MEMFD;
+				job_m_out.VMV_INO = f->filp_vno->v_inode_nr;
+				job_m_out.VMV_SIZE_PAGES =
+					roundup(f->filp_vno->v_size,
+						PAGE_SIZE)/PAGE_SIZE;
+			} else if(S_ISBLK(f->filp_vno->v_mode)) {
 				assert(f->filp_vno->v_sdev != NO_DEV);
 				job_m_out.VMV_DEV = f->filp_vno->v_sdev;
 				job_m_out.VMV_INO = VMC_NO_INODE;

@@ -82,6 +82,9 @@ int do_remap(message *m);
 int do_get_phys(message *m);
 int do_get_refcount(message *m);
 int do_vfs_mmap(message *m);
+struct vir_region *mmap_region(struct vmproc *vmp, vir_bytes addr,
+	u32_t vmm_flags, size_t len, u32_t vrflags, mem_type_t *mt,
+	int execpriv);
 
 /* pagefaults.c */
 void do_pagefaults(message *m);
@@ -239,6 +242,11 @@ int vfs_request(int reqno, int fd, struct vmproc *vmp, u64_t offset,
 	u32_t len, vfs_callback_t reply_callback, void *cbarg, void *state,
 	int statelen);
 int do_vfs_reply(message *m);
+
+/* memobj.c */
+int do_memfd(message *m);
+int mmap_memobj(struct vmproc *vmp, int fd, ino_t ino, off_t offset,
+	int flags, int prot, vir_bytes addr, vir_bytes len, vir_bytes *retaddr);
 
 /* mem_file.c */
 int mappedfile_setfile(struct vmproc *owner, struct vir_region *region,

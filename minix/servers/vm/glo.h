@@ -49,6 +49,7 @@ extern  mem_type_t mem_type_anon,       /* anonymous memory */
 	mem_type_anon_contig,		/* physically contig anon memory */
 	mem_type_cache,			/* disk cache */
 	mem_type_mappedfile,		/* memory with file contents */
+	mem_type_memobj,		/* memfd_create(2) objects */
 	mem_type_shared;		/* memory shared by multiple processes */
 
 /* total number of memory pages */

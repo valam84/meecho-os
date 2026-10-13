@@ -144,8 +144,28 @@ int main(void)
 		/* If it's a request from VFS, it might have a transaction id. */
 		msg.m_type = TRNS_DEL_ID(msg.m_type);
 
-		/* Calls that use the transid */
-		result = do_procctl(&msg, transid);
+		/*
+		 * A request from a VFS worker thread, which waits for the
+		 * answer under this transaction id.  The answer has to be
+		 * posted with the id put back, as handle_memory_final() does
+		 * for the delayed answer of VM_PROCCTL - not sent by the
+		 * plain reply below, which asserts that there is no id.  Until
+		 * memory objects (VM_MEMFD) the only such request was
+		 * VM_PROCCTL, and it answered at once only on an error VFS
+		 * never caused; the assertion was waiting for the first
+		 * request that answers at once on success.
+		 */
+		if(msg.m_type == VM_MEMFD)
+			result = do_memfd(&msg);
+		else
+			result = do_procctl(&msg, transid);
+
+		if(result != SUSPEND) {
+			msg.m_type = TRNS_ADD_ID(result, transid);
+			if(asynsend3(VFS_PROC_NR, &msg, AMF_NOREPLY) != OK)
+				panic("VM: cannot answer VFS");
+		}
+		continue;
 	} else if(msg.m_type == RS_INIT && msg.m_source == RS_PROC_NR) {
 		result = do_sef_init_request(&msg);
 		if(result != OK) panic("do_sef_init_request failed!\n");
@@ -559,6 +579,7 @@ void init_vm(void)
 	/* Calls from VFS. */
 	CALLMAP(VM_VFS_REPLY, do_vfs_reply);
 	CALLMAP(VM_VFS_MMAP, do_vfs_mmap);
+	CALLMAP(VM_MEMFD, do_memfd);
 
 	/* Calls from RS */
 	CALLMAP(VM_RS_SET_PRIV, do_rs_set_priv);

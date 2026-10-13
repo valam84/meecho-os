@@ -175,6 +175,13 @@ typedef	__off_t		off_t;		/* file offset */
 					   implemented in UVM */
 #define	MAP_INHERIT_ZERO	4	/* zero in child */
 #define	MAP_INHERIT_DEFAULT	MAP_INHERIT_COPY
+
+/*
+ * Flags to memfd_create (the values are NetBSD-current's)
+ */
+#define	MFD_CLOEXEC		0x1U
+#define	MFD_ALLOW_SEALING	0x2U
+#define	MFD_CLOFORK		0x4U
 #endif
 
 #ifndef _KERNEL
@@ -201,6 +208,9 @@ void *	mremap(void *, size_t, void *, size_t, int);
 int	posix_madvise(void *, size_t, int);
 int	shm_open(const char *, int, mode_t);
 int	shm_unlink(const char *);
+#if defined(_NETBSD_SOURCE)
+int	memfd_create(const char *, unsigned int);
+#endif
 
 #if defined(__minix) && defined(_MINIX_SYSTEM)
 #include <minix/endpoint.h>

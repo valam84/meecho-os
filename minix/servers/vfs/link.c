@@ -371,6 +371,10 @@ truncate_vnode(struct vnode *vp, off_t newsize)
   assert(tll_locked_by_me(&vp->v_lock));
   if (!S_ISREG(vp->v_mode) && !S_ISFIFO(vp->v_mode)) return(EINVAL);
 
+  /* A memory object: seals, and VM keeps the pages. */
+  if (is_memfd(vp))
+	return(memfd_truncate(vp, newsize));
+
   /* We must not compare the old and the new size here: this function may be
    * called for open(2), which requires an update to the file times if O_TRUNC
    * is given, even if the file size remains the same.

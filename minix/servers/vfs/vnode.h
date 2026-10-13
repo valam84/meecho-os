@@ -19,6 +19,7 @@ EXTERN struct vnode {
                                    inode resides */
   dev_t v_sdev;                 /* device number for special files */
   struct vmnt *v_vmnt;          /* vmnt object of the partition */
+  unsigned int v_seals;		/* memory objects: F_SEAL_* (memfd.c) */
   tll_t v_lock;			/* three-level-lock */
 } vnode[NR_VNODES];
 

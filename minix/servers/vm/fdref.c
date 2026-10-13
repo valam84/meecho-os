@@ -68,7 +68,9 @@ void fdref_sanitycheck(void)
 			continue;
 		region_start_iter_least(&vmp->vm_regions_avl, &v_iter);
 		while((vr = region_get_iter(&v_iter))) {
-			if(vr->def_memtype == &mem_type_mappedfile && vr->param.file.inited) {
+			if((vr->def_memtype == &mem_type_mappedfile ||
+			    vr->def_memtype == &mem_type_memobj) &&
+			    vr->param.file.inited) {
 				vr->param.file.fdref->counting++;
 			}
 			region_incr_iter(&v_iter);

@@ -33,7 +33,7 @@
 #include "region.h"
 
 
-static struct vir_region *mmap_region(struct vmproc *vmp, vir_bytes addr,
+struct vir_region *mmap_region(struct vmproc *vmp, vir_bytes addr,
 	u32_t vmm_flags, size_t len, u32_t vrflags,
 	mem_type_t *mt, int execpriv)
 {
@@ -175,6 +175,23 @@ static void mmap_file_cont(struct vmproc *vmp, message *replymsg, void *cbarg,
 		sys_diagctl_stacktrace(vmp->vm_endpoint);
 #endif
 		result = replymsg->VMV_RESULT;
+	} else if(replymsg->VMV_DEV == VMV_DEV_MEMFD) {
+		/* A memory object (memobj.c): pages of VM's own. */
+		result = mmap_memobj(vmp, replymsg->VMV_FD,
+			(ino_t) replymsg->VMV_INO, origmsg->m_mmap.offset,
+			origmsg->m_mmap.flags, origmsg->m_mmap.prot,
+			(vir_bytes) origmsg->m_mmap.addr,
+			origmsg->m_mmap.len, &v);
+	} else if((origmsg->m_mmap.flags & MAP_SHARED) && writable) {
+		/*
+		 * A file mapped shared and writable: its pages would have to
+		 * go back to the file, and nothing here writes them back.
+		 * Only a memory object can be mapped this way.  VFS has given
+		 * VM a descriptor of the file already; it goes back.
+		 */
+		(void)vfs_request(VMVFSREQ_FDCLOSE, replymsg->VMV_FD, vmp,
+			0, 0, NULL, NULL, NULL, 0);
+		result = ENXIO;
 	} else {
 		/* Finish mmap */
 		result = mmap_file(vmp, replymsg->VMV_FD, origmsg->m_mmap.offset,
@@ -255,13 +272,9 @@ int do_mmap(message *m)
 		/* File mapping might be disabled */
 		if(!enable_filemap) return ENXIO;
 
-		/* For files, we only can't accept writable MAP_SHARED
-		 * mappings.
+		/* Writable MAP_SHARED is for memory objects only, and which
+		 * this is VFS says: see mmap_file_cont().
 		 */
-		if((m->m_mmap.flags & MAP_SHARED) && (m->m_mmap.prot & PROT_WRITE)) {
-			return ENXIO;
-		}
-
 		if(vfs_request(VMVFSREQ_FDLOOKUP, m->m_mmap.fd, vmp, 0, 0,
 			mmap_file_cont, NULL, m, sizeof(*m)) != OK) {
 			printf("VM: vfs_request for mmap failed\n");

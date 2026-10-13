@@ -133,7 +133,8 @@
 #define VFS_GETSOCKNAME		(VFS_BASE + 61)
 #define VFS_GETPEERNAME		(VFS_BASE + 62)
 #define VFS_SHUTDOWN		(VFS_BASE + 63)
+#define VFS_MEMFD_CREATE	(VFS_BASE + 64)
 
-#define NR_VFS_CALLS		64	/* highest number from base plus one */
+#define NR_VFS_CALLS		65	/* highest number from base plus one */
 
 #endif /* !_MINIX_CALLNR_H */

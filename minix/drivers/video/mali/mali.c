@@ -48,6 +48,7 @@ struct log mali_log = {
 static const char *const irq_names[MALI_NR_IRQS] = { "gpu", "job", "mmu" };
 
 static int probe_only;
+static int selftest = 1;		/* "selftest=0": no job at start */
 
 /*
  * The notification bit of each line.  Not the line number: the kernel
@@ -93,8 +94,8 @@ model_name(uint32_t gpu_id)
  * The GPU's own registers on the working vendor system, panfrost holding
  * it on (port/cb2-gpu/ref-on.txt) - the identity and what is present and
  * powered.  Printed beside what this driver reads once the cores are up.
- * JM_CONFIG is not here: panfrost writes an errata setting into it (the
- * IDVS group size, 0x000f0000), which belongs with the first job.
+ * JM_CONFIG is panfrost's setting for this part (the IDVS group size),
+ * which gpu_power_up() writes too.
  */
 static const struct {
 	const char *name;
@@ -120,6 +121,7 @@ static const struct {
 	{ "TILER_READY",	GPU_TILER_READY_LO,	0x00000001 },
 	{ "L2_READY",		GPU_L2_READY_LO,	0x00000001 },
 	{ "GPU_STATUS",		GPU_STATUS,		0x00000000 },
+	{ "JM_CONFIG",		GPU_JM_CONFIG,		0x000f0000 },
 };
 
 static void
@@ -246,6 +248,15 @@ gpu_power_up(void)
 	const struct mali_regs *gpu = &mali.info.gpu;
 	int r;
 
+	/*
+	 * What panfrost sets before the cores come up on a G52: the IDVS
+	 * group size in JM_CONFIG (the part has the feature).  Its other
+	 * errata settings - SHADER_CONFIG, TILER_CONFIG - are zero on this
+	 * revision, as the board's snapshot shows.
+	 */
+	mali_wr(gpu, GPU_JM_CONFIG, JM_DEFAULT_IDVS_GROUP_SIZE <<
+	    JM_IDVS_GROUP_SIZE_SHIFT);
+
 	if ((r = gpu_power_kind("L2", GPU_L2_PWRON_LO, GPU_L2_READY_LO,
 	    mali.l2_present)) != OK ||
 	    (r = gpu_power_kind("shader", GPU_SHADER_PWRON_LO,
@@ -301,9 +312,9 @@ irq_setup(void)
 }
 
 /*
- * Whatever arrived on one line: read the block's status, say it, clear it
- * and let the line raise again.  The masks are such that only the cache
- * clean of step 6 and faults reach here for now.
+ * Whatever arrived on one line: read the block's status, say it (or let
+ * mali_job.c say it, for the job and MMU lines), clear it and let the line
+ * raise again.
  */
 static void
 irq_handle(int i)
@@ -331,6 +342,10 @@ irq_handle(int i)
 		    mali_rd(gpu, GPU_FAULTSTATUS),
 		    mali_rd(gpu, GPU_FAULTADDRESS_HI),
 		    mali_rd(gpu, GPU_FAULTADDRESS_LO));
+	else if (i == MALI_IRQ_JOB)
+		mali_job_irq(s);
+	else if (i == MALI_IRQ_MMU)
+		mali_mmu_irq(s);
 	else
 		log_info(&mali_log, "line %d (%s): status 0x%08x\n",
 		    mali.info.irq[i], irq_names[i], s);
@@ -400,6 +415,15 @@ mali_init(int type, sef_init_info_t *UNUSED(info))
 		    GPU_IRQ_MULTIPLE_FAULT | GPU_IRQ_CLEAN_CACHES);
 		mali_wr(gpu, GPU_CMD, GPU_CMD_CLEAN_CACHES);
 	}
+
+	/*
+	 * The second half of 11.5: the GPU's own address space and a chain
+	 * of jobs, finished on the job line in the main loop (mali_job.c).
+	 * A failure here is reported and does not stop the service: the GPU
+	 * is up, and what failed is the test.
+	 */
+	if (selftest && (mali_job_setup() != OK || mali_job_start() != OK))
+		log_warn(&mali_log, "the job test did not start\n");
 	return OK;
 }
 
@@ -416,6 +440,9 @@ mali_signal(int signo)
 		if (mali.irq_hook[i] >= 0)
 			(void)sys_irqrmpolicy(&mali.irq_hook[i]);
 	mali_wr(&mali.info.gpu, GPU_INT_MASK, 0);
+	mali_wr(&mali.info.gpu, JOB_INT_MASK, 0);
+	mali_wr(&mali.info.gpu, MMU_INT_MASK, 0);
+	mali_job_teardown();
 	gpu_power_down();
 	exit(0);
 }
@@ -432,6 +459,8 @@ main(int argc, char *argv[])
 		mali_log.log_level = (int)v;
 	if (env_parse("probe", "d", 0, &v, 0, 1) == EP_SET)
 		probe_only = (int)v;
+	if (env_parse("selftest", "d", 0, &v, 0, 1) == EP_SET)
+		selftest = (int)v;
 
 	sef_setcb_init_fresh(mali_init);
 	sef_setcb_init_restart(mali_init);
@@ -455,6 +484,9 @@ main(int argc, char *argv[])
 					    (1u << IRQ_BIT(i))))
 						irq_handle(i);
 			}
+			/* The job test's deadline (mali_job.c). */
+			if (_ENDPOINT_P(m.m_source) == CLOCK)
+				mali_job_alarm();
 			continue;
 		}
 

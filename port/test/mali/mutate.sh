@@ -24,6 +24,17 @@ pll-postdiv@mali_rk.c@pd2 = (con1 >> 6) \& 0x7;@pd2 = (con1 >> 6) \& 0x3;
 irq-order@mali_find.c@"gpu", "job", "mmu"@"gpu", "mmu", "job"
 clock-cells@mali_find.c@p + idx \* 8 + 4@p + idx \* 8
 supply-walk@mali_find.c@(void)fdt_walk(dtb, find_supply, info);@;
+leaf-type@mali_job.c@MALI_PTE_SH_OUTER | MALI_PTE_LEAF;@MALI_PTE_SH_OUTER | MALI_PTE_TABLE;
+leaf-write@mali_job.c@MALI_PTE_READ | MALI_PTE_WRITE |@MALI_PTE_READ |
+l2-shift@mali_job.c@i2 = (va >> 21)@i2 = (va >> 20)
+read-inner@mali_job.c@AS_TRANSTAB_READ_INNER;@0;
+memattr@malireg.h@0x00888d88u@0x008d8888u
+wv-value@malireg.h@JOB_WV_VALUE[[:space:]]*48@JOB_WV_VALUE 40
+job-index@mali_job.c@JOB_CTL_INDEX(i + 1)@JOB_CTL_INDEX(i)
+next-ptr@mali_job.c@JOB_VA + (i + 1) \* JOB_DESC_SIZE : 0@JOB_VA + i * JOB_DESC_SIZE : 0
+no-clean@mali_job.c@cache(CACHE_CLEAN_INVALIDATE, DESC, NBUF \* PAGE, "the job buffer");@;
+no-inval@mali_job.c@cache(CACHE_INVALIDATE, DESC, NBUF \* PAGE, "the job buffer");@;
+flush-red@mali_job.c@JS_CONFIG_ENABLE_FLUSH_REDUCTION |@
 '
 
 echo "$MUTATIONS" | while IFS='@' read -r name file from to; do

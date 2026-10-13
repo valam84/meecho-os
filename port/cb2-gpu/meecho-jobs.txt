@@ -1,0 +1,152 @@
+mali(info)gpu at 0xfde60000 (16384 bytes), lines gpu 71 job 72 mmu 73
+mali(info)clock "bus" 27 of 0xfdd20000, clock "gpu" 1 (firmware's), power domain 7, cru 0xfdd20000, pmu 0xfdd90000
+mali(info)supply vdd_gpu: always on, on at boot, 900000 uV at boot
+mali(info)found: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)found: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)the GPU clock is gpll/6 = 200000 kHz already
+mali(info)power domain PD_GPU is on
+mali(info)Mali-G52, product 0x7402 r1p0 status 0 (GPU_ID 0x74021000)
+mali(info)soft reset complete
+mali(info)features: L2 0x07110206 core 0x00000002 tiler 0x00000209 mem 0x00000001 mmu 0x00002823 (35-bit VA, 40-bit PA)
+mali(info)present: shader 0x1 tiler 0x1 L2 0x1 stack 0x1, address spaces 0xff, job slots 0x7, 768 threads, coherency 0x0
+mali(info)config: jm 0x00000000 shader 0x00000000 tiler 0x00000000 l2/mmu 0x00000000
+mali(info)cores ready: shader 0x1 tiler 0x1 L2 0x1
+mali(info)up: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)up: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)this driver against the board (port/cb2-gpu/ref-on.txt):
+mali(info)  CLKSEL_CON6    0x00004155 (reference 0x00004155)
+mali(info)  CLKGATE_CON2   0x00000000 (reference 0x000001c0)
+mali(info)  SOFTRST_CON2   0x00000000 (reference 0x00000000)
+mali(info)  PWR_STATUS     0x0000007e (reference 0x0000007e)
+mali(info)  IDLE_ACK       0x000001ec (reference 0x000001ec)
+mali(info)  IDLE_ST        0x000001ec (reference 0x000001ec)
+mali(info)  GPU_ID         0x74021000 (reference 0x74021000)
+mali(info)  L2_FEATURES    0x07110206 (reference 0x07110206)
+mali(info)  CORE_FEATURES  0x00000002 (reference 0x00000002)
+mali(info)  TILER_FEATURES 0x00000209 (reference 0x00000209)
+mali(info)  MEM_FEATURES   0x00000001 (reference 0x00000001)
+mali(info)  MMU_FEATURES   0x00002823 (reference 0x00002823)
+mali(info)  AS_PRESENT     0x000000ff (reference 0x000000ff)
+mali(info)  JS_PRESENT     0x00000007 (reference 0x00000007)
+mali(info)  THREAD_MAX     0x00000300 (reference 0x00000300)
+mali(info)  THREAD_FEATURES 0x0a046000 (reference 0x0a046000)
+mali(info)  COHERENCY      0x00000000 (reference 0x00000000)
+mali(info)  SHADER_PRESENT 0x00000001 (reference 0x00000001)
+mali(info)  TILER_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  L2_PRESENT     0x00000001 (reference 0x00000001)
+mali(info)  STACK_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  SHADER_READY   0x00000001 (reference 0x00000001)
+mali(info)  TILER_READY    0x00000001 (reference 0x00000001)
+mali(info)  L2_READY       0x00000001 (reference 0x00000001)
+mali(info)  GPU_STATUS     0x00000000 (reference 0x00000000)
+mali(info)  JM_CONFIG      0x000f0000 (reference 0x000f0000)
+mali(info)0 register(s) differ from the reference
+mali(info)address space 0: tables at 0x7b38d000, 2 pages at GPU address 0x2000000; TRANSTAB 0x000000007b38d007 (reference ...007) MEMATTR 0x00888d88 (reference 0x00888d88) TRANSCFG 0x00000000 (reference 0)
+mali(info)a chain of 64 WRITE_VALUE jobs started on slot 1 (config 0x87b00)
+mali(info)line 71 (gpu): cache clean completed - the line works
+mali(info)line 72 (job): slot 1 done - the line works
+mali(info)chain of 64: done in 1224 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+mali(info)the GPU filled the buffer through its own MMU: every word checked by the processor
+mali(info)slot 1 config 0x00007b00 (reference 0x00007b00), status 0x0, address space status 0x0
+mali(info)going down; powering the cores off
+mali(info)gpu at 0xfde60000 (16384 bytes), lines gpu 71 job 72 mmu 73
+mali(info)clock "bus" 27 of 0xfdd20000, clock "gpu" 1 (firmware's), power domain 7, cru 0xfdd20000, pmu 0xfdd90000
+mali(info)supply vdd_gpu: always on, on at boot, 900000 uV at boot
+mali(info)found: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)found: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)the GPU clock is gpll/6 = 200000 kHz already
+mali(info)power domain PD_GPU is on
+mali(info)Mali-G52, product 0x7402 r1p0 status 0 (GPU_ID 0x74021000)
+mali(info)soft reset complete
+mali(info)features: L2 0x07110206 core 0x00000002 tiler 0x00000209 mem 0x00000001 mmu 0x00002823 (35-bit VA, 40-bit PA)
+mali(info)present: shader 0x1 tiler 0x1 L2 0x1 stack 0x1, address spaces 0xff, job slots 0x7, 768 threads, coherency 0x0
+mali(info)config: jm 0x00000000 shader 0x00000000 tiler 0x00000000 l2/mmu 0x00000000
+mali(info)cores ready: shader 0x1 tiler 0x1 L2 0x1
+mali(info)up: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)up: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)this driver against the board (port/cb2-gpu/ref-on.txt):
+mali(info)  CLKSEL_CON6    0x00004155 (reference 0x00004155)
+mali(info)  CLKGATE_CON2   0x00000000 (reference 0x000001c0)
+mali(info)  SOFTRST_CON2   0x00000000 (reference 0x00000000)
+mali(info)  PWR_STATUS     0x0000007e (reference 0x0000007e)
+mali(info)  IDLE_ACK       0x000001ec (reference 0x000001ec)
+mali(info)  IDLE_ST        0x000001ec (reference 0x000001ec)
+mali(info)  GPU_ID         0x74021000 (reference 0x74021000)
+mali(info)  L2_FEATURES    0x07110206 (reference 0x07110206)
+mali(info)  CORE_FEATURES  0x00000002 (reference 0x00000002)
+mali(info)  TILER_FEATURES 0x00000209 (reference 0x00000209)
+mali(info)  MEM_FEATURES   0x00000001 (reference 0x00000001)
+mali(info)  MMU_FEATURES   0x00002823 (reference 0x00002823)
+mali(info)  AS_PRESENT     0x000000ff (reference 0x000000ff)
+mali(info)  JS_PRESENT     0x00000007 (reference 0x00000007)
+mali(info)  THREAD_MAX     0x00000300 (reference 0x00000300)
+mali(info)  THREAD_FEATURES 0x0a046000 (reference 0x0a046000)
+mali(info)  COHERENCY      0x00000000 (reference 0x00000000)
+mali(info)  SHADER_PRESENT 0x00000001 (reference 0x00000001)
+mali(info)  TILER_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  L2_PRESENT     0x00000001 (reference 0x00000001)
+mali(info)  STACK_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  SHADER_READY   0x00000001 (reference 0x00000001)
+mali(info)  TILER_READY    0x00000001 (reference 0x00000001)
+mali(info)  L2_READY       0x00000001 (reference 0x00000001)
+mali(info)  GPU_STATUS     0x00000000 (reference 0x00000000)
+mali(info)  JM_CONFIG      0x000f0000 (reference 0x000f0000)
+mali(info)0 register(s) differ from the reference
+mali(info)address space 0: tables at 0x7b387000, 2 pages at GPU address 0x2000000; TRANSTAB 0x000000007b387007 (reference ...007) MEMATTR 0x00888d88 (reference 0x00888d88) TRANSCFG 0x00000000 (reference 0)
+mali(info)a chain of 64 WRITE_VALUE jobs started on slot 1 (config 0x87b00)
+mali(info)line 71 (gpu): cache clean completed - the line works
+mali(info)line 72 (job): slot 1 done - the line works
+mali(info)chain of 64: done in 1334 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+mali(info)the GPU filled the buffer through its own MMU: every word checked by the processor
+mali(info)slot 1 config 0x00007b00 (reference 0x00007b00), status 0x0, address space status 0x0
+mali(info)going down; powering the cores off
+mali(info)gpu at 0xfde60000 (16384 bytes), lines gpu 71 job 72 mmu 73
+mali(info)clock "bus" 27 of 0xfdd20000, clock "gpu" 1 (firmware's), power domain 7, cru 0xfdd20000, pmu 0xfdd90000
+mali(info)supply vdd_gpu: always on, on at boot, 900000 uV at boot
+mali(info)found: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)found: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)the GPU clock is gpll/6 = 200000 kHz already
+mali(info)power domain PD_GPU is on
+mali(info)Mali-G52, product 0x7402 r1p0 status 0 (GPU_ID 0x74021000)
+mali(info)soft reset complete
+mali(info)features: L2 0x07110206 core 0x00000002 tiler 0x00000209 mem 0x00000001 mmu 0x00002823 (35-bit VA, 40-bit PA)
+mali(info)present: shader 0x1 tiler 0x1 L2 0x1 stack 0x1, address spaces 0xff, job slots 0x7, 768 threads, coherency 0x0
+mali(info)config: jm 0x00000000 shader 0x00000000 tiler 0x00000000 l2/mmu 0x00000000
+mali(info)cores ready: shader 0x1 tiler 0x1 L2 0x1
+mali(info)up: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)up: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)this driver against the board (port/cb2-gpu/ref-on.txt):
+mali(info)  CLKSEL_CON6    0x00004155 (reference 0x00004155)
+mali(info)  CLKGATE_CON2   0x00000000 (reference 0x000001c0)
+mali(info)  SOFTRST_CON2   0x00000000 (reference 0x00000000)
+mali(info)  PWR_STATUS     0x0000007e (reference 0x0000007e)
+mali(info)  IDLE_ACK       0x000001ec (reference 0x000001ec)
+mali(info)  IDLE_ST        0x000001ec (reference 0x000001ec)
+mali(info)  GPU_ID         0x74021000 (reference 0x74021000)
+mali(info)  L2_FEATURES    0x07110206 (reference 0x07110206)
+mali(info)  CORE_FEATURES  0x00000002 (reference 0x00000002)
+mali(info)  TILER_FEATURES 0x00000209 (reference 0x00000209)
+mali(info)  MEM_FEATURES   0x00000001 (reference 0x00000001)
+mali(info)  MMU_FEATURES   0x00002823 (reference 0x00002823)
+mali(info)  AS_PRESENT     0x000000ff (reference 0x000000ff)
+mali(info)  JS_PRESENT     0x00000007 (reference 0x00000007)
+mali(info)  THREAD_MAX     0x00000300 (reference 0x00000300)
+mali(info)  THREAD_FEATURES 0x0a046000 (reference 0x0a046000)
+mali(info)  COHERENCY      0x00000000 (reference 0x00000000)
+mali(info)  SHADER_PRESENT 0x00000001 (reference 0x00000001)
+mali(info)  TILER_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  L2_PRESENT     0x00000001 (reference 0x00000001)
+mali(info)  STACK_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  SHADER_READY   0x00000001 (reference 0x00000001)
+mali(info)  TILER_READY    0x00000001 (reference 0x00000001)
+mali(info)  L2_READY       0x00000001 (reference 0x00000001)
+mali(info)  GPU_STATUS     0x00000000 (reference 0x00000000)
+mali(info)  JM_CONFIG      0x000f0000 (reference 0x000f0000)
+mali(info)0 register(s) differ from the reference
+mali(info)address space 0: tables at 0x7b381000, 2 pages at GPU address 0x2000000; TRANSTAB 0x000000007b381007 (reference ...007) MEMATTR 0x00888d88 (reference 0x00888d88) TRANSCFG 0x00000000 (reference 0)
+mali(info)a chain of 64 WRITE_VALUE jobs started on slot 1 (config 0x87b00)
+mali(info)line 71 (gpu): cache clean completed - the line works
+mali(info)line 72 (job): slot 1 done - the line works
+mali(info)chain of 64: done in 1584 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+mali(info)the GPU filled the buffer through its own MMU: every word checked by the processor
+mali(info)slot 1 config 0x00007b00 (reference 0x00007b00), status 0x0, address space status 0x0

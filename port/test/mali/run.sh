@@ -20,6 +20,15 @@ $CC -std=gnu99 -Wall -Wextra -Wno-unused-parameter -O1 -g \
 	"$HERE/malitest.c" "$SRC/mali_find.c" "$SRC/mali_rk.c" \
 	"$TREE/minix/lib/libsys/fdt.c" -o "$OUT/mali-test"
 
+# Вторая половина: MMU ускорителя и цепочка заданий на модели
+# некогерентной памяти (jobtest.c).
+$CC -std=gnu99 -Wall -Wextra -Wno-unused-parameter -O1 -g \
+	-I "$HERE/shim" -I "$SRC" \
+	"$HERE/jobtest.c" "$SRC/mali_job.c" -o "$OUT/mali-jobtest"
+
+rc=0
 "$OUT/mali-test" "$PORT/cb2-display/live.dtb" \
 	"$PORT/cb2-sd/rk3566-bigtreetech-cb2.dtb" \
-	"$PORT/h313/h313-tanix-tx1.dtb" "$@"
+	"$PORT/h313/h313-tanix-tx1.dtb" "$@" || rc=1
+"$OUT/mali-jobtest" "$@" || rc=1
+exit $rc

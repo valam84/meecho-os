@@ -26,6 +26,8 @@
  *                its power domain and its supply
  *   mali_rk.c    the SoC around the GPU: power domain, clock gates and
  *                resets of the RK3568 (the only file that knows the SoC)
+ *   mali_job.c   the GPU's own MMU and its first jobs (a WRITE_VALUE
+ *                chain that fills a buffer, checked by the processor)
  *   mali.c       the GPU itself and the service's own life
  *
  * Linux's drivers for this part (kbase and panfrost) are GPL, and only
@@ -114,5 +116,13 @@ int mali_rk_clocks_on(void);
 int mali_rk_power_domain(void);
 void mali_rk_resets(void);
 unsigned mali_rk_compare(void);
+
+/* mali_job.c */
+int mali_job_setup(void);
+int mali_job_start(void);
+void mali_job_irq(uint32_t status);
+void mali_mmu_irq(uint32_t status);
+void mali_job_alarm(void);
+void mali_job_teardown(void);
 
 #endif /* _MALI_H */

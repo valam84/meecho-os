@@ -441,6 +441,18 @@ t_refused(void)
 	    write(fd, buf, sizeof(buf)) == -1, NULL);
 	check("an unknown flag is refused", memfd_create("x", 0x80) == -1 &&
 	    errno == EINVAL, "%s", strerror(errno));
+#ifdef MAP_UNINITIALIZED
+	/* foot passes it (it is 0 on most systems): meaningless for an
+	 * object, whose pages are zeroed when made - not a reason to refuse
+	 * the mapping, which VM did, as ENOMEM. */
+	p = mmap(NULL, PAGE, PROT_READ | PROT_WRITE,
+	    MAP_SHARED | MAP_UNINITIALIZED, fd, 0);
+	check("MAP_UNINITIALIZED on an object: mapped, and zero",
+	    p != MAP_FAILED && ((volatile char *)p)[PAGE - 1] == 0, "%s",
+	    p == MAP_FAILED ? strerror(errno) : "not zero");
+	if (p != MAP_FAILED)
+		munmap(p, PAGE);
+#endif
 	close(fd);
 }
 

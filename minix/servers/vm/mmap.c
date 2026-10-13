@@ -118,7 +118,14 @@ static int mmap_file(struct vmproc *vmp,
 	}
 #endif
 
-	if(!(vr = mmap_region(vmp, addr, flags, len,
+	/*
+	 * MAP_UNINITIALIZED is about anonymous memory - and the caller's
+	 * privilege to see pages unzeroed - and a file's pages come from the
+	 * file.  Linux ignores it here; passing it on made mmap_region()
+	 * refuse every file mapping that named it, as ENOMEM (foot names it:
+	 * it is 0 on most systems and 0x40000 on this one).
+	 */
+	if(!(vr = mmap_region(vmp, addr, flags & ~MAP_UNINITIALIZED, len,
 		vrflags, &mem_type_mappedfile, 0))) {
 		result = ENOMEM;
 	} else {

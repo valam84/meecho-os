@@ -236,8 +236,10 @@ int mmap_memobj(struct vmproc *vmp, int fd, ino_t ino, off_t offset,
 	if(flags & MAP_SHARED)
 		vrflags |= VR_SHARED;
 
-	if(!(vr = mmap_region(vmp, addr, flags, roundup(len, VM_PAGE_SIZE),
-	    vrflags, &mem_type_memobj, 0))) {
+	/* An object's pages are zeroed when made, whoever asks: as for a
+	 * file (mmap_file()), MAP_UNINITIALIZED means nothing here. */
+	if(!(vr = mmap_region(vmp, addr, flags & ~MAP_UNINITIALIZED,
+	    roundup(len, VM_PAGE_SIZE), vrflags, &mem_type_memobj, 0))) {
 		(void)vfs_request(VMVFSREQ_FDCLOSE, fd, vmp, 0, 0, NULL, NULL,
 		    NULL, 0);
 		return ENOMEM;

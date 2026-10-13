@@ -1044,14 +1044,31 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   хватает, kqueue в VFS — не следующая работа** (несколько процентов
   одного ядра только при непрерывном вводе; вернуться, если `KTRACE` по
   живому столу покажет `poll` главным).
-- **11.4: `meechowm`** (`port/gfx/meechowm/`) — `tinywl` с выводом в
-  буферы развёртки `fb` (`FBIOC_MAP`/`FBIOC_FLIP`, копируется только
-  недостающее, кадр без изменений не показывается) и вводом из `input`;
-  в нём foot. Стек — прототипом в `port/gfx/` (`build-stack.sh`, sysroot
-  `~/gfx-sysroot`, исходники `~/gfx-src`, патчи `port/gfx/patches/` —
-  **`.gitignore` прячет `*.patch`, добавлять `git add -f`**). Стенд
-  `port/gfx/test/qemu-meechowm.py` (экран читает `fbart` через
-  `/dev/fb0`): окно, курсор, foot с текстом, возврат консоли — 4 из 4.
+- **11.4: `meechowm`** (`minix/usr.bin/meechowm`, `/usr/bin`) — `tinywl`
+  с выводом в буферы развёртки `fb` (`FBIOC_MAP`/`FBIOC_FLIP`, копируется
+  только недостающее, кадр без изменений не показывается) и вводом из
+  `input`; в нём foot. Стенд `port/gfx/test/qemu-meechowm.py` (экран
+  читает `fbart` через `/dev/fb0`): окно, курсор, foot с текстом, возврат
+  консоли — 4 из 4, на том, что установлено в `DESTDIR`.
+- **Стек Wayland — в дереве (2026-10-13)**, прототипа больше нет:
+  `external/mit/{libffi,wayland,wayland-protocols,pixman,libdrm,
+  libxkbcommon,xkeyboard-config,wlroots,freetype,fontconfig,tllist,fcft,
+  foot}` — `dist/` (нетронутый импорт, `port/gfx/import-stack.sh`; pixman,
+  libdrm, xkeyboard-config — из xsrc NetBSD-current) и reachover рядом.
+  Сборка и порядок — `port/gfx/README`; с нуля 61 с. Код протоколов делает
+  при сборке **`nbwayland-scanner`** (`tools/wayland-scanner`,
+  `TOOL_WAYLAND_SCANNER`; после смены дерева tools —
+  `nbmake-evbarm64-el -C tools/wayland-scanner obj dependall install`).
+  Чего нет в системе — **`minix/lib/libgfxcompat`** (`pthread.h`,
+  `threads.h` поверх libmthread, `sem_*`, `uchar.h` UTF-8 всегда,
+  `linux/input-event-codes.h` FreeBSD; заголовки в `/usr/include/gfxcompat`
+  — нарочно не libc и не путь по умолчанию). **`build-dirs.sh` теперь
+  зовёт `includes`** (раньше заголовки библиотек в `DESTDIR` не попадали);
+  **новый каталог установки — в `etc/mtree/NetBSD.dist.base`** и
+  `do-distrib-dirs`; образ берёт `etc/fonts` из `DESTDIR`. Сгенерированное
+  инструментами, которых в дереве нет (gperf, python, bison для парсера
+  xkbcommon), лежит рядом с Makefile — перегенерировать при импорте.
+  Разбор — `PORTING-LOG.md`, «Стек Wayland в дереве».
   На плате — `board-meechowm.sh` по ssh (с `trap '' HUP`: иначе конец
   сессии ssh убивает композитор, и монитор возвращается к консоли — это
   выглядит как несработавшая смена буфера). **`FBIOC_FLIP` при трёх
@@ -1061,9 +1078,9 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   `board-cursorload.sh`.
 - **Чего стек ждёт от системы и как это сделано** (подробно —
   «Этап 11.4»): курсор headless-вывода надо делать программным
-  (`wlr_output_lock_software_cursors`); `thrd_t` в compat — номер
+  (`wlr_output_lock_software_cursors`); `thrd_t` в libgfxcompat — номер
   libmthread **плюс два** (ноль — «нет потока») и 256 КиБ стека (по
-  умолчанию 8); `mbrtoc32`/`c32rtomb` в compat — UTF-8 при любой локали
+  умолчанию 8); `mbrtoc32`/`c32rtomb` там же — UTF-8 при любой локали
   (в статической libc UTF-8-локали нет); `MAP_UNINITIALIZED` у MINIX свой
   (`0x40000`) и для файла/объекта теперь снимается в VM.
 - **Unix98-псевдотерминалы работают с 2026-10-13** (не работали никогда):

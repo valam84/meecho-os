@@ -15448,3 +15448,172 @@ QEMU:
 **Что осталось от 11.1–11.4.** Стек — в `external/` (сейчас прототип в
 `port/gfx/`, исходники в `~/gfx-src`); `F_SEAL_WRITE`; UTF-8-локаль в
 статической libc и ширины знаков за ASCII.
+
+## Стек Wayland в дереве: из прототипа в `external/` (2026-10-13)
+
+**Что было.** 11.4 прошла на прототипе: `port/gfx/build-stack.sh` собирал
+каждый пакет его же meson или autotools против копии `DESTDIR`
+(`~/gfx-sysroot`), правки лежали патчами, compat — в sysroot. Прототип
+отвечал на вопрос «что каждому пакету нужно от системы»; политика дерева
+другая — чужой код в `external/` с reachover-сборкой NetBSD, диагностики
+`CC_WNO_*` по файлу, GPL не тащить.
+
+**Что стало.** Тринадцать пакетов в `external/mit/<пакет>/dist`, сборка
+`bsd.lib.mk`/`bsd.prog.mk` рядом, установка в `DESTDIR` через
+`port/build-dirs.sh` — как у всей системы, и образ корня берёт стек
+оттуда. Порядок каталогов — `external/mit/Makefile`, полный список
+команд — `port/gfx/README`. Коммиты: 5c13be651 (импорт нетронутым),
+171548c1c (правки MEECHO в импорте), 2fc46104c (`libgfxcompat`),
+080e2e291 (reachover), 9bfab94b6 (`meechowm`, `wlhello`), 007b0197b
+(сканер и для машины), 68d49082f (стенды на установленном, прототип
+убран).
+
+**Откуда исходники — сначала NetBSD-current.** В его xsrc есть пять
+пакетов стека, и решение принималось по каждому:
+
+| Пакет | xsrc NetBSD | Взято |
+|---|---|---|
+| pixman | 0.46.4 | **xsrc NetBSD** (тот же номер, что у прототипа, с правками NetBSD) |
+| libdrm | 2.4.134 | **xsrc NetBSD** (то же; правки под `__NetBSD__` и `atomic_cas_uint` — в libc есть) |
+| xkeyboard-config | 2.38 | **xsrc NetBSD** с его тридцатью Makefile'ами: это данные, раскладка `us`/`pc105`/`evdev` есть в обеих |
+| FreeType | 2.10.4 | апстрим **2.15.0**: у NetBSD код шестилетний, а он разбирает чужие шрифты (CVE-2025-27363 закрыта в 2.13.0) |
+| fontconfig | 2.15.0 | апстрим **2.18.3** (проверен прототипом) |
+
+libffi, wayland, wayland-protocols, libxkbcommon, wlroots, tllist, fcft,
+foot — в NetBSD их нет, взяты теги прототипа. Makefile'ы — по образцу
+reachover NetBSD там, где он есть (pixman, libdrm, xkeyboard-config,
+freetype, fontconfig), по `meson.build` пакета — там, где нет.
+`port/gfx/import-stack.sh` делает каждый `dist` из источника.
+
+**Обрезка импорта** — только то, что строится, и лицензия: без тестов,
+CI, исходников документации и чужих сборочных систем. GPL-файлов в дереве
+нет — вне импорта остались автотулс-помощники libffi и FreeType,
+`test/evdev-scancodes.h` libxkbcommon, `etnaviv_drm.h` libdrm. И один
+**LGPL**: протокол KDE `server-decoration.xml` у wlroots — не импортирован,
+`types/wlr_server_decoration.c` не строится, заголовок не ставится.
+
+**Что генерирует сборка пакетов и как это здесь.**
+
+- **Код протоколов — при сборке**, `nbwayland-scanner`: хостовой
+  инструмент `tools/wayland-scanner` (`TOOL_WAYLAND_SCANNER` в
+  `bsd.own.mk`), реальный Makefile — `external/mit/wayland/bin/wayland-scanner`.
+  XML читает expat **дерева**, вкомпилированный в инструмент: сборка не
+  зависит от expat хоста. Тот же Makefile строит сканер и для машины
+  (`/usr/bin/wayland-scanner`, с libexpat дерева) — на будущее, когда
+  Wayland-код станут собирать на самой MEECHO.
+- **Ответы configure** — заголовок рядом с каждым Makefile, записанный с
+  того, что meson нашёл для прототипа.
+- **Вывод инструментов, которых в дереве нет** — рядом с Makefile, как
+  NetBSD держит его в `xsrc/.../include`: таблицы fontconfig (python) и
+  хэш объектов (gperf), таблицы Unicode у fcft и foot (python). И парсер
+  раскладок libxkbcommon: **bison 3.8.2**, потому что yacc дерева — byacc
+  2015 года и не знает ни `%code requires`, ни `parse.error detailed`.
+  GPL скелета bison несёт исключение Bison: сгенерированный парсер живёт
+  под лицензией библиотеки. Перегенерировать при импорте нового `parser.y`.
+- Генератор терминфо foot пишет в `query-os-name` `uname -s` машины
+  сборки («Linux»); отвечает на этот вопрос MEECHO — поправлено в
+  сгенерированном файле.
+
+**`libgfxcompat` — свой код, решение о месте.** То, что стеку нужно от
+системы и чего в ней нет: `<pthread.h>` поверх libmthread, `<threads.h>`
+с `thrd_create`/`thrd_join`, `sem_*`, `pthread_sigmask`, `<uchar.h>` с
+UTF-8 при любой локали, и FreeBSD'шный `<linux/input-event-codes.h>`
+(`external/bsd/evdev`). Живёт в `minix/lib/libgfxcompat`, заголовки — в
+`/usr/include/gfxcompat`, **нарочно не libc, не libmthread и не путь по
+умолчанию**: обе половины — замена, а не реализация. Потоки libmthread
+пользовательские и переключаются только в его вызовах, а `pthread.h` в
+`/usr/include` сказал бы каждому configure, что POSIX-потоки есть
+(OpenSSL собран без потоков именно поэтому). Преобразования говорят UTF-8
+потому, что у статической libc нет UTF-8-локали, а не потому, что так
+велит локаль. Когда libc получит `<uchar.h>` и локали, а libmthread —
+потоки C11, библиотека сойдёт на нет. `uchartest.sh` против перенесённого
+`uchar.c` — 9.36 млн проверок, 0 расхождений.
+
+**Чего прототип не показал — и что стоило сборке:**
+
+- **`port/build-dirs.sh` не звал `includes`**: заголовки библиотеки
+  (`INCS`) в `DESTDIR` не попадали вовсе — `install` их не ставит, — и
+  следующий каталог собирался против пустоты. Теперь шаги как у `build.sh`
+  NetBSD: `obj`, `includes`, `dependall`, `install`. (`libepoll-shim` в
+  `DESTDIR` попала, видимо, руками.)
+- **Каждый каталог установки — в `etc/mtree/NetBSD.dist.base`**, иначе
+  `install` падает с `mkstemp: No such file or directory`; `DESTDIR`
+  получает их от `nbmake-evbarm64-el do-distrib-dirs`. Заголовки wlroots —
+  в `/usr/include/wlroots-0.20`, как велит его `.pc`.
+- **Публичные заголовки wlroots включают
+  `<wayland-protocols/ИМЯ-enum.h>`** — их генерирует сборка
+  wayland-protocols (каталог `include/` пакета, который сначала не был
+  импортирован). Reachover wayland-protocols — эти 64 заголовка; сам XML
+  в `/usr/share` не ставится: на машине Wayland-код пока не собирают.
+- **Объект называется по базовому имени исходника.** У libxkbcommon два
+  `keymap.c` и два `state.c` — обёртки в одну строку; у wlroots дюжина
+  совпадений (`backend.c`, `output.c`, `pass.c`, `shm.c`…) — каждый из
+  209 исходников строится через символическую ссылку, названную по пути
+  (`BUILDSYMLINKS`: `backend/multi/backend.c` → `backend-multi-backend.c`).
+  wlroots ничего не включает рядом с исходником, так что компилятору всё
+  равно; побочный след — в журнале wlroots файл называется
+  `backend-headless-backend.c`, а не `backend/headless/backend.c`.
+- **`bsd.init.mk` включает `../Makefile.inc`, а не `./Makefile.inc`**:
+  у пакета из одного каталога (wayland-protocols, tllist) переменные — в
+  самом Makefile.
+- **Пакет из библиотеки и программ** (fontconfig) — программы берут
+  библиотеку из её каталога объектов (`PRINTOBJDIR`), как `xmlwf` у expat:
+  один проход строит обе, а в `DESTDIR` библиотека попадает лишь при
+  `install`.
+- **Образ корня берёт `/etc` только из ramdisk** — `etc/fonts` добавлен в
+  то, что `evbarm64_rootproto.py` берёт из `DESTDIR`. Раскладка — NetBSD'шная:
+  `/etc/fonts/fonts.conf`, шаблоны в `/etc/fonts/conf.avail`, в `conf.d`
+  ссылки на набор, который meson включает по умолчанию (как у прототипа).
+- **`UNUSED`.** `<minix/mthread.h>` тянет `<minix/const.h>` с его
+  `UNUSED(v)`; foot определяет свой `UNUSED`, и прототип собирал foot с
+  `-Dwerror=false`, что столкновение прятало. Первая правка (`#undef`)
+  стёрла и UNUSED foot, если `pthread.h` включался после его `macros.h`;
+  теперь `pthread.h` прячет системный и возвращает тот, что был у
+  включающего (`push_macro`/`pop_macro`).
+
+**Диагностики под `-Werror`.** Предупреждений компилятора на весь стек —
+восемь, все нарочно: `#warning Missing implementation` libdrm для
+незнакомой системы (поиск шины и PCI-идентификаторов DRM-устройства,
+которого здесь нет), оставленные предупреждениями строкой NetBSD
+`-Wno-error=cpp`. Ещё сканер ворчит на пять мест экспериментального
+`xx-input-method-v2.xml` («since version not increasing») — у meson то
+же. Подавлено два места, каждое по файлу: libffi — Java raw API объявлен
+устаревшим и вызывает сам себя (`CC_WNO_DEPRECATED_DECLARATIONS`, новая в
+`bsd.own.mk`); `wlhello` — клиентский заголовок сканера отдаёт свою
+const-таблицу слушателей в `wl_proxy_add_listener()` без const
+(`-Wno-cast-qual`). Свой код — по-настоящему: в `fbout.c` `meechowm`
+(WARNS=3) нашёлся лишний каст.
+
+**С нуля** — удалены объекты и всё, что стек поставил в `DESTDIR`, затем
+`do-distrib-dirs`, сканер и `build-dirs.sh` в порядке `port/gfx/README` —
+стек собирается за 61 с на 48 заданиях.
+
+**Отличия от прототипа, сознательные:** pixman с NEON, как его строит
+NetBSD на AArch64 (у прототипа выключен; `PIXMAN_DISABLE=arm-neon` выключит
+на ходу); FreeType со сжатием gzip через системный `libz`, как у NetBSD;
+xkeyboard-config 2.38 вместо 2.48; `PIXMAN_NO_TLS` — ответ
+`pixman-config.h`, а не правка исходника; шаблоны fontconfig в
+`/etc/fonts/conf.avail`.
+
+**Проверка на QEMU** — `port/gfx/test/qemu-meechowm.py`, переведённый на
+то, что установлено: `/usr/bin/meechowm`, `/usr/bin/foot`,
+`/usr/tests/gfx/wlhello`, раскладки из `/usr/share/X11/xkb`,
+`/etc/fonts`. Стенд отказывается работать, если чего-то из этого в
+`DESTDIR` нет, и убирает то, что раскладывал прототип; свои у него только
+`fbart` и шрифт хоста с `fonts.conf`, который включает системный.
+**4 из 4**: окно 256×256 цвета `0x3060c0`; курсор там, где он по журналу
+композитора (400,300), — 26 пикселей на месте пустого фона; окно foot —
+фон `0xffffff`, 3502 пикселя «чернил» в левом верхнем углу (заголовок
+«foot» и `FOOT-OK`); после `kill` — снова консоль. `fc-match` нашёл
+DejaVu через системный `fonts.conf`, в `conf.d` 23 ссылки.
+`qemu-gfx.py` (было: tinywl, которого дерево не строит) — теперь
+`meechowm` без экрана и `wlhello`: `WLHELLO drawn 256x256 colour
+0xff3060c0 frames 1`, выход 0. Оба стенда пройдены на сборке с нуля.
+
+**Не сделано.** Плата: сборка из дерева на CB2 не проверялась (там
+работал прототип). Файлы `.pc` не ставятся (у прототипа в них
+`-pthread`, который GCC порта отвергает); XML wayland-protocols не
+ставится; `footclient` не строится. Expat дерева — 2.1.0 (2012); для
+fontconfig, читающего свои же конфиги, это терпимо, но обновить его из
+NetBSD-current стоит. Полная сборка (`build.sh distribution`) с новыми
+`SUBDIR` не прогонялась — порт собирается по каталогам.

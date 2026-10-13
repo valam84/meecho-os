@@ -264,8 +264,10 @@ set_module_thread_name(thrd_t id, struct module *mod)
 
     title[15] = '\0';
 
+#if !defined(__minix)	/* MEECHO: user-level threads have no names */
     if (pthread_setname_np(id, title) < 0)
         LOG_ERRNO("failed to set thread title");
+#endif
 }
 
 static int

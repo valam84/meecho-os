@@ -144,6 +144,17 @@ conf_to_deco(const struct yml_node *node)
     return iface->from_conf(deco_data);
 }
 
+#if defined(__minix)
+/* MEECHO: the userland is static, and a static program has no symbol table
+ * for dlsym() to look in - it answered NULL, which was then called.  The
+ * list particle is compiled in; it is taken directly. */
+struct particle *particle_list_new(struct particle *common, struct particle *particles[], size_t count,
+                                   int left_spacing, int right_spacing);
+static struct particle *(*const particle_list_new_static)(struct particle *common, struct particle *particles[],
+                                                          size_t count, int left_spacing, int right_spacing)
+    = &particle_list_new;
+#endif
+
 static struct particle *
 particle_simple_list_from_config(const struct yml_node *node, struct conf_inherit inherited)
 {
@@ -161,9 +172,13 @@ particle_simple_list_from_config(const struct yml_node *node, struct conf_inheri
         = NULL;
 
     if (particle_list_new == NULL) {
+#if defined(__minix)
+        particle_list_new = particle_list_new_static;
+#else
         const struct plugin *plug = plugin_load("list", PLUGIN_PARTICLE);
 
         particle_list_new = dlsym(plug->lib, "particle_list_new");
+#endif
         assert(particle_list_new != NULL);
     }
 

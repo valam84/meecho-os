@@ -1187,7 +1187,9 @@ loop(struct bar *_bar, void (*expose)(const struct bar *bar),
     struct wayland_backend *backend = bar->backend.data;
     bool send_abort_to_modules = true;
 
+#if !defined(__minix)	/* MEECHO: user-level threads have no names */
     pthread_setname_np(pthread_self(), "bar(wayland)");
+#endif
 
     backend->bar_on_mouse = on_mouse;
 

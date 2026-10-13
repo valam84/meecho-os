@@ -29,7 +29,8 @@ _Static_assert(sizeof(wchar_t) == sizeof(char32_t), "wchar_t vs. char32_t size m
 #if !defined(__STDC_UTF_32__) || !__STDC_UTF_32__
 #error "char32_t does not use UTF-32"
 #endif
-#if (!defined(__STDC_ISO_10646__) || !__STDC_ISO_10646__) && !defined(__FreeBSD__)
+/* MEECHO (__minix), as NetBSD: wchar_t is the code point in UTF-8 locales. */
+#if (!defined(__STDC_ISO_10646__) || !__STDC_ISO_10646__) && !defined(__FreeBSD__) && !defined(__minix)
 #error "wchar_t does not use UTF-32"
 #endif
 

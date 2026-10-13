@@ -13,10 +13,10 @@ SUBDIR+=	expat lua
 #
 .if ${MACHINE_ARCH} == "aarch64"
 SUBDIR+=	.WAIT libffi wayland-protocols pixman libdrm libxkbcommon \
-		xkeyboard-config tllist freetype
+		xkeyboard-config tllist freetype libyaml
 SUBDIR+=	.WAIT wayland fontconfig
 SUBDIR+=	.WAIT wlroots fcft
-SUBDIR+=	.WAIT foot
+SUBDIR+=	.WAIT foot fuzzel yambar
 .endif
 
 .if ${MKX11} != "no"

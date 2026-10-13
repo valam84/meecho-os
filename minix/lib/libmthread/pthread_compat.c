@@ -56,10 +56,16 @@ int pthread_mutex_lock(pthread_mutex_t *mutex)
 int pthread_mutex_trylock(pthread_mutex_t *mutex)
 {
 	if (PTHREAD_MUTEX_INITIALIZER == *mutex) {
-		mthread_mutex_init(mutex, NULL);	
+		mthread_mutex_init(mutex, NULL);
 	}
 
-	return pthread_mutex_trylock(mutex);
+	/*
+	 * MEECHO: this called itself, not mthread_mutex_trylock(), since the
+	 * file was written (2014): endless recursion, which GCC makes a jump
+	 * to itself.  Every trylock hung its caller in a loop with no system
+	 * call in it - fuzzel's render, the first program here to try a lock.
+	 */
+	return mthread_mutex_trylock(mutex);
 }
 
 /*===========================================================================*

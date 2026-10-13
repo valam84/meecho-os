@@ -226,16 +226,19 @@ mali_rk_report(const char *when)
  * PVTPLL, a ring oscillator this driver can neither see running nor ask
  * for (CLKSEL_CON6 0x4951, gpll/2 behind it); at 200 MHz, with panfrost
  * working, the firmware itself puts it on the PLL path - 0x4155, gpll/6 =
- * 198 MHz, aclk /2, pclk /5.  (Linux's clk_summary shows cpll/500 MHz for
- * the same clocks: it caches read-only muxes, and only the register is
- * true.)
+ * 198 MHz, aclk /2, pclk /5.  What the loader leaves, MEECHO's first run
+ * on the board said: 0x4191, cpll/2 = 500 MHz - and that is what Linux's
+ * clk_summary keeps showing long after the firmware has moved the mux,
+ * because it reads read-only muxes once, at boot.  Only the register is
+ * current.
  *
  * So the driver sets the word the vendor system demonstrably runs on, the
  * slowest operating point of the tree (0.85 V; vdd_gpu boots at 0.9 V),
- * whatever it finds - a PVTPLL that may be dead, or whatever reset leaves,
- * which may be faster than the boot voltage allows.  The divider is
- * computed from gpll rather than copied, and the result is compared with
- * the reference afterwards (mali_rk_compare).  The two bits of the
+ * whatever it finds - a PVTPLL that may be dead, or the loader's 500 MHz,
+ * or whatever another loader leaves.  The divider is computed from gpll
+ * rather than copied - gpll is 1200 MHz after the loader and 1188 under
+ * Linux, so the same word is 200 or 198 MHz - and the result is compared
+ * with the reference afterwards (mali_rk_compare).  The two bits of the
  * register whose meaning neither Linux driver gives (5:4 and 10) are left
  * as found.  A faster rate is stage 11.8, together with its voltage.
  */

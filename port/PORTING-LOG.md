@@ -15615,5 +15615,64 @@ DejaVu через системный `fonts.conf`, в `conf.d` 23 ссылки.
 `-pthread`, который GCC порта отвергает); XML wayland-protocols не
 ставится; `footclient` не строится. Expat дерева — 2.1.0 (2012); для
 fontconfig, читающего свои же конфиги, это терпимо, но обновить его из
-NetBSD-current стоит. Полная сборка (`build.sh distribution`) с новыми
-`SUBDIR` не прогонялась — порт собирается по каталогам.
+NetBSD-current стоит (сделано — «expat 2.8.5 из NetBSD-current»).
+Полная сборка (`build.sh distribution`) с новыми `SUBDIR` не
+прогонялась — порт собирается по каталогам.
+
+## expat 2.8.5 из NetBSD-current (2026-10-13)
+
+**Возраст кода.** В дереве лежал expat 2.1.0 (март 2012), взятый MINIX у
+NetBSD в 2013 году, — со всеми CVE тринадцати лет: billion laughs и его
+варианты, хэш-флуд, переполнения в `storeAtts` и `XML_GetBuffer`, вплоть
+до CVE-2026-93990 (непарные суррогаты UTF-16), закрытой в 2.8.5. Пока
+его никто не линковал, это было неважно; с этапа 11 им читает свои
+конфиги fontconfig (foot, `fc-*`), а XML протоколов — `nbwayland-scanner`.
+
+- **Взят целиком из NetBSD-current** (`github.com/NetBSD/src`,
+  `1fc61a5c45`, sparse-клон `~/gfxport/nb-src`): `dist/` — импорт NetBSD,
+  reachover — NetBSD'шный. **Переносить было нечего:** `dist/lib` и
+  `dist/xmlwf` дерева побайтно совпадали с тегом апстрима `R_2_1_0`,
+  Makefile — с ревизиями NetBSD 2012 года. Импорт — отдельным коммитом,
+  правки MEECHO — следующим.
+- **Энтропия.** С 2.2 expat солит хэши, в 2.8 каждый источник — свой
+  `random_*.c`. Конфиг NetBSD обещает `getrandom(2)`, `getentropy(3)` и
+  `SYS_getrandom`; в libc MINIX нет ни одного — под `__minix` они сняты в
+  `expat_config.h`, два файла — из `SRCS`. Соль даёт `arc4random_buf(3)`:
+  он у libc есть и у expat первый в очереди (`nm libexpat.a`:
+  `writeRandomBytes_arc4random_buf` → `arc4random_buf`). Хостовой сканер
+  компилирует тот же заголовок и получает все источники (нужен glibc
+  2.36+ — ради `arc4random_buf`).
+- **`expat_config.h` NetBSD отстаёт от своего `dist/`** (2.8.1 против
+  2.8.5), а `expat.pc` берёт `Version` оттуда — поправлено на 2.8.5.
+- **`cp -a` сохранил время файлов клона** (18:51), а прежняя сборка
+  поставила заголовки 2.1.0 в 19:48 — `includes` счёл их свежими, и
+  `DESTDIR` остался со старым `expat.h` при новой библиотеке.
+  `port/import-netbsd.sh` теперь кончает перенос `touch` — как после
+  `git checkout`, — и берёт источник из `NETBSD=` (по умолчанию
+  `~/netbsd-current`).
+- **`xmlwf` компоновался со старой libexpat.** `bsd.prog.mk` MINIX кладёт
+  `-L ${DESTDIR}/usr/lib` (обход для Gold, 2013) в `LDFLAGS`, то есть
+  **раньше** `-L` каталога объектов из `LDADD`, и `-lexpat` находил
+  установленную 2.1.0, а не собранную рядом. Здесь это было громко —
+  `undefined reference` на пять функций API 2.8
+  (`XML_SetAllocTrackerActivationThreshold`…); при совпадающем API та же
+  компоновка с прошлой версией прошла бы **молча**. `xmlwf` теперь
+  называет архив путём (`${EXPATLIB.expat}`).
+- **У программ fontconfig — то же самое, и молча** (`-L${FONTCONFIGOBJDIR}
+  -lfontconfig`, см. «Стек Wayland в дереве»: «один проход строит обе»
+  верно, только пока в `DESTDIR` нет прежней `libfontconfig.a`). В этом
+  обновлении `fc-*` взяли архив, собранный с `expat.h` 2.1.0, а `DPADD`
+  на архив в obj не перекомпонует их и на следующем проходе;
+  перекомпонованы вручную, удалением в obj. Makefile fontconfig не
+  тронут — общая починка (порядок `-L` в `bsd.prog.mk`) отдельно.
+
+**Проверка.** `build-dirs.sh external/mit/expat external/mit/fontconfig`
+и весь стек по `port/gfx/README` — без единого предупреждения; `foot`,
+`fc-*` и машинный `wayland-scanner` несут `expat_2.8.5`.
+`nbwayland-scanner` с новым expat собран без предупреждений, `xdg-shell`
+через него — побайтно тот же код и заголовок, что лежали в obj wlroots;
+битый XML — `Error parsing XML at line 1 col 53: mismatched tag`.
+`qemu-meechowm.py` — **4 из 4**; шаг 3 (окно foot с текстом) — тот, где
+fontconfig разбирает системный и стендовый `fonts.conf` новым expat,
+`fc-match` находит DejaVu. Набор тестов самого expat на машине не
+гонялся.

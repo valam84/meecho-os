@@ -1,0 +1,43 @@
+# meechowm: the compositor of stage 11.4 (meechowm.h says what is whose).
+# Built on the Wayland stack in external/mit; static, as the userland is.
+
+PROG=	meechowm
+SRCS=	meechowm.c fbout.c input.c hid2evdev.c
+MAN=
+
+WLPROTOCOLSDIST=	${NETBSDSRCDIR}/external/mit/wayland-protocols/dist
+
+# wlroots' public headers ask for the protocol headers, and leave making
+# them to the compositor - as tinywl does.
+xdg-shell-protocol.h: ${WLPROTOCOLSDIST}/stable/xdg-shell/xdg-shell.xml
+	${_MKTARGET_CREATE}
+	${TOOL_WAYLAND_SCANNER} server-header ${.ALLSRC} ${.TARGET}
+DPSRCS+=	xdg-shell-protocol.h
+CLEANFILES+=	xdg-shell-protocol.h
+
+CPPFLAGS+=	-DWLR_USE_UNSTABLE -D_NETBSD_SOURCE -I.
+CPPFLAGS+=	-I${DESTDIR}/usr/include/wlroots-0.20 \
+		-I${DESTDIR}/usr/include/pixman-1 \
+		-I${DESTDIR}/usr/include/libdrm \
+		-I${DESTDIR}/usr/include/gfxcompat
+# FBIOC_MAP and FBIOC_FLIP: the frame buffer driver's own requests, in its
+# arch header, which is not installed.
+CPPFLAGS+=	-I${NETBSDSRCDIR}/minix/drivers/video/fb/arch/aarch64
+
+# wlr_log() names the source file: by its name here, not the build host's
+# path to it.
+COPTS+=		-fmacro-prefix-map=${.CURDIR}/=
+
+LDADD+=	-lwlroots-0.20 -lwayland-server -lwayland-client -lxkbcommon \
+	-lpixman-1 -ldrm -lepoll-shim -lffi -lgfxcompat -lmthread -lm
+DPADD+=	${DESTDIR}/usr/lib/libwlroots-0.20.a \
+	${DESTDIR}/usr/lib/libwayland-server.a \
+	${DESTDIR}/usr/lib/libwayland-client.a \
+	${DESTDIR}/usr/lib/libxkbcommon.a ${DESTDIR}/usr/lib/libpixman-1.a \
+	${DESTDIR}/usr/lib/libdrm.a ${DESTDIR}/usr/lib/libepoll-shim.a \
+	${DESTDIR}/usr/lib/libffi.a ${DESTDIR}/usr/lib/libgfxcompat.a \
+	${LIBMTHREAD} ${LIBM}
+
+WARNS?=	3
+
+.include <bsd.prog.mk>

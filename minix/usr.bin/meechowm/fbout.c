@@ -122,7 +122,7 @@ mc_fb_present(struct mc_fb *fb, struct wlr_buffer *buffer,
 	for (i = 0; i < fb->map.nbuf; i++) {
 		if (damage != NULL)
 			pixman_region32_union(&fb->lacks[i], &fb->lacks[i],
-			    (pixman_region32_t *)damage);
+			    damage);
 		else
 			pixman_region32_union_rect(&fb->lacks[i], &fb->lacks[i],
 			    0, 0, fb->map.width, fb->map.height);

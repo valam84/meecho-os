@@ -21,6 +21,10 @@ LDADD+=		-lm
 SUBDIR+=		blocktest
 SUBDIR+=		ddekit
 SUBDIR+=		rmibtest
+# The Wayland stack's test client (stage 11), into /usr/tests/gfx.
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+=		gfx
+.endif
 
 # Some have special flags compiling
 CPPFLAGS.test56.c += -D_MINIX_SYSTEM=1

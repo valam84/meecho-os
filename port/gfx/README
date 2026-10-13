@@ -15,7 +15,8 @@ Where things are:
                              over libmthread, sem_*, <uchar.h> (UTF-8 always)
                              - headers in /usr/include/gfxcompat
   minix/usr.bin/meechowm     the compositor (tinywl with MEECHO's screen and
-                             input)
+                             input, and windows as columns on a strip -
+                             the keys are in meechowm.c)
   minix/tests/gfx            wlhello, the smallest client, /usr/tests/gfx
 
 Packages: libffi 3.8.0, wayland 1.26.0, wayland-protocols 1.49, pixman
@@ -56,6 +57,11 @@ etc/mtree/NetBSD.dist.base, and DESTDIR gets them from
                      4.4 MB scrolled through foot on the board: time,
                      kern.cp_time and the md5 of the frame it ends on
                      (the same with PIXMAN_DISABLE=arm-neon and without)
+  test/striptest.sh  the strip's arithmetic (meechowm's layout.c) on the
+                     host: widths, the view, random walks
+  test/qemu-strip.py the strip on QEMU's fb: three windows, the keys
+                     (usb_kbd inject= chords), a click, a terminal - each
+                     step against meechowm -m state and the screen
   test/fcftprobe.c   what foot asks of fcft, alone, with fcft's debug log
   test/uchartest.sh  libgfxcompat's uchar.c against glibc in C.UTF-8, on
                      the host

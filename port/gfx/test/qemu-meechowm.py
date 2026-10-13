@@ -16,12 +16,15 @@ the scanout buffers only - looks at the screen through /dev/fb0 (fbart,
 which reads the buffer on display):
 
   1. meechowm takes the screen and starts wlhello: a 256x256 window of
-     one colour must be in the top left corner;
+     one colour must be in the top left corner (the first column of the
+     strip, stage 11.7);
   2. a mouse (usb_mouse inject=) moves 300 right and 200 down: where the
      compositor says the cursor went (its debug log), the screen must carry
      the cursor, on the desktop's background where there was none before;
   3. foot, a second client, opens a terminal that prints FOOT-OK: its
-     window must carry text - ink on its background;
+     window - the strip's second column, where the compositor's state
+     (meechowm -m state) says it is - must carry text, ink on its
+     background;
   4. meechowm is stopped: the console must have the screen back.
 
 The whole screen, scaled down, is printed after each step.  Log:
@@ -213,8 +216,16 @@ def main():
              "/tmp/foot.log | head -12; ls -l /dev/pts")
         print("      the screen after foot:")
         fbart("-w 1280 -h 720 -s 16", show=True)
-        print("      its top left, every other pixel:")
-        bg, ink, _ = fbart("-x 0 -y 0 -w 320 -h 48 -s 2", show=True)
+        # Where its column is: the one that is not wlhello's.
+        send("meechowm -m state | grep '^column' | grep -v wlhello; "
+             "echo SC''DONE")
+        out = expect(r"SCDONE", 60)
+        m = re.search(r"column \S+ (-?\d+) (-?\d+) ", out)
+        fx, fy = (max(int(m.group(1)), 0), max(int(m.group(2)), 0)) \
+            if m else (0, 0)
+        print("      its top left (%d,%d), every other pixel:" % (fx, fy))
+        bg, ink, _ = fbart("-x %d -y %d -w 320 -h 48 -s 2" % (fx, fy),
+                           show=True)
         record("3. foot's window carries text", bg != COLOUR and ink > 200,
                "background 0x%06x, %d pixel(s) of ink" % (bg, ink))
 

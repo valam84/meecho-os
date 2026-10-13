@@ -7,8 +7,11 @@
 # left corner as text, read back through /dev/fb0 (fbart) - the same check
 # as port/gfx/test/qemu-meechowm.py, on the real display controller this
 # time.  Then it leaves the compositor running, for whoever is at the
-# monitor to look and to use the mouse and the keyboard;
-# "board-meechowm.sh stop" ends it, and the console has the screen back.
+# monitor to look and to use the mouse and the keyboard - Super+Return
+# opens another foot as the next column of the strip, Super with the
+# arrows goes along it (the keys: meechowm.c), and "meechowm -m state"
+# over ssh says where everything is; "board-meechowm.sh stop" ends it,
+# and the console has the screen back.
 #
 #   sh board-meechowm.sh [stop]
 #
@@ -30,7 +33,8 @@ fi
 mkdir -p -m 700 /tmp/xdg
 XDG_RUNTIME_DIR=/tmp/xdg
 FONTCONFIG_FILE=$G/fonts.conf
-export XDG_RUNTIME_DIR FONTCONFIG_FILE
+MEECHOWM_TERM="foot -o main.workers=0 -f 'DejaVu Sans Mono:size=14'"
+export XDG_RUNTIME_DIR FONTCONFIG_FILE MEECHOWM_TERM
 
 # SIGHUP ignored: started from ssh, the compositor is in the session's
 # process group, and the end of the ssh session hangs it up - on the first

@@ -1,0 +1,19 @@
+/*
+ * Стенд mali: то немногое из <minix/drivers.h>, чем пользуются mali_find.c
+ * и mali_rk.c.  Здесь только объявления; что делают vm_map_phys() и
+ * micro_delay(), решает модель в malitest.c, где это видно.
+ */
+#ifndef _SHIM_MINIX_DRIVERS_H
+#define _SHIM_MINIX_DRIVERS_H
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <minix/type.h>
+#define OK		0
+#define SELF		0x8ace
+#define UNUSED(x)	x __attribute__((unused))
+void *vm_map_phys(endpoint_t who, void *phaddr, size_t len);
+int micro_delay(u32_t usec);
+#endif

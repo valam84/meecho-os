@@ -47,6 +47,8 @@ struct log mali_log = {
 
 static const char *const irq_names[MALI_NR_IRQS] = { "gpu", "job", "mmu" };
 
+static int probe_only;
+
 /*
  * The notification bit of each line.  Not the line number: the kernel
  * reports interrupts as bits of one word and refuses hook identifiers above
@@ -300,6 +302,18 @@ mali_init(int type, sef_init_info_t *UNUSED(info))
 		return r;
 
 	mali_rk_report("found");
+
+	/*
+	 * "probe=1": say what the SoC has around the GPU and stop there,
+	 * having written nothing - the first run on a board, before anything
+	 * of this driver is trusted with a write.
+	 */
+	if (probe_only) {
+		log_info(&mali_log, "probe only: nothing written, not "
+		    "starting\n");
+		return ENXIO;
+	}
+
 	if ((r = mali_rk_clocks_on()) != OK ||
 	    (r = mali_rk_power_domain()) != OK)
 		return r;
@@ -361,6 +375,8 @@ main(int argc, char *argv[])
 	env_setargs(argc, argv);
 	if (env_parse("log", "d", 0, &v, LEVEL_NONE, LEVEL_TRACE) == EP_SET)
 		mali_log.log_level = (int)v;
+	if (env_parse("probe", "d", 0, &v, 0, 1) == EP_SET)
+		probe_only = (int)v;
 
 	sef_setcb_init_fresh(mali_init);
 	sef_setcb_init_restart(mali_init);

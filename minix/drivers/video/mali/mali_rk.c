@@ -216,25 +216,75 @@ mali_rk_report(const char *when)
 	    (idle & PD_GPU_IDLE) || (ack & PD_GPU_IDLE) ? ", bus idle" : "");
 }
 
+/*
+ * The clock under the core and under its registers.
+ *
+ * The register interface runs off the same mux as the core (pclk_gpu_pre
+ * divides clk_gpu_pre_mux), so the mux decides whether a read of the GPU
+ * answers at all.  Its other input is the GPU's PVTPLL - a ring oscillator
+ * the firmware sets up when asked over SCMI for certain rates, and that
+ * this driver can neither see running nor ask for.  The vendor system
+ * leaves the mux on it (CLKSEL_CON6 0x4951 in port/cb2-display's snapshot,
+ * gpll/2 behind it).  So a PVTPLL found here is not gambled on: the mux is
+ * moved to the PLL path, with the source divided down to no more than
+ * MALI_SAFE_KHZ - an operating point the tree allows at the lowest voltage
+ * it lists (400 MHz at 0.85 V; vdd_gpu boots at 0.9 V) - and the result is
+ * said.  A source this file cannot compute is refused.  Choosing a faster
+ * rate is stage 11.8, together with the voltage it needs.
+ */
+#define MALI_SAFE_KHZ		400000
+
+static int
+clock_source(void)
+{
+	const struct mali_regs *cru = &mali.info.cru;
+	uint32_t sel = mali_rd(cru, CRU_CLKSEL_CON(CLKSEL_GPU));
+	unsigned src = GPU_SRC_MUX(sel), khz, div;
+
+	if (!GPU_PRE_MUX_PVTPLL(sel))
+		return OK;
+
+	khz = pll_khz(gpu_src[src].index, gpu_src[src].mode_shift);
+	if (khz == 0) {
+		log_warn(&mali_log, "the GPU clock comes from its PVTPLL, and "
+		    "the PLL path's source (%s) is not one this driver can "
+		    "compute; not touching the GPU\n", gpu_src[src].name);
+		return EIO;
+	}
+	for (div = 1; div <= 16 && khz / div > MALI_SAFE_KHZ; div++)
+		;
+	if (div > 16) {
+		log_warn(&mali_log, "%s at %u kHz cannot be divided below %u "
+		    "kHz; not touching the GPU\n", gpu_src[src].name, khz,
+		    MALI_SAFE_KHZ);
+		return EIO;
+	}
+
+	log_info(&mali_log, "the GPU clock comes from its PVTPLL, which this "
+	    "driver cannot check; moving it to %s/%u = %u kHz\n",
+	    gpu_src[src].name, div, khz / div);
+	/* Bit 11 to the PLL path, the divider in 3:0, both write-masked. */
+	mali_wr(cru, CRU_CLKSEL_CON(CLKSEL_GPU),
+	    ((0x800u | 0xfu) << 16) | (div - 1));
+
+	sel = mali_rd(cru, CRU_CLKSEL_CON(CLKSEL_GPU));
+	if (GPU_PRE_MUX_PVTPLL(sel) || GPU_SRC_DIV(sel) != div - 1) {
+		log_warn(&mali_log, "the GPU clock mux did not move "
+		    "(CLKSEL_CON6 0x%08x); not touching the GPU\n", sel);
+		return EIO;
+	}
+	return OK;
+}
+
 int
 mali_rk_clocks_on(void)
 {
 	const struct mali_regs *cru = &mali.info.cru;
 	uint32_t gate, want = GATE_CLK_GPU_SRC | GATE_CLK_GPU;
+	int r;
 
-	/*
-	 * The GPU's register interface runs off the same mux as its core
-	 * (pclk_gpu_pre divides clk_gpu_pre_mux), so a mux pointed at the
-	 * PVTPLL - a ring oscillator the firmware sets up when asked for
-	 * certain rates, and that this driver cannot see running - may be
-	 * a dead clock under every register below.  Reset leaves the mux on
-	 * the PLL path; finding it elsewhere is reported, not gambled on.
-	 */
-	if (GPU_PRE_MUX_PVTPLL(mali_rd(cru, CRU_CLKSEL_CON(CLKSEL_GPU)))) {
-		log_warn(&mali_log, "the GPU clock comes from its PVTPLL, "
-		    "which this driver cannot check; not touching the GPU\n");
-		return EIO;
-	}
+	if ((r = clock_source()) != OK)
+		return r;
 
 	gate = mali_rd(cru, CRU_CLKGATE_CON(CLKGATE_GPU));
 	if (!(gate & want))

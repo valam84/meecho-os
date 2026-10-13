@@ -45,6 +45,7 @@
 #include <minix/usb.h>
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "report.h"
@@ -593,16 +594,39 @@ static struct inputdriver kbd_tab = {
  * driver does only this.
  *
  * Arguments are split at spaces, so TEXT is URL-style: %20 is a space,
- * %0a is Enter, %25 is a percent sign.  injectwait=N waits N seconds
+ * %0a is Enter, %25 is a percent sign.  %[MODS+KEY] is a chord - what no
+ * character types, a compositor's keys first of all: MODS is any of C
+ * (control), S (shift), A (alt) and G (the GUI key, Super), each followed
+ * by '+', and KEY a character or one of Left Right Up Down Home End PageUp
+ * PageDown Insert Delete Return Escape Tab Space Backspace F1..F12 - so
+ * "%[G+Right]", "%[G+S+Left]", "%[G+r]".  injectwait=N waits N seconds
  * instead of one - long enough, say, to log out and have getty ask for a
  * login name that is then typed.
  */
 #define INJECT_MAX	256
 
-static char inject[INJECT_MAX];
+/* A key and the modifier bits held with it: one report. */
+struct keystroke {
+	uint8_t mods;
+	uint8_t key;
+};
+
+static struct keystroke inject[INJECT_MAX];
 static size_t inject_len, inject_pos;
-static int inject_down;			/* the current character's key */
+static int inject_down;			/* the current keystroke's key */
 static minix_timer_t tmr_inject;
+
+/* The keys of a chord that have names rather than characters. */
+static const struct {
+	const char *name;
+	uint8_t key;
+} key_names[] = {
+	{ "Return", 0x28 }, { "Escape", 0x29 }, { "Backspace", 0x2a },
+	{ "Tab", 0x2b }, { "Space", 0x2c }, { "Insert", 0x49 },
+	{ "Home", 0x4a }, { "PageUp", 0x4b }, { "Delete", 0x4c },
+	{ "End", 0x4d }, { "PageDown", 0x4e }, { "Right", 0x4f },
+	{ "Left", 0x50 }, { "Down", 0x51 }, { "Up", 0x52 }
+};
 
 /* A character to a key code and the modifiers it needs. */
 static int
@@ -654,11 +678,60 @@ char_key(int c, uint8_t *mods)
 	return -1;
 }
 
+/*
+ * A chord's text, between "%[" and "]", to a keystroke: modifier letters
+ * each with a '+', then the key.  Answers -1 if it is not a chord.
+ */
+static int
+chord_key(const char *s, size_t len, struct keystroke *k)
+{
+	char name[16], *end;
+	uint8_t mods;
+	unsigned i;
+	long f;
+	int key;
+
+	k->mods = 0;
+	while (len >= 2 && s[1] == '+') {
+		switch (s[0]) {
+		case 'C':	k->mods |= 0x01; break;	/* left control */
+		case 'S':	k->mods |= 0x02; break;	/* left shift */
+		case 'A':	k->mods |= 0x04; break;	/* left alt */
+		case 'G':	k->mods |= 0x08; break;	/* left GUI */
+		default:	return -1;
+		}
+		s += 2;
+		len -= 2;
+	}
+	if (len == 0 || len >= sizeof(name))
+		return -1;
+	memcpy(name, s, len);
+	name[len] = '\0';
+
+	if (len == 1) {
+		if ((key = char_key((unsigned char)name[0], &mods)) < 0)
+			return -1;
+		k->mods |= mods;
+		k->key = (uint8_t)key;
+		return 0;
+	}
+	for (i = 0; i < sizeof(key_names) / sizeof(key_names[0]); i++)
+		if (strcmp(name, key_names[i].name) == 0) {
+			k->key = key_names[i].key;
+			return 0;
+		}
+	if (name[0] == 'F' && (f = strtol(name + 1, &end, 10)) >= 1 &&
+	    f <= 12 && *end == '\0') {
+		k->key = (uint8_t)(0x3a + f - 1);	/* F1 is 0x3a */
+		return 0;
+	}
+	return -1;
+}
+
 static void
 inject_step(int arg)
 {
 	uint8_t rep[KBD_REPORT_LEN];
-	int key;
 
 	memset(rep, 0, sizeof(rep));
 
@@ -667,19 +740,13 @@ inject_step(int arg)
 		inject_down = 0;
 		inject_pos++;
 	} else {
-		while (inject_pos < inject_len &&
-		    (key = char_key((unsigned char)inject[inject_pos],
-		    &rep[0])) < 0) {
-			log_warn(&kbd_log, "inject: no key types 0x%02x\n",
-			    (unsigned char)inject[inject_pos]);
-			inject_pos++;
-		}
 		if (inject_pos >= inject_len) {
-			log_info(&kbd_log, "inject: typed %u character(s)\n",
+			log_info(&kbd_log, "inject: typed %u key(s)\n",
 			    (unsigned)inject_len);
 			return;
 		}
-		rep[2] = (uint8_t)key;
+		rep[0] = inject[inject_pos].mods;
+		rep[2] = inject[inject_pos].key;
 		report(rep, sizeof(rep));
 		inject_down = 1;
 	}
@@ -699,22 +766,44 @@ hexdigit(int c)
 	return -1;
 }
 
-/* The argument, with its %XX escapes undone; answers its length. */
+/*
+ * The argument as keystrokes: characters, %XX escapes undone, and %[...]
+ * chords.  What no key types is said and left out.  Answers how many.
+ */
 static size_t
-inject_parse(const char *s, char *out, size_t max)
+inject_parse(const char *s, struct keystroke *out, size_t max)
 {
+	const char *end;
 	size_t n = 0;
-	int hi, lo;
+	uint8_t mods;
+	int hi, lo, c, key;
 
-	while (*s != '\0' && n + 1 < max) {
+	while (*s != '\0' && n < max) {
+		if (s[0] == '%' && s[1] == '[' &&
+		    (end = strchr(s + 2, ']')) != NULL) {
+			if (chord_key(s + 2, (size_t)(end - (s + 2)),
+			    &out[n]) == 0)
+				n++;
+			else
+				log_warn(&kbd_log, "inject: no such chord "
+				    "%%[%.*s]\n", (int)(end - (s + 2)), s + 2);
+			s = end + 1;
+			continue;
+		}
 		if (s[0] == '%' && (hi = hexdigit(s[1])) >= 0 &&
 		    (lo = hexdigit(s[2])) >= 0) {
-			out[n++] = (char)(hi * 16 + lo);
+			c = hi * 16 + lo;
 			s += 3;
 		} else
-			out[n++] = *s++;
+			c = (unsigned char)*s++;
+		if ((key = char_key(c, &mods)) < 0) {
+			log_warn(&kbd_log, "inject: no key types 0x%02x\n", c);
+			continue;
+		}
+		out[n].mods = mods;
+		out[n].key = (uint8_t)key;
+		n++;
 	}
-	out[n] = '\0';
 	return n;
 }
 
@@ -735,7 +824,7 @@ kbd_init(int type, sef_init_info_t *info)
 	(void)env_parse("delay", "d", 0, &delay, 100, 2000);
 	(void)env_parse("rate", "d", 0, &rate, 2, 50);
 	if (env_get_param("inject", arg, sizeof(arg)) == OK)
-		inject_len = inject_parse(arg, inject, sizeof(inject));
+		inject_len = inject_parse(arg, inject, INJECT_MAX);
 	(void)env_parse("injectwait", "d", 0, &inject_wait, 1, 600);
 
 	rep_delay = (clock_t)(delay * hz / 1000);

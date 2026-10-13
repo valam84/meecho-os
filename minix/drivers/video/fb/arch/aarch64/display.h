@@ -106,6 +106,7 @@ void rk_vo_report(struct disp_info *d);
 int vop2_init(struct disp_regs *vop);
 int vop2_set_mode(const struct videomode *m, phys_bytes fb, unsigned stride);
 int vop2_scanning(unsigned *line);
+int vop2_scanout(phys_bytes fb);
 void vop2_report(void);
 
 /*

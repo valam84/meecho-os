@@ -305,6 +305,30 @@ vop2_set_mode(const struct videomode *m, phys_bytes fb, unsigned stride)
 }
 
 /*
+ * Show another frame buffer of the same mode: a new address for the window,
+ * committed, and taken at the next frame start - which is when the buffer
+ * shown before stops being read, and so what the caller waits for.  Polled
+ * at a quarter of a millisecond: at 60 Hz the wait is at most a frame, and
+ * the commit bit is the one register that says when it is over.
+ */
+int
+vop2_scanout(phys_bytes fb)
+{
+	unsigned spins;
+
+	if (fb > 0xffffffffUL)
+		return EINVAL;
+	wr(SMART0_REGION0_YRGB_MST, (uint32_t)fb);
+	wr(VOP_REG_CFG_DONE, CFG_DONE_EN | CFG_DONE_VP0);
+	for (spins = 0; spins < 400; spins++) {
+		if (!(rd(VOP_REG_CFG_DONE) & CFG_DONE_VP0))
+			return OK;
+		micro_delay(250);
+	}
+	return ETIMEDOUT;
+}
+
+/*
  * Is the port scanning?  Three answers that need no monitor: the line
  * counter moves, a frame start comes along within a frame, and the fetch
  * has not fallen behind - the last is what an unreadable frame buffer

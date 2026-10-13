@@ -33,4 +33,45 @@ typedef char fb_logdump_fits[(sizeof(struct fb_logdump) <= 4095) ? 1 : -1];
 
 #define FBIOC_LOG	_IOR('V', 0x40, struct fb_logdump)
 
+/*
+ * The frame for a compositor (stage 11.4): the scanout buffers, mapped into
+ * the caller, and the request that shows one of them.
+ *
+ * FBIOC_MAP maps every scanout buffer the driver has into the process that
+ * asks - the display controller fetches them by physical address, so they
+ * are the driver's physically contiguous memory, shared through VM - and
+ * makes that process the owner of the screen until its last close of the
+ * device.  Buffer 0 is the one the console draws into while nobody owns
+ * the screen.  The format is XRGB8888, little-endian (the word is
+ * 0x00RRGGBB), DRM's fourcc 'XR24'.
+ *
+ * FBIOC_FLIP shows buffer "buf": its lines are cleaned out of the
+ * processor's caches (the controller reads behind them), its address goes
+ * into the window, and the call returns once the controller has taken it at
+ * a frame start - so the buffer shown before may be drawn into as soon as
+ * it returns.  Rows y0..y1-1 only are cleaned if y1 > y0: damage.
+ */
+#define FB_MAX_BUFFERS	3
+#define FB_FORMAT_XRGB8888	0x34325258u	/* fourcc 'XR24' */
+
+struct fb_map {
+	uint32_t	width, height;	/* pixels */
+	uint32_t	stride;		/* bytes from one row to the next */
+	uint32_t	format;		/* FB_FORMAT_* */
+	uint32_t	size;		/* bytes of one buffer */
+	uint32_t	nbuf;		/* buffers below */
+	uint32_t	shown;		/* the one on the screen now */
+	uint32_t	_pad;
+	uint64_t	addr[FB_MAX_BUFFERS];	/* in the caller */
+};
+
+struct fb_flip {
+	uint32_t	buf;
+	uint32_t	y0, y1;		/* rows drawn since its last showing */
+	uint32_t	_pad;
+};
+
+#define FBIOC_MAP	_IOR('V', 0x41, struct fb_map)
+#define FBIOC_FLIP	_IOW('V', 0x42, struct fb_flip)
+
 #endif /* _FB_IOC_H */

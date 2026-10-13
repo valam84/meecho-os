@@ -319,9 +319,15 @@ arch_fb_flush(int UNUSED(minor), size_t UNUSED(off), size_t UNUSED(len))
 
 int
 arch_fb_ioctl(int UNUSED(minor), unsigned long UNUSED(request),
-	endpoint_t UNUSED(ep), cp_grant_id_t UNUSED(gid))
+	endpoint_t UNUSED(ep), cp_grant_id_t UNUSED(gid),
+	endpoint_t UNUSED(user_ep))
 {
 	return ENOTTY;
+}
+
+void
+arch_fb_release(int UNUSED(minor))
+{
 }
 
 int

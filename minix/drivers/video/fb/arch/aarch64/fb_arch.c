@@ -113,6 +113,27 @@ static unsigned fb_stride;
 static int have_edid;
 static struct edid_info edid;
 
+/*
+ * The scanout buffers a compositor draws into (FBIOC_MAP, FBIOC_FLIP).
+ * Buffer 0 is fb_vir, the console's; the others are made on the first
+ * FBIOC_MAP and kept for the life of the driver - a process maps them
+ * through VM's shared memory, which looks for the driver's region on every
+ * page it touches, so a buffer must not go while anybody may map it.
+ */
+static vir_bytes buf_vir[FB_MAX_BUFFERS];
+static phys_bytes buf_phys[FB_MAX_BUFFERS];
+static int nbuf;			/* made so far */
+static int shown;			/* the one the controller reads */
+static endpoint_t owner = NONE;		/* who has mapped them */
+
+/*
+ * virtual=1: no display at all, the buffers only - for QEMU, which has no
+ * controller this driver knows.  Everything above the hardware works as on
+ * the board (mapping, flipping, the console, reading the screen back), and
+ * that is what it is for: the compositor's output path tested without one.
+ */
+static int virtual_mode;
+
 /* The journal: everything logged, printed and kept (see fb_ioc.h). */
 #define RING_BYTES	16384
 static char ring[RING_BYTES];
@@ -394,6 +415,9 @@ alloc_frame_buffer(void)
 		return ENOMEM;
 	}
 	fb_vir = (vir_bytes)v;
+	buf_vir[0] = fb_vir;		/* before the first flush: it uses these */
+	buf_phys[0] = fb_phys;
+	nbuf = 1;
 	memset(v, 0, fb_size);
 	{
 		/* What a whole-frame clean costs: the console pays it per scroll. */
@@ -411,16 +435,143 @@ alloc_frame_buffer(void)
 	return OK;
 }
 
+/* Clean rows y0..y1-1 of a buffer out of the cache, in pieces. */
+static void
+flush_rows(int b, unsigned y0, unsigned y1)
+{
+	size_t off, len, n;
+
+	if (y1 > (unsigned)mode.vdisplay)
+		y1 = mode.vdisplay;
+	if (y0 >= y1)
+		return;
+	off = (size_t)y0 * fb_stride;
+	len = (size_t)(y1 - y0) * fb_stride;
+	while (len > 0) {
+		n = len < FLUSH_PIECE ? len : FLUSH_PIECE;
+		(void)sys_cachectl(CACHE_CLEAN, (void *)(buf_vir[b] + off), n);
+		off += n;
+		len -= n;
+	}
+}
+
+/* Put buffer b on the screen; the call returns when it is there. */
+static int
+show(int b)
+{
+	int r = OK;
+
+	if (!virtual_mode && (r = vop2_scanout(buf_phys[b])) != OK)
+		log_warn(&fb_log, "buffer %d did not reach the screen: %d\n",
+		    b, r);
+	if (r == OK)
+		shown = b;
+	return r;
+}
+
+/*
+ * FBIOC_MAP: every scanout buffer, mapped into the asker, who becomes the
+ * owner of the screen.  The second and third are made now, the first time,
+ * and kept.
+ */
+static int
+do_map(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
+{
+	struct fb_map m;
+	void *v;
+	int i;
+
+	if (owner != NONE && owner != user_ep)
+		return EBUSY;
+
+	while (nbuf < FB_MAX_BUFFERS) {
+		if ((v = alloc_contig(fb_size, AC_ALIGN64K,
+		    &buf_phys[nbuf])) == NULL) {
+			log_warn(&fb_log, "no memory for scanout buffer %d\n",
+			    nbuf);
+			break;
+		}
+		memset(v, 0, fb_size);
+		buf_vir[nbuf] = (vir_bytes)v;
+		flush_rows(nbuf, 0, mode.vdisplay);
+		nbuf++;
+	}
+
+	memset(&m, 0, sizeof(m));
+	m.width = mode.hdisplay;
+	m.height = mode.vdisplay;
+	m.stride = fb_stride;
+	m.format = FB_FORMAT_XRGB8888;
+	m.size = (uint32_t)fb_size;
+	m.nbuf = nbuf;
+	m.shown = shown;
+	for (i = 0; i < nbuf; i++) {
+		v = vm_remap(user_ep, sef_self(), NULL, (void *)buf_vir[i],
+		    fb_size);
+		if (v == MAP_FAILED) {
+			log_warn(&fb_log, "cannot map buffer %d into %d\n", i,
+			    user_ep);
+			return ENOMEM;
+		}
+		m.addr[i] = (uint64_t)(uintptr_t)v;
+	}
+	owner = user_ep;
+	log_info(&fb_log, "%d scanout buffer(s) mapped into %d\n", nbuf,
+	    user_ep);
+	return sys_safecopyto(ep, gid, 0, (vir_bytes)&m, sizeof(m));
+}
+
+/* FBIOC_FLIP: clean what was drawn, then show it. */
+static int
+do_flip(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
+{
+	struct fb_flip f;
+	int r;
+
+	if (user_ep != owner)
+		return EPERM;
+	if ((r = sys_safecopyfrom(ep, gid, 0, (vir_bytes)&f, sizeof(f))) != OK)
+		return r;
+	if (f.buf >= (uint32_t)nbuf)
+		return EINVAL;
+	if (f.y1 > f.y0)
+		flush_rows((int)f.buf, f.y0, f.y1);
+	else
+		flush_rows((int)f.buf, 0, mode.vdisplay);
+	return show((int)f.buf);
+}
+
+void
+arch_fb_release(int minor)
+{
+	if (minor != 0 || status <= 0)
+		return;
+	if (owner != NONE)
+		log_info(&fb_log, "the screen is given back by %d\n", owner);
+	owner = NONE;
+	if (shown != 0)
+		(void)show(0);
+}
+
 static void
 report_state(void)
 {
 	unsigned line;
 	char stats[256];
 
-	log_info(&fb_log, "state: monitor %s, PHY %s, mode %dx%d\n",
+	if (virtual_mode) {
+		log_info(&fb_log, "state: virtual, mode %dx%d, buffer %d of %d "
+		    "shown, owner %d\n", mode.hdisplay, mode.vdisplay, shown,
+		    nbuf, owner);
+		fbcon_stats(stats, sizeof(stats));
+		log_info(&fb_log, "%s\n", stats);
+		return;
+	}
+	log_info(&fb_log, "state: monitor %s, PHY %s, mode %dx%d, buffer %d of "
+	    "%d shown, owner %d\n",
 	    dwhdmi_hpd() ? "plugged in" : "absent",
 	    dwhdmi_phy_locked() ? "locked" : "NOT locked",
-	    mode.hdisplay, mode.vdisplay);
+	    mode.hdisplay, mode.vdisplay, shown, nbuf, owner);
 	(void)vop2_scanning(&line);
 	fbcon_stats(stats, sizeof(stats));
 	log_info(&fb_log, "%s\n", stats);
@@ -438,6 +589,17 @@ bring_up(void)
 	(void)env_parse("report", "d", 0, &report, 0, 1);
 	if (env_parse("log", "d", 0, &v, LEVEL_NONE, LEVEL_TRACE) == EP_SET)
 		fb_log.log_level = (int)v;
+
+	if (env_parse("virtual", "d", 0, &v, 0, 1) == EP_SET && v == 1) {
+		/* No hardware: a 720p frame in memory, and nothing else. */
+		virtual_mode = 1;
+		mode = mode_720p;
+		if ((r = alloc_frame_buffer()) != OK)
+			return r;
+		log_info(&fb_log, "virtual display, %dx%d, no controller\n",
+		    mode.hdisplay, mode.vdisplay);
+		return OK;
+	}
 
 	if ((dtb = fdt_fetch()) == NULL) {
 		log_warn(&fb_log, "the kernel has no device tree\n");
@@ -529,7 +691,8 @@ arch_get_device(int minor, struct device *dev)
 {
 	if (minor != 0 || status <= 0)
 		return ENXIO;
-	dev->dv_base = fb_vir;
+	/* read(2) shows what is on the screen: fbpeek reads it this way. */
+	dev->dv_base = buf_vir[shown];
 	dev->dv_size = fb_size;
 	return OK;
 }
@@ -603,10 +766,12 @@ arch_fb_flush(int minor, size_t off, size_t len)
 	 * scroll, up to ten times a second.  The total work is the same; no
 	 * single request holds the lock for more than a 128 KiB piece of it.
 	 */
+	/* The buffer on the screen: the console's, unless a program owns it. */
 	while (len > 0) {
 		size_t n = len < FLUSH_PIECE ? len : FLUSH_PIECE;
 
-		(void)sys_cachectl(CACHE_CLEAN, (void *)(fb_vir + off), n);
+		(void)sys_cachectl(CACHE_CLEAN, (void *)(buf_vir[shown] + off),
+		    n);
 		off += n;
 		len -= n;
 	}
@@ -614,13 +779,19 @@ arch_fb_flush(int minor, size_t off, size_t len)
 
 int
 arch_fb_ioctl(int minor, unsigned long request, endpoint_t ep,
-	cp_grant_id_t gid)
+	cp_grant_id_t gid, endpoint_t user_ep)
 {
 	static struct fb_logdump d;
 	uint64_t from, i;
 
 	if (minor != 0)
 		return ENXIO;
+	if (request == FBIOC_MAP || request == FBIOC_FLIP) {
+		if (status <= 0)
+			return ENXIO;
+		return request == FBIOC_MAP ? do_map(ep, gid, user_ep) :
+		    do_flip(ep, gid, user_ep);
+	}
 	if (request != FBIOC_LOG)
 		return ENOTTY;
 

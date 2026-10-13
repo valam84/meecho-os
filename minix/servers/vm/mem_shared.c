@@ -84,7 +84,17 @@ static int getsrc(struct vir_region *region,
                 return EINVAL;
 	}
 
-	if((*r)->def_memtype != &mem_type_anon) {
+	/*
+	 * Anonymous memory, or physically contiguous anonymous memory: the
+	 * frame buffers of the display driver are the second kind (the
+	 * display controller fetches them by physical address), and the
+	 * compositor maps them through here (stage 11.4).  Both keep every
+	 * page present for as long as the region lives, which is all a
+	 * shared mapping needs of its source; contiguous memory is never
+	 * paged in, so physblock_get() always finds it.
+	 */
+	if((*r)->def_memtype != &mem_type_anon &&
+	    (*r)->def_memtype != &mem_type_anon_contig) {
 		printf("source region hasn't anon type but %s.\n",
 			(*r)->def_memtype->name);
 		return EINVAL;

@@ -16,9 +16,15 @@ int arch_pan_display(int minor, struct fb_var_screeninfo *fbvs_copy);
  */
 void arch_fb_flush(int minor, size_t off, size_t len);
 
-/* Requests the generic part does not know; ENOTTY if the arch does not. */
+/*
+ * Requests the generic part does not know; ENOTTY if the arch does not.
+ * "ep" is for the grant, "user_ep" the process that asked.
+ */
 int arch_fb_ioctl(int minor, unsigned long request, endpoint_t ep,
-	cp_grant_id_t gid);
+	cp_grant_id_t gid, endpoint_t user_ep);
+
+/* The device's last close: whatever a program took over is given back. */
+void arch_fb_release(int minor);
 
 #define FB_MESSAGE "Hello, world! From framebuffer!\n"
 #define FB_DEV_NR 1

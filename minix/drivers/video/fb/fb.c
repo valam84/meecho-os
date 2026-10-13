@@ -119,8 +119,10 @@ fb_close(devminor_t minor)
 {
 	if (minor < 0 || minor >= FB_DEV_NR) return ENXIO;
 	assert(open_counter[minor] > 0);
-	if (--open_counter[minor] == 0)
+	if (--open_counter[minor] == 0) {
+		arch_fb_release(minor);	/* the screen back, then the console */
 		fbcon_pause(0);
+	}
 	return OK;
 }
 
@@ -175,7 +177,7 @@ fb_read(devminor_t minor, u64_t pos, endpoint_t ep, cp_grant_id_t gid,
 
 static int
 fb_ioctl(devminor_t minor, unsigned long request, endpoint_t ep,
-	cp_grant_id_t gid, int UNUSED(flags), endpoint_t UNUSED(user_ep),
+	cp_grant_id_t gid, int UNUSED(flags), endpoint_t user_ep,
 	cdev_id_t UNUSED(id))
 {
 /* Process I/O control requests */
@@ -198,7 +200,7 @@ fb_ioctl(devminor_t minor, unsigned long request, endpoint_t ep,
 		return r;
 	}
 
-	return arch_fb_ioctl(minor, request, ep, gid);
+	return arch_fb_ioctl(minor, request, ep, gid, user_ep);
 }
 
 static int

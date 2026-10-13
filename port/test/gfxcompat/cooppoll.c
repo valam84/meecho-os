@@ -15,6 +15,8 @@
  *            runs: it must wake after its time, not before, not much after
  *   which    two threads wait on two pipes, one is written: that one wakes
  *            with POLLIN, the other sleeps on to its own time
+ *   sigmask  a thread blocks every signal, as fuzzel's workers start: the
+ *            process must not be left deaf to SIGTERM (sigmask.c)
  *   epoll    the main thread in epoll_wait() (libepoll-shim, whose wait is
  *            gfx_poll() when the program has threads) for a pipe a thread
  *            writes after waiting in poll() itself (fuzzel: the list loads
@@ -36,6 +38,7 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <threads.h>
@@ -120,6 +123,17 @@ wait_thread(void *arg)
 	w->revents = p.revents;
 	w->took = now_ms() - t0;
 	return 0;
+}
+
+/* sigmask: a worker's start as fuzzel's - block everything. */
+static int
+blocker_thread(void *arg)
+{
+	sigset_t all;
+
+	(void)arg;
+	sigfillset(&all);
+	return pthread_sigmask(SIG_SETMASK, &all, NULL);
 }
 
 /* epoll: waits in poll() for a while, then writes. */
@@ -236,6 +250,30 @@ main(void)
 	    "which: the other sleeps on to its time: %d, revents 0x%x, "
 	    "%ld ms", wb.result, wb.revents, wb.took);
 	(void)read(ring[0][0], &c, 1);
+
+	/*
+	 * sigmask: a thread's pthread_sigmask() is not the process's - one
+	 * that blocked everything left fuzzel deaf to SIGTERM - and the main
+	 * thread's still is.
+	 */
+	{
+		sigset_t cur, usr1;
+
+		thrd_create(&t1, blocker_thread, NULL);
+		thrd_join(t1, &res);
+		sigprocmask(SIG_BLOCK, NULL, &cur);
+		CHECK(res == 0 && !sigismember(&cur, SIGTERM),
+		    "sigmask: a thread blocked everything, SIGTERM is not "
+		    "blocked: %d, %d", res, sigismember(&cur, SIGTERM));
+		sigemptyset(&usr1);
+		sigaddset(&usr1, SIGUSR1);
+		pthread_sigmask(SIG_BLOCK, &usr1, NULL);
+		sigprocmask(SIG_BLOCK, NULL, &cur);
+		r = sigismember(&cur, SIGUSR1);
+		pthread_sigmask(SIG_UNBLOCK, &usr1, NULL);
+		CHECK(r == 1, "sigmask: the main thread's mask is the "
+		    "process's: SIGUSR1 blocked %d", r);
+	}
 
 	/* epoll: the main thread in epoll_wait(), a thread to write. */
 	if ((ep = epoll_create1(0)) < 0) {

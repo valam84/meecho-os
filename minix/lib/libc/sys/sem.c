@@ -1,4 +1,10 @@
-#define _SYSTEM	1
+/*
+ * Built without _SYSTEM on purpose: with it <errno.h> makes every code
+ * negative (the servers' way) while errno in a process is positive, and
+ * "errno = ENOSYS" below would store -ENOSYS.  Nothing here speaks the
+ * servers' codes - _syscall() has already made errno positive, and OK
+ * is only 0 - so the user's view of <errno.h> is the right one.
+ */
 #define _MINIX_SYSTEM	1
 
 #include <sys/cdefs.h>
@@ -28,7 +34,7 @@ int semget(key_t key, int nsems, int semflag)
 	endpoint_t ipc_pt;
 	int r;
 
-	if (get_ipc_endpt(&ipc_pt) != OK) {
+	if (get_ipc_endpt(&ipc_pt) != 0) {
 		errno = ENOSYS;
 		return -1;
 	}
@@ -39,7 +45,7 @@ int semget(key_t key, int nsems, int semflag)
 	m.m_lc_ipc_semget.flag = semflag;
 
 	r = _syscall(ipc_pt, IPC_SEMGET, &m);
-	if (r != OK)
+	if (r != 0)
 		return r;
 
 	return m.m_lc_ipc_semget.retid;
@@ -53,7 +59,7 @@ int semctl(int semid, int semnum, int cmd, ...)
 	va_list ap;
 	int r;
 
-	if (get_ipc_endpt(&ipc_pt) != OK) {
+	if (get_ipc_endpt(&ipc_pt) != 0) {
 		errno = ENOSYS;
 		return -1;
 	}
@@ -96,7 +102,7 @@ int semop(int semid, struct sembuf *sops, size_t nsops)
 	message m;
 	endpoint_t ipc_pt;
 
-	if (get_ipc_endpt(&ipc_pt) != OK) {
+	if (get_ipc_endpt(&ipc_pt) != 0) {
 		errno = ENOSYS;
 		return -1;
 	}

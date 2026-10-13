@@ -1,5 +1,10 @@
-#define _SYSTEM	1
-
+/*
+ * Built without _SYSTEM on purpose: with it <errno.h> makes every code
+ * negative (the servers' way) while errno in a process is positive, and
+ * "errno = ENOSYS" below would store -ENOSYS.  Nothing here speaks the
+ * servers' codes - _syscall() has already made errno positive, and OK
+ * is only 0 - so the user's view of <errno.h> is the right one.
+ */
 #include <sys/cdefs.h>
 #include <lib.h>
 #include "namespace.h"
@@ -24,7 +29,7 @@ int shmget(key_t key, size_t size, int shmflg)
 	endpoint_t ipc_pt;
 	int r;
 
-	if (get_ipc_endpt(&ipc_pt) != OK) {
+	if (get_ipc_endpt(&ipc_pt) != 0) {
 		errno = ENOSYS;
 		return -1;
 	}
@@ -35,7 +40,7 @@ int shmget(key_t key, size_t size, int shmflg)
 	m.m_lc_ipc_shmget.flag = shmflg;
 
 	r = _syscall(ipc_pt, IPC_SHMGET, &m);
-	if (r != OK)
+	if (r != 0)
 		return r;
 	return m.m_lc_ipc_shmget.retid;
 }

@@ -51,6 +51,8 @@ enum {
 	INPUT_GD_X = 0x0030,
 	INPUT_GD_Y,
 
+	INPUT_GD_WHEEL = 0x0038,	/* relative; > 0 away from the user */
+
 	INPUT_GD_SYSTEM_POWER_DOWN = 0x0081,
 	INPUT_GD_SYSTEM_SLEEP,
 	INPUT_GD_SYSTEM_WAKE_UP

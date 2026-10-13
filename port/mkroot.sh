@@ -101,8 +101,11 @@ fi
 # набранного видно и на линии, и на экране. Цепочка: xhci (контроллер, на
 # котором хаб платы; метка usbd) -> usb_hub -> usb_kbd (клавиатура по
 # загрузочному протоколу) -> input -> tty. Клавиатуру можно воткнуть и
-# после загрузки. Аргументы загрузки: usb=0 не поднимает ничего из этого,
-# usblog= - уровень журнала xhci (2 по умолчанию), kbdlog= - usb_kbd.
+# после загрузки. Мышь идёт рядом: usb_mouse -> input -> читатели
+# /dev/mousemux (композитор); если читателя нет, её события никуда не идут.
+# Аргументы загрузки: usb=0 не поднимает ничего из этого, usblog= -
+# уровень журнала xhci (2 по умолчанию), kbdlog= - usb_kbd, mouselog= -
+# usb_mouse.
 if [ "`sysenv usb 2>/dev/null`" != 0 ] && [ -x /service/xhci ]
 then
 	usblog=2
@@ -112,6 +115,10 @@ then
 	kbdlog=2
 	if sysenv kbdlog >/dev/null
 	then	kbdlog="`sysenv kbdlog`"
+	fi
+	mouselog=2
+	if sysenv mouselog >/dev/null
+	then	mouselog="`sysenv mouselog`"
 	fi
 	minix-service up /service/input -dev /dev/kbdmux ||
 	    echo "WARNING: no input server"
@@ -123,6 +130,11 @@ then
 		minix-service up /service/usb_kbd -label usb_kbd \
 		    -args "log=$kbdlog" ||
 		    echo "WARNING: no USB keyboard driver"
+		if [ -x /service/usb_mouse ]
+		then	minix-service up /service/usb_mouse -label usb_mouse \
+			    -args "log=$mouselog" ||
+			    echo "WARNING: no USB mouse driver"
+		fi
 	else
 		echo "WARNING: no USB host controller"
 	fi

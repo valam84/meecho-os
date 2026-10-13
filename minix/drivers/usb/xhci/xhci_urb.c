@@ -36,7 +36,7 @@
  *
  * (Both paragraphs describe the first version.  Transfers have since
  * become asynchronous - see "out" below - and a device goes to the driver
- * its class names, driver_for().)
+ * its interfaces name, wants().)
  *
  * Interrupt IN transfers are the one kind that is not one-at-a-time, and
  * see "intr" below for why: a keyboard's transfer finishes when a key is
@@ -58,7 +58,12 @@
 #include "xhci.h"
 #include "xhcireg.h"
 
-#define MAX_CLIENTS	4
+/*
+ * Every driver that has said hello.  Four were exactly the drivers there
+ * are (hub, storage, keyboard, mouse), which left no room for one more
+ * started by hand, so the table has room for eight.
+ */
+#define MAX_CLIENTS	8
 
 static struct {
 	endpoint_t ep;
@@ -333,22 +338,44 @@ client_add(endpoint_t ep, const char *name)
  *
  * A keyboard is an interface, not a device: class 3 (HID), subclass 1
  * (boot interface), protocol 1 (keyboard), on whichever interface it is.
- * The device's own class is 0 on every keyboard seen so far.
+ * The device's own class is 0 on every keyboard seen so far.  A mouse is
+ * the same with protocol 2.
+ *
+ * So the question is not "which driver" but "does this device want this
+ * driver": a receiver for a keyboard and a mouse is one device with both
+ * interfaces, and both drivers are told about it - each then speaks to
+ * its own interface, and transfers from the two are kept apart by the
+ * endpoint, which is the controller's business.  A hub or a flash drive
+ * wants exactly one.
  */
-static const char *
-driver_for(struct xhci_device *dev)
+static const char *const drivers[] = {
+	"usb_hub", "usb_storage", "usb_kbd", "usb_mouse"
+};
+
+static int
+has_hid(const struct xhci_device *dev, unsigned protocol)
 {
 	unsigned i;
 
-	if (dev->class == 9)
-		return "usb_hub";
-	if (dev->class == 8 || dev->iface_class == 8)
-		return "usb_storage";
 	for (i = 0; i < dev->niface; i++)
 		if (dev->iface[i].class == 3 && dev->iface[i].subclass == 1 &&
-		    dev->iface[i].protocol == 1)
-			return "usb_kbd";
-	return NULL;
+		    dev->iface[i].protocol == protocol)
+			return 1;
+	return 0;
+}
+
+static int
+wants(const struct xhci_device *dev, const char *driver)
+{
+	if (dev->class == 9)
+		return strcmp(driver, "usb_hub") == 0;
+	if (dev->class == 8 || dev->iface_class == 8)
+		return strcmp(driver, "usb_storage") == 0;
+	if (strcmp(driver, "usb_kbd") == 0)
+		return has_hid(dev, 1);
+	if (strcmp(driver, "usb_mouse") == 0)
+		return has_hid(dev, 2);
+	return 0;
 }
 
 /*
@@ -392,9 +419,8 @@ announce_to(struct xhci_device *dev, unsigned who)
 void
 xhci_urb_announce(struct xhci_device *dev)
 {
-	const char *want;
-
 	unsigned i;
+	int handled = 0;
 
 	if (nclients == 0) {
 		log_info(&xhci_log, "no driver is listening yet; the device "
@@ -403,7 +429,10 @@ xhci_urb_announce(struct xhci_device *dev)
 		return;
 	}
 
-	if ((want = driver_for(dev)) == NULL) {
+	for (i = 0; i < sizeof(drivers) / sizeof(drivers[0]); i++)
+		if (wants(dev, drivers[i]))
+			handled = 1;
+	if (!handled) {
 		log_info(&xhci_log, "device %u is class %u/%u, which no "
 		    "driver here handles\n", dev->slot, dev->class,
 		    dev->iface_class);
@@ -411,13 +440,13 @@ xhci_urb_announce(struct xhci_device *dev)
 	}
 
 	for (i = 0; i < nclients; i++)
-		if (strcmp(clients[i].name, want) == 0)
+		if (wants(dev, clients[i].name))
 			announce_to(dev, i);
 
 	if (!dev->announced)
-		log_info(&xhci_log, "device %u wants \"%s\", which is not "
-		    "running; it will be announced when it starts\n",
-		    dev->slot, want);
+		log_info(&xhci_log, "device %u wants a driver that is not "
+		    "running; it will be announced when one starts\n",
+		    dev->slot);
 }
 
 /*
@@ -1282,17 +1311,10 @@ xhci_urb_message(message *m)
 		 * spent a run watching a storage driver assert on a device
 		 * it had never been given.
 		 */
-		for (i = 0; i < XHCI_MAX_PORTS; i++) {
-			const char *want;
-
-			if (xhci.dev[i].slot == 0)
-				continue;
-
-			want = driver_for(&xhci.dev[i]);
-			if (want != NULL &&
-			    strcmp(clients[who].name, want) == 0)
+		for (i = 0; i < XHCI_MAX_PORTS; i++)
+			if (xhci.dev[i].slot != 0 &&
+			    wants(&xhci.dev[i], clients[who].name))
 				announce_to(&xhci.dev[i], (unsigned)who);
-		}
 		break;
 
 	case USB_RQ_DEINIT:

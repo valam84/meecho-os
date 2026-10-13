@@ -21,5 +21,12 @@ SUBDIR+=	xhci
 SUBDIR+=	usb_kbd
 .endif
 
+# A mouse, through the boot protocol.  Its events go to the readers of
+# /dev/mousemux - the compositor of stage 11 - and the same reasoning
+# keeps it to aarch64: nothing on the other two reads them from USB.
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+=	usb_mouse
+.endif
+
 
 .include <bsd.subdir.mk>

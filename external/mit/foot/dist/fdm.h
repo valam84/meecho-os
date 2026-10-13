@@ -2,6 +2,12 @@
 
 #include <stdbool.h>
 
+#include <signal.h>
+#if defined(__minix) && !defined(SIGRTMAX)
+/* MEECHO: no real-time signals; every signal there is is below NSIG. */
+#define SIGRTMAX NSIG
+#endif
+
 struct fdm;
 
 typedef bool (*fdm_fd_handler_t)(struct fdm *fdm, int fd, int events, void *data);

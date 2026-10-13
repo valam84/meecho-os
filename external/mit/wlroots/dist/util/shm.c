@@ -8,6 +8,46 @@
 #include <wlr/config.h>
 #include "util/shm.h"
 
+#if defined(__minix)
+/*
+ * MEECHO: there is no shm_open(3) - a named object would have to be a file,
+ * and files are not mapped shared and writable here.  What is mapped so is
+ * a memory object, memfd_create(2), which is what these two make.
+ */
+int allocate_shm_file(size_t size) {
+	int fd = memfd_create("wlroots", MFD_CLOEXEC);
+	if (fd < 0) {
+		return -1;
+	}
+	if (ftruncate(fd, size) < 0) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+/*
+ * The pair wants a second descriptor that cannot write.  A memory object
+ * has no read-only reopening yet (Linux takes it from /proc/self/fd); the
+ * second descriptor here is a duplicate, so a client could write into a
+ * keymap that is shared with the others.  Known gap: closes with
+ * F_SEAL_WRITE in VM (PORTING-LOG.md, stage 11.4).
+ */
+bool allocate_shm_file_pair(size_t size, int *rw_fd_ptr, int *ro_fd_ptr) {
+	int rw_fd = allocate_shm_file(size);
+	if (rw_fd < 0) {
+		return false;
+	}
+	int ro_fd = fcntl(rw_fd, F_DUPFD_CLOEXEC, 0);
+	if (ro_fd < 0) {
+		close(rw_fd);
+		return false;
+	}
+	*rw_fd_ptr = rw_fd;
+	*ro_fd_ptr = ro_fd;
+	return true;
+}
+#else
 #define RANDNAME_PATTERN "/wlroots-XXXXXX"
 
 static void randname(char *buf) {
@@ -95,3 +135,4 @@ bool allocate_shm_file_pair(size_t size, int *rw_fd_ptr, int *ro_fd_ptr) {
 	*ro_fd_ptr = ro_fd;
 	return true;
 }
+#endif /* !__minix */

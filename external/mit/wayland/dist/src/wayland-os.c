@@ -106,6 +106,25 @@ wl_os_socket_peercred(int sockfd, uid_t *uid, gid_t *gid, pid_t *pid)
 #endif
 	return 0;
 }
+#elif defined(LOCAL_PEEREID)
+/*
+ * MEECHO (__minix), as NetBSD: the peer's identity, recorded by the
+ * socket at connect(2) - what getpeereid(3) reads, plus the pid.
+ */
+int
+wl_os_socket_peercred(int sockfd, uid_t *uid, gid_t *gid, pid_t *pid)
+{
+	socklen_t len;
+	struct unpcbid ucred;
+
+	len = sizeof(ucred);
+	if (getsockopt(sockfd, 0, LOCAL_PEEREID, &ucred, &len) < 0)
+		return -1;
+	*uid = ucred.unp_euid;
+	*gid = ucred.unp_egid;
+	*pid = ucred.unp_pid;
+	return 0;
+}
 #elif defined(SO_PEERCRED)
 int
 wl_os_socket_peercred(int sockfd, uid_t *uid, gid_t *gid, pid_t *pid)

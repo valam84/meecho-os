@@ -1,4 +1,5 @@
 #include "unicode-mode.h"
+#include <limits.h>
 
 #define LOG_MODULE "unicode-input"
 #define LOG_ENABLE_DBG 0
@@ -49,7 +50,9 @@ unicode_mode_input(struct seat *seat, struct terminal *term,
         sym == XKB_KEY_KP_Enter ||
         sym == XKB_KEY_KP_Space)
     {
-        char utf8[MB_CUR_MAX];
+        /* MEECHO: MB_CUR_MAX is the locale's, 1 in "C", and c32rtomb()
+         * there writes UTF-8 whatever the locale: room for any. */
+        char utf8[MB_LEN_MAX];
         size_t chars = c32rtomb(
             utf8, term->unicode_mode.character, &(mbstate_t){0});
 

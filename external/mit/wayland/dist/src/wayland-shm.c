@@ -376,7 +376,17 @@ shm_create_pool(struct wl_client *client, struct wl_resource *resource,
 		goto err_close;
 	}
 
-#ifdef HAVE_MEMFD_CREATE
+#if defined(__minix)
+	/*
+	 * MEECHO: a pool is a memory object (memfd_create(2)) - nothing else
+	 * maps shared and writable here - and a memory object never raises
+	 * SIGBUS: past its end VM gives a zeroed page too.  Nor is there
+	 * SA_SIGINFO to tell the address of one that came.
+	 */
+	(void)seals;
+	(void)statbuf;
+	pool->sigbus_is_impossible = true;
+#elif defined(HAVE_MEMFD_CREATE)
 	seals = fcntl(fd, F_GET_SEALS);
 	if (seals == -1)
 		seals = 0;
@@ -679,7 +689,12 @@ init_sigbus_data_key(void)
 {
 	struct sigaction new_action = {
 		.sa_sigaction = sigbus_handler,
+#ifdef SA_SIGINFO
 		.sa_flags = SA_SIGINFO | SA_NODEFER
+#else
+		/* MEECHO: never installed; see sigbus_is_impossible. */
+		.sa_flags = SA_NODEFER
+#endif
 	};
 
 	sigemptyset(&new_action.sa_mask);

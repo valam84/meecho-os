@@ -1,5 +1,6 @@
 #include "input.h"
 
+#include <limits.h>
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
@@ -1178,7 +1179,7 @@ legacy_kbd_protocol(struct seat *seat, struct terminal *term,
         else if (term->meta.eight_bit && count == 1) {
             const char32_t wc = 0x80 | utf8[0];
 
-            char utf8_meta[MB_CUR_MAX];
+            char utf8_meta[MB_LEN_MAX];  /* MEECHO: see unicode-mode.c */
             size_t chars = c32rtomb(utf8_meta, wc, &(mbstate_t){0});
 
             if (chars != (size_t)-1)

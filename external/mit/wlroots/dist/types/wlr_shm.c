@@ -179,6 +179,7 @@ static bool buffer_get_shm(struct wlr_buffer *wlr_buffer,
 	return true;
 }
 
+#if !defined(__minix)	/* never installed on MEECHO: see below */
 static void handle_sigbus(int sig, siginfo_t *info, void *context) {
 	assert(sigbus_data != NULL);
 	struct sigaction prev_action = sigbus_data->prev_action;
@@ -210,12 +211,16 @@ static void handle_sigbus(int sig, siginfo_t *info, void *context) {
 	return;
 
 reraise:
+#ifdef SA_SIGINFO
 	if (prev_action.sa_flags & SA_SIGINFO) {
 		prev_action.sa_sigaction(sig, info, context);
-	} else {
+	} else
+#endif
+	{
 		prev_action.sa_handler(sig);
 	}
 }
+#endif
 
 static bool buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer,
 		uint32_t flags, void **data, uint32_t *format, size_t *stride) {
@@ -229,6 +234,15 @@ static bool buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer,
 	// Install a SIGBUS handler. SIGBUS is triggered if the client shrinks the
 	// backing file, and then we try to access the mapping.
 	struct sigaction prev_action;
+#if defined(__minix)
+	/*
+	 * MEECHO: a shm pool is a memory object (memfd_create(2)), and a
+	 * memory object never raises SIGBUS - past its end VM maps a zeroed
+	 * page too - nor does the system have SA_SIGINFO to find the address
+	 * of one.  So no handler; the list below is kept all the same.
+	 */
+	memset(&prev_action, 0, sizeof(prev_action));
+#else
 	if (sigbus_data == NULL) {
 		struct sigaction new_action = {
 			.sa_sigaction = handle_sigbus,
@@ -241,6 +255,7 @@ static bool buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer,
 	} else {
 		prev_action = sigbus_data->prev_action;
 	}
+#endif
 
 	struct wlr_shm_mapping *mapping = buffer->pool->mapping;
 
@@ -271,11 +286,13 @@ static void buffer_end_data_ptr_access(struct wlr_buffer *wlr_buffer) {
 		}
 	}
 
+#if !defined(__minix)	/* no handler was installed: see above */
 	if (sigbus_data == NULL) {
 		if (sigaction(SIGBUS, &buffer->sigbus_data.prev_action, NULL) != 0) {
 			wlr_log_errno(WLR_ERROR, "sigaction failed");
 		}
 	}
+#endif
 
 	mapping_consider_destroy(buffer->sigbus_data.mapping);
 }

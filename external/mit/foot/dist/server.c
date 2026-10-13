@@ -446,8 +446,19 @@ fdm_server(struct fdm *fdm, int fd, int events, void *data)
 
     struct sockaddr_un addr;
     socklen_t addr_size = sizeof(addr);
+#if defined(__minix)
+    /* MEECHO: no accept4(2); accept(2) and the two flags after it. */
+    int client_fd = accept(server->fd, (struct sockaddr *)&addr, &addr_size);
+    if (client_fd != -1 &&
+        (fcntl(client_fd, F_SETFD, FD_CLOEXEC) == -1 ||
+         fcntl(client_fd, F_SETFL, fcntl(client_fd, F_GETFL) | O_NONBLOCK) == -1)) {
+        close(client_fd);
+        client_fd = -1;
+    }
+#else
     int client_fd = accept4(
         server->fd, (struct sockaddr *)&addr, &addr_size, SOCK_CLOEXEC | SOCK_NONBLOCK);
+#endif
 
     if (client_fd == -1) {
         LOG_ERRNO("failed to accept client connection");
@@ -527,9 +538,16 @@ prepare_socket(int fd)
         return false;
     }
 
+#if defined(__minix)
+    /* MEECHO, as NetBSD: no SO_DOMAIN to ask; the other two are asked. */
+    int const socket_options[] = { SO_ACCEPTCONN, SO_TYPE };
+    int const socket_options_values[] = { NON_ZERO_OPT, SOCK_STREAM};
+    char const * const socket_options_names[] = { "SO_ACCEPTCONN", "SO_TYPE" };
+#else
     int const socket_options[] = { SO_DOMAIN, SO_ACCEPTCONN, SO_TYPE };
     int const socket_options_values[] = { AF_UNIX, NON_ZERO_OPT, SOCK_STREAM};
     char const * const socket_options_names[] = { "SO_DOMAIN", "SO_ACCEPTCONN", "SO_TYPE" };
+#endif
 
     xassert(ALEN(socket_options) == ALEN(socket_options_values));
     xassert(ALEN(socket_options) == ALEN(socket_options_names));

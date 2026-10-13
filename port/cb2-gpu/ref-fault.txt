@@ -1,0 +1,74 @@
+render node /dev/dri/renderD130, mode fault
+BO handle 1, GPU VA 0x2000000 (16 KiB: last-level entries 0-3)
+
+before the fault: chain of 64: done=True in 0.546 ms, 0 wrong word(s); header status first 0x1 last 0x1
+JS1 CONFIG 0x00007b00: address space 0
+# before the fault
+  0x0020 GPU_IRQ_RAWSTAT        0x00000600
+  0x0034 GPU_STATUS             0x00000000
+  0x1000 JOB_IRQ_RAWSTAT        0x00000000
+  0x1010 JOB_IRQ_JS_STATE       0x00000000
+  0x2000 MMU_IRQ_RAWSTAT        0x00000000
+  0x0f00 JM_CONFIG              0x000f0000
+  0x0f04 SHADER_CONFIG          0x00000000
+  0x0f08 TILER_CONFIG           0x00000000
+  0x0f0c L2_MMU_CONFIG          0x00000000
+  JS0 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS1 head 0000000002000fc0 tail 0000000002000fc0 affinity 0000000000000001 config 00007b00 status 00000000
+  JS2 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  AS0 transtab 0x000000000eea7007 memattr 0x0000000000888d88 transcfg 0x0000000000000000 status 0x0 faultstatus 0x0 faultaddr 0x0000000000000000
+
+fault job: WRITE_VALUE 0xbadc0de5 to unmapped GPU VA 0x2010040; done=True after 1000.339 ms (wait after a 1 s watch); header status 0x0, first incomplete 0x0, fault pointer 0x0
+
+# registers while it faults, every change (t from SUBMIT):
+      t, us  MMU_RAW    MMU_MASK   JOB_RAW    JOB_MASK   JS_STATE   JS1_STATUS JS1_HEAD   AS_STATUS  AS_FSTAT   AS_FADDR   AS_TTAB    AS_MATTR   GPU_RAW   
+          3  0x00000000 0x00ff00ff 0x00000000 0x00070007 0x00000000 0x00000000 0x02000fc0 0x00000000 0x00000000 0x00000000 0x0eea7007 0x00888d88 0x00000600
+        184  0x00000001 0x00fe00fe 0x00000000 0x00070007 0x00000000 0x00000048 0x02000000 0x00000000 0x7c1003c3 0x02010040 0x00000000 0x00000000 0x00000600
+  (51702 polls in 1.000 s)
+
+last AS0 FAULTSTATUS 0x7c1003c3: exception 0xc3, access WRITE, slave, source 0x7c10; FAULTADDRESS 0x0000000002010040 (asked for 0x2010040)
+JS1 STATUS 0x48
+# after the fault, before the next job
+  0x0020 GPU_IRQ_RAWSTAT        0x00000600
+  0x0034 GPU_STATUS             0x00000010
+  0x1000 JOB_IRQ_RAWSTAT        0x00000000
+  0x1010 JOB_IRQ_JS_STATE       0x00000000
+  0x2000 MMU_IRQ_RAWSTAT        0x00000001
+  0x0f00 JM_CONFIG              0x000f0000
+  0x0f04 SHADER_CONFIG          0x00000000
+  0x0f08 TILER_CONFIG           0x00000000
+  0x0f0c L2_MMU_CONFIG          0x00000000
+  JS0 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS1 head 0000000002000000 tail 0000000002000000 affinity 0000000000000001 config 00007300 status 00000048
+  JS2 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  AS0 transtab 0x0000000000000000 memattr 0x0000000000000000 transcfg 0x0000000000000000 status 0x0 faultstatus 0x7c1003c3 faultaddr 0x0000000002010040
+
+dmesg, new lines:
+[  483.697377] panfrost fde60000.gpu: Unhandled Page fault in AS0 at VA 0x0000000002010040
+               Reason: TODO
+               raw fault status: 0x7C1003C3
+               decoded fault status: SLAVE FAULT
+               exception type 0xC3: TRANSLATION_FAULT_3
+               access type 0x3: WRITE
+               source id 0x7C10
+[  483.697552] panfrost fde60000.gpu: js fault, js=1, status=JOB_BUS_FAULT, head=0x2000000, tail=0x2000000
+
+after the fault: chain of 64: done=True in 0.546 ms, 0 wrong word(s); header status first 0x1 last 0x1
+# after the chain that follows the fault
+  0x0020 GPU_IRQ_RAWSTAT        0x00000600
+  0x0034 GPU_STATUS             0x00000000
+  0x1000 JOB_IRQ_RAWSTAT        0x00000000
+  0x1010 JOB_IRQ_JS_STATE       0x00000000
+  0x2000 MMU_IRQ_RAWSTAT        0x00000000
+  0x0f00 JM_CONFIG              0x000f0000
+  0x0f04 SHADER_CONFIG          0x00000000
+  0x0f08 TILER_CONFIG           0x00000000
+  0x0f0c L2_MMU_CONFIG          0x00000000
+  JS0 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  JS1 head 0000000002000fc0 tail 0000000002000fc0 affinity 0000000000000001 config 00007b00 status 00000000
+  JS2 head 0000000000000000 tail 0000000000000000 affinity 0000000000000000 config 00000000 status 00000000
+  AS0 transtab 0x000000000eea7007 memattr 0x0000000000888d88 transcfg 0x0000000000000000 status 0x0 faultstatus 0x7c1003c3 faultaddr 0x0000000002010040
+
+FAULT REPORTED, CHAINS OK
+
+power/control restored: auto

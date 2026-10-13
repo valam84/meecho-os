@@ -15,6 +15,17 @@
 # возвращается.  Запуск под root:
 #
 #	python3 jobprobe.py > jobprobe.txt
+#	python3 jobprobe.py fault > ref-fault.txt
+#
+# Режим fault - эталон линии MMU (73): цепочка, потом одно задание,
+# пишущее туда, где ничего не отображено (FAULT_OFF от начала буфера: та
+# же таблица последнего уровня, пустая запись), и цепочка снова - жив ли
+# ускоритель после отказа.  Пока panfrost разбирается с отказом, зонд
+# опрашивает регистры MMU, слота и адресного пространства и печатает
+# каждое их изменение со временем от SUBMIT: что сделало железо и в каком
+# порядке panfrost отвечал.  Ловится не всё - обработчик прерывания
+# быстрее Python, - но порядок и конечные значения видны.  Потом новые
+# строки dmesg.
 #
 # Раскладка дескриптора (v7.xml, слова по 32 бита):
 #   заголовок, 32 байта: 0 состояние исключения (пишет GPU), 1 первая
@@ -43,6 +54,12 @@ GEM_CLOSE = IOC(IOW, 0x09, 8)
 JOB_WRITE_VALUE = 2
 WV_IMM32 = 6
 JOB_SIZE = 64                   # заголовок 32 + нагрузка 24, выравнивание 64
+
+# Отказ: буфер 16 КиБ занимает записи 0-3 таблицы последнего уровня,
+# запись 16 пуста.  Не с начала страницы - видно, весь ли адрес
+# запоминает FAULTADDRESS.  Служба MEECHO пишет туда же (0x2010040).
+FAULT_OFF = 0x10040
+FAULT_VALUE = 0xbadc0de5
 
 
 def render_node():
@@ -82,12 +99,15 @@ def write_value_job(m, at, index, nxt, addr, value):
     m[at + 32:at + 56] = pay
 
 
-def submit_wait(fd, handle, jc):
+def submit_wait(fd, handle, jc, during=None):
+    """SUBMIT и WAIT_BO; during() - между ними, сразу после SUBMIT."""
     import ctypes
     harr = bytearray(struct.pack("<I", handle))
     c = (ctypes.c_uint32 * 1).from_buffer(harr)
     ioctl(fd, SUBMIT, "<QQIIQII", jc, 0, 0, 0, ctypes.addressof(c), 1, 0)
     t0 = time.monotonic()
+    if during is not None:
+        during()
     deadline = time.clock_gettime_ns(time.CLOCK_MONOTONIC) + 2 * 10**9
     try:
         ioctl(fd, WAIT_BO, "<IIq", handle, 0, deadline)
@@ -146,7 +166,7 @@ def main():
     time.sleep(0.2)
     rc = 1
     try:
-        rc = probe()
+        rc = probe_fault() if sys.argv[1:] == ["fault"] else probe()
     finally:
         open(pc, "w").write(orig)
         print("\npower/control restored: %s" % open(pc).read().strip())
@@ -228,6 +248,133 @@ def probe():
     log = os.popen("dmesg | grep -i panfrost | tail -5").read()
     print("\ndmesg (panfrost, last lines):\n" + log.rstrip())
     print("\n%s" % ("ALL JOBS OK" if failures == 0 else
+                    "%d CHECK(S) FAILED" % failures))
+    return 0 if failures == 0 else 1
+
+
+def chain(fd, handle, va, m, title, n=64, base=0x2000):
+    """Цепочка из n WRITE_VALUE, каждое - своё слово; True, если всё так."""
+    for i in range(n):
+        m[base + 4 * i:base + 4 * i + 4] = struct.pack("<I", 0)
+    for i in range(n):
+        nxt = va + JOB_SIZE * (i + 1) if i + 1 < n else 0
+        write_value_job(m, JOB_SIZE * i, i + 1, nxt, va + base + 4 * i,
+                        0x5a000000 | i)
+    ok, dt = submit_wait(fd, handle, va)
+    words = struct.unpack_from("<%dI" % n, m, base)
+    bad = [i for i in range(n) if words[i] != (0x5a000000 | i)]
+    st = [struct.unpack_from("<I", m, JOB_SIZE * i)[0] for i in range(n)]
+    print("\n%s: chain of %d: done=%s in %.3f ms, %d wrong word(s)%s; "
+          "header status first 0x%x last 0x%x" % (title, n, ok, dt * 1000,
+          len(bad), (" at %s" % bad[:8]) if bad else "", st[0], st[-1]))
+    return ok and not bad and st[0] == 1 and st[-1] == 1
+
+
+# Что опрашивается, пока задание отказывает: (имя, смещение или функция
+# номера адресного пространства).
+def timeline_regs(a):
+    b = 0x2400 + 0x40 * a
+    return (("MMU_RAW", 0x2000), ("MMU_MASK", 0x2008),
+            ("JOB_RAW", 0x1000), ("JOB_MASK", 0x1008),
+            ("JS_STATE", 0x1010), ("JS1_STATUS", 0x1824 + 0x80),
+            ("JS1_HEAD", 0x1800 + 0x80), ("AS_STATUS", b + 0x28),
+            ("AS_FSTAT", b + 0x1c), ("AS_FADDR", b + 0x20),
+            ("AS_TTAB", b + 0x00), ("AS_MATTR", b + 0x08),
+            ("GPU_RAW", 0x20))
+
+
+def timeline(g, a, secs, out):
+    """Каждое изменение регистров за secs секунд, со временем."""
+    regs = timeline_regs(a)
+    offs = [o for _, o in regs]
+    t0 = time.monotonic()
+    last = None
+    polls = 0
+    while True:
+        t = time.monotonic() - t0
+        if t > secs or len(out) >= 400:
+            break
+        cur = tuple(rd(g, o) for o in offs)
+        polls += 1
+        if cur != last:
+            out.append((t, cur))
+            last = cur
+    out.append((time.monotonic() - t0, None, polls))
+
+
+def fault_status(fs):
+    acc = ("ATOMIC", "EXECUTE", "READ", "WRITE")[(fs >> 8) & 3]
+    return ("exception 0x%02x, access %s, %s, source 0x%x" % (fs & 0xff,
+            acc, "decoder" if fs & (1 << 10) else "slave", fs >> 16))
+
+
+def probe_fault():
+    node = render_node()
+    fd = os.open(node, os.O_RDWR)
+    print("render node %s, mode fault" % node)
+    g = gpu_regs()
+    handle, va, m = create_bo(fd, 0x4000)
+    print("BO handle %d, GPU VA 0x%x (16 KiB: last-level entries 0-3)" % (
+          handle, va))
+    failures = 0
+
+    # Эталонная цепочка: и проверка, и номер адресного пространства.
+    if not chain(fd, handle, va, m, "before the fault"):
+        failures += 1
+    a = rd(g, 0x1818 + 0x80) & 0xf
+    print("JS1 CONFIG 0x%08x: address space %d" % (rd(g, 0x1818 + 0x80), a))
+    dump_mmu(g, "before the fault")
+
+    dmesg0 = os.popen("dmesg").read().splitlines()
+
+    # Одно задание туда, где ничего нет.
+    fva = va + FAULT_OFF
+    m[0x3000:0x3008] = struct.pack("<II", 0xdeadbeef, 0xdeadbeef)
+    write_value_job(m, 0, 1, 0, fva, FAULT_VALUE)
+    tl = []
+    ok, dt = submit_wait(fd, handle, va,
+                         during=lambda: timeline(g, a, 1.0, tl))
+    status = struct.unpack_from("<IIQ", m, 0)
+    print("\nfault job: WRITE_VALUE 0x%08x to unmapped GPU VA 0x%x; "
+          "done=%s after %.3f ms (wait after a 1 s watch); header status "
+          "0x%x, first incomplete 0x%x, fault pointer 0x%x" % (
+          FAULT_VALUE, fva, ok, dt * 1000, status[0], status[1], status[2]))
+
+    names = [nm for nm, _ in timeline_regs(a)]
+    print("\n# registers while it faults, every change (t from SUBMIT):")
+    print("  %9s  %s" % ("t, us", " ".join("%-10s" % nm for nm in names)))
+    for e in tl:
+        if e[1] is None:
+            print("  (%d polls in %.3f s)" % (e[2], e[0]))
+            continue
+        print("  %9.0f  %s" % (e[0] * 1e6,
+              " ".join("0x%08x" % v for v in e[1])))
+    last = [e for e in tl if e[1] is not None][-1][1]
+    fs = last[names.index("AS_FSTAT")]
+    print("\nlast AS%d FAULTSTATUS 0x%08x: %s; FAULTADDRESS 0x%08x%08x "
+          "(asked for 0x%x)" % (a, fs, fault_status(fs),
+          rd(g, 0x2400 + 0x40 * a + 0x24), rd(g, 0x2400 + 0x40 * a + 0x20),
+          fva))
+    print("JS1 STATUS 0x%02x" % rd(g, 0x1824 + 0x80))
+    dump_mmu(g, "after the fault, before the next job")
+
+    dmesg1 = os.popen("dmesg").read().splitlines()
+    new = dmesg1[len(dmesg0):] if dmesg1[:len(dmesg0)] == dmesg0 else \
+        [l for l in dmesg1 if l not in set(dmesg0)]
+    print("\ndmesg, new lines:\n" + "\n".join(new))
+    if not any("fault" in l.lower() for l in new):
+        print("NO FAULT REPORTED BY PANFROST")
+        failures += 1
+
+    # Жив ли ускоритель: та же цепочка в том же адресном пространстве.
+    if not chain(fd, handle, va, m, "after the fault"):
+        failures += 1
+    dump_mmu(g, "after the chain that follows the fault")
+
+    m.close()
+    ioctl(fd, GEM_CLOSE, "<II", handle, 0)
+    os.close(fd)
+    print("\n%s" % ("FAULT REPORTED, CHAINS OK" if failures == 0 else
                     "%d CHECK(S) FAILED" % failures))
     return 0 if failures == 0 else 1
 

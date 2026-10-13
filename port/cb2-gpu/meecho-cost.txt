@@ -1,0 +1,43 @@
+# Цена обслуживания кэша процессора службой mali, 2026-10-14.
+#
+# Та же плата и та же служба, что в meecho-heap.txt (без log=3).  Служба
+# чистит и сбрасывает каждый буфер задания, который отображал процессор,
+# целиком: CLEAN_INVALIDATE до задания, INVALIDATE после (mali_bo.c,
+# mali_sched.c).  pftest cost гоняет одну и ту же цепочку из 64
+# WRITE_VALUE с ещё одним буфером в списке задания - сначала не
+# отображённым (его не чистят), потом отображённым процессором; разница -
+# цена этого буфера.  Часы MEECHO идут тиком 10 мс, поэтому мелкие буферы
+# меряются 200 цепочками, 16 и 64 МиБ - двадцатью (точность 0,05 и
+# 0,5 мс на цепочку).  Эталон «ничего не чистить» - ref-cost.txt
+# (panfrost отображает буфер без WB_MMAP некэшируемо).
+
+## pftest cost 200
+
+create 0x4000 flags 0: handle 1 va 0x2000000
+cost: 200 chain(s) of 64, alone: 0.200 ms each, 0 bad
+create 0x4000 flags 1: handle 2 va 0x2004000
+cost: +    16 KiB buffer, 200 chains: 0.150 ms unmapped, 0.150 ms mapped (+0.000 ms, 0.00 ms per MiB), 0 bad
+create 0x100000 flags 1: handle 2 va 0x2004000
+cost: +  1024 KiB buffer, 200 chains: 0.150 ms unmapped, 0.650 ms mapped (+0.500 ms, 0.50 ms per MiB), 0 bad
+create 0x400000 flags 1: handle 2 va 0x2200000
+cost: +  4096 KiB buffer, 200 chains: 0.150 ms unmapped, 2.250 ms mapped (+2.100 ms, 0.53 ms per MiB), 0 bad
+create 0x1000000 flags 1: handle 2 va 0x2200000
+cost: + 16384 KiB buffer, 20 chains: 0.000 ms unmapped, 8.500 ms mapped (+8.500 ms, 0.53 ms per MiB), 0 bad
+create 0x4000000 flags 1: handle 2 va 0x2200000
+cost: + 65536 KiB buffer, 20 chains: 0.000 ms unmapped, 34.500 ms mapped (+34.500 ms, 0.54 ms per MiB), 0 bad
+
+# Итог: 0,53 мс на мегабайт отображённого буфера на каждое задание,
+# линейно от 1 до 64 МиБ.  Кадр 1920x1080 RGBA - 8 МиБ, то есть 4,2 мс на
+# задание, если его отображал процессор.
+
+## pftest cost 200, служба 9470fca42 (после задания CLEAN_INVALIDATE)
+
+# Сброс после задания теперь с чисткой (DC CIVAC вместо DC IVAC): запись
+# процессора, сделанная во время задания, не выбрасывается.  Цена та же.
+
+cost: 200 chain(s) of 64, alone: 0.350 ms each, 0 bad
+cost: +    16 KiB buffer, 200 chains: 0.200 ms unmapped, 0.200 ms mapped (+0.000 ms, 0.00 ms per MiB), 0 bad
+cost: +  1024 KiB buffer, 200 chains: 0.150 ms unmapped, 0.750 ms mapped (+0.600 ms, 0.60 ms per MiB), 0 bad
+cost: +  4096 KiB buffer, 200 chains: 0.150 ms unmapped, 2.500 ms mapped (+2.350 ms, 0.59 ms per MiB), 0 bad
+cost: + 16384 KiB buffer, 20 chains: 0.500 ms unmapped, 9.000 ms mapped (+8.500 ms, 0.53 ms per MiB), 0 bad
+cost: + 65536 KiB buffer, 20 chains: 0.000 ms unmapped, 34.500 ms mapped (+34.500 ms, 0.54 ms per MiB), 0 bad

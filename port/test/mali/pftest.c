@@ -751,10 +751,14 @@ heap(void)
 		printf("(16 pieces in %.1f ms)\n", (double)(now_ns() - t) / 1e6);
 	}
 
-	/* За концом кучи: отказ, которого кучей не решить. */
+	/*
+	 * За концом кучи: отказ, которого кучей не решить.  Слово состояния
+	 * заголовка - ноль, как его оставляет chain_to(): с ненулевым
+	 * ускоритель отвергает дескриптор сам (0x58, DATA_INVALID_FAULT),
+	 * не дойдя до записи, - так первая версия этой проверки и вышла.
+	 */
 	at[0] = h.va + HEAP_SIZE + 0x40;
 	chain_to(&b, 1, at, 0x60);
-	*(uint32_t *)b.m = 0xdeadbeef;
 	e = submit(fd, b.va, hs, 2, so, 0);
 	printf("write past the heap (+0x%x): submit %s, wait_bo %s, syncobj "
 	    "%s, header status 0x%x\n", HEAP_SIZE + 0x40, ename(e),
@@ -820,19 +824,26 @@ cost(unsigned n)
 	printf("cost: %u chain(s) of 64, alone: %.3f ms each, %u bad\n", n,
 	    plain, bad1);
 	for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+		/*
+		 * Часы MEECHO идут тиком (10 мс): мелкое меряется числом
+		 * повторов; крупное - десятой их частью, чтобы не держать
+		 * процессор чисткой минутами.
+		 */
+		unsigned k = sizes[i] >= 0x1000000 && n >= 100 ? n / 10 : n;
+
 		if (create(fd, sizes[i], PANFROST_BO_NOEXEC, &big) != 0)
 			break;
 		hs[1] = big.handle;
-		cold = chains(fd, &b, hs, 2, so, n, &bad2);
+		cold = chains(fd, &b, hs, 2, so, k, &bad2);
 		if (map_bo(fd, &big) != 0) {
 			printf("cost: no map of 0x%x\n", sizes[i]);
 			break;
 		}
 		big.m[0] = 1;		/* процессор его коснулся */
-		mapped = chains(fd, &b, hs, 2, so, n, &bad3);
-		printf("cost: + %5u KiB buffer: %.3f ms unmapped, %.3f ms "
-		    "mapped (+%.3f ms, %.2f ms per MiB), %u bad\n",
-		    sizes[i] / 1024, cold, mapped, mapped - cold,
+		mapped = chains(fd, &b, hs, 2, so, k, &bad3);
+		printf("cost: + %5u KiB buffer, %u chains: %.3f ms unmapped, "
+		    "%.3f ms mapped (+%.3f ms, %.2f ms per MiB), %u bad\n",
+		    sizes[i] / 1024, k, cold, mapped, mapped - cold,
 		    (mapped - cold) * 1048576.0 / sizes[i], bad2 + bad3);
 		munmap(big.m, big.size);
 		memset(&gc, 0, sizeof(gc));

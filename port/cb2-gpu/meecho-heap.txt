@@ -1,0 +1,83 @@
+# Куча службы mali растёт по отказам (веха 11.6), 2026-10-14.
+#
+# Плата BIGTREETECH CB2, MEECHO с корнем на eMMC (образ из дерева на
+# 80079c71d, поставлен сессией «Окружение рабочего стола»; стол в это
+# время работал на мониторе).  Служба - коммит 6ed0f9fec (md5 8093eac6),
+# pftest - 1d7bd8ae5 с правкой проверки за концом кучи; положены по ssh в
+# /usr/tests/mali-heap, служба запущена
+#   minix-service up /usr/tests/mali-heap/mali -dev /dev/dri/renderD128 -args log=3
+# (log=3 - строки роста кучи; их уровень debug, как у dev_dbg() panfrost).
+# Эталон того же зонда под panfrost - ref-heap.txt.
+
+## pftest heap
+
+render node /dev/dri/renderD128, mode heap
+create 0x4000 flags 0: handle 1 va 0x2000000
+create 0x4000000 flags 3: handle 2 va 0x2200000
+chain before: submit ok, 0 wrong word(s)
+heap write at +0x1000: submit ok, syncobj ok, header status 0x1
+heap write at +0x1ff040 (same piece): submit ok, syncobj ok, header status 0x1
+heap write at +0x3ffffc0 (last piece): submit ok, syncobj ok, header status 0x1
+chain of 16 through pieces 1-16: submit ok, syncobj ok, 16 of 16 header(s) done
+(16 pieces in 120.0 ms)
+write past the heap (+0x4000040): submit ok, wait_bo ok, syncobj EIO, header status 0x0
+chain after: submit ok, 0 wrong word(s)
+
+## kmsg: служба (log=3), строки окон, роста и отказов
+
+mali(debug):mali_mmu.c+427(mali_as_get):address space 0: the self-test, tables at 0x79ae3000
+mali(debug):mali_mmu.c+427(mali_as_get):address space 1: client 0, tables at 0x799b1000
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x02201000 (status 0x7c1003c2): 2 MiB at 0x02200000 mapped in 6042 us, 2048 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x061fffc0 (status 0x7c1003c2): 2 MiB at 0x06000000 mapped in 5408 us, 4096 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x02400040 (status 0x7c1003c2): 2 MiB at 0x02400000 mapped in 5482 us, 6144 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x02600080 (status 0x7c1003c2): 2 MiB at 0x02600000 mapped in 5420 us, 8192 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x028000c0 (status 0x7c1003c2): 2 MiB at 0x02800000 mapped in 5649 us, 10240 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x02a00100 (status 0x7c1003c2): 2 MiB at 0x02a00000 mapped in 5451 us, 12288 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x02c00140 (status 0x7c1003c2): 2 MiB at 0x02c00000 mapped in 5438 us, 14336 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x02e00180 (status 0x7c1003c2): 2 MiB at 0x02e00000 mapped in 5638 us, 16384 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x030001c0 (status 0x7c1003c2): 2 MiB at 0x03000000 mapped in 5455 us, 18432 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x03200200 (status 0x7c1003c2): 2 MiB at 0x03200000 mapped in 5427 us, 20480 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x03400240 (status 0x7c1003c2): 2 MiB at 0x03400000 mapped in 5670 us, 22528 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x03600280 (status 0x7c1003c2): 2 MiB at 0x03600000 mapped in 5603 us, 24576 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x038002c0 (status 0x7c1003c2): 2 MiB at 0x03800000 mapped in 5443 us, 26624 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x03a00300 (status 0x7c1003c2): 2 MiB at 0x03a00000 mapped in 5645 us, 28672 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x03c00340 (status 0x7c1003c2): 2 MiB at 0x03c00000 mapped in 11199 us, 30720 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x03e00380 (status 0x7c1003c2): 2 MiB at 0x03e00000 mapped in 5494 us, 32768 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x040003c0 (status 0x7c1003c2): 2 MiB at 0x04000000 mapped in 5483 us, 34816 KiB of 65536
+mali(debug):mali_mmu.c+535(heap_fault):client 0: heap fault at 0x04200400 (status 0x7c1003c2): 2 MiB at 0x04200000 mapped in 5688 us, 36864 KiB of 65536
+mali(warn):mali_mmu.c+592(as_fault):line 73 (mmu): status 0x00000002; address space 1 fault status 0x7c1003c2 (translation fault 0xc2, write access, source 0x7c10) at 0x0000000006200040, in client 0
+mali(info):mali_mmu.c+601(as_fault):address space 1 off: mmu rawstat 0x00000000 after the clear, 0x00000002 after the switch-off, mask 0x00010001; job rawstat 0x00020000, slot status 0x00 0x48, GPU_STATUS 0x30
+mali(warn):mali_drm.c+512(pjob_done):client 0: the job at 0x02000000 failed, slot status 0x48; GPU address space fault 0x7c1003c2 at 0x06200040
+mali(debug):mali_mmu.c+427(mali_as_get):address space 1: client 0, tables at 0x799b1000
+mali(info):mali_drm.c+244(ctx_free):client 0 is gone (1 failed job(s))
+
+# 19 ростов, ни одного выключения окна до отказа за концом кучи; пустая
+# запись второго уровня (0xc2) - у куска нет таблицы третьего уровня, она
+# делается при отображении.
+
+## Из чего складываются 5,5 мс куска
+
+# Та же служба с замером шагов mali_bo_grow() (копия коммита с
+# read_frclock_64() между шагами, в дерево не входит), тот же pftest heap,
+# 18 ростов (все одинаковы с точностью до 0,2 мс; приведены первые три):
+
+grow timed: mmap 4117 us, sys_umap x512 729 us, clean 540 us, tables and flush 151 us
+grow timed: mmap 4134 us, sys_umap x512 728 us, clean 541 us, tables and flush 170 us
+grow timed: mmap 3980 us, sys_umap x512 735 us, clean 552 us, tables and flush 141 us
+
+# Три четверти - mmap(2) с MAP_PREALLOC: VM выделяет и обнуляет 512
+# страниц по одной (около 8 мкс страница).  sys_umap - 1,4 мкс на
+# страницу, чистка 2 МиБ - 0,55 мс, таблицы и сброс кэшей MMU - 0,1-0,2.
+
+## Попутно: ненулевое слово состояния заголовка
+
+# Первая версия проверки «за концом кучи» записала 0xdeadbeef в слово
+# состояния заголовка задания (чтобы отличить «не тронут» от нуля).
+# Ускоритель отверг дескриптор сам, до всякого доступа: линии MMU не было,
+# слот - 0x58 (DATA_INVALID_FAULT), заголовок 0x10258:
+#
+#   write past the heap (+0x4000040): submit ok, wait_bo ok, syncobj EIO, header status 0x10258
+#   mali(warn):mali_drm.c+519(pjob_done):client 0: the job at 0x02000000 failed: -5, slot status 0x58
+#
+# То есть слово состояния - вход, а не только выход: Mesa обнуляет его в
+# каждом дескрипторе, и зонды обязаны так же.

@@ -524,8 +524,9 @@ def probe_heap():
     print("(16 pieces in %.1f ms)" % dt)
     dump_mmu(g, "address space %d after 19 pieces" % a)
 
+    # Заголовок - с нулевым словом состояния: с ненулевым ускоритель
+    # отвергает дескриптор сам (0x58, DATA_INVALID_FAULT), до записи.
     chain_to(m, vab, [vah + HEAP_SIZE + 0x40], 0x60)
-    m[0:4] = struct.pack("<I", 0xdeadbeef)
     r, e = submit(fd, vab, [hb, hh], out=so)
     wb = wait_bo(fd, hb, now_ns() + 2 * 10**9)
     sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
@@ -567,7 +568,7 @@ def chains(fd, m, va, handles, so, n):
     return (now_ns() - t0) / 1e6 / n, bad
 
 
-def probe_cost(n=50):
+def probe_cost(n=200):
     fd = os.open(render_node(), os.O_RDWR)
     hb, vab = create(fd, 0x4000, 0)
     off, m = map_bo(fd, hb, 0x4000)
@@ -576,15 +577,16 @@ def probe_cost(n=50):
     print("cost: %d chain(s) of 64, alone: %.3f ms each, %d bad" % (n, plain,
           bad))
     for size in (0x4000, 0x100000, 0x400000, 0x1000000, 0x4000000):
+        k = n // 10 if size >= 0x1000000 and n >= 100 else n
         hg, vag = create(fd, size, BO_NOEXEC)
-        cold, bad2 = chains(fd, m, vab, [hb, hg], so, n)
+        cold, bad2 = chains(fd, m, vab, [hb, hg], so, k)
         offg, mg = map_bo(fd, hg, size)
         mg[0] = 1
-        mapped, bad3 = chains(fd, m, vab, [hb, hg], so, n)
-        print("cost: + %5d KiB buffer: %.3f ms unmapped, %.3f ms mapped "
-              "(+%.3f ms, %.2f ms per MiB), %d bad" % (size // 1024, cold,
-              mapped, mapped - cold, (mapped - cold) * 1048576.0 / size,
-              bad2 + bad3))
+        mapped, bad3 = chains(fd, m, vab, [hb, hg], so, k)
+        print("cost: + %5d KiB buffer, %d chains: %.3f ms unmapped, %.3f ms "
+              "mapped (+%.3f ms, %.2f ms per MiB), %d bad" % (size // 1024,
+              k, cold, mapped, mapped - cold,
+              (mapped - cold) * 1048576.0 / size, bad2 + bad3))
         mg.close()
         ioctl(fd, GEM_CLOSE, "<II", hg, 0)
     m.close()

@@ -1,20 +1,26 @@
-# meechowm: the compositor of stage 11.4, with the strip of 11.7 (meechowm.h
-# and wm.h say what is whose).  Built on the Wayland stack in external/mit;
-# static, as the userland is.
+# meechowm: the compositor of stage 11.4, with the strip and the layer
+# surfaces of 11.7 (meechowm.h and wm.h say what is whose).  Built on the
+# Wayland stack in external/mit; static, as the userland is.
 
 PROG=	meechowm
-SRCS=	meechowm.c strip.c layout.c ipc.c fbout.c input.c hid2evdev.c
+SRCS=	meechowm.c strip.c layers.c layout.c ipc.c fbout.c input.c \
+	hid2evdev.c
 MAN=
 
 WLPROTOCOLSDIST=	${NETBSDSRCDIR}/external/mit/wayland-protocols/dist
+WLROOTSPROTO=		${NETBSDSRCDIR}/external/mit/wlroots/dist/protocol
 
 # wlroots' public headers ask for the protocol headers, and leave making
 # them to the compositor - as tinywl does.
 xdg-shell-protocol.h: ${WLPROTOCOLSDIST}/stable/xdg-shell/xdg-shell.xml
 	${_MKTARGET_CREATE}
 	${TOOL_WAYLAND_SCANNER} server-header ${.ALLSRC} ${.TARGET}
-DPSRCS+=	xdg-shell-protocol.h
-CLEANFILES+=	xdg-shell-protocol.h
+wlr-layer-shell-unstable-v1-protocol.h: \
+    ${WLROOTSPROTO}/wlr-layer-shell-unstable-v1.xml
+	${_MKTARGET_CREATE}
+	${TOOL_WAYLAND_SCANNER} server-header ${.ALLSRC} ${.TARGET}
+DPSRCS+=	xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h
+CLEANFILES+=	xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h
 
 CPPFLAGS+=	-DWLR_USE_UNSTABLE -D_NETBSD_SOURCE -I.
 CPPFLAGS+=	-I${DESTDIR}/usr/include/wlroots-0.20 \

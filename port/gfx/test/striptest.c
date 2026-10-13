@@ -181,12 +181,57 @@ properties(void)
 	}
 }
 
+/*
+ * Motion: exact at both ends, never past the end, never backwards, and
+ * eased out - by hand, 1 - (1 - 1/2)^3 = 7/8 of the way at half the time.
+ */
+static void
+motion(void)
+{
+	static const int ends[][2] = {
+		{ 0, 636 }, { 636, 0 }, { -628, 8 }, { 5, 5 }, { 0, 1 },
+		{ 1280, -1280 }, { 0, -720 }
+	};
+	unsigned i;
+	long d, t;
+	int v, was;
+
+	CHECK(mc_ease(0, 800, 100, 200) == 700, "7/8 of 800 at half: %d",
+	    mc_ease(0, 800, 100, 200));
+	CHECK(mc_ease(0, 800, 0, 0) == 800, "no time: at once");
+	CHECK(mc_ease(0, 800, -5, 200) == 0, "before the start: at the start");
+	CHECK(mc_ease(0, 800, 999, 200) == 800, "after the end: at the end");
+
+	for (i = 0; i < sizeof(ends) / sizeof(ends[0]); i++) {
+		int a = ends[i][0], b = ends[i][1];
+
+		for (d = 1; d <= 3000; d = d * 3 + 1) {
+			was = a;
+			CHECK(mc_ease(a, b, 0, d) == a, "%d->%d over %ld: start",
+			    a, b, d);
+			CHECK(mc_ease(a, b, d, d) == b, "%d->%d over %ld: end",
+			    a, b, d);
+			for (t = 0; t <= d + 2; t++) {
+				v = mc_ease(a, b, t, d);
+				CHECK(a <= b ? v >= was && v <= b :
+				    v <= was && v >= b,
+				    "%d->%d over %ld: %d after %d at %ld", a, b,
+				    d, v, was, t);
+				CHECK(a <= b ? v >= a : v <= a,
+				    "%d->%d: %d before the start", a, b, v);
+				was = v;
+			}
+		}
+	}
+}
+
 int
 main(void)
 {
 	widths();
 	walk();
 	properties();
+	motion();
 	printf("striptest: %ld checks, %ld failed\n", checks, failed);
 	return failed != 0;
 }

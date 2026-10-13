@@ -22,6 +22,9 @@
  *   c                           put it in the middle
  *   q                           close it
  *   Return                      a terminal (MEECHOWM_TERM, foot)
+ *   d                           the launcher: programs and the compositor's
+ *                               commands (MEECHOWM_LAUNCHER,
+ *                               meechowm-palette - fuzzel)
  *   1 .. 9                      workspace 1 .. 9
  *   Shift+e                     end the compositor (and so does Alt+Escape)
  *   the wheel                   focus the column left or right
@@ -35,7 +38,8 @@
  * Environment: MEECHOWM_FB (default /dev/fb0; without it, no screen - the
  * compositor runs headless, 1280x720), MEECHOWM_KBD, MEECHOWM_MOUSE,
  * MEECHOWM_MOD (super or alt), MEECHOWM_TERM, MEECHOWM_GAP (pixels, 8),
- * MEECHOWM_WIDTH (a new column's: 1/3, 1/2, 2/3 or 1), MEECHOWM_SOCK,
+ * MEECHOWM_WIDTH (a new column's: 1/3, 1/2, 2/3 or 1), MEECHOWM_ANIM_MS
+ * (how long a move takes, 200; 0: things jump), MEECHOWM_SOCK,
  * XKB_CONFIG_ROOT.  When it ends, the console has the screen back.
  */
 #include <assert.h>
@@ -141,6 +145,7 @@ static const struct binding {
 	{ false, XKB_KEY_c,	"center" },
 	{ false, XKB_KEY_q,	"close" },
 	{ false, XKB_KEY_Return, "terminal" },
+	{ false, XKB_KEY_d,	"launcher" },
 	{ false, XKB_KEY_1,	"workspace 1" },
 	{ false, XKB_KEY_2,	"workspace 2" },
 	{ false, XKB_KEY_3,	"workspace 3" },
@@ -180,6 +185,12 @@ void focus_toplevel(struct tinywl_toplevel *toplevel) {
 	}
 	struct tinywl_server *server = toplevel->server;
 	struct wlr_seat *seat = server->seat;
+	/* MEECHO: a launcher that has the keyboard keeps it until it goes
+	 * (layers.c); a panel that had it on demand gives it up. */
+	if (layers_hold_keyboard(server)) {
+		return;
+	}
+	server->layer_focus = NULL;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
 	if (prev_surface == surface) {
@@ -545,6 +556,10 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
 				server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 		if (toplevel != NULL) {
 			strip_focus(toplevel);
+		} else {
+			/* A panel or a launcher that takes the keyboard on a
+			 * click. */
+			layers_click(server, surface);
 		}
 	}
 }
@@ -687,6 +702,10 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	wl_signal_add(&wlr_output->events.destroy, &output->destroy);
 
 	wl_list_insert(&server->outputs, &output->link);
+	/* MEECHO: the one screen, for layer surfaces that name none. */
+	if (server->output == NULL) {
+		server->output = wlr_output;
+	}
 
 	/* Adds this to the output layout. The add_auto function arranges outputs
 	 * from left-to-right in the order they appear. A more sophisticated
@@ -866,11 +885,17 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	 * wlroots scene graph provides a helper for this, but to use it we must
 	 * provide the proper parent scene node of the xdg popup. To enable this,
 	 * we always set the user data field of xdg_surfaces to the corresponding
-	 * scene node. */
-	struct wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
-	assert(parent != NULL);
-	struct wlr_scene_tree *parent_tree = parent->data;
-	xdg_popup->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+	 * scene node.
+	 * MEECHO: a layer surface's popup is made without a parent, which
+	 * layer-shell gives it afterwards - with its tree (layers.c). */
+	if (xdg_popup->parent != NULL) {
+		struct wlr_xdg_surface *parent =
+			wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
+		assert(parent != NULL);
+		struct wlr_scene_tree *parent_tree = parent->data;
+		xdg_popup->base->data =
+			wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+	}
 
 	popup->commit.notify = xdg_popup_commit;
 	wl_signal_add(&xdg_popup->base->surface->events.commit, &popup->commit);
@@ -935,6 +960,8 @@ static void settings(struct tinywl_server *server) {
 		server->mod = WLR_MODIFIER_ALT;
 	}
 	server->terminal = (v = getenv("MEECHOWM_TERM")) != NULL ? v : "foot";
+	server->launcher = (v = getenv("MEECHOWM_LAUNCHER")) != NULL ? v :
+		"meechowm-palette";
 	server->gap = 8;
 	if ((v = getenv("MEECHOWM_GAP")) != NULL) {
 		long g = strtol(v, &end, 10);
@@ -945,6 +972,13 @@ static void settings(struct tinywl_server *server) {
 	server->default_width = MC_W_HALF;
 	if ((v = getenv("MEECHOWM_WIDTH")) != NULL && mc_width_parse(v) >= 0) {
 		server->default_width = mc_width_parse(v);
+	}
+	server->anim_ms = 200;
+	if ((v = getenv("MEECHOWM_ANIM_MS")) != NULL) {
+		long ms = strtol(v, &end, 10);
+		if (*v != '\0' && *end == '\0' && ms >= 0 && ms <= 60000) {
+			server->anim_ms = (int)ms;
+		}
 	}
 }
 
@@ -1063,6 +1097,9 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);
 	server.new_xdg_popup.notify = server_new_xdg_popup;
 	wl_signal_add(&server.xdg_shell->events.new_popup, &server.new_xdg_popup);
+
+	/* MEECHO: panels and launchers over and under the strip. */
+	layers_init(&server);
 
 	/* MEECHO: windows are decorated by the strip, not by themselves. */
 	server.decoration_mgr = wlr_xdg_decoration_manager_v1_create(server.wl_display);

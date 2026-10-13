@@ -92,6 +92,22 @@ mc_strip_fit(const int *w, int n, int focus, int view, int area_x,
 	return view;
 }
 
+/* A cubic ease-out, 1 - (1 - p)^3: the speed falls to nothing at the end. */
+int
+mc_ease(int a, int b, long t, long d)
+{
+	double p, e, v;
+
+	if (d <= 0 || t >= d)
+		return b;
+	if (t <= 0)
+		return a;
+	p = (double)t / (double)d;
+	e = 1.0 - (1.0 - p) * (1.0 - p) * (1.0 - p);
+	v = (double)(b - a) * e;
+	return a + (v >= 0 ? (int)(v + 0.5) : -(int)(-v + 0.5));
+}
+
 int
 mc_strip_center(const int *w, int n, int focus, int area_w, int gap)
 {

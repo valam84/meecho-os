@@ -20,7 +20,11 @@ every step checks two things that do not share code:
 
 The numbers are worked out by hand for a 1280x720 screen and a gap of 8,
 before the run: a half column is 628 wide, two thirds 840; three halves
-start on the strip at 0, 636 and 1272.
+start on the strip at 0, 636 and 1272.  A step is checked once nothing
+moves (state: animating 0, every column drawn where it goes).  Steps 2
+and 6 make a move last twelve seconds (meechowm -m anim 12000) and catch
+it on its way: columns drawn strictly between where they were and where
+they go, workspaces strictly between on and off the screen.
 
   1. three windows: the third pushes the view to 636 - red at -628,
      green at 8, blue at 644, blue focused
@@ -32,6 +36,9 @@ start on the strip at 0, 636 and 1272.
   7. Super+Up: workspace 1 - green at 8, blue at 644, blue focused
   8. the mouse to (300, 200) and a click: green focused
   9. Super+q: green closes, blue is alone at 8
+ 9a. a panel across the top (wlhello -L top -H 32, wlr-layer-shell): the
+     columns are laid out under it - at 40, 672 high - and it is on the
+     screen
  10. Super+Return: a terminal (foot) opens right of blue, at 644
  11. a command that is not one: an error, and exit status 1
  12. Super+Shift+e: the compositor ends, the console has the screen
@@ -61,7 +68,7 @@ RAMIMAGE = os.path.join(HERE, "..", "..", "ramimage.sh")
 WORK = os.path.join(HOME, "obj-evbarm64/work-strip")
 GUESTDIR = "/usr/tests/gfx"
 
-RED, GREEN, BLUE = 0xc03030, 0x30c030, 0x3030c0
+RED, GREEN, BLUE, PANEL = 0xc03030, 0x30c030, 0x3030c0, 0xc0c030
 COLOURS = {"red": RED, "green": GREEN, "blue": BLUE}
 BACKGROUND, RING = 0x1d2330, 0x7fc8ff
 SCREEN_W, SCREEN_H, GAP = 1280, 720, 8
@@ -76,20 +83,30 @@ _spec.loader.exec_module(qemu_meechowm)
 
 STATE_COL = re.compile(
     r"column (\d+)\.(\d+) (-?\d+) (-?\d+) (\d+) (\d+) width (\S+) (\S+) "
-    r"size (\d+)x(\d+) pid (\d+) title (.*)")
-STATE_TOP = re.compile(r"screen (\d+)x(\d+) .* gap (\d+) workspaces (\d+) "
-                       r"active (\d+)")
+    r"at (-?\d+) size (\d+)x(\d+) pid (\d+) title (.*)")
+STATE_TOP = re.compile(r"screen (\d+)x(\d+) area (\d+),(\d+) (\d+)x(\d+) "
+                       r"gap (\d+) workspaces (\d+) active (\d+) "
+                       r"animating (\d)")
+STATE_WS = re.compile(r"workspace (\d+) \S+ view (-?\d+) columns (\d+) "
+                      r"y (-?\d+)")
 
 
 def parse_state(text):
-    """{'w', 'h', 'gap', 'nws', 'active', 'cols': {ws: [col, ...]}}"""
-    st = {"cols": {}}
+    """{'w', 'h', 'area': (x, y, w, h), 'gap', 'nws', 'active',
+    'animating', 'ws_y': {ws: y}, 'cols': {ws: [col, ...]}}; a column's
+    'x' is where it goes, 'at' where it is drawn."""
+    st = {"cols": {}, "ws_y": {}}
     for line in text.splitlines():
         m = STATE_TOP.search(line)
         if m:
             st.update(w=int(m.group(1)), h=int(m.group(2)),
-                      gap=int(m.group(3)), nws=int(m.group(4)),
-                      active=int(m.group(5)))
+                      area=tuple(int(m.group(i)) for i in range(3, 7)),
+                      gap=int(m.group(7)), nws=int(m.group(8)),
+                      active=int(m.group(9)), animating=int(m.group(10)))
+            continue
+        m = STATE_WS.search(line)
+        if m:
+            st["ws_y"][int(m.group(1))] = int(m.group(4))
             continue
         m = STATE_COL.search(line)
         if m:
@@ -97,8 +114,9 @@ def parse_state(text):
                 "x": int(m.group(3)), "y": int(m.group(4)),
                 "w": int(m.group(5)), "h": int(m.group(6)),
                 "width": m.group(7), "focus": m.group(8) == "focus",
-                "sw": int(m.group(9)), "sh": int(m.group(10)),
-                "title": m.group(12).strip()})
+                "at": int(m.group(9)),
+                "sw": int(m.group(10)), "sh": int(m.group(11)),
+                "title": m.group(13).strip()})
     return st
 
 
@@ -208,11 +226,27 @@ def main():
                    for c in st["cols"].get(ws, [])
                    if c["title"] in COLOURS)
 
+    def still(st):
+        """Nothing moves: every column is drawn where it goes."""
+        return st.get("animating") == 0 and all(
+            c["at"] == c["x"] for cols in st["cols"].values() for c in cols)
+
+    def moving(step, st, ws, title, a, b):
+        """Mid-move, the column title of workspace ws is drawn strictly
+        between a, where it was, and b, where it goes."""
+        cols = [c for c in st["cols"].get(ws, []) if c["title"] == title]
+        at = cols[0]["at"] if cols else None
+        record("%s: %s on its way from %d to %d" % (step, title, a, b),
+               st.get("animating") == 1 and at is not None and
+               min(a, b) < at < max(a, b),
+               "animating %s, drawn at %s" % (st.get("animating"), at))
+
     def check(step, want, ws=1, active=1, nws=None, timeout=150):
         """The state of workspace ws against want: [(title, x, w, focus)],
         then the screen: each column's colour, the focus ring."""
         st = wait_for(lambda s: s.get("active") == active and
-                      layout(s, ws) == want and sized(s, ws), timeout)
+                      layout(s, ws) == want and sized(s, ws) and
+                      still(s), timeout)
         got = layout(st, ws)
         ok = st.get("active") == active and got == want and \
             (nws is None or st.get("nws") == nws)
@@ -289,10 +323,17 @@ def main():
         print("      the screen, 1 character for 16x16 pixels:")
         fbart("-w 1280 -h 720 -s 16", show=True)
 
+        # A move of twelve seconds, to be caught on its way: the view goes
+        # from 636 back to 0, every column 636 to the right.
+        send("meechowm -m anim 12000")
         keys("%[G+Left]%[G+Left]")
+        st = state()
+        moving("2. Super+Left twice", st, 1, "red", -628, 8)
+        moving("2. Super+Left twice", st, 1, "green", 8, 644)
         check("2. Super+Left twice", [("red", 8, HALF, True),
                                       ("green", 644, HALF, False),
                                       ("blue", 1280, HALF, False)])
+        send("meechowm -m anim 200")
 
         keys("%[G+r]")
         check("3. Super+r", [("red", 8, TWOTHIRDS, True),
@@ -311,9 +352,20 @@ def main():
         print("      red in the middle:")
         fbart("-w 1280 -h 720 -s 16", show=True)
 
+        # Again caught on its way: workspace 2 comes up from under the
+        # screen (720 to 0) as workspace 1 goes up out of it (0 to -720).
+        send("meechowm -m anim 12000")
         keys("%[G+S+Down]")
+        st = state()
+        y1, y2 = st["ws_y"].get(1), st["ws_y"].get(2)
+        record("6. Super+Shift+Down: the workspaces on their way",
+               st.get("animating") == 1 and y1 is not None and
+               y2 is not None and -720 < y1 < 0 and 0 < y2 < 720,
+               "animating %s, workspace 1 at y %s, 2 at y %s" %
+               (st.get("animating"), y1, y2))
         check("6. Super+Shift+Down", [("red", 8, TWOTHIRDS, True)],
               ws=2, active=2, nws=3)
+        send("meechowm -m anim 200")
         c = colour_at(1064, SCREEN_H // 2)
         record("6. right of red: the desktop", c == BACKGROUND,
                "0x%06x" % c)
@@ -337,6 +389,27 @@ def main():
 
         keys("%[G+q]")
         check("9. Super+q", [("blue", 8, HALF, True)])
+
+        # A panel (wlr-layer-shell) across the top, 32 high: the strip
+        # lays its columns out under it - the area starts at 32 and is
+        # 688 high, a column at 40 and 672 high, and blue draws at that.
+        send("meechowm -m spawn $G/wlhello -L top -H 32 -c 0xffc0c030 "
+             "-t 1800")
+        st = wait_for(lambda s: s.get("area") == (0, 32, 1280, 688) and
+                      still(s) and sized(s, 1))
+        cols = st["cols"].get(1, [])
+        record("9a. a panel: the columns under it",
+               st.get("area") == (0, 32, 1280, 688) and len(cols) == 1 and
+               cols[0]["y"] == 40 and cols[0]["h"] == 672 and
+               cols[0]["sh"] == 672,
+               "area %s, columns %s" % (st.get("area"), [
+                   (c["title"], c["x"], c["y"], c["w"], c["h"], c["sh"])
+                   for c in cols]))
+        time.sleep(2)
+        c = colour_at(640, 16)
+        record("9a. the panel is on the screen", c == PANEL, "0x%06x" % c)
+        c = colour_at(320, 360)
+        record("9a. blue under it", c == BLUE, "0x%06x" % c)
 
         if not a.n:
             keys("%[G+Return]")

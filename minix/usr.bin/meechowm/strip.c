@@ -11,6 +11,13 @@
  * niri's do: there is always one empty workspace at the bottom, and an
  * empty one that is left behind goes away.
  *
+ * Nothing jumps: a column the layout moves goes there from where it is
+ * drawn, and a workspace slides in from below or above as the one it
+ * replaces slides out (MEECHOWM_ANIM_MS, 200 by default, 0 for none).
+ * Every move runs on one clock, which every change restarts from where
+ * things are drawn at that moment - so a key pressed mid-move turns the
+ * motion, it does not jump it back; the easing is layout.c's.
+ *
  * Every action is a command, wm_command(), whether it comes from a key
  * (meechowm.c) or from the socket (ipc.c): one path to test, and the one
  * a launcher or a script will take.
@@ -25,6 +32,8 @@
  *   workspace N                  the Nth workspace from the top
  *   spawn COMMAND                /bin/sh -c COMMAND
  *   terminal                     the terminal (MEECHOWM_TERM, foot)
+ *   launcher                     the launcher (MEECHOWM_LAUNCHER)
+ *   anim MS                      how long a move takes; 0: no motion
  *   state                        the layout, as text (for the stands)
  *   quit
  */
@@ -36,6 +45,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <wayland-server-core.h>
@@ -173,10 +183,11 @@ configure(struct tinywl_toplevel *t)
 }
 
 /*
- * The window into its column: its geometry's corner on the column's, and
- * cut to the column.  The cut is set on the window's own surfaces only -
- * the first child of the xdg surface's tree; its popups come after, and
- * must not be cut to the column they open from.
+ * The window into its column, where the column is drawn now (at_x - box.x
+ * once it has stopped): its geometry's corner on the column's, and cut to
+ * the column.  The cut is set on the window's own surfaces only - the
+ * first child of the xdg surface's tree; its popups come after, and must
+ * not be cut to the column they open from.
  */
 static void
 place(struct tinywl_toplevel *t)
@@ -185,7 +196,7 @@ place(struct tinywl_toplevel *t)
 	struct wlr_box clip = { geo->x, geo->y, t->box.width, t->box.height };
 	struct wlr_scene_node *own;
 
-	wlr_scene_node_set_position(&t->scene_tree->node, t->box.x - geo->x,
+	wlr_scene_node_set_position(&t->scene_tree->node, t->at_x - geo->x,
 	    t->box.y - geo->y);
 	if (!wl_list_empty(&t->scene_tree->children)) {
 		own = wl_container_of(t->scene_tree->children.next, own, link);
@@ -205,6 +216,7 @@ ring_update(struct tinywl_server *s)
 		return;
 	}
 	b = t->box;
+	b.x = t->at_x;			/* it goes where its column goes */
 	side[0] = (struct wlr_box){ b.x - RING, b.y - RING,
 	    b.width + 2 * RING, RING };
 	side[1] = (struct wlr_box){ b.x - RING, b.y + b.height,
@@ -220,9 +232,80 @@ ring_update(struct tinywl_server *s)
 	wlr_scene_node_set_enabled(&s->ring->node, true);
 }
 
+/*===========================================================================*
+ *    motion                                                                 *
+ *===========================================================================*/
+static uint32_t
+now_ms(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
+
+/*
+ * The clock starts again, from where everything is drawn now: a move
+ * already under way turns towards the new place instead of jumping.
+ */
+static void
+anim_begin(struct tinywl_server *s)
+{
+	struct mw_workspace *ws;
+	struct tinywl_toplevel *t;
+
+	wl_list_for_each(ws, &s->workspaces, link) {
+		ws->from_y = ws->at_y;
+		wl_list_for_each(t, &ws->columns, column_link)
+			t->from_x = t->at_x;
+	}
+	s->anim_start = now_ms();
+	if (!s->animating) {
+		s->animating = true;
+		wl_event_source_timer_update(s->anim_timer, 1);
+	}
+}
+
+/*
+ * A step of every move: about sixty a second while anything moves, none
+ * otherwise.  Positions come from the clock, not from the steps, so a
+ * frame that is late (pixman on four A55, TCG) costs smoothness, not
+ * time: the move ends when it should.
+ */
+static int
+anim_tick(void *data)
+{
+	struct tinywl_server *s = data;
+	struct mw_workspace *ws;
+	struct tinywl_toplevel *t;
+	long el = (long)(uint32_t)(now_ms() - s->anim_start);
+	bool done = el >= s->anim_ms;
+
+	wl_list_for_each(ws, &s->workspaces, link) {
+		ws->at_y = mc_ease(ws->from_y, ws->to_y, el, s->anim_ms);
+		wlr_scene_node_set_position(&ws->tree->node, 0, ws->at_y);
+		if (done && ws != s->ws)	/* off the screen now */
+			wlr_scene_node_set_enabled(&ws->tree->node, false);
+		wl_list_for_each(t, &ws->columns, column_link) {
+			t->at_x = mc_ease(t->from_x, t->box.x, el, s->anim_ms);
+			place(t);
+		}
+	}
+	ring_update(s);
+	if (!done) {
+		wl_event_source_timer_update(s->anim_timer, 16);
+		return 0;
+	}
+	s->animating = false;
+	wm_pointer_refresh(s);		/* what is under the pointer now */
+	return 0;
+}
+
 /*
  * Every column of the workspace to its place: the view fitted to the
- * focused column (layout.c), or the focused column put in the middle.
+ * focused column (layout.c), or the focused column put in the middle.  A
+ * column already drawn on a workspace that shows goes there in a move;
+ * one that is new, or on a workspace out of sight, is put there at once.
  */
 static void
 relayout(struct mw_workspace *ws, bool centre)
@@ -230,6 +313,7 @@ relayout(struct mw_workspace *ws, bool centre)
 	struct tinywl_server *s = ws->server;
 	struct tinywl_toplevel *t;
 	int n = wl_list_length(&ws->columns), i = 0, f = -1, h;
+	bool move = false, shows = ws->tree->node.enabled;
 
 	if (!lay_grow(n)) {
 		wlr_log(WLR_ERROR, "no memory to lay out %d columns", n);
@@ -253,10 +337,18 @@ relayout(struct mw_workspace *ws, bool centre)
 	wl_list_for_each(t, &ws->columns, column_link) {
 		t->box = (struct wlr_box){ lay_x[i], s->area.y + s->gap,
 		    lay_w[i], h > 1 ? h : 1 };
+		if (s->anim_ms > 0 && shows && t->shown) {
+			if (t->at_x != t->box.x)
+				move = true;
+		} else
+			t->at_x = t->box.x;
+		t->shown = true;
 		configure(t);
 		place(t);
 		i++;
 	}
+	if (move)
+		anim_begin(s);
 	if (ws == s->ws)
 		ring_update(s);
 }
@@ -278,18 +370,41 @@ set_focus(struct mw_workspace *ws, struct tinywl_toplevel *t)
 	wm_pointer_refresh(s);
 }
 
+/*
+ * Another workspace on the screen.  The one below comes up from under the
+ * screen as the old one goes up and out of it, and the other way for the
+ * one above; the old one is hidden when the move is over.  The focus ring
+ * lives in the tree of the workspace on the screen, under its windows, and
+ * so moves with it.
+ */
 static void
 switch_to(struct tinywl_server *s, struct mw_workspace *ws)
 {
 	struct mw_workspace *old = s->ws;
+	int dir;
 
 	if (ws == old)
 		return;
-	wlr_scene_node_set_enabled(&old->tree->node, false);
 	if (old->focus != NULL)
 		wlr_xdg_toplevel_set_activated(old->focus->xdg_toplevel, false);
+	dir = ws_number(ws) > ws_number(old) ? 1 : -1;
 	s->ws = ws;
-	wlr_scene_node_set_enabled(&ws->tree->node, true);
+	if (s->anim_ms > 0) {
+		if (!ws->tree->node.enabled)	/* not already on the way */
+			ws->at_y = dir * s->height;
+		ws->to_y = 0;
+		old->to_y = -dir * s->height;
+		wlr_scene_node_set_position(&ws->tree->node, 0, ws->at_y);
+		wlr_scene_node_set_enabled(&ws->tree->node, true);
+		anim_begin(s);
+	} else {
+		wlr_scene_node_set_enabled(&old->tree->node, false);
+		ws->at_y = ws->to_y = 0;
+		wlr_scene_node_set_position(&ws->tree->node, 0, 0);
+		wlr_scene_node_set_enabled(&ws->tree->node, true);
+	}
+	wlr_scene_node_reparent(&s->ring->node, ws->tree);
+	wlr_scene_node_lower_to_bottom(&s->ring->node);
 	set_focus(ws, ws->focus);
 	ws_tidy(s);
 }
@@ -302,9 +417,16 @@ strip_init(struct tinywl_server *s)
 {
 	int i;
 
+	/*
+	 * The scene, bottom to top: the desktop's colour, the background and
+	 * bottom layers (layers.c), the workspaces, the top and overlay
+	 * layers.  The cursor wlroots draws over all of it.
+	 */
 	wl_list_init(&s->workspaces);
 	if ((s->background = wlr_scene_rect_create(&s->scene->tree, 0, 0,
 	    colour_background)) == NULL ||
+	    (s->layer[0] = wlr_scene_tree_create(&s->scene->tree)) == NULL ||
+	    (s->layer[1] = wlr_scene_tree_create(&s->scene->tree)) == NULL ||
 	    (s->ring = wlr_scene_tree_create(&s->scene->tree)) == NULL)
 		goto nomem;
 	for (i = 0; i < 4; i++)
@@ -322,9 +444,15 @@ strip_init(struct tinywl_server *s)
 		goto nomem;
 	wlr_scene_node_set_enabled(&s->hidden->node, false);
 	if ((s->layer_ws = wlr_scene_tree_create(&s->scene->tree)) == NULL ||
+	    (s->layer[2] = wlr_scene_tree_create(&s->scene->tree)) == NULL ||
+	    (s->layer[3] = wlr_scene_tree_create(&s->scene->tree)) == NULL ||
 	    (s->ws = ws_create(s)) == NULL)
 		goto nomem;
 	wlr_scene_node_set_enabled(&s->ws->tree->node, true);
+	wlr_scene_node_reparent(&s->ring->node, s->ws->tree);
+	if ((s->anim_timer = wl_event_loop_add_timer(
+	    wl_display_get_event_loop(s->wl_display), anim_tick, s)) == NULL)
+		goto nomem;
 	return;
 nomem:
 	wlr_log(WLR_ERROR, "no memory for the strip");
@@ -342,6 +470,23 @@ strip_screen(struct tinywl_server *s, int width, int height)
 	wlr_scene_rect_set_size(s->background, width, height);
 	wl_list_for_each(ws, &s->workspaces, link)
 		relayout(ws, false);
+}
+
+/*
+ * What the panels leave of the screen (layers.c): columns get the height
+ * of that and are laid out across its width - and get there in a move.
+ */
+void
+strip_area(struct tinywl_server *s, const struct wlr_box *area)
+{
+	struct mw_workspace *ws;
+
+	if (wlr_box_equal(&s->area, area))
+		return;
+	s->area = *area;
+	wl_list_for_each(ws, &s->workspaces, link)
+		relayout(ws, false);
+	wm_pointer_refresh(s);
 }
 
 /* The first configure: the size of the column the window will have. */
@@ -389,6 +534,7 @@ strip_unmap(struct tinywl_toplevel *t)
 		next = col_next(t, -1);
 	wl_list_remove(&t->column_link);
 	t->ws = NULL;
+	t->shown = false;		/* shown again, it appears in place */
 	wlr_scene_node_reparent(&t->scene_tree->node, ws->server->hidden);
 	set_focus(ws, ws->focus == t ? next : ws->focus);
 	ws_tidy(ws->server);
@@ -493,13 +639,14 @@ state(struct tinywl_server *s, struct mw_reply *r)
 	int wi = 0, ci;
 
 	wm_reply(r, "screen %dx%d area %d,%d %dx%d gap %d workspaces %d "
-	    "active %d\n", s->width, s->height, s->area.x, s->area.y,
-	    s->area.width, s->area.height, s->gap,
-	    wl_list_length(&s->workspaces), ws_number(s->ws));
+	    "active %d animating %d\n", s->width, s->height, s->area.x,
+	    s->area.y, s->area.width, s->area.height, s->gap,
+	    wl_list_length(&s->workspaces), ws_number(s->ws),
+	    s->animating ? 1 : 0);
 	wl_list_for_each(ws, &s->workspaces, link) {
-		wm_reply(r, "workspace %d %s view %d columns %d\n", ++wi,
+		wm_reply(r, "workspace %d %s view %d columns %d y %d\n", ++wi,
 		    ws == s->ws ? "active" : "-", ws->view,
-		    wl_list_length(&ws->columns));
+		    wl_list_length(&ws->columns), ws->at_y);
 		ci = 0;
 		wl_list_for_each(t, &ws->columns, column_link) {
 			g = &t->xdg_toplevel->base->geometry;
@@ -507,11 +654,13 @@ state(struct tinywl_server *s, struct mw_reply *r)
 			wl_client_get_credentials(
 			    t->xdg_toplevel->base->client->client, &pid, &uid,
 			    &gid);
-			wm_reply(r, "column %d.%d %d %d %d %d width %s %s "
+			/* x is where the column goes, "at" where it is drawn
+			 * now: the two differ only while it moves. */
+			wm_reply(r, "column %d.%d %d %d %d %d width %s %s at %d "
 			    "size %dx%d pid %d title %s\n", wi, ++ci, t->box.x,
 			    t->box.y, t->box.width, t->box.height,
 			    mc_width_name(t->width),
-			    t == ws->focus ? "focus" : "-", g->width,
+			    t == ws->focus ? "focus" : "-", t->at_x, g->width,
 			    g->height, (int)pid, t->xdg_toplevel->title != NULL ?
 			    t->xdg_toplevel->title : "-");
 		}
@@ -689,6 +838,20 @@ wm_command(struct tinywl_server *s, const char *line, struct mw_reply *r)
 			return;
 	} else if (strcmp(verb, "terminal") == 0)
 		wm_spawn(s->terminal);
+	else if (strcmp(verb, "launcher") == 0)
+		wm_spawn(s->launcher);
+	else if (strcmp(verb, "anim") == 0) {
+		char *end;
+		long ms = strtol(arg, &end, 10);
+
+		if (arg[0] == '\0' || *end != '\0' || ms < 0 || ms > 60000) {
+			r->error = true;
+			wm_reply(r, "error: anim %s: milliseconds, 0 to 60000\n",
+			    arg);
+			return;
+		}
+		s->anim_ms = (int)ms;
+	}
 	else if (strcmp(verb, "state") == 0) {
 		state(s, r);
 		return;

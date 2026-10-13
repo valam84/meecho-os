@@ -44,4 +44,11 @@ int mc_strip_center(const int *w, int n, int focus, int area_w, int gap);
 void mc_strip_place(const int *w, int n, int view, int area_x, int gap,
 	int *x);
 
+/*
+ * Motion: where a thing is t ms into a move of d ms from a to b.  Eased
+ * out - quick at first, slowing to rest - exactly a at the start and b
+ * from d on, and never beyond b.  d <= 0 is no motion: b at once.
+ */
+int mc_ease(int a, int b, long t, long d);
+
 #endif

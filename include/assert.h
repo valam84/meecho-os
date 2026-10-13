@@ -104,3 +104,13 @@ void __diagassert(const char *, int, const char *);
 void __diagassert13(const char *, int, const char *, const char *);
 __END_DECLS
 #endif /* __ASSERT_DECLARED */
+
+/*
+ * C11 7.2: <assert.h> defines static_assert.  This header predates it;
+ * NetBSD-current has the same lines (C23 makes it a keyword, which the
+ * macro does not disturb).
+ */
+#if (__STDC_VERSION__ - 0) >= 201101L && !defined(__cplusplus)
+#undef static_assert
+#define static_assert _Static_assert
+#endif

@@ -65,7 +65,7 @@
  * The cores, each kind as a bitmap: present (fixed), ready (powered and
  * usable), and two write-only registers that power a set on or off.  The
  * high halves are there for parts with more than 32 cores; this one has
- * two shader cores, so only the low words are used.
+ * one of each kind, so only the low words are used.
  */
 #define GPU_SHADER_PRESENT_LO	0x100
 #define GPU_TILER_PRESENT_LO	0x110

@@ -1,0 +1,389 @@
+
+######## uname
+Linux bigtreetech-cb2 6.1.115-btt-rockchip64 #1 SMP PREEMPT Mon Jun 29 19:45:03 CST 2026 aarch64 GNU/Linux
+
+######## cmdline
+root=UUID=b4e30710-be59-4ffe-9d89-a89490c89aae rootwait rootfstype=ext4 splash=verbose console=ttyS2,1500000 console=tty1 consoleblank=0 loglevel=1 ubootpart=42f94570-01 usb-storage.quirks=0x2537:0x1066:u,0x2537:0x1068:u cma=256M  cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory
+
+######## date
+Tue Oct 13 06:46:16 PM UTC 2026
+
+######## driver
+bound driver: panfrost
+total 0
+drwxr-xr-x 3 root root    0 Oct 13 18:45 devfreq
+lrwxrwxrwx 1 root root    0 Oct 13 18:45 driver -> ../../../bus/platform/drivers/panfrost
+-rw-r--r-- 1 root root 4096 Oct 13 18:45 driver_override
+drwxr-xr-x 4 root root    0 Oct 13 18:45 drm
+-r--r--r-- 1 root root 4096 Oct 13 18:45 modalias
+lrwxrwxrwx 1 root root    0 Oct 13 18:45 of_node -> ../../../firmware/devicetree/base/gpu@fde60000
+drwxr-xr-x 2 root root    0 Oct 13 18:45 power
+lrwxrwxrwx 1 root root    0 Oct 13 18:45 subsystem -> ../../../bus/platform
+lrwxrwxrwx 1 root root    0 Oct 13 18:45 supplier:i2c:0-0020 -> ../../virtual/devlink/i2c:0-0020--platform:fde60000.gpu
+lrwxrwxrwx 1 root root    0 Oct 13 18:45 supplier:platform:fdd90000.power-management:power-controller -> ../../virtual/devlink/platform:fdd90000.power-management:power-controller--platform:fde60000.gpu
+lrwxrwxrwx 1 root root    0 Oct 13 18:45 supplier:platform:firmware:scmi -> ../../virtual/devlink/platform:firmware:scmi--platform:fde60000.gpu
+lrwxrwxrwx 1 root root    0 Oct 13 18:45 supplier:regulator:regulator.14 -> ../../virtual/devlink/regulator:regulator.14--platform:fde60000.gpu
+-rw-r--r-- 1 root root 4096 Oct 13 18:45 uevent
+
+######## modules
+panfrost               61440  0
+drm_shmem_helper       20480  1 panfrost
+gpu_sched              40960  1 panfrost
+
+######## kernel config
+# CONFIG_MALI_BASE_MODULES is not set
+# CONFIG_DRM_MALI_DISPLAY is not set
+CONFIG_DRM_PANFROST=m
+CONFIG_DRM_PANTHOR=m
+# CONFIG_MALI400 is not set
+# CONFIG_MALI_MIDGARD is not set
+# CONFIG_MALI_KUTF is not set
+# CONFIG_MALI_BIFROST is not set
+# CONFIG_UNICODE_NORMALIZATION_SELFTEST is not set
+
+######## dmesg (gpu)
+[    9.808337] vdd_gpu: supplied by vcc3v3_sys
+[    9.808446] vdd_gpu: override min_uV, 810000 -> 812500
+[    9.808869] vdd_gpu: 812 <--> 1200 mV at 900 mV, enabled
+[   18.709214] rockchip-pm-domain fdd90000.power-management:power-controller: Looking up gpu-supply from device tree
+[   18.709256] rockchip-pm-domain fdd90000.power-management:power-controller: Looking up gpu-supply property in node /power-management@fdd90000/power-controller failed
+[   18.709512] panfrost fde60000.gpu: clock rate = 594000000
+[   18.709558] panfrost fde60000.gpu: bus_clock rate = 500000000
+[   18.709684] panfrost fde60000.gpu: Looking up mali-supply from device tree
+[   18.712672] panfrost fde60000.gpu: mali-g52 id 0x7402 major 0x1 minor 0x0 status 0x0
+[   18.712706] panfrost fde60000.gpu: features: 00000000,00000cf7, issues: 00000000,00000400
+[   18.712714] panfrost fde60000.gpu: Features: L2:0x07110206 Shader:0x00000002 Tiler:0x00000209 Mem:0x1 MMU:0x00002823 AS:0xff JS:0x7
+[   18.712723] panfrost fde60000.gpu: shader_present=0x1 l2_present=0x1
+[   18.745317] [drm] Initialized panfrost 1.2.0 20180908 for fde60000.gpu on minor 2
+
+######## device tree /proc/device-tree/gpu@fde60000
+#cooling-cells            00000002 
+clock-names              gpu bus 
+clocks                    00000002 00000001 00000022 0000001b 
+compatible               arm,mali-bifrost 
+downdifferential          0000000a 
+interrupt-names          gpu mmu job GPU MMU JOB 
+interrupts                00000000 00000027 00000004 00000000 00000029 00000004 00000000 00000028 00000004 00000000 00000027 00000004 00000000 00000029 00000004 00000000 00000028 00000004 
+mali-supply               00000068 
+name                     gpu 
+operating-points-v2       00000067 
+phandle                   00000112 
+power-domains             00000024 00000007 
+reg                       00000000 fde60000 00000000 00004000 
+status                   okay 
+upthreshold               00000028 
+subnode: power-model
+
+######## forcing the block on
+power/control before: auto
+power/control now:    on
+
+######## driver's own report
+power/control                  on 
+power/runtime_status           active 
+power/runtime_active_time      1024 
+power/runtime_suspended_time   84955 
+power/autosuspend_delay_ms     50 
+devfreq /sys/class/devfreq/fde60000.gpu:
+  governor                 simple_ondemand 
+  cur_freq                 200000000 
+  min_freq                 200000000 
+  max_freq                 800000000 
+  available_frequencies    200000000 300000000 400000000 600000000 700000000 800000000 
+  available_governors      rknpu_ondemand dmc_ondemand vop2_ondemand vdec2_ondemand venc_ondemand userspace powersave performance simple_ondemand 
+  load                     0@200000000Hz 
+  trans_stat:
+         From  :   To
+               : 200000000 300000000 400000000 600000000 700000000 800000000   time(ms)
+    * 200000000:         0         0         0         0         0         0      1023
+      300000000:         0         0         0         0         0         0         0
+      400000000:         0         0         0         0         0         0         0
+      600000000:         1         0         0         0         0         0        86
+      700000000:         0         0         0         0         0         0         0
+      800000000:         0         0         0         0         0         0         0
+    Total transition : 1
+
+######## opp table (from the tree)
+  opp-200000000        hz 200000000    uV  850000 850000 1000000 
+  opp-300000000        hz 300000000    uV  850000 850000 1000000 
+  opp-400000000        hz 400000000    uV  850000 850000 1000000 
+  opp-600000000        hz 600000000    uV  900000 900000 1000000 
+  opp-700000000        hz 700000000    uV  950000 950000 1000000 
+  opp-800000000        hz 800000000    uV  1000000 1000000 1000000 
+
+######## regulator vdd_gpu
+  name             vdd_gpu
+  microvolts       850000
+  state            enabled
+  num_users        2
+  opmode           normal
+  min_microvolts   812500
+  max_microvolts   1200000
+ regulator                      use open bypass  opmode voltage current     min     max
+          vdd_gpu                 2    2      0  normal   850mV     0mA   812mV  1200mV 
+             fde60000.gpu-mali    1                                 0mA   850mV  1000mV
+             vdd_gpu              0                                 0mA     0mV     0mV
+
+######## clk_summary (gpu)
+---------------------------------------------------------------------------------------------------------------------------------------------
+ clk_scmi_ddr                        0       0        0        1056000000  0          0     50000      Y   dmc                             dmc_clk                  
+ clk_scmi_npu                        0       0        0        198000000   0          0     50000      Y   fde40000.npu                    scmi_clk                 
+ clk_scmi_gpu                        1       1        0        198000000   0          0     50000      Y   fde60000.gpu                    no_connection_id         
+                                                                                                           fde60000.gpu                    no_connection_id         
+                                                                                                           gpu@fde60000                    no_connection_id         
+ clk_scmi_cpu                        0       0        0        1800000000  0          0     50000      Y   cpu0                            no_connection_id         
+    clk_gpu_pvtm                     0       0        0        24000000    0          0     50000      N      pvtm@1                          no_connection_id         
+    pll_npll                         1       2        0        1200000000  0          0     50000      Y      deviceless                      no_connection_id         
+       npll                          0       1        0        1200000000  0          0     50000      Y         deviceless                      no_connection_id         
+    pll_cpll                         1       1        0        1000000000  0          0     50000      Y      deviceless                      no_connection_id         
+       cpll                          5       5        0        1000000000  0          0     50000      Y         deviceless                      no_connection_id         
+          clk_gpu_src                1       1        0        166666667   0          0     50000      Y            deviceless                      no_connection_id         
+             clk_gpu_pvtpll          0       0        0        166666667   0          0     50000      Y               deviceless                      no_connection_id         
+             clk_gpu_pvtm_core       0       0        0        166666667   0          0     50000      N               deviceless                      no_connection_id         
+             clk_gpu_pre_mux         1       3        0        166666667   0          0     50000      Y               deviceless                      no_connection_id         
+                clk_gpu              1       2        0        166666667   0          0     50000      Y                  fde60000.gpu                    bus                      
+                                                                                                                          gpu@fde60000                    no_connection_id         
+                pclk_gpu_pre         0       1        0        33333334    0          0     50000      Y                  power-domain@7                  no_connection_id         
+                   pclk_gpu_pvtm     0       0        0        33333334    0          0     50000      N                     pvtm@1                          no_connection_id         
+                aclk_gpu_pre         0       1        0        83333334    0          0     50000      Y                  power-domain@7                  no_connection_id         
+    pll_gpll                         1       1        0        1188000000  0          0     50000      Y      deviceless                      no_connection_id         
+       gpll                          7       15       0        1188000000  0          0     50000      Y         deviceless                      no_connection_id         
+ mpll                                0       0        0        800000000   0          0     50000      Y   deviceless                      no_connection_id         
+
+######## pm_genpd
+domain                          status          children                           performance
+gpu                             on                                                 0
+    /devices/platform/fde60000.gpu                      active                     0
+gpu current_state: on
+
+######## interrupts
+           CPU0       CPU1       CPU2       CPU3       
+ 36:          0          0          0          0     GICv3 183 Level     fde4b000.iommu, fde40000.npu
+ 37:          0          0          0          0     GICv3 170 Level     fdea0800.iommu
+ 38:          0          0          0          0     GICv3  93 Level     fded0480.iommu
+ 39:          0          0          0          0     GICv3  95 Level     fdee0800.iommu
+ 40:          0          0          0          0     GICv3  88 Level     fdef0800.iommu, fdef0000.iep
+ 41:          0          0          0          0     GICv3 173 Level     fdf40f00.iommu
+ 42:          0          0          0          0     GICv3 174 Level     fdf40f00.iommu
+ 43:          0          0          0          0     GICv3 124 Level     fdf80800.iommu
+ 44:        751          0          0          0     GICv3 180 Level     fe043e00.iommu, fe040000.vop
+ 96:          0          0          0          0     GICv3  71 Level     panfrost-gpu
+ 97:          0          0          0          0     GICv3  73 Level     panfrost-mmu
+ 98:          0          0          0          0     GICv3  72 Level     panfrost-job
+
+######## registers via /dev/mem
+# PMU @ 0xfdd90000
+  0x0000: 03003566 00000e0c 00000000 00000000
+  0x0010: 00000000 00000000 00000000 00000000
+  0x0020: 00000000 00000000 00000000 00000000
+  0x0030: 00000000 00000000 00000000 00000000
+  0x0040: 00000000 00000000 00000000 00000000
+  0x0050: 000001e4 00000000 00000000 00000000
+  0x0060: 000001ec 00000000 000001ec 00000000
+  0x0070: 0000ffff 0000000f 00000000 00000000
+  0x0080: 00000000 00000000 00000000 00000000
+  0x0090: 00000000 00000000 0000007e 00000000
+  0x00a0: 0000007e 00000000 00000003 00000000
+  0x00b0: 00000000 00000000 00000000 00000000
+  0x00c0: 00000000 00000000 00000000 00000000
+  0x00d0: 00000000 00000000 00000000 00000000
+  0x00e0: 00000000 00000000 00000000 00000000
+  0x00f0: 00000000 00000000 00000000 00000000
+PD_GPU: PWR_CON bit0=0 PWR_STATUS bit0=0 IDLE_REQ bit1=0 IDLE_ST bit1=0 IDLE_ACK bit1=0 -> ON
+# CRU @ 0xfdd20000
+  0x0000: 0000104b 00001441 00000000 00000007
+  0x0010: 00007f00 00000000 00000000 00000000
+  0x0020: 00006084 00001441 00000000 00000007
+  0x0030: 00007f00 00000000 00000000 00000000
+  0x0040: 00002063 00001441 00000000 00000007
+  0x0050: 00007f00 00000000 00000000 00000000
+  0x0060: 0000107d 00001443 00000000 00000007
+  0x0070: 00007f00 00000000 00000000 00000000
+  0x0080: 00001032 00001441 00000000 00000000
+  0x0090: 00000000 00000000 00000000 00000000
+  0x00a0: 0000307d 00001442 00000000 00000000
+  0x00b0: 00000000 00000000 00000000 00000000
+  0x00c0: 00004455 00000000 00000000 00000000
+  0x0100: 000080c0 00000000 00008100 00000505
+  0x0110: 00000505 00000111 00004155 000000e5
+  0x0120: 00000053 00000100 00000000 00008000
+  0x0130: 00040004 00008000 00040004 00000400
+  0x0300: 00000000 00000e00 000001c0 00000f9f
+  0x0310: 00000000 0000f300 0000f0ff 0000ffff
+  0x0400: 00000000 00000000 00000000 00000000
+  0x0410: 00000000 00000000 00000000 00000000
+CLKSEL_CON6  = 0x00004155: gpu_src mux 1 div 5, aclk div 1, pre_mux 0, pclk div 4
+CLKGATE_CON2 = 0x000001c0: clk_gpu_src open, clk_gpu open
+SOFTRST_CON2 = 0x00000000: srst_gpu 0, a_niu 0, p_niu 0
+# QOS_GPU @ 0xfe128000
+  0x0000: 1f20d104 3c9d4e00 80000101 00000003
+  0x0010: 00000140 00000040 00000000 00000000
+# GPU @ 0xfde60000
+  0x0000 GPU_ID                       0x74021000
+  0x0004 L2_FEATURES                  0x07110206
+  0x0008 CORE_FEATURES                0x00000002
+  0x000c TILER_FEATURES               0x00000209
+  0x0010 MEM_FEATURES                 0x00000001
+  0x0014 MMU_FEATURES                 0x00002823
+  0x0018 AS_PRESENT                   0x000000ff
+  0x001c JS_PRESENT                   0x00000007
+  0x0020 GPU_IRQ_RAWSTAT              0x00000600
+  0x0028 GPU_IRQ_MASK                 0x00030081
+  0x002c GPU_IRQ_STATUS               0x00000000
+  0x0034 GPU_STATUS                   0x00000000
+  0x0038 LATEST_FLUSH_ID              0x00ffffe0
+  0x003c GPU_FAULTSTATUS              0x00000000
+  0x0040 GPU_FAULTADDRESS_LO          0x00000000
+  0x0044 GPU_FAULTADDRESS_HI          0x00000000
+  0x004c AFBC_FEATURES                0x00000000
+  0x0054 PWR_OVERRIDE0                0x00000000
+  0x0058 PWR_OVERRIDE1                0x00000000
+  0x0090 CYCLE_COUNT_LO               0x00000000
+  0x0094 CYCLE_COUNT_HI               0x00000000
+  0x0098 TIMESTAMP_LO                 0x00000000
+  0x009c TIMESTAMP_HI                 0x00000000
+  0x00a0 THREAD_MAX_THREADS           0x00000300
+  0x00a4 THREAD_MAX_WORKGROUP_SIZE    0x00000180
+  0x00a8 THREAD_MAX_BARRIER_SIZE      0x00000180
+  0x00ac THREAD_FEATURES              0x0a046000
+  0x00b0 TEXTURE_FEATURES_0           0xf7fffffe
+  0x00b4 TEXTURE_FEATURES_1           0xc3fff7ff
+  0x00b8 TEXTURE_FEATURES_2           0xbfe1ff9f
+  0x00bc TEXTURE_FEATURES_3           0x000010f6
+  0x00c0 JS_FEATURES_0                0x0000020e
+  0x00c4 JS_FEATURES_1                0x000004fe
+  0x00c8 JS_FEATURES_2                0x0000007e
+  0x00cc JS_FEATURES_3                0x00000000
+  0x00d0 JS_FEATURES_4                0x00000000
+  0x00d4 JS_FEATURES_5                0x00000000
+  0x00d8 JS_FEATURES_6                0x00000000
+  0x00dc JS_FEATURES_7                0x00000000
+  0x00e0 JS_FEATURES_8                0x00000000
+  0x00e4 JS_FEATURES_9                0x00000000
+  0x00e8 JS_FEATURES_10               0x00000000
+  0x00ec JS_FEATURES_11               0x00000000
+  0x00f0 JS_FEATURES_12               0x00000000
+  0x00f4 JS_FEATURES_13               0x00000000
+  0x00f8 JS_FEATURES_14               0x00000000
+  0x00fc JS_FEATURES_15               0x00000000
+  0x0100 SHADER_PRESENT_LO            0x00000001
+  0x0104 SHADER_PRESENT_HI            0x00000000
+  0x0110 TILER_PRESENT_LO             0x00000001
+  0x0114 TILER_PRESENT_HI             0x00000000
+  0x0120 L2_PRESENT_LO                0x00000001
+  0x0124 L2_PRESENT_HI                0x00000000
+  0x0140 SHADER_READY_LO              0x00000001
+  0x0150 TILER_READY_LO               0x00000001
+  0x0160 L2_READY_LO                  0x00000001
+  0x0200 SHADER_PWRTRANS_LO           0x00000000
+  0x0210 TILER_PWRTRANS_LO            0x00000000
+  0x0220 L2_PWRTRANS_LO               0x00000000
+  0x0240 SHADER_PWRACTIVE_LO          0x00000000
+  0x0250 TILER_PWRACTIVE_LO           0x00000000
+  0x0260 L2_PWRACTIVE_LO              0x00000000
+  0x0300 COHERENCY_FEATURES           0x00000000
+  0x0304 COHERENCY_ENABLE             0x00000000
+  0x0310 THREAD_TLS_ALLOC             0x00000400
+  0x0e00 STACK_PRESENT_LO             0x00000001
+  0x0e10 STACK_READY_LO               0x00000001
+  0x0f00 JM_CONFIG                    0x000f0000
+  0x0f04 SHADER_CONFIG                0x00000000
+  0x0f08 TILER_CONFIG                 0x00000000
+  0x0f0c L2_MMU_CONFIG                0x00000000
+  0x1000 JOB_IRQ_RAWSTAT              0x00000000
+  0x1008 JOB_IRQ_MASK                 0x00070007
+  0x100c JOB_IRQ_STATUS               0x00000000
+  0x1010 JOB_IRQ_JS_STATE             0x00000000
+  0x1014 JOB_IRQ_THROTTLE             0x00000000
+  0x2000 MMU_IRQ_RAWSTAT              0x00000000
+  0x2008 MMU_IRQ_MASK                 0x00ff00ff
+  0x200c MMU_IRQ_STATUS               0x00000000
+  0x1800 JS0_HEAD_LO                  0x00000000
+  0x1804 JS0_HEAD_HI                  0x00000000
+  0x1808 JS0_TAIL_LO                  0x00000000
+  0x1810 JS0_AFFINITY_LO              0x00000000
+  0x1818 JS0_CONFIG                   0x00000000
+  0x1824 JS0_STATUS                   0x00000000
+  0x1858 JS0_CONFIG_NEXT              0x00000000
+  0x1880 JS1_HEAD_LO                  0x00000000
+  0x1884 JS1_HEAD_HI                  0x00000000
+  0x1888 JS1_TAIL_LO                  0x00000000
+  0x1890 JS1_AFFINITY_LO              0x00000000
+  0x1898 JS1_CONFIG                   0x00000000
+  0x18a4 JS1_STATUS                   0x00000000
+  0x18d8 JS1_CONFIG_NEXT              0x00000000
+  0x1900 JS2_HEAD_LO                  0x00000000
+  0x1904 JS2_HEAD_HI                  0x00000000
+  0x1908 JS2_TAIL_LO                  0x00000000
+  0x1910 JS2_AFFINITY_LO              0x00000000
+  0x1918 JS2_CONFIG                   0x00000000
+  0x1924 JS2_STATUS                   0x00000000
+  0x1958 JS2_CONFIG_NEXT              0x00000000
+  0x2400 AS0_TRANSTAB_LO              0x00000000
+  0x2404 AS0_TRANSTAB_HI              0x00000000
+  0x2408 AS0_MEMATTR_LO               0x00000000
+  0x240c AS0_MEMATTR_HI               0x00000000
+  0x241c AS0_FAULTSTATUS              0x00000000
+  0x2428 AS0_STATUS                   0x00000000
+  0x2430 AS0_TRANSCFG_LO              0x00000000
+  0x2434 AS0_TRANSCFG_HI              0x00000000
+  0x2440 AS1_TRANSTAB_LO              0x00000000
+  0x2444 AS1_TRANSTAB_HI              0x00000000
+  0x2448 AS1_MEMATTR_LO               0x00000000
+  0x244c AS1_MEMATTR_HI               0x00000000
+  0x245c AS1_FAULTSTATUS              0x00000000
+  0x2468 AS1_STATUS                   0x00000000
+  0x2470 AS1_TRANSCFG_LO              0x00000000
+  0x2474 AS1_TRANSCFG_HI              0x00000000
+  0x2480 AS2_TRANSTAB_LO              0x00000000
+  0x2484 AS2_TRANSTAB_HI              0x00000000
+  0x2488 AS2_MEMATTR_LO               0x00000000
+  0x248c AS2_MEMATTR_HI               0x00000000
+  0x249c AS2_FAULTSTATUS              0x00000000
+  0x24a8 AS2_STATUS                   0x00000000
+  0x24b0 AS2_TRANSCFG_LO              0x00000000
+  0x24b4 AS2_TRANSCFG_HI              0x00000000
+  0x24c0 AS3_TRANSTAB_LO              0x00000000
+  0x24c4 AS3_TRANSTAB_HI              0x00000000
+  0x24c8 AS3_MEMATTR_LO               0x00000000
+  0x24cc AS3_MEMATTR_HI               0x00000000
+  0x24dc AS3_FAULTSTATUS              0x00000000
+  0x24e8 AS3_STATUS                   0x00000000
+  0x24f0 AS3_TRANSCFG_LO              0x00000000
+  0x24f4 AS3_TRANSCFG_HI              0x00000000
+  0x2500 AS4_TRANSTAB_LO              0x00000000
+  0x2504 AS4_TRANSTAB_HI              0x00000000
+  0x2508 AS4_MEMATTR_LO               0x00000000
+  0x250c AS4_MEMATTR_HI               0x00000000
+  0x251c AS4_FAULTSTATUS              0x00000000
+  0x2528 AS4_STATUS                   0x00000000
+  0x2530 AS4_TRANSCFG_LO              0x00000000
+  0x2534 AS4_TRANSCFG_HI              0x00000000
+  0x2540 AS5_TRANSTAB_LO              0x00000000
+  0x2544 AS5_TRANSTAB_HI              0x00000000
+  0x2548 AS5_MEMATTR_LO               0x00000000
+  0x254c AS5_MEMATTR_HI               0x00000000
+  0x255c AS5_FAULTSTATUS              0x00000000
+  0x2568 AS5_STATUS                   0x00000000
+  0x2570 AS5_TRANSCFG_LO              0x00000000
+  0x2574 AS5_TRANSCFG_HI              0x00000000
+  0x2580 AS6_TRANSTAB_LO              0x00000000
+  0x2584 AS6_TRANSTAB_HI              0x00000000
+  0x2588 AS6_MEMATTR_LO               0x00000000
+  0x258c AS6_MEMATTR_HI               0x00000000
+  0x259c AS6_FAULTSTATUS              0x00000000
+  0x25a8 AS6_STATUS                   0x00000000
+  0x25b0 AS6_TRANSCFG_LO              0x00000000
+  0x25b4 AS6_TRANSCFG_HI              0x00000000
+  0x25c0 AS7_TRANSTAB_LO              0x00000000
+  0x25c4 AS7_TRANSTAB_HI              0x00000000
+  0x25c8 AS7_MEMATTR_LO               0x00000000
+  0x25cc AS7_MEMATTR_HI               0x00000000
+  0x25dc AS7_FAULTSTATUS              0x00000000
+  0x25e8 AS7_STATUS                   0x00000000
+  0x25f0 AS7_TRANSCFG_LO              0x00000000
+  0x25f4 AS7_TRANSCFG_HI              0x00000000
+GPU_ID 0x74021000: product 0x7402 (arch 7.4 rev 0, major 2), r1p0 status 0
+
+######## restoring
+power/control: auto

@@ -6,8 +6,9 @@
 
 /*
  * The GPU of the RK3566/RK3568, and so of the BIGTREETECH CB2: an ARM
- * Mali-G52 (Bifrost, two shader cores), node gpu@fde60000 in the device
- * tree.  Stage 11.5 of the plan, first half: power, clocks, reset, the
+ * Mali-G52 r1p0 (Bifrost; one shader core of two execution engines, one
+ * tiler, one L2 - GPU_ID 0x74021000 on the board), node gpu@fde60000 in
+ * the device tree.  Stage 11.5 of the plan, first half: power, clocks, reset, the
  * identity register and the cores powered up.  The interface Mesa's
  * Panfrost driver talks to (panfrost_drm.h) comes with 11.6; until then
  * this service brings the part up, says what it found and keeps it so.
@@ -112,5 +113,6 @@ void mali_rk_report(const char *when);
 int mali_rk_clocks_on(void);
 int mali_rk_power_domain(void);
 void mali_rk_resets(void);
+unsigned mali_rk_compare(void);
 
 #endif /* _MALI_H */

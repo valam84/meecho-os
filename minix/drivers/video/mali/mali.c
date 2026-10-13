@@ -89,6 +89,60 @@ model_name(uint32_t gpu_id)
 	return "an unknown Mali";
 }
 
+/*
+ * The GPU's own registers on the working vendor system, panfrost holding
+ * it on (port/cb2-gpu/ref-on.txt) - the identity and what is present and
+ * powered.  Printed beside what this driver reads once the cores are up.
+ * JM_CONFIG is not here: panfrost writes an errata setting into it (the
+ * IDVS group size, 0x000f0000), which belongs with the first job.
+ */
+static const struct {
+	const char *name;
+	unsigned off;
+	uint32_t value;
+} reference[] = {
+	{ "GPU_ID",		GPU_ID,			0x74021000 },
+	{ "L2_FEATURES",	GPU_L2_FEATURES,	0x07110206 },
+	{ "CORE_FEATURES",	GPU_CORE_FEATURES,	0x00000002 },
+	{ "TILER_FEATURES",	GPU_TILER_FEATURES,	0x00000209 },
+	{ "MEM_FEATURES",	GPU_MEM_FEATURES,	0x00000001 },
+	{ "MMU_FEATURES",	GPU_MMU_FEATURES,	0x00002823 },
+	{ "AS_PRESENT",		GPU_AS_PRESENT,		0x000000ff },
+	{ "JS_PRESENT",		GPU_JS_PRESENT,		0x00000007 },
+	{ "THREAD_MAX",		GPU_THREAD_MAX_THREADS,	0x00000300 },
+	{ "THREAD_FEATURES",	GPU_THREAD_FEATURES,	0x0a046000 },
+	{ "COHERENCY",		GPU_COHERENCY_FEATURES,	0x00000000 },
+	{ "SHADER_PRESENT",	GPU_SHADER_PRESENT_LO,	0x00000001 },
+	{ "TILER_PRESENT",	GPU_TILER_PRESENT_LO,	0x00000001 },
+	{ "L2_PRESENT",		GPU_L2_PRESENT_LO,	0x00000001 },
+	{ "STACK_PRESENT",	GPU_STACK_PRESENT_LO,	0x00000001 },
+	{ "SHADER_READY",	GPU_SHADER_READY_LO,	0x00000001 },
+	{ "TILER_READY",	GPU_TILER_READY_LO,	0x00000001 },
+	{ "L2_READY",		GPU_L2_READY_LO,	0x00000001 },
+	{ "GPU_STATUS",		GPU_STATUS,		0x00000000 },
+};
+
+static void
+compare(void)
+{
+	unsigned i, differs;
+	uint32_t got;
+
+	log_info(&mali_log, "this driver against the board "
+	    "(port/cb2-gpu/ref-on.txt):\n");
+	differs = mali_rk_compare();
+	for (i = 0; i < sizeof(reference) / sizeof(reference[0]); i++) {
+		got = mali_rd(&mali.info.gpu, reference[i].off);
+		if (got != reference[i].value)
+			differs++;
+		log_info(&mali_log, "  %-14s 0x%08x (reference 0x%08x)%s\n",
+		    reference[i].name, got, reference[i].value,
+		    got != reference[i].value ? "  DIFFERS" : "");
+	}
+	log_info(&mali_log, "%u register(s) differ from the reference\n",
+	    differs);
+}
+
 /* Poll a GPU register until (value & mask) == want, up to usec. */
 static int
 gpu_wait(unsigned off, uint32_t mask, uint32_t want, unsigned usec)
@@ -337,6 +391,7 @@ mali_init(int type, sef_init_info_t *UNUSED(info))
 	if ((r = gpu_power_up()) != OK)
 		return r;
 	mali_rk_report("up");
+	compare();
 
 	/* Step 6: one interrupt on purpose, taken in the main loop. */
 	irq_setup();

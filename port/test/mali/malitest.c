@@ -320,50 +320,77 @@ test_rk(const char *file)
 	mali_rk_report("pd2");
 	CHECK(said("gpll/2 = 297000 kHz"), "postdiv2 4: %s", logbuf);
 
-	/* Такты: PVTPLL -> путь PLL, gpll 1188 МГц / 3 = 396 МГц. */
+	/*
+	 * Такты: слово, на котором вендорская система работает при 200 МГц
+	 * (ref-on.txt: 0x4155 - gpll/6, путь PLL, aclk /2, pclk /5), каким бы
+	 * ни было найденное.  Из 0x4951 (PVTPLL на 600 МГц) - маскированная
+	 * запись полей 0xfbcf, биты 5:4 и 10 не трогаются.
+	 */
 	board_ready(file);
 	(void)mali_rk_map();
 	r = mali_rk_clocks_on();
 	CHECK(r == OK, "clocks_on: %d", r);
-	CHECK(C(0x118) == 0x080f0002, "CLKSEL_CON6 written 0x%08x, want "
-	    "0x080f0002", C(0x118));
-	CHECK(said("moving it to gpll/3 = 396000 kHz"), "clock: %s", logbuf);
+	CHECK(C(0x118) == 0xfbcf4145, "CLKSEL_CON6 written 0x%08x, want "
+	    "0xfbcf4145", C(0x118));
+	CHECK(((0x4951u & ~0xfbcfu) | 0x4145u) == 0x4155,
+	    "the masked write does not give the reference word");
+	CHECK(said("comes from its PVTPLL; setting gpll/6 = 198000 kHz"),
+	    "clock: %s", logbuf);
 	CHECK(C(0x308) == 0x000001c0, "gates written though open: 0x%08x",
 	    C(0x308));
 
-	/* cpll (1000 МГц) и npll (1200 МГц) за PVTPLL: тоже делятся на 3. */
+	/* Уже эталонное слово не переписывается. */
 	board_ready(file);
 	(void)mali_rk_map();
-	C(0x118) = 0x00004991;		/* mux 2: cpll */
+	C(0x118) = 0x00004155;
 	r = mali_rk_clocks_on();
-	CHECK(r == OK && said("cpll/3 = 333333 kHz"), "cpll: %d %s", r,
-	    logbuf);
-	board_ready(file);
-	(void)mali_rk_map();
-	C(0x118) = 0x000049d1;		/* mux 3: npll */
-	r = mali_rk_clocks_on();
-	CHECK(r == OK && said("npll/3 = 400000 kHz"), "npll: %d %s", r,
-	    logbuf);
+	CHECK(r == OK && C(0x118) == 0x00004155 && said("gpll/6 = 198000 kHz "
+	    "already"), "reference word: %d 0x%08x %s", r, C(0x118), logbuf);
 
-	/* mpll за PVTPLL посчитать нечем: отказ, и ничего не записано. */
+	/*
+	 * Что угодно другое - тоже: после сброса регистр может держать
+	 * mpll/1, быстрее, чем позволяет напряжение загрузки.
+	 */
 	board_ready(file);
 	(void)mali_rk_map();
-	C(0x118) = 0x00004911;		/* mux 0: mpll */
+	C(0x118) = 0x00000000;
 	r = mali_rk_clocks_on();
-	CHECK(r == EIO, "mpll: %d, want EIO", r);
-	CHECK(C(0x118) == 0x00004911, "mpll: CLKSEL written 0x%08x",
+	CHECK(r == OK && C(0x118) == 0xfbcf4145 && said("comes from mpll/1"),
+	    "from reset: %d 0x%08x %s", r, C(0x118), logbuf);
+
+	/* gpll, которого не посчитать (глубокий сон), - отказ без записи. */
+	board_ready(file);
+	(void)mali_rk_map();
+	C(0xc0) = 0x00004495;		/* gpll: режим 2 */
+	r = mali_rk_clocks_on();
+	CHECK(r == EIO, "gpll deep slow: %d, want EIO", r);
+	CHECK(C(0x118) == 0x00004951, "gpll deep slow: CLKSEL written 0x%08x",
 	    C(0x118));
 
 	/* Закрытые вентили открываются маскированной записью. */
 	board_ready(file);
 	(void)mali_rk_map();
-	C(0x118) = 0x00004151;
+	C(0x118) = 0x00004155;
 	C(0x308) = 0x000001c9;
 	r = mali_rk_clocks_on();
 	CHECK(r == OK, "gates: %d", r);
 	CHECK(C(0x308) == 0x00090000, "CLKGATE_CON2 written 0x%08x, want "
 	    "0x00090000", C(0x308));
-	CHECK(C(0x118) == 0x00004151, "CLKSEL touched without PVTPLL");
+
+	/*
+	 * Сравнение с эталоном: на числах платы под Linux в простое (домен
+	 * выключен, PVTPLL) - четыре расхождения: такт и три бита домена; на
+	 * регистрах, как их оставляет panfrost за работой, - ни одного.
+	 */
+	board_ready(file);
+	(void)mali_rk_map();
+	CHECK(mali_rk_compare() == 4, "idle board: %s", logbuf);
+	C(0x118) = 0x00004155;
+	P(0x98) = 0x7e;
+	P(0x60) = P(0x68) = 0x1ec;
+	log_reset();
+	CHECK(mali_rk_compare() == 0 && !said("DIFFERS"), "working board: %s",
+	    logbuf);
 
 	/* Домен: питание, потом шина - и слова ровно такие. */
 	board_ready(file);

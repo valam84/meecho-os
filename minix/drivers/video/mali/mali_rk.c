@@ -18,9 +18,8 @@
  *
  * The source clock is the one the tree calls "gpu", and it is the secure
  * firmware's: an SCMI clock, whose rate BL31 sets and Linux only asks for.
- * The muxes are read-only to Linux for that reason.  This driver reads
- * them to say what rate the GPU runs at and changes nothing there; the
- * rate it boots with is enough to bring the part up, and choosing another
+ * This driver cannot ask, and sets the register to the word the firmware
+ * itself uses for the slowest rate (see clock_source below); a faster one
  * is stage 11.8, together with the voltage it needs.
  *
  * Order, as the vendor kernel does it: the clocks first, because the power
@@ -220,57 +219,81 @@ mali_rk_report(const char *when)
  * The clock under the core and under its registers.
  *
  * The register interface runs off the same mux as the core (pclk_gpu_pre
- * divides clk_gpu_pre_mux), so the mux decides whether a read of the GPU
- * answers at all.  Its other input is the GPU's PVTPLL - a ring oscillator
- * the firmware sets up when asked over SCMI for certain rates, and that
- * this driver can neither see running nor ask for.  The vendor system
- * leaves the mux on it (CLKSEL_CON6 0x4951 in port/cb2-display's snapshot,
- * gpll/2 behind it).  So a PVTPLL found here is not gambled on: the mux is
- * moved to the PLL path, with the source divided down to no more than
- * MALI_SAFE_KHZ - an operating point the tree allows at the lowest voltage
- * it lists (400 MHz at 0.85 V; vdd_gpu boots at 0.9 V) - and the result is
- * said.  A source this file cannot compute is refused.  Choosing a faster
- * rate is stage 11.8, together with the voltage it needs.
+ * divides clk_gpu_pre_mux), so this register decides whether a read of the
+ * GPU answers at all - and it is the firmware's: BL31 sets it when Linux
+ * asks over SCMI for a rate.  What the firmware does is in the reference
+ * snapshot (port/cb2-gpu/ref-*.txt): at 600 MHz the core runs off its
+ * PVTPLL, a ring oscillator this driver can neither see running nor ask
+ * for (CLKSEL_CON6 0x4951, gpll/2 behind it); at 200 MHz, with panfrost
+ * working, the firmware itself puts it on the PLL path - 0x4155, gpll/6 =
+ * 198 MHz, aclk /2, pclk /5.  (Linux's clk_summary shows cpll/500 MHz for
+ * the same clocks: it caches read-only muxes, and only the register is
+ * true.)
+ *
+ * So the driver sets the word the vendor system demonstrably runs on, the
+ * slowest operating point of the tree (0.85 V; vdd_gpu boots at 0.9 V),
+ * whatever it finds - a PVTPLL that may be dead, or whatever reset leaves,
+ * which may be faster than the boot voltage allows.  The divider is
+ * computed from gpll rather than copied, and the result is compared with
+ * the reference afterwards (mali_rk_compare).  The two bits of the
+ * register whose meaning neither Linux driver gives (5:4 and 10) are left
+ * as found.  A faster rate is stage 11.8, together with its voltage.
  */
-#define MALI_SAFE_KHZ		400000
+#define GPU_CLK_TARGET_KHZ	200000
+#define GPU_SRC_GPLL		1
+#define GPU_ACLK_DIV_REF	2	/* aclk_gpu_pre = core / 2 */
+#define GPU_PCLK_DIV_REF	5	/* pclk_gpu_pre = core / 5 */
+#define CLKSEL_GPU_FIELDS	0xfbcfu	/* 15:12, 11, 9:8, 7:6, 3:0 */
 
 static int
 clock_source(void)
 {
 	const struct mali_regs *cru = &mali.info.cru;
-	uint32_t sel = mali_rd(cru, CRU_CLKSEL_CON(CLKSEL_GPU));
+	uint32_t sel = mali_rd(cru, CRU_CLKSEL_CON(CLKSEL_GPU)), want;
 	unsigned src = GPU_SRC_MUX(sel), khz, div;
+	char was[48];
 
-	if (!GPU_PRE_MUX_PVTPLL(sel))
-		return OK;
-
-	khz = pll_khz(gpu_src[src].index, gpu_src[src].mode_shift);
+	khz = pll_khz(gpu_src[GPU_SRC_GPLL].index,
+	    gpu_src[GPU_SRC_GPLL].mode_shift);
 	if (khz == 0) {
-		log_warn(&mali_log, "the GPU clock comes from its PVTPLL, and "
-		    "the PLL path's source (%s) is not one this driver can "
-		    "compute; not touching the GPU\n", gpu_src[src].name);
+		log_warn(&mali_log, "gpll is not running in a mode this driver "
+		    "can compute; not touching the GPU\n");
 		return EIO;
 	}
-	for (div = 1; div <= 16 && khz / div > MALI_SAFE_KHZ; div++)
-		;
+	div = (khz + GPU_CLK_TARGET_KHZ - 1) / GPU_CLK_TARGET_KHZ;
+	if (div < 1)
+		div = 1;
 	if (div > 16) {
-		log_warn(&mali_log, "%s at %u kHz cannot be divided below %u "
-		    "kHz; not touching the GPU\n", gpu_src[src].name, khz,
-		    MALI_SAFE_KHZ);
+		log_warn(&mali_log, "gpll at %u kHz cannot be divided to %u "
+		    "kHz; not touching the GPU\n", khz, GPU_CLK_TARGET_KHZ);
 		return EIO;
+	}
+	want = ((GPU_PCLK_DIV_REF - 1) << 12) | ((GPU_ACLK_DIV_REF - 1) << 8) |
+	    (GPU_SRC_GPLL << 6) | (div - 1);
+
+	if ((sel & CLKSEL_GPU_FIELDS) == want) {
+		log_info(&mali_log, "the GPU clock is gpll/%u = %u kHz already\n",
+		    div, khz / div);
+		return OK;
 	}
 
-	log_info(&mali_log, "the GPU clock comes from its PVTPLL, which this "
-	    "driver cannot check; moving it to %s/%u = %u kHz\n",
-	    gpu_src[src].name, div, khz / div);
-	/* Bit 11 to the PLL path, the divider in 3:0, both write-masked. */
+	if (GPU_PRE_MUX_PVTPLL(sel))
+		snprintf(was, sizeof(was), "its PVTPLL");
+	else
+		snprintf(was, sizeof(was), "%s/%u", gpu_src[src].name,
+		    GPU_SRC_DIV(sel) + 1);
+	log_info(&mali_log, "the GPU clock comes from %s; setting gpll/%u = %u "
+	    "kHz on the PLL path, aclk /%u, pclk /%u\n", was, div, khz / div,
+	    GPU_ACLK_DIV_REF, GPU_PCLK_DIV_REF);
+
+	/* Write-masked: only the fields above change. */
 	mali_wr(cru, CRU_CLKSEL_CON(CLKSEL_GPU),
-	    ((0x800u | 0xfu) << 16) | (div - 1));
+	    (CLKSEL_GPU_FIELDS << 16) | want);
 
 	sel = mali_rd(cru, CRU_CLKSEL_CON(CLKSEL_GPU));
-	if (GPU_PRE_MUX_PVTPLL(sel) || GPU_SRC_DIV(sel) != div - 1) {
-		log_warn(&mali_log, "the GPU clock mux did not move "
-		    "(CLKSEL_CON6 0x%08x); not touching the GPU\n", sel);
+	if ((sel & CLKSEL_GPU_FIELDS) != want) {
+		log_warn(&mali_log, "the GPU clock did not take (CLKSEL_CON6 "
+		    "0x%08x); not touching the GPU\n", sel);
 		return EIO;
 	}
 	return OK;
@@ -380,4 +403,48 @@ mali_rk_resets(void)
 	log_info(&mali_log, "releasing the GPU reset lines (0x%08x)\n", rst);
 	mali_wr(cru, CRU_SOFTRST_CON(SOFTRST_GPU), SRST_GPU_ALL << 16);
 	micro_delay(10);
+}
+
+/*
+ * What the working vendor system has in the registers this file writes,
+ * with panfrost holding the GPU on at 200 MHz (port/cb2-gpu/ref-on.txt).
+ * Not a table to copy: each value above is computed from what it is for,
+ * and this says whether the result is what the board runs with.  Only the
+ * bits this driver is responsible for are compared - the other gates of
+ * CLKGATE_CON2 (the PVTM's) and the other domains are somebody else's.
+ */
+static const struct {
+	const char *name;
+	int pmu;			/* 0 the CRU, 1 the PMU */
+	unsigned off;
+	uint32_t value, mask;
+} reference[] = {
+	{ "CLKSEL_CON6",  0, CRU_CLKSEL_CON(CLKSEL_GPU), 0x00004155,
+	    CLKSEL_GPU_FIELDS },
+	{ "CLKGATE_CON2", 0, CRU_CLKGATE_CON(CLKGATE_GPU), 0x000001c0,
+	    GATE_CLK_GPU_SRC | GATE_CLK_GPU },
+	{ "SOFTRST_CON2", 0, CRU_SOFTRST_CON(SOFTRST_GPU), 0x00000000,
+	    SRST_GPU_ALL },
+	{ "PWR_STATUS",   1, PMU_PWR_STATUS, 0x0000007e, PD_GPU_PWR },
+	{ "IDLE_ACK",     1, PMU_IDLE_ACK,   0x000001ec, PD_GPU_IDLE },
+	{ "IDLE_ST",      1, PMU_IDLE_ST,    0x000001ec, PD_GPU_IDLE },
+};
+
+unsigned
+mali_rk_compare(void)
+{
+	unsigned i, differs = 0;
+	uint32_t got;
+
+	for (i = 0; i < sizeof(reference) / sizeof(reference[0]); i++) {
+		got = mali_rd(reference[i].pmu ? &mali.info.pmu :
+		    &mali.info.cru, reference[i].off);
+		if ((got ^ reference[i].value) & reference[i].mask)
+			differs++;
+		log_info(&mali_log, "  %-14s 0x%08x (reference 0x%08x)%s\n",
+		    reference[i].name, got, reference[i].value,
+		    ((got ^ reference[i].value) & reference[i].mask) ?
+		    "  DIFFERS" : "");
+	}
+	return differs;
 }

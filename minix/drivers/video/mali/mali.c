@@ -22,12 +22,14 @@
  *      raises on its "gpu" line - so that the line number the tree gave is
  *      proved end to end, before anything waits on it.
  *
- * The job and MMU lines are taken too and report whatever arrives on them;
- * the job line is proved by the first job (the second half of 11.5), the
- * MMU line by a job that faults on purpose ("faulttest=1", mali_job.c).
+ * The job and MMU lines are taken too; the job line is proved by the
+ * self-test's chain (mali_job.c), the MMU line by a job that faults on
+ * purpose ("faulttest=1").  Then the service announces the render node
+ * and serves its clients (mali_drm.c, stage 11.6).
  */
 
 #include <minix/drivers.h>
+#include <minix/chardriver.h>
 #include <minix/syslib.h>
 #include <minix/sysutil.h>
 
@@ -51,6 +53,8 @@ static const char *const irq_names[MALI_NR_IRQS] = { "gpu", "job", "mmu" };
 static int probe_only;
 static int selftest = 1;		/* "selftest=0": no job at start */
 static int faulttest;			/* "faulttest=1": and a fault after */
+static long mem_total_mb = 768;		/* "memmb=": buffers of all clients */
+static long mem_client_mb = 512;	/* "clientmb=": of one client */
 
 /*
  * The notification bit of each line.  Not the line number: the kernel
@@ -333,6 +337,17 @@ irq_handle(int i)
 	s = mali_rd(gpu, stat[i]);
 	mali.irq_count[i]++;
 
+	/*
+	 * The job line is cleared before its handler, as panfrost does: the
+	 * handler may start the next job, and a short one could be done -
+	 * its bit up - before a clear after the handler took it with the
+	 * old one.  The MMU line is cleared after: switching an address
+	 * space off raises its fault bit again (measured on the board), and
+	 * the clear after the handler is what takes that second bit.
+	 */
+	if (i == MALI_IRQ_JOB && s != 0)
+		mali_wr(gpu, clear[i], s);
+
 	if (i == MALI_IRQ_GPU && s == GPU_IRQ_CLEAN_CACHES &&
 	    mali.irq_count[i] == 1)
 		log_info(&mali_log, "line %d (gpu): cache clean completed - "
@@ -345,14 +360,14 @@ irq_handle(int i)
 		    mali_rd(gpu, GPU_FAULTADDRESS_HI),
 		    mali_rd(gpu, GPU_FAULTADDRESS_LO));
 	else if (i == MALI_IRQ_JOB)
-		mali_job_irq(s);
+		mali_sched_job_irq(s);
 	else if (i == MALI_IRQ_MMU)
 		mali_mmu_irq(s);
 	else
 		log_info(&mali_log, "line %d (%s): status 0x%08x\n",
 		    mali.info.irq[i], irq_names[i], s);
 
-	if (s != 0)
+	if (i != MALI_IRQ_JOB && s != 0)
 		mali_wr(gpu, clear[i], s);
 	(void)sys_irqenable(&mali.irq_hook[i]);
 }
@@ -418,15 +433,51 @@ mali_init(int type, sef_init_info_t *UNUSED(info))
 		mali_wr(gpu, GPU_CMD, GPU_CMD_CLEAN_CACHES);
 	}
 
+	mali_sched_init();
+	mali_bo_limits((size_t)mem_total_mb << 20, (size_t)mem_client_mb << 20);
+	mali_drm_init();
+
 	/*
-	 * The second half of 11.5: the GPU's own address space and a chain
-	 * of jobs, finished on the job line in the main loop (mali_job.c).
-	 * A failure here is reported and does not stop the service: the GPU
-	 * is up, and what failed is the test.
+	 * The self-test: an address space, a buffer and a chain of jobs,
+	 * finished on the job line in the main loop (mali_job.c).  A failure
+	 * is reported and does not stop the service: the GPU is up, and
+	 * what failed is the test.  Clients' jobs queue behind it.
 	 */
 	if (selftest && (mali_job_setup() != OK ||
 	    mali_job_start(faulttest) != OK))
 		log_warn(&mali_log, "the job test did not start\n");
+
+	chardriver_announce();
+	log_info(&mali_log, "/dev/dri/renderD128 is served: buffers up to "
+	    "%ld MiB in all, %ld MiB per client\n", mem_total_mb,
+	    mem_client_mb);
+	return OK;
+}
+
+/*
+ * The GPU hung - a slot that does not stop when told to.  Every running
+ * job fails, the GPU is reset and powered up as at start, and every
+ * window is empty; the waiting jobs start again after it, each address
+ * space getting a window anew.
+ */
+int
+mali_gpu_recover(void)
+{
+	const struct mali_regs *gpu = &mali.info.gpu;
+	int r;
+
+	log_warn(&mali_log, "resetting the GPU\n");
+	mali_sched_fail_all(EIO);
+	mali_mmu_reset();
+	if ((r = gpu_soft_reset()) != OK || (r = gpu_power_up()) != OK) {
+		log_warn(&mali_log, "the GPU does not come back: %d\n", r);
+		return r;
+	}
+	if (mali.irq_hook[MALI_IRQ_GPU] >= 0)
+		mali_wr(gpu, GPU_INT_MASK, GPU_IRQ_FAULT |
+		    GPU_IRQ_MULTIPLE_FAULT | GPU_IRQ_CLEAN_CACHES);
+	mali_sched_init();
+	mali_sched_kick();
 	return OK;
 }
 
@@ -445,6 +496,16 @@ mali_signal(int signo)
 	mali_wr(&mali.info.gpu, GPU_INT_MASK, 0);
 	mali_wr(&mali.info.gpu, JOB_INT_MASK, 0);
 	mali_wr(&mali.info.gpu, MMU_INT_MASK, 0);
+	/*
+	 * Nothing may be left that points the GPU at memory that goes back
+	 * with this process: every slot stopped, every job over, every
+	 * buffer out of the tables and every address space out of its
+	 * window, and only then the memory.
+	 */
+	for (i = 0; i < MALI_NR_SLOTS; i++)
+		mali_wr(&mali.info.gpu, JS_COMMAND(i), JS_COMMAND_HARD_STOP);
+	mali_sched_fail_all(ECANCELED);
+	mali_drm_shutdown();
 	mali_job_teardown();
 	gpu_power_down();
 	exit(0);
@@ -466,6 +527,10 @@ main(int argc, char *argv[])
 		selftest = (int)v;
 	if (env_parse("faulttest", "d", 0, &v, 0, 1) == EP_SET)
 		faulttest = (int)v;
+	if (env_parse("memmb", "d", 0, &v, 16, 4096) == EP_SET)
+		mem_total_mb = v;
+	if (env_parse("clientmb", "d", 0, &v, 16, 4096) == EP_SET)
+		mem_client_mb = v;
 
 	sef_setcb_init_fresh(mali_init);
 	sef_setcb_init_restart(mali_init);
@@ -473,9 +538,8 @@ main(int argc, char *argv[])
 	sef_startup();
 
 	/*
-	 * Nobody talks to this service yet: the interface Mesa will use is
-	 * stage 11.6.  The loop is here so that the service stays alive with
-	 * the GPU up, and so that its interrupts have somewhere to go.
+	 * Interrupts and the clock here; everything else is a request on
+	 * the render node (mali_drm.c).
 	 */
 	for (;;) {
 		if ((r = sef_receive_status(ANY, &m, &ipc_status)) != OK)
@@ -489,14 +553,13 @@ main(int argc, char *argv[])
 					    (1u << IRQ_BIT(i))))
 						irq_handle(i);
 			}
-			/* The job test's deadline (mali_job.c). */
+			/* Deadlines: jobs (mali_sched.c), waits (mali_drm.c). */
 			if (_ENDPOINT_P(m.m_source) == CLOCK)
-				mali_job_alarm();
+				expire_timers(m.m_notify.timestamp);
 			continue;
 		}
 
-		log_debug(&mali_log, "message %d from %d ignored\n",
-		    m.m_type, m.m_source);
+		chardriver_process(&mali_chardriver, &m, ipc_status);
 	}
 
 	return 0;

@@ -3,15 +3,17 @@
 
 #include <minix/drivers.h>
 #include <minix/log.h>
+#include <minix/timers.h>
+
+#include <sys/queue.h>
 
 /*
  * The GPU of the RK3566/RK3568, and so of the BIGTREETECH CB2: an ARM
  * Mali-G52 r1p0 (Bifrost; one shader core of two execution engines, one
  * tiler, one L2 - GPU_ID 0x74021000 on the board), node gpu@fde60000 in
- * the device tree.  Stage 11.5 of the plan, first half: power, clocks, reset, the
- * identity register and the cores powered up.  The interface Mesa's
- * Panfrost driver talks to (panfrost_drm.h) comes with 11.6; until then
- * this service brings the part up, says what it found and keeps it so.
+ * the device tree.  Stage 11.5 brought the part up, gave it page tables
+ * and ran jobs in them; stage 11.6 gives it clients: the interface Mesa's
+ * Panfrost driver talks to (panfrost_drm.h), on /dev/dri/renderD128.
  *
  * Why a service of its own rather than a part of fb.  The two have
  * nothing in common but the screen at the end: the display controller
@@ -22,13 +24,19 @@
  *
  * The parts, split by what each one talks to:
  *
- *   mali_find.c  the device tree: the node, its three lines, its clock,
- *                its power domain and its supply
- *   mali_rk.c    the SoC around the GPU: power domain, clock gates and
- *                resets of the RK3568 (the only file that knows the SoC)
- *   mali_job.c   the GPU's own MMU and its first jobs (a WRITE_VALUE
- *                chain that fills a buffer, checked by the processor)
- *   mali.c       the GPU itself and the service's own life
+ *   mali_find.c   the device tree: the node, its three lines, its clock,
+ *                 its power domain and its supply
+ *   mali_rk.c     the SoC around the GPU: power domain, clock gates and
+ *                 resets of the RK3568 (the only file that knows the SoC)
+ *   mali_mmu.c    the GPU's MMU: its eight address-space windows, page
+ *                 tables, and what a fault does
+ *   mali_bo.c     buffers: memory, a place in a GPU address space, the
+ *                 processor's caches around the GPU, a client's mapping
+ *   mali_sched.c  jobs: the slots, which job runs when, how it ends
+ *   mali_drm.c    the clients: the DRM device, its ioctls, sync objects
+ *   mali_job.c    the self-test at start (a chain of WRITE_VALUE jobs,
+ *                 checked by the processor; "faulttest=1" adds a fault)
+ *   mali.c        the GPU itself and the service's own life
  *
  * Linux's drivers for this part (kbase and panfrost) are GPL, and only
  * register numbers and the order of steps are taken from them; every
@@ -41,6 +49,10 @@
 #define MALI_IRQ_JOB		1
 #define MALI_IRQ_MMU		2
 #define MALI_NR_IRQS		3
+
+#define MALI_PAGE		4096u
+#define MALI_NR_AS		8	/* address-space windows (AS_PRESENT) */
+#define MALI_NR_SLOTS		3	/* job slots (JS_PRESENT) */
 
 struct mali_regs {
 	phys_bytes base;
@@ -106,6 +118,31 @@ mali_wr(const struct mali_regs *r, unsigned off, uint32_t val)
 	*(volatile uint32_t *)(r->v + off) = val;
 }
 
+/*
+ * One GPU address space: page tables, the buffers placed in it, and the
+ * window it is loaded into while jobs run in it.  Each client has one,
+ * and so has the self-test; the GPU's MMU never sees one through another.
+ */
+struct mali_table;
+struct mali_bo;
+TAILQ_HEAD(mali_bo_list, mali_bo);
+
+struct mali_vm {
+	struct mali_table *root;	/* level 0, or NULL */
+	int as;				/* the window it is in, or -1 */
+	struct mali_bo_list bos;	/* by GPU address */
+	size_t mem;			/* bytes of buffers */
+	const char *name;		/* for the log: "client 3", "self-test" */
+
+	/* The last fault in it - for the job that was running there. */
+	int faulted;
+	uint32_t fault_irq;		/* MMU_INT bits: page fault, bus error */
+	uint32_t fault_status;
+	uint64_t fault_addr;
+	int expect_fault;		/* the self-test asked for one */
+	unsigned faults;		/* how many so far, for the log */
+};
+
 /* mali_find.c */
 int mali_find(struct mali_info *info);
 
@@ -117,12 +154,110 @@ int mali_rk_power_domain(void);
 void mali_rk_resets(void);
 unsigned mali_rk_compare(void);
 
-/* mali_job.c */
+/* mali_mmu.c */
+int mali_vm_init(struct mali_vm *vm, const char *name);
+void mali_vm_fini(struct mali_vm *vm);
+int mali_vm_map(struct mali_vm *vm, uint64_t va, const phys_bytes *pages,
+	size_t npages, uint64_t prot);
+void mali_vm_unmap(struct mali_vm *vm, uint64_t va, size_t npages);
+phys_bytes mali_vm_root(const struct mali_vm *vm);
+int mali_as_get(struct mali_vm *vm);
+void mali_as_put(int as);
+void mali_mmu_irq(uint32_t status);
+void mali_mmu_reset(void);
+
+/*
+ * A buffer object: memory the GPU and the processor share.  The service
+ * owns the memory (anonymous memory of its own, page by page, so that no
+ * large buffer needs contiguous RAM), places it in one GPU address space,
+ * and maps it into the client that asks (vm_remap).
+ */
+struct mali_bo {
+	TAILQ_ENTRY(mali_bo) link;	/* in its address space, by address */
+	struct mali_vm *vm;
+	uint32_t flags;			/* PANFROST_BO_* */
+	size_t size;			/* a whole number of pages */
+	void *cpu;			/* this service's mapping */
+	phys_bytes *pages;		/* the physical address of each page */
+	uint64_t va;			/* in the GPU address space */
+	unsigned refs;			/* a handle, a job, a wait each hold one */
+	unsigned busy;			/* jobs queued or running with it */
+	int cpu_access;			/* written or read by a processor */
+	uint64_t mmap_offset;		/* the token mmap(2) is given */
+};
+
+#define MALI_VA_START	0x02000000ull	/* panfrost's: 32 MiB */
+#define MALI_VA_END	0x100000000ull	/* and 4 GiB */
+
+void mali_bo_limits(size_t total, size_t per_vm);
+struct mali_bo *mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags,
+	int *err);
+void mali_bo_ref(struct mali_bo *bo);
+void mali_bo_unref(struct mali_bo *bo);
+void mali_bo_for_gpu(struct mali_bo *bo);
+void mali_bo_for_cpu(struct mali_bo *bo);
+int mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
+	int writable, void **where);
+struct mali_bo *mali_bo_at(struct mali_vm *vm, uint64_t va);
+size_t mali_bo_total(void);
+
+/*
+ * A job: a chain of descriptors at a GPU address, run in one address
+ * space on one slot.  Jobs of one address space run one at a time and in
+ * the order given - what panfrost's implicit fences on shared buffers
+ * come to for a client whose every job touches its tiler heap - and jobs
+ * of different address spaces run side by side as slots and windows
+ * allow.
+ */
+struct mali_job {
+	TAILQ_ENTRY(mali_job) link;	/* the queue, in the order given */
+	struct mali_vm *vm;
+	uint64_t jc;			/* the first descriptor */
+	uint32_t req;			/* PANFROST_JD_REQ_* */
+	struct mali_bo **bos;		/* what it uses (held by the owner) */
+	unsigned nbos;
+
+	int slot, as, state;
+	int result;			/* OK, EIO, ETIMEDOUT, ECANCELED */
+	uint32_t js_status;		/* the slot's word on how it ended */
+	int fault;			/* an MMU fault came with it */
+	uint32_t fault_status;
+	uint64_t fault_addr;
+	int await_mmu;			/* failed; the MMU's half not yet in */
+	int stopping;			/* hard stop sent at its deadline */
+	u64_t started;			/* frclock */
+	uint32_t config;		/* JS_CONFIG it ran with */
+
+	/* Told when it is over, from the job or the MMU line. */
+	void (*done)(struct mali_job *job);
+	void *owner;
+};
+
+#define MALI_JOB_QUEUED		0
+#define MALI_JOB_RUNNING	1
+#define MALI_JOB_DONE		2
+
+/* mali_sched.c */
+void mali_sched_init(void);
+void mali_job_submit(struct mali_job *job);
+void mali_sched_job_irq(uint32_t status);
+void mali_sched_mmu_fault(int as, struct mali_vm *vm);
+void mali_sched_cancel(struct mali_vm *vm);
+void mali_sched_fail_all(int result);
+void mali_sched_kick(void);
+
+/* mali_job.c: the self-test */
 int mali_job_setup(void);
 int mali_job_start(int faulttest);
-void mali_job_irq(uint32_t status);
-void mali_mmu_irq(uint32_t status);
-void mali_job_alarm(void);
 void mali_job_teardown(void);
+
+/* mali_drm.c: the device */
+struct chardriver;
+extern struct chardriver mali_chardriver;
+void mali_drm_init(void);
+void mali_drm_shutdown(void);
+
+/* mali.c */
+int mali_gpu_recover(void);
 
 #endif /* _MALI_H */

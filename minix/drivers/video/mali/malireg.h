@@ -85,6 +85,7 @@
 
 #define GPU_COHERENCY_FEATURES	0x300
 #define GPU_COHERENCY_ENABLE	0x304
+#define GPU_THREAD_TLS_ALLOC	0x310	/* Bifrost: thread-local storage */
 #define GPU_STACK_PRESENT_LO	0xe00
 
 /* Implementation-specific configuration, where the errata quirks go. */
@@ -128,6 +129,17 @@
 #define JS_FLUSH_ID_NEXT(js)	(JS_BASE(js) + 0x70)
 #define  JS_COMMAND_START		0x01
 #define  JS_COMMAND_HARD_STOP		0x03
+
+/*
+ * JS_STATUS: the job's exception code once it is over.  1 is "done";
+ * what a failed job leaves is one of the codes from 4 up - TERMINATED
+ * after a hard stop, the 0x4x faults of the job manager (0x48 when the
+ * address space under a job is switched off), the 0x5x of the shader
+ * core.  Only names for the log; the code itself goes to the client.
+ */
+#define  JS_STATUS_DONE			0x01
+#define  JS_STATUS_TERMINATED		0x04
+#define  JS_STATUS_JOB_BUS_FAULT	0x48
 #define  JS_CONFIG_START_FLUSH_CLEAN_INV (3u << 8)
 #define  JS_CONFIG_JOB_CHAIN_FLAG	(1u << 11)
 #define  JS_CONFIG_END_FLUSH_CLEAN_INV	(3u << 12)
@@ -164,11 +176,20 @@
 #define AS_TRANSCFG_HI(as)	(AS_BASE(as) + 0x34)
 #define  AS_COMMAND_UPDATE		0x01
 #define  AS_COMMAND_LOCK		0x02
-#define  AS_COMMAND_FLUSH_MEM		0x05
+#define  AS_COMMAND_UNLOCK		0x03
+#define  AS_COMMAND_FLUSH_PT		0x04	/* the MMU's caches of tables */
+#define  AS_COMMAND_FLUSH_MEM		0x05	/* and the GPU's of data */
 #define  AS_STATUS_ACTIVE		0x01
 #define  AS_TRANSTAB_ADRMODE_TABLE	0x3
 #define  AS_TRANSTAB_READ_INNER		(1u << 2)
 #define  AS_LOCKADDR_ALL		63	/* log2 of the region minus one */
+
+/*
+ * LOCKADDR: a naturally aligned power-of-two region, its base in the high
+ * bits and log2(size) - 1 in the low six; the smallest the part takes is
+ * 32 KiB.  "All of it" is 63.
+ */
+#define  AS_LOCK_REGION_MIN_LOG2	15
 
 /*
  * FAULTSTATUS: the exception in 7:0 - a translation fault is 0xc0 plus
@@ -206,6 +227,7 @@
 #define MALI_PTE_READ		(1ull << 6)
 #define MALI_PTE_WRITE		(2ull << 6)
 #define MALI_PTE_SH_OUTER	(2ull << 8)
+#define MALI_PTE_XN		(1ull << 54)	/* not executable */
 #define MALI_PTE_ADDR		0x000ffffffffff000ull
 
 /*

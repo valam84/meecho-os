@@ -1,5 +1,9 @@
 # The kernel interface headers, where libdrm's users look for them
 # (<drm_fourcc.h> with -I/usr/include/libdrm).
+#
+# panfrost_drm.h is not libdrm's: it is the kernel's interface of Panfrost
+# (Linux 7.0, include/uapi/drm, MIT), untouched, beside this file - what
+# the GPU service mali serves (stage 11.6) and Mesa speaks.
 
 .include <bsd.init.mk>
 
@@ -15,6 +19,7 @@ INCS=	drm.h \
 	mga_drm.h \
 	msm_drm.h \
 	nouveau_drm.h \
+	panfrost_drm.h \
 	qxl_drm.h \
 	r128_drm.h \
 	radeon_drm.h \

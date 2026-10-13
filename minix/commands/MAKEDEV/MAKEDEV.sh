@@ -21,6 +21,7 @@ RAMDISK_DEVICES="
 	input
 	ptmx
 	random
+	renderD128
 	urandom
 	ttyp0 ttyp1 ttyp2 ttyp3 ttyp4 ttyp5 ttyp6 ttyp7
 	ttyp8 ttyp9 ttypa ttypb ttypc ttypd ttype ttypf
@@ -138,6 +139,7 @@ Where key is one of the following:
   bpf                     # Make /dev/bpf
   klog                    # Make /dev/klog
   ptmx                    # Make /dev/ptmx
+  renderD128              # Make /dev/dri/renderD128 (the GPU's DRM node)
   random                  # Make /dev/random, /dev/urandom
   filter                  # Make /dev/filter
   fbd                     # Make /dev/fbd
@@ -370,6 +372,18 @@ do
 	ptmx)
 		# Unix98 pseudoterminal master
 		makedev ptmx c 9 0 ${uname} tty 666
+		;;
+	renderD128)
+		# The GPU's render node (mali, the DRM interface of Panfrost).
+		# Any user may render: what keeps users apart is the service,
+		# with an address space of the GPU's own for each open file.
+		if [ ${MTREE} = "yes" ]
+		then
+			echo ./dev/dri type=dir uname=${uname} gname=${gname} mode=0755
+		else
+			${ECHO} mkdir -p dri
+		fi
+		makedev dri/renderD128 c 18 128 ${uname} ${gname} 666
 		;;
 	ram|mem|kmem|null|boot|zero|imgrd)
 		# Memory devices.

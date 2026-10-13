@@ -52,6 +52,10 @@ etc/mtree/NetBSD.dist.base, and DESTDIR gets them from
                      whoever is at the monitor
   test/board-cursorload.sh
                      what moving the cursor costs on the board
+  test/board-scroll.sh
+                     4.4 MB scrolled through foot on the board: time,
+                     kern.cp_time and the md5 of the frame it ends on
+                     (the same with PIXMAN_DISABLE=arm-neon and without)
   test/fcftprobe.c   what foot asks of fcft, alone, with fcft's debug log
   test/uchartest.sh  libgfxcompat's uchar.c against glibc in C.UTF-8, on
                      the host

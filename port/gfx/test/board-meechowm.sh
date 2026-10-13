@@ -9,9 +9,10 @@
 # time.  Then it leaves the compositor running, for whoever is at the
 # monitor to look and to use the mouse and the keyboard - Super+Return
 # opens another foot as the next column of the strip, Super with the
-# arrows goes along it (the keys: meechowm.c), and "meechowm -m state"
-# over ssh says where everything is; "board-meechowm.sh stop" ends it,
-# and the console has the screen back.
+# arrows goes along it, Super+d is the palette (the keys: meechowm.c), the
+# panel is yambar, and "meechowm -m state" over ssh says where everything
+# is; "board-meechowm.sh stop" ends it, and the console has the screen
+# back.
 #
 #   sh board-meechowm.sh [stop]
 #
@@ -41,7 +42,9 @@ export XDG_RUNTIME_DIR FONTCONFIG_FILE MEECHOWM_TERM
 # run it died the moment this script returned, and foot after it ("Broken
 # pipe"), while the monitor went back to the console.
 trap '' HUP
-meechowm -s "foot -o main.workers=0 -f 'DejaVu Sans Mono:size=14' \
+# The panel (meechowm-bar: yambar) along the top, and foot below it.
+meechowm -s "meechowm-bar & foot -o main.workers=0 \
+    -f 'DejaVu Sans Mono:size=14' \
     -e /bin/sh -c 'echo FOOT-OK on MEECHO; exec /bin/sh -i'" \
     < /dev/null > /tmp/mwm.log 2>&1 &
 echo $! > /tmp/mwm.pid

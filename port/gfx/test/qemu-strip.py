@@ -39,7 +39,11 @@ they go, workspaces strictly between on and off the screen.
  9a. a panel across the top (wlhello -L top -H 32, wlr-layer-shell): the
      columns are laid out under it - at 40, 672 high - and it is on the
      screen
+ 9b. the desktop's panel (meechowm-bar: yambar) under that one: at 32, 24
+     high, the columns at 64; text in its three places
  10. Super+Return: a terminal (foot) opens right of blue, at 644
+ 10a. Super+d: the palette (meechowm-palette, fuzzel) over the strip, with
+     the keyboard; "third" and Enter make the focused column a third (416)
  11. a command that is not one: an error, and exit status 1
  12. Super+Shift+e: the compositor ends, the console has the screen
 
@@ -89,14 +93,24 @@ STATE_TOP = re.compile(r"screen (\d+)x(\d+) area (\d+),(\d+) (\d+)x(\d+) "
                        r"animating (\d)")
 STATE_WS = re.compile(r"workspace (\d+) \S+ view (-?\d+) columns (\d+) "
                       r"y (-?\d+)")
+STATE_LAYER = re.compile(r"layer (\S+) (\d+) (-?\d+) (-?\d+) (\d+) (\d+) "
+                         r"keyboard (\S+) (\S+)")
 
 
 def parse_state(text):
     """{'w', 'h', 'area': (x, y, w, h), 'gap', 'nws', 'active',
     'animating', 'ws_y': {ws: y}, 'cols': {ws: [col, ...]}}; a column's
     'x' is where it goes, 'at' where it is drawn."""
-    st = {"cols": {}, "ws_y": {}}
+    st = {"cols": {}, "ws_y": {}, "layers": []}
     for line in text.splitlines():
+        m = STATE_LAYER.search(line)
+        if m:
+            st["layers"].append({
+                "ns": m.group(1), "layer": int(m.group(2)),
+                "x": int(m.group(3)), "y": int(m.group(4)),
+                "w": int(m.group(5)), "h": int(m.group(6)),
+                "keyboard": m.group(7), "focus": m.group(8) == "focus"})
+            continue
         m = STATE_TOP.search(line)
         if m:
             st.update(w=int(m.group(1)), h=int(m.group(2)),
@@ -411,6 +425,37 @@ def main():
         c = colour_at(320, 360)
         record("9a. blue under it", c == BLUE, "0x%06x" % c)
 
+        # 9b. The panel of the desktop: meechowm-bar, which is yambar -
+        # threads and all, a thread per module and one for the bar, all
+        # waiting in libgfxcompat's shared poll(2).  It goes under the
+        # first panel (that one is on the top layer, yambar on the bottom
+        # one): at 32, 24 high; the columns move down again, to 64, 648
+        # high.  On it, "MEECHO", what its script module read from the
+        # compositor (the workspace, the focused window) and the clock -
+        # three places with text in them.
+        send("meechowm -m spawn meechowm-bar")
+        st = wait_for(lambda s: any(l["ns"] == "panel"
+                                    for l in s["layers"]) and
+                      s.get("area") == (0, 56, 1280, 664) and still(s) and
+                      sized(s, 1), 300)
+        pan = [l for l in st["layers"] if l["ns"] == "panel"]
+        cols = st["cols"].get(1, [])
+        record("9b. yambar: a panel under the first, the columns under both",
+               len(pan) == 1 and pan[0]["y"] == 32 and pan[0]["h"] == 24 and
+               st.get("area") == (0, 56, 1280, 664) and len(cols) == 1 and
+               cols[0]["y"] == 64 and cols[0]["sh"] == 648,
+               "panel %s, area %s, columns %s" % (pan, st.get("area"), [
+                   (c["title"], c["y"], c["h"], c["sh"]) for c in cols]))
+        time.sleep(5)		# a poll interval or two of the script module
+        print("      yambar, its left half, every other pixel:")
+        fbart("-x 0 -y 32 -w 640 -h 24 -s 2", show=True)
+        for name, x, w in (("MEECHO", 0, 64), ("the script module", 66, 200),
+                           ("the clock", 1080, 190)):
+            bg, ink = fbart("-x %d -y 32 -w %d -h 24 -s 1" % (x, w))
+            record("9b. text on the panel: %s" % name,
+                   bg == BACKGROUND and ink > 20,
+                   "background 0x%06x, %d pixel(s) of ink" % (bg, ink))
+
         if not a.n:
             keys("%[G+Return]")
             st = wait_for(lambda s: len(s["cols"].get(1, [])) == 2 and
@@ -432,6 +477,44 @@ def main():
                 record("10. its column carries text", bg not in
                        (BACKGROUND, BLUE) and ink > 100,
                        "background 0x%06x, %d pixel(s) of ink" % (bg, ink))
+
+        # 10a. The palette: Super+d starts meechowm-palette, which is
+        # fuzzel over the strip (a layer surface that takes the keyboard
+        # exclusively); "third" and Enter choose "Width: a third", which
+        # the palette runs - the focused column becomes 416 wide - and
+        # fuzzel goes, giving the keyboard back.
+        keys("%[G+d]")
+        st = wait_for(lambda s: any(l["keyboard"] == "exclusive" and
+                                    l["focus"] for l in s["layers"]), 300)
+        pal = [l for l in st["layers"] if l["keyboard"] == "exclusive"]
+        record("10a. Super+d: the palette, over the strip, with the keyboard",
+               len(pal) == 1 and pal[0]["focus"] and pal[0]["layer"] >= 2,
+               "layers %s" % st["layers"])
+        if pal:
+            time.sleep(3)
+            bg = fbart("-x %d -y %d -w 2 -h 2 -s 1" % (pal[0]["x"],
+                                                       pal[0]["y"]))[0]
+            record("10a. the palette is on the screen (its border)",
+                   bg == RING, "0x%06x at %d,%d" % (bg, pal[0]["x"],
+                                                     pal[0]["y"]))
+            print("      the palette:")
+            fbart("-x %d -y %d -w %d -h %d -s 4" %
+                  (pal[0]["x"], pal[0]["y"], pal[0]["w"], pal[0]["h"]),
+                  show=True)
+        keys("third%0a")
+
+        def palette_gone(s):
+            return not any(l["keyboard"] == "exclusive" for l in s["layers"])
+
+        st = wait_for(lambda s: palette_gone(s) and still(s) and any(
+            c["focus"] and c["width"] == "1/3"
+            for c in s["cols"].get(1, [])), 240)
+        foc = [c for c in st["cols"].get(1, []) if c["focus"]]
+        record("10a. 'third' and Enter: the palette made the column a third",
+               palette_gone(st) and len(foc) == 1 and
+               foc[0]["width"] == "1/3" and foc[0]["w"] == 416,
+               "layers %s, focused %s" % (st["layers"], [
+                   (c["title"], c["width"], c["w"]) for c in foc]))
 
         send("meechowm -m frobnicate; echo RC=$?")
         out = expect(r"RC=\d+", 60)

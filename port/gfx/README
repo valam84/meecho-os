@@ -60,8 +60,13 @@ etc/mtree/NetBSD.dist.base, and DESTDIR gets them from
   test/striptest.sh  the strip's arithmetic (meechowm's layout.c) on the
                      host: widths, the view, random walks
   test/qemu-strip.py the strip on QEMU's fb: three windows, the keys
-                     (usb_kbd inject= chords), a click, a terminal - each
-                     step against meechowm -m state and the screen
+                     (usb_kbd inject= chords), motion caught half way, a
+                     click, panels (wlhello -L, yambar), a terminal, the
+                     palette (fuzzel) - each step against meechowm -m state
+                     and the screen
+  test/qemu-shot.py  a picture of the desktop as a PNG: panel, foot, a
+                     window, with -p the palette open; the frame comes
+                     from /dev/fb0 through gzip and uuencode on the console
   test/fcftprobe.c   what foot asks of fcft, alone, with fcft's debug log
   test/uchartest.sh  libgfxcompat's uchar.c against glibc in C.UTF-8, on
                      the host

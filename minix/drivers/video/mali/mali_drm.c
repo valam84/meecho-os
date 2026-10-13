@@ -327,6 +327,10 @@ do_version(struct call *c, void *arg)
 	return OK;
 }
 
+/*
+ * As the board's panfrost answers (ref-api.txt), but for PRIME: 3 there
+ * (import and export), 0 here until buffers can travel as descriptors.
+ */
 static int
 do_get_cap(struct call *c, void *arg)
 {
@@ -334,16 +338,15 @@ do_get_cap(struct call *c, void *arg)
 
 	switch (g->capability) {
 	case DRM_CAP_SYNCOBJ:
-		g->value = 1;
-		return OK;
-	case DRM_CAP_PRIME:
-		g->value = 0;		/* no buffers as descriptors yet */
-		return OK;
 	case DRM_CAP_TIMESTAMP_MONOTONIC:
 		g->value = 1;
 		return OK;
+	case DRM_CAP_PRIME:
+	case DRM_CAP_SYNCOBJ_TIMELINE:
+		g->value = 0;
+		return OK;
 	default:
-		return EINVAL;
+		return EOPNOTSUPP;
 	}
 }
 
@@ -486,10 +489,11 @@ do_madvise(struct call *c, void *arg)
 
 	if (bo_get(c->ctx, a->handle) == NULL)
 		return ENOENT;
-	if (a->madv != PANFROST_MADV_WILLNEED &&
-	    a->madv != PANFROST_MADV_DONTNEED)
-		return EINVAL;
-	/* Nothing is purged here: the pages are always still there. */
+	/*
+	 * Nothing is purged here: the pages are always still there.  Any
+	 * advice is taken, as the board's panfrost takes it (madvise 7:
+	 * retained 1, ref-api.txt).
+	 */
 	a->retained = 1;
 	return OK;
 }
@@ -937,6 +941,9 @@ do_mmap(struct call *c)
 	if ((r = sys_safecopyfrom(c->endpt, c->grant, 0, (vir_bytes)&cm,
 	    sizeof(cm))) != OK)
 		return r;
+	log_debug(&mali_log, "%s: mmap of 0x%llx, %zu bytes, prot 0x%x flags "
+	    "0x%x, for %d\n", c->ctx->name, (unsigned long long)cm.cm_offset,
+	    cm.cm_len, cm.cm_prot, cm.cm_flags, c->user);
 	for (i = 1; i <= c->ctx->nbo && bo == NULL; i++)
 		if ((bo = bo_get(c->ctx, i)) != NULL &&
 		    bo->mmap_offset != (uint64_t)cm.cm_offset)
@@ -984,8 +991,11 @@ mali_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 
 	if (IOCBASECMD(request) == IOCBASECMD(MIOCMMAP))
 		return do_mmap(&c);
-	if (IOCGROUP(request) != DRM_IOCTL_BASE)
+	if (IOCGROUP(request) != DRM_IOCTL_BASE) {
+		log_debug(&mali_log, "%s: ioctl 0x%lx is not this device's\n",
+		    c.ctx->name, request);
 		return ENOTTY;
+	}
 
 	nr = request & 0xff;
 	for (i = 0; i < sizeof(calls) / sizeof(calls[0]); i++)

@@ -43,6 +43,7 @@ void log_clear(void);
 #define ARENA_PAGES	8192		/* 32 МиБ виртуальных и физических */
 #define PHYS_BASE	0x6a000000ul	/* выдуманный физический адрес арены */
 #define VFS_EP		VFS_PROC_NR
+#define MODEL_SELF_EP	0x5eef		/* sef_self() службы */
 
 extern uint32_t model_regs[];
 #define G(off)		model_regs[(off) / 4]

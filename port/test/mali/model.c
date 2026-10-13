@@ -1156,13 +1156,24 @@ model_replies(void)
 struct model_remap remaps[64];
 unsigned nremaps;
 
+/* Endpoint службы, как его даёт sef_self(). */
+endpoint_t
+sef_self(void)
+{
+	return MODEL_SELF_EP;
+}
+
 static void *
 remap(endpoint_t d, endpoint_t s, void *da, void *sa, size_t size, int ro)
 {
 	struct alloc *a = alloc_of(sa);
 
-	/* VM: начало области источника, и её размер целиком. */
-	if (s != SELF || a == NULL || a->contig ||
+	/*
+	 * VM: оба конца - настоящие endpoint'ы (vm_isokendpt(); SELF им не
+	 * является - на плате так и отказало, молча), источник - начало
+	 * области, и её размер целиком.
+	 */
+	if (s != MODEL_SELF_EP || a == NULL || a->contig ||
 	    cpu_view + (size_t)a->v0 * PAGE != sa ||
 	    (size_t)a->n * PAGE != size)
 		return MAP_FAILED;

@@ -21,6 +21,7 @@
 #define UNUSED(x)	x __attribute__((unused))
 #define EDONTREPLY	9203	/* у MINIX - _SIGN 203 */
 void *vm_map_phys(endpoint_t who, void *phaddr, size_t len);
+endpoint_t sef_self(void);
 int micro_delay(u32_t usec);
 
 /* Память, кэш, часы и будильник - в модели. */

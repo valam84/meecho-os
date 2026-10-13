@@ -293,8 +293,12 @@ test_interface(void)
 	cap.capability = DRM_CAP_SYNCOBJ;
 	CHECK(io(a, DRM_IOCTL_GET_CAP, &cap, USER_A) == OK && cap.value == 1,
 	    "syncobj cap");
+	cap.capability = DRM_CAP_SYNCOBJ_TIMELINE;
+	CHECK(io(a, DRM_IOCTL_GET_CAP, &cap, USER_A) == OK && cap.value == 0,
+	    "timeline cap");
+	/* ref-api.txt: an unknown capability is ENOTSUP under panfrost. */
 	cap.capability = 0x7777;
-	CHECK(io(a, DRM_IOCTL_GET_CAP, &cap, USER_A) == EINVAL, "odd cap");
+	CHECK(io(a, DRM_IOCTL_GET_CAP, &cap, USER_A) == EOPNOTSUPP, "odd cap");
 
 	/* Параметры: из регистров, как у panfrost (числа - ref-on.txt). */
 	mali.gpu_id = 0x74021000;
@@ -352,6 +356,9 @@ test_interface(void)
 	CHECK(create(a, USER_A, 0x100000, PANFROST_BO_NOEXEC |
 	    PANFROST_BO_HEAP, &b[4]) == OK && b[4].va == 0x2600000,
 	    "heap 1M: 0x%llx", (unsigned long long)b[4].va);
+	CHECK(create(a, USER_A, 5000, PANFROST_BO_NOEXEC, &b[7]) == OK &&
+	    b[7].va == 0x2005000 && b[7].handle == 6, "5000 bytes: 0x%llx "
+	    "handle %u", (unsigned long long)b[7].va, b[7].handle);
 	CHECK(create(a2, USER_A, 0x4000, 0, &b[5]) == OK && b[5].va == VA0 &&
 	    b[5].handle == 1, "another context's first: 0x%llx",
 	    (unsigned long long)b[5].va);
@@ -400,9 +407,11 @@ test_interface(void)
 	mad.madv = PANFROST_MADV_DONTNEED;
 	CHECK(io(a, DRM_IOCTL_PANFROST_MADVISE, &mad, USER_A) == OK &&
 	    mad.retained == 1, "madvise");
+	/* ref-api.txt: panfrost takes any advice; retained 1. */
 	mad.madv = 7;
-	CHECK(io(a, DRM_IOCTL_PANFROST_MADVISE, &mad, USER_A) == EINVAL,
-	    "madvise 7");
+	mad.retained = 0;
+	CHECK(io(a, DRM_IOCTL_PANFROST_MADVISE, &mad, USER_A) == OK &&
+	    mad.retained == 1, "madvise 7");
 	mad.handle = 77;
 	mad.madv = 0;
 	CHECK(io(a, DRM_IOCTL_PANFROST_MADVISE, &mad, USER_A) == ENOENT,

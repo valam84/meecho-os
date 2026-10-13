@@ -41,6 +41,7 @@
 
 #include <minix/drivers.h>
 #include <minix/cachectl.h>
+#include <minix/sef.h>
 #include <minix/syslib.h>
 #include <minix/sysutil.h>
 
@@ -377,10 +378,15 @@ mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
 {
 	void *v;
 
+	/*
+	 * The source by its own endpoint, not SELF: VM checks both ends with
+	 * vm_isokendpt(), and SELF is no endpoint there - the call fails
+	 * without a word (the board said ENOMEM to the first mmap).
+	 */
 	if (writable)
-		v = vm_remap(who, SELF, addr, bo->cpu, bo->size);
+		v = vm_remap(who, sef_self(), addr, bo->cpu, bo->size);
 	else
-		v = vm_remap_ro(who, SELF, addr, bo->cpu, bo->size);
+		v = vm_remap_ro(who, sef_self(), addr, bo->cpu, bo->size);
 	if (v == MAP_FAILED)
 		return ENOMEM;
 	/*

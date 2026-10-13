@@ -63,6 +63,7 @@ wait-error@mali_drm.c@return f->error != 0 ? EIO : OK;@return OK;
 no-out-fence@mali_drm.c@		syncobj_set(out, p->out);@		;
 mmap-part@mali_drm.c@if (len != bo->size ||@if (
 version-name@mali_drm.c@"panfrost", \&v->name_len@"mali", \&v->name_len
+remap-self@mali_bo.c@v = vm_remap(who, sef_self(),@v = vm_remap(who, SELF,
 param-rev@mali_drm.c@return mali.gpu_id \& 0xffff;@return mali.gpu_id >> 12;
 '
 

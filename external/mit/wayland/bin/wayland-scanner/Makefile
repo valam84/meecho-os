@@ -6,6 +6,7 @@
 
 PROG=		wayland-scanner
 MAN=
+BINDIR=		/usr/bin
 
 .PATH:		${WAYLANDDIST}/src
 SRCS=		scanner.c wayland-util.c

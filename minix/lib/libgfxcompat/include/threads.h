@@ -71,5 +71,7 @@ int thrd_join(thrd_t, int *);
 static inline thrd_t thrd_current(void)
 { return THRD_FROM_PTHREAD(pthread_self()); }
 static inline int thrd_equal(thrd_t a, thrd_t b) { return a == b; }
+/* The others run first, if any can: libmthread's own yield. */
+static inline void thrd_yield(void) { (void)pthread_yield(); }
 
 #endif

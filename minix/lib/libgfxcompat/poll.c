@@ -34,6 +34,7 @@
 #include <limits.h>
 #include <poll.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -71,6 +72,32 @@ now_ms(void)
 
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/*
+ * GFX_POLL_DEBUG in the environment: what the shared wait did, on stderr,
+ * every two seconds it is in use - a wait that spins shows as yields or
+ * parks by the thousand.
+ */
+static struct {
+	int on;				/* -1: not looked yet */
+	long last;
+	unsigned long calls, parks, takeovers, yields, blocks;
+} stat = { -1, 0, 0, 0, 0, 0, 0 };
+
+static void
+stat_report(void)
+{
+	long now;
+
+	if (stat.on < 0)
+		stat.on = getenv("GFX_POLL_DEBUG") != NULL;
+	if (!stat.on || (now = now_ms()) - stat.last < 2000)
+		return;
+	stat.last = now;
+	fprintf(stderr, "gfx_poll: %lu calls, %lu parks, %lu takeovers, "
+	    "%lu yields, %lu blocking polls\n", stat.calls, stat.parks,
+	    stat.takeovers, stat.yields, stat.blocks);
 }
 
 static int
@@ -156,6 +183,7 @@ gfx_poll(struct pollfd *fds, nfds_t n, int timeout)
 
 	if (!threaded)
 		return poll(fds, n, timeout);
+	stat.calls++;
 	if ((r = poll(fds, n, 0)) != 0 || timeout == 0)
 		return r;
 	if (!ready) {
@@ -174,18 +202,36 @@ gfx_poll(struct pollfd *fds, nfds_t n, int timeout)
 	waiters = &w;
 
 	while (!w.done) {
+		stat_report();
 		if (poller == NULL)
 			poller = &w;
 		if (poller != &w) {
+			stat.parks++;
 			mthread_mutex_lock(&lock);
 			mthread_cond_wait(&w.cv, &lock);
 			mthread_mutex_unlock(&lock);
+			/*
+			 * Woken with nothing ready: handed the job (poller is
+			 * NULL now), or woken for nothing - libmthread gives
+			 * the processor to the main thread whenever no other
+			 * thread can run, whatever the main thread waits for.
+			 * If no other thread can run, the poller cannot either,
+			 * and the job is ours.
+			 */
+			if (!w.done && poller != NULL && poller != &w &&
+			    mthread_yield() != 0) {
+				stat.takeovers++;
+				poller = &w;
+			}
 			continue;
 		}
-		if (mthread_yield() == 0)	/* the others ran first */
+		if (mthread_yield() == 0) {	/* the others ran first */
+			stat.yields++;
 			poll_all(false);
-		else				/* nobody else can run */
+		} else {			/* nobody else can run */
+			stat.blocks++;
 			poll_all(true);
+		}
 	}
 
 	for (pp = &waiters; *pp != &w; pp = &(*pp)->next)

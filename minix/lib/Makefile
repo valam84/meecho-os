@@ -25,6 +25,12 @@ SUBDIR+=	libtimers
 SUBDIR+=	libusb
 SUBDIR+=	libvtreefs
 
+# epoll, eventfd, timerfd and signalfd over poll(2): what libwayland and
+# the rest of the Wayland stack of stage 11 ask for (PLAN.md, 11.3).
+.if (${MACHINE_ARCH} == "aarch64")
+SUBDIR+=	libepoll-shim
+.endif
+
 .if (${HAVE_LIBGCC} == "no")
 SUBDIR+=	libgcc_s_empty
 .endif

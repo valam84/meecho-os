@@ -96,6 +96,10 @@
 ./usr/include/isofs/cd9660
 ./usr/include/kadm5
 ./usr/include/krb5
+./usr/include/libepoll-shim
+./usr/include/libepoll-shim/epoll-shim
+./usr/include/libepoll-shim/epoll-shim/detail
+./usr/include/libepoll-shim/sys
 ./usr/include/lutok
 ./usr/include/lzma
 ./usr/include/isofs

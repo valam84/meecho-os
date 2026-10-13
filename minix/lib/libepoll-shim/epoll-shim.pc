@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: epoll-shim
+Description: epoll, eventfd, timerfd and signalfd over poll(2) (MEECHO)
+Version: 0.0.20261013
+
+Libs: -L${libdir} -lepoll-shim
+Cflags: -I${includedir}/libepoll-shim

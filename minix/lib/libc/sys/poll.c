@@ -38,6 +38,7 @@
 #include <unistd.h>
 #include <sys/poll.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <limits.h>
 
@@ -97,6 +98,31 @@ poll_common(struct pollfd *p, nfds_t nfds, int timout)
 
 	rval = select(highfd + 1, &rd, &wr, &except,
 		timout == -1 ? NULL : &tv);
+
+	/*
+	 * MEECHO: select(2) проваливает весь вызов из-за одного закрытого
+	 * дескриптора, а poll(2) не должен: по POSIX такой дескриптор
+	 * помечается POLLNVAL и считается готовым, а EBADF среди ошибок
+	 * poll нет. Поэтому дескрипторы проверяются по одному - и только
+	 * после того, как select уже сказал, что какой-то из них плох, так
+	 * что обычный вызов ничего не платит. На это опирается цикл событий
+	 * libwayland через libepoll-shim: закрытый дескриптор должен
+	 * показаться, а не провалить ожидание.
+	 */
+	if (rval < 0 && errno == EBADF) {
+		rval = 0;
+		for (i = 0; i < nfds; i++) {
+			if (p[i].fd >= 0 && fcntl(p[i].fd, F_GETFD) < 0) {
+				p[i].revents = POLLNVAL;
+				rval++;
+			}
+		}
+		if (rval == 0) {
+			errno = EBADF;
+			return -1;
+		}
+		return rval;
+	}
 	if (rval <= 0)
 		return rval;
 

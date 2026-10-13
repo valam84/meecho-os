@@ -20,7 +20,13 @@
  * compositor that lays windows out (meechowm's strip, 11.7) can then be
  * seen doing it, a colour per window, on the screen.  -T names the window.
  *
+ * With -L top or -L bottom it is no window but a panel (wlr-layer-shell):
+ * a strip HEIGHT high (-H, 32) across that edge of the screen, on the top
+ * layer, which takes its height off what windows may use - its exclusive
+ * zone.  It draws at the size the compositor gives it.
+ *
  *   wlhello [-f] [-c 0xAARRGGBB] [-t seconds] [-T title]
+ *   wlhello -L top|bottom [-H height] [-c 0xAARRGGBB] [-t seconds]
  */
 #include <sys/mman.h>
 
@@ -36,6 +42,7 @@
 #include <wayland-client.h>
 
 #include "xdg-shell-client-protocol.h"
+#include "wlr-layer-shell-client-protocol.h"
 
 #define W	256
 #define H	256
@@ -43,6 +50,7 @@
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct xdg_wm_base *wm_base;
+static struct zwlr_layer_shell_v1 *layer_shell;
 static int configured, frames;
 static uint32_t colour = 0xff3060c0;
 
@@ -60,6 +68,9 @@ global(void *data, struct wl_registry *reg, uint32_t name,
 		shm = wl_registry_bind(reg, name, &wl_shm_interface, 1);
 	else if (strcmp(iface, xdg_wm_base_interface.name) == 0)
 		wm_base = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
+	else if (strcmp(iface, zwlr_layer_shell_v1_interface.name) == 0)
+		layer_shell = wl_registry_bind(reg, name,
+		    &zwlr_layer_shell_v1_interface, version < 4 ? version : 4);
 }
 
 static void
@@ -114,6 +125,32 @@ toplevel_close(void *data, struct xdg_toplevel *t)
 static const struct xdg_toplevel_listener toplevel_listener = {
 	.configure = toplevel_configure,
 	.close = toplevel_close,
+};
+
+/* -L: the panel's configure, the size to draw at. */
+static void
+layer_configure(void *data, struct zwlr_layer_surface_v1 *ls,
+	uint32_t serial, uint32_t w, uint32_t h)
+{
+	zwlr_layer_surface_v1_ack_configure(ls, serial);
+	configured = 1;
+	if (w > 0 && h > 0) {
+		want_w = (int)w;
+		want_h = (int)h;
+		if (want_w != cur_w || want_h != cur_h)
+			resize = 1;
+	}
+}
+
+static void
+layer_closed(void *data, struct zwlr_layer_surface_v1 *ls)
+{
+	exit(0);
+}
+
+static const struct zwlr_layer_surface_v1_listener layer_listener = {
+	.configure = layer_configure,
+	.closed = layer_closed,
 };
 
 static void
@@ -200,11 +237,12 @@ main(int argc, char **argv)
 	struct wl_surface *surface;
 	struct xdg_surface *xs;
 	struct xdg_toplevel *top;
-	const char *title = "wlhello";
+	struct zwlr_layer_surface_v1 *ls;
+	const char *title = "wlhello", *edge = NULL;
 	time_t end;
-	int c, secs = 3;
+	int c, secs = 3, height = 32;
 
-	while ((c = getopt(argc, argv, "c:ft:T:")) != -1) {
+	while ((c = getopt(argc, argv, "c:ft:T:L:H:")) != -1) {
 		if (c == 'c')
 			colour = (uint32_t)strtoul(optarg, NULL, 0);
 		else if (c == 'f')
@@ -213,6 +251,15 @@ main(int argc, char **argv)
 			secs = atoi(optarg);
 		else if (c == 'T')
 			title = optarg;
+		else if (c == 'L')
+			edge = optarg;
+		else if (c == 'H')
+			height = atoi(optarg);
+	}
+	if (edge != NULL && ((strcmp(edge, "top") != 0 &&
+	    strcmp(edge, "bottom") != 0) || height < 1)) {
+		fprintf(stderr, "wlhello: -L top|bottom, -H height\n");
+		return 2;
 	}
 
 	if ((dpy = wl_display_connect(NULL)) == NULL) {
@@ -231,12 +278,31 @@ main(int argc, char **argv)
 	xdg_wm_base_add_listener(wm_base, &wm_listener, NULL);
 
 	surface = wl_compositor_create_surface(compositor);
-	xs = xdg_wm_base_get_xdg_surface(wm_base, surface);
-	xdg_surface_add_listener(xs, &surface_listener, NULL);
-	top = xdg_surface_get_toplevel(xs);
-	xdg_toplevel_add_listener(top, &toplevel_listener, NULL);
-	xdg_toplevel_set_title(top, title);
-	xdg_toplevel_set_app_id(top, "wlhello");
+	if (edge != NULL) {
+		if (layer_shell == NULL) {
+			fprintf(stderr, "wlhello: the compositor has no layer "
+			    "shell\n");
+			return 1;
+		}
+		ls = zwlr_layer_shell_v1_get_layer_surface(layer_shell, surface,
+		    NULL, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "wlhello");
+		zwlr_layer_surface_v1_add_listener(ls, &layer_listener, NULL);
+		zwlr_layer_surface_v1_set_size(ls, 0, (uint32_t)height);
+		zwlr_layer_surface_v1_set_anchor(ls,
+		    ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
+		    ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT |
+		    (strcmp(edge, "top") == 0 ?
+		    ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP :
+		    ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM));
+		zwlr_layer_surface_v1_set_exclusive_zone(ls, height);
+	} else {
+		xs = xdg_wm_base_get_xdg_surface(wm_base, surface);
+		xdg_surface_add_listener(xs, &surface_listener, NULL);
+		top = xdg_surface_get_toplevel(xs);
+		xdg_toplevel_add_listener(top, &toplevel_listener, NULL);
+		xdg_toplevel_set_title(top, title);
+		xdg_toplevel_set_app_id(top, "wlhello");
+	}
 	wl_surface_commit(surface);
 
 	while (!configured && wl_display_dispatch(dpy) != -1)

@@ -9,6 +9,8 @@ BINDIR=	/usr/tests/gfx
 
 WLPROTOCOLSDIST=	${NETBSDSRCDIR}/external/mit/wayland-protocols/dist
 XDG_SHELL_XML=		${WLPROTOCOLSDIST}/stable/xdg-shell/xdg-shell.xml
+LAYER_SHELL_XML=	\
+    ${NETBSDSRCDIR}/external/mit/wlroots/dist/protocol/wlr-layer-shell-unstable-v1.xml
 
 xdg-shell-client-protocol.h: ${XDG_SHELL_XML}
 	${_MKTARGET_CREATE}
@@ -16,10 +18,18 @@ xdg-shell-client-protocol.h: ${XDG_SHELL_XML}
 xdg-shell-protocol.c: ${XDG_SHELL_XML}
 	${_MKTARGET_CREATE}
 	${TOOL_WAYLAND_SCANNER} private-code ${.ALLSRC} ${.TARGET}
+# -L: a panel, through wlr-layer-shell (meechowm's layers.c).
+wlr-layer-shell-client-protocol.h: ${LAYER_SHELL_XML}
+	${_MKTARGET_CREATE}
+	${TOOL_WAYLAND_SCANNER} client-header ${.ALLSRC} ${.TARGET}
+wlr-layer-shell-protocol.c: ${LAYER_SHELL_XML}
+	${_MKTARGET_CREATE}
+	${TOOL_WAYLAND_SCANNER} private-code ${.ALLSRC} ${.TARGET}
 
-SRCS=		wlhello.c xdg-shell-protocol.c
-DPSRCS+=	xdg-shell-client-protocol.h
-CLEANFILES+=	xdg-shell-client-protocol.h xdg-shell-protocol.c
+SRCS=		wlhello.c xdg-shell-protocol.c wlr-layer-shell-protocol.c
+DPSRCS+=	xdg-shell-client-protocol.h wlr-layer-shell-client-protocol.h
+CLEANFILES+=	xdg-shell-client-protocol.h xdg-shell-protocol.c \
+		wlr-layer-shell-client-protocol.h wlr-layer-shell-protocol.c
 
 CPPFLAGS+=	-D_NETBSD_SOURCE -I.
 # The scanner's client header hands its const listener table to

@@ -44,10 +44,15 @@ import sys
 # usr/libexec несёт ld.elf_so - интерпретатор, имя которого записано в
 # PT_INTERP каждого динамического двоичного файла. Без него exec отказывает
 # ещё до первой инструкции программы.
+#
+# etc/fonts - настройка fontconfig (external/mit/fontconfig/etc): fonts.conf,
+# шаблоны conf.avail и ссылки conf.d. В ramdisk её нет, а без неё fcft и
+# foot не находят шрифтов иначе как по FONTCONFIG_FILE.
 DEFAULT_SUBDIRS = [
     "bin",
     "service",
     "etc/system.conf.d",
+    "etc/fonts",
     "sbin",
     "usr/bin",
     "usr/sbin",

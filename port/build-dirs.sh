@@ -1,6 +1,10 @@
 #!/bin/bash
 # Собрать и поставить перечисленные каталоги; статус проверяется здесь,
 # а не в строке для wsl.exe (там $? всегда ноль).
+#
+# Порядок шагов - как у build.sh NetBSD: obj, includes, dependall, install.
+# Без includes заголовки библиотеки (INCS) в DESTDIR не попадают вовсе:
+# install их не ставит, а следующий каталог собирается против DESTDIR.
 set -uo pipefail
 PORT=$(cd "$(dirname "$0")" && pwd)
 SRCDIR=${SRCDIR:-$(cd "$PORT/.." && pwd)}
@@ -12,7 +16,8 @@ cd "$M" || exit 1
 rc=0
 for d in "$@"; do
 	log=/tmp/mk-$(echo "$d" | tr / _).log
-	{ $MAKE -C "$d" obj && $MAKE -C "$d" -j"$JOBS" dependall && $MAKE -C "$d" install; } > "$log" 2>&1
+	{ $MAKE -C "$d" obj && $MAKE -C "$d" includes &&
+	  $MAKE -C "$d" -j"$JOBS" dependall && $MAKE -C "$d" install; } > "$log" 2>&1
 	if [ $? -eq 0 ]; then echo "ok   $d"; else
 		echo "FAIL $d  ($log)"
 		grep -m3 -E "error:|Error code|cannot find|don't know how" "$log" | sed "s|$M/||" | cut -c1-160

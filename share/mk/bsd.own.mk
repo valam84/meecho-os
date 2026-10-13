@@ -601,6 +601,7 @@ TOOL_TOPROTO=		${TOOLDIR}/bin/${_TOOL_PREFIX}toproto
 TOOL_UUDECODE=		${TOOLDIR}/bin/${_TOOL_PREFIX}uudecode
 TOOL_VGRIND=		${TOOLDIR}/bin/${_TOOL_PREFIX}vgrind -f
 TOOL_VFONTEDPR=		${TOOLDIR}/libexec/${_TOOL_PREFIX}vfontedpr
+TOOL_WAYLAND_SCANNER=	${TOOLDIR}/bin/${_TOOL_PREFIX}wayland-scanner
 TOOL_ZIC=		${TOOLDIR}/bin/${_TOOL_PREFIX}zic
 
 .else	# USETOOLS != yes						# } {
@@ -758,6 +759,7 @@ TOOL_TOPROTO=		toproto
 TOOL_UUDECODE=		uudecode
 TOOL_VGRIND=		vgrind -f
 TOOL_VFONTEDPR=		/usr/libexec/vfontedpr
+TOOL_WAYLAND_SCANNER=	wayland-scanner
 TOOL_ZIC=		zic
 
 .endif	# USETOOLS != yes						# }
@@ -835,6 +837,7 @@ CC_WNO_USE_AFTER_FREE=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 12:? -Wno-u
 CC_WNO_UNUSED_CONST_VARIABLE=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 6:? -Wno-unused-const-variable :}
 CC_WNO_UNTERMINATED_STRING_INITIALIZATION=	\
 				${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 15:? -Wno-unterminated-string-initialization :}
+CC_WNO_DEPRECATED_DECLARATIONS=	${${ACTIVE_CC} == "gcc":? -Wno-deprecated-declarations :}
 
 # For each ${MACHINE_CPU}, list the ports that use it.
 MACHINES.aarch64=	evbarm64

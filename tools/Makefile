@@ -159,6 +159,11 @@ SUBDIR += \
 #
 .if ${MACHINE_ARCH} == "aarch64"
 SUBDIR+=	mkbootarchive
+#
+# The Wayland stack (stage 11) generates its protocol code at build time;
+# the scanner that does it runs on the build host.
+#
+SUBDIR+=	wayland-scanner
 .endif
 .else
 SUBDIR+= .WAIT config

@@ -1,0 +1,13 @@
+#	$NetBSD: Makefile.xkbdata,v 1.4 2018/06/01 01:21:02 christos Exp $
+
+XKBDISTDIR=	${XKBCONFIGDIST}/${XKBNAME}
+
+.PATH:		${XKBDISTDIR}
+
+.SUFFIXES: .in
+
+.in:
+	${TOOL_SED} -e 's,<_,<,g' -e 's,</_,</,g' < ${.ALLSRC} > ${.TARGET}
+
+
+FILESDIR=	${XKBCONFIGDIR}/${XKBNAME}

@@ -1,0 +1,107 @@
+render node /dev/dri/renderD130
+version: 1.2.0 name 'panfrost' (8) date '20180908' (8) desc 'panfrost DRM' (12)
+version, name buffer of 4: 'panf', name_len 8
+cap 0x13: 1
+cap 0x5: 3
+cap 0x6: 1
+cap 0x14: 0
+cap 0x7777: ENOTSUP
+param 0: 0x7402
+param 1: 0x1000
+param 2: 0x1
+param 3: 0x1
+param 4: 0x1
+param 5: 0x1
+param 6: 0xff
+param 7: 0x7
+param 8: 0x7110206
+param 9: 0x2
+param 10: 0x209
+param 11: 0x1
+param 12: 0x2823
+param 13: 0xa046000
+param 14: 0x300
+param 15: 0x180
+param 16: 0x180
+param 17: 0x0
+param 18: 0xf7fffffe
+param 19: 0xc3fff7ff
+param 20: 0xbfe1ff9f
+param 21: 0x10f6
+param 22: 0x20e
+param 23: 0x4fe
+param 24: 0x7e
+param 25: 0x0
+param 26: 0x0
+param 27: 0x0
+param 28: 0x0
+param 29: 0x0
+param 30: 0x0
+param 31: 0x0
+param 32: 0x0
+param 33: 0x0
+param 34: 0x0
+param 35: 0x0
+param 36: 0x0
+param 37: 0x0
+param 38: 0x1
+param 39: 0x400
+param 40: 0x0
+param 41: EINVAL
+param 42: EINVAL
+param 43: EINVAL
+param 44: EINVAL
+param 0 with pad 1: EINVAL
+create 0x4000 flags 0: handle 1 va 0x2000000
+create 0x1000 flags 1: handle 2 va 0x2004000
+create 0x300000 flags 1: handle 3 va 0x2200000
+create 0x19000 flags 0: handle 4 va 0x2008000
+create 0x100000 flags 3: handle 5 va 0x2600000
+create 0x0 flags 0: EINVAL
+create 0x1000 flags 2: EINVAL
+create 0x1000 flags 8: EINVAL
+create 0x1388 flags 1: handle 6 va 0x2005000
+get_bo_offset 4: 0x2008000
+get_bo_offset 99: ENOENT
+mmap_bo 1 flags 0: token 0x100000000
+mmap_bo 5 flags 0: EINVAL
+mmap_bo 1 flags 1: EINVAL
+gem_close 2: ok
+gem_close 2 again: EINVAL
+create 0x1000 flags 1: handle 2 va 0x2004000
+madvise 1 1: retained 1
+madvise 1 7: retained 1
+madvise 77 0: ENOENT
+wait_bo 1 idle, deadline 0: ok
+wait_bo 99: ENOENT
+syncobj create: handle 1
+syncobj wait 1 (no fence): EINVAL
+syncobj wait 1 for submit, 1 ms: ETIME
+chain of 64 with out_sync 1: submit ok, wait_bo ok, syncobj wait ok first 0, 0 wrong word(s)
+syncobj reset 1: ok; wait: EINVAL
+syncobj signal 1: ok; wait: ok
+syncobj create signaled: handle 2; wait all 1 2: ok
+syncobj destroy 1: ok; wait: ENOENT
+submit jc 0: EINVAL
+submit bo 99: ENOENT
+submit bad array: EFAULT
+submit out_sync 77: ENODEV
+submit requirements 4: EINVAL
+create 0x400000 flags 0: handle 7 va 0x2800000
+long chain of 32768: wait_bo deadline past: EBUSY; deadline +1 ms: ETIMEDOUT; then: ok (18.7 ms)
+fault at 0x2100040 with out_sync 1: submit ok; wait_bo ok; syncobj wait ok; header status 0x0
+chain after the fault: 0 wrong word(s)
+create 0x400000 flags 3: handle 8 va 0x2c00000
+heap write at +0x1000: submit ok, wait_bo ok, syncobj ok, header status 0x1
+heap write at +0x300000: submit ok, wait_bo ok, syncobj ok, header status 0x1
+
+dmesg, new lines:
+[  302.890718] [drm] unknown mmap_bo flags: 1
+[  303.103027] panfrost fde60000.gpu: Unhandled Page fault in AS0 at VA 0x0000000002100040
+               Reason: TODO
+               raw fault status: 0x7C1003C3
+               decoded fault status: SLAVE FAULT
+               exception type 0xC3: TRANSLATION_FAULT_3
+               access type 0x3: WRITE
+               source id 0x7C10
+[  303.103161] panfrost fde60000.gpu: js fault, js=1, status=JOB_BUS_FAULT, head=0x2000000, tail=0x2000000

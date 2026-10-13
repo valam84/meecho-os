@@ -1,0 +1,5 @@
+client A: va 0x2000000
+client A: fault at round 50: wait_bo ok, syncobj wait EIO
+client A: 199 chains of 64, 0 bad
+client B: va 0x2000000
+client B: 200 chains of 64, 0 bad

@@ -1,0 +1,107 @@
+# Служба mali с интерфейсом Panfrost на плате (веха 11.6), 2026-10-14.
+#
+# Плата BIGTREETECH CB2, карта Armbian (с неё же снят эталон
+# ref-api.txt и ref-two.txt), MEECHO загружена одноразово с корнем на eMMC
+# (board-cycle.sh -e -l) образом из дерева с правками VM и VFS 11.6:
+# kernel.bin b377ee67d4bfc494ee0cbfc5d7fa2cbd, boot.mba
+# f0625a5d4dce5e10ec3f70c7e8417b20.  Служба, её .conf, pftest и узел
+# /dev/dri/renderD128 (mknod c 18 128) положены по ssh; служба запущена
+# minix-service up /service/mali -dev /dev/dri/renderD128.
+#
+# Ниже: что делал скрипт (journal.sh), журнал службы из буфера ядра
+# (kmsg) от её запуска до конца прогонов, и итог pftest chain 500.  Вывод
+# pftest api и two - meecho-api.txt и meecho-two.txt, рядом с эталоном
+# panfrost (ref-api.txt, ref-two.txt); diff api - пять строк, все
+# объяснены в PORTING-LOG.md, «Этап 11.6, первая часть».
+
+## journal.sh
+### Tue Oct 13 21:27:08 GMT 2026 minix-service up /service/mali -dev /dev/dri/renderD128
+### pftest api
+rc=0
+### pftest two
+rc=0
+### pftest chain 500
+rc=0
+done
+
+## kmsg: служба от запуска до конца прогонов
+mali(info)gpu at 0xfde60000 (16384 bytes), lines gpu 71 job 72 mmu 73
+mali(info)clock "bus" 27 of 0xfdd20000, clock "gpu" 1 (firmware's), power domain 7, cru 0xfdd20000, pmu 0xfdd90000
+mali(info)supply vdd_gpu: always on, on at boot, 900000 uV at boot
+mali(info)found: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)found: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)the GPU clock is gpll/6 = 200000 kHz already
+mali(info)power domain PD_GPU is on
+mali(info)Mali-G52, product 0x7402 r1p0 status 0 (GPU_ID 0x74021000)
+mali(info)soft reset complete
+mali(info)features: L2 0x07110206 core 0x00000002 tiler 0x00000209 mem 0x00000001 mmu 0x00002823 (35-bit VA, 40-bit PA)
+mali(info)present: shader 0x1 tiler 0x1 L2 0x1 stack 0x1, address spaces 0xff, job slots 0x7, 768 threads, coherency 0x0
+mali(info)config: jm 0x00000000 shader 0x00000000 tiler 0x00000000 l2/mmu 0x00000000
+mali(info)cores ready: shader 0x1 tiler 0x1 L2 0x1
+mali(info)up: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)up: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)this driver against the board (port/cb2-gpu/ref-on.txt):
+mali(info)  CLKSEL_CON6    0x00004155 (reference 0x00004155)
+mali(info)  CLKGATE_CON2   0x00000000 (reference 0x000001c0)
+mali(info)  SOFTRST_CON2   0x00000000 (reference 0x00000000)
+mali(info)  PWR_STATUS     0x0000007e (reference 0x0000007e)
+mali(info)  IDLE_ACK       0x000001ec (reference 0x000001ec)
+mali(info)  IDLE_ST        0x000001ec (reference 0x000001ec)
+mali(info)  GPU_ID         0x74021000 (reference 0x74021000)
+mali(info)  L2_FEATURES    0x07110206 (reference 0x07110206)
+mali(info)  CORE_FEATURES  0x00000002 (reference 0x00000002)
+mali(info)  TILER_FEATURES 0x00000209 (reference 0x00000209)
+mali(info)  MEM_FEATURES   0x00000001 (reference 0x00000001)
+mali(info)  MMU_FEATURES   0x00002823 (reference 0x00002823)
+mali(info)  AS_PRESENT     0x000000ff (reference 0x000000ff)
+mali(info)  JS_PRESENT     0x00000007 (reference 0x00000007)
+mali(info)  THREAD_MAX     0x00000300 (reference 0x00000300)
+mali(info)  THREAD_FEATURES 0x0a046000 (reference 0x0a046000)
+mali(info)  COHERENCY      0x00000000 (reference 0x00000000)
+mali(info)  SHADER_PRESENT 0x00000001 (reference 0x00000001)
+mali(info)  TILER_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  L2_PRESENT     0x00000001 (reference 0x00000001)
+mali(info)  STACK_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  SHADER_READY   0x00000001 (reference 0x00000001)
+mali(info)  TILER_READY    0x00000001 (reference 0x00000001)
+mali(info)  L2_READY       0x00000001 (reference 0x00000001)
+mali(info)  GPU_STATUS     0x00000000 (reference 0x00000000)
+mali(info)  JM_CONFIG      0x000f0000 (reference 0x000f0000)
+mali(info)0 register(s) differ from the reference
+mali(info)address space 0: tables at 0x7d7d0000, 2 pages at GPU address 0x2000000; TRANSTAB 0x000000007d7d0007 (reference ...007) MEMATTR 0x00888d88 (reference 0x00888d88) TRANSCFG 0x00000000 (reference 0)
+mali(info)a chain of 64 WRITE_VALUE jobs started on slot 1 (config 0x87b00)
+mali(info)/dev/dri/renderD128 is served: buffers up to 768 MiB in all, 512 MiB per client
+mali(info)line 71 (gpu): cache clean completed - the line works
+mali(info)line 72 (job): slot 1 done - the line works
+mali(info)chain of 64: done in 4305 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+mali(info)the GPU filled the buffer through its own MMU: every word checked by the processor
+mali(info)slot 1 config 0x00007b00 (reference 0x00007b00), status 0x0, address space status 0x0
+mali(warn)line 73 (mmu): status 0x00000002; address space 1 fault status 0x7c1003c3 (translation fault 0xc3, write access, source 0x7c10) at 0x0000000002100040, in client 0
+mali(info)address space 1 off: mmu rawstat 0x00000000 after the clear, 0x00000002 after the switch-off, mask 0x00010001; job rawstat 0x00020000, slot status 0x00 0x48, GPU_STATUS 0x30
+mali(warn)client 0: the job at 0x02000000 failed, slot status 0x48; GPU address space fault 0x7c1003c3 at 0x02100040
+mali(info)client 0 is gone (1 failed job(s))
+mali(warn)line 73 (mmu): status 0x00000002; address space 1 fault status 0x7c1003c3 (translation fault 0xc3, write access, source 0x7c10) at 0x0000000002010040, in client 0
+mali(info)address space 1 off: mmu rawstat 0x00000000 after the clear, 0x00000002 after the switch-off, mask 0x00050005; job rawstat 0x00020000, slot status 0x00 0x48, GPU_STATUS 0x30
+mali(warn)client 0: the job at 0x02000000 failed, slot status 0x48; GPU address space fault 0x7c1003c3 at 0x02010040
+mali(info)client 0 is gone (1 failed job(s))
+mali(info)client 1 is gone (0 failed job(s))
+mali(info)client 0 is gone (0 failed job(s))
+
+## pftest chain 500
+create 0x4000 flags 0: handle 1 va 0x2000000
+500 chain(s) of 64 WRITE_VALUE: 0 bad, 0.160 ms each
+
+## faulttest=1: самопроверка 11.5 с отказом - через код 11.6
+# minix-service down mali; minix-service up /service/mali -dev /dev/dri/renderD128 -args faulttest=1
+mali(info)fault test: one WRITE_VALUE job to GPU address 0x02010040, where nothing is mapped, started on slot 1 (config 0x87300)
+mali(info)line 73 (mmu): status 0x00000001; address space 0 fault status 0x7c1003c3 (translation fault 0xc3, write access, source 0x7c10) at 0x0000000002010040, in the self-test
+mali(info)address space 0 off: mmu rawstat 0x00000000 after the clear, 0x00000001 after the switch-off, mask 0x00000000; job rawstat 0x00020000, slot status 0x00 0x48, GPU_STATUS 0x30
+mali(info)line 72 (job): the fault job failed, slot status 0x48, at job 0x02000000
+mali(info)fault test: the fault asked for; fault status 0x7c1003c3 (reference 0x7c1003c3), slot status 0x48 (reference 0x48), header status 0x0 (reference 0); now GPU_STATUS 0x0, mmu rawstat 0x00000000 mask 0x00000000
+mali(info)fault test: address space 0 back on
+mali(info)a chain of 64 WRITE_VALUE jobs started on slot 1 (config 0x87b00), after the fault
+mali(info)line 72 (job): slot 1 done - the line works
+mali(info)chain of 64: done in 1601 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+mali(info)the GPU filled the buffer through its own MMU: every word checked by the processor
+mali(info)slot 1 config 0x00007b00 (reference 0x00007b00), status 0x0, address space status 0x0
+mali(info)fault test passed: line 73 (mmu) reported the fault, the address space came back, the chain after it is clean

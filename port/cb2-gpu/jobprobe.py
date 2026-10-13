@@ -16,6 +16,21 @@
 #
 #	python3 jobprobe.py > jobprobe.txt
 #	python3 jobprobe.py fault > ref-fault.txt
+#	python3 jobprobe.py api > ref-api.txt
+#	python3 jobprobe.py two > ref-two.txt
+#
+# Режим api (веха 11.6) - эталон интерфейса, который служба mali отдаёт
+# клиентам: что panfrost отвечает на каждый вызов, который служба
+# реализует, с теми же аргументами, что гоняет хостовый стенд
+# (port/test/mali/drmtest.c) и программа MEECHO (port/test/mali/pftest.c,
+# тот же вывод строка в строку): версия, возможности, все параметры,
+# места буферов по порядку создания, дескрипторы, ошибки, ожидания со
+# сроками, объекты синхронизации, отказ задания (что возвращают WAIT_BO и
+# ожидание объекта, если задание упало), куча.
+#
+# Режим two - два клиента (два открытия узла, два процесса) гоняют
+# цепочки одновременно, один на середине ставит задание с отказом: что
+# видит каждый, в каких адресных пространствах идут их задания.
 #
 # Режим fault - эталон линии MMU (73): цепочка, потом одно задание,
 # пишущее туда, где ничего не отображено (FAULT_OFF от начала буфера: та
@@ -49,7 +64,20 @@ WAIT_BO = IOC(IOW, 0x41, 16)
 CREATE_BO = IOC(IOWR, 0x42, 24)
 MMAP_BO = IOC(IOWR, 0x43, 16)
 GET_PARAM = IOC(IOWR, 0x44, 16)
+GET_BO_OFFSET = IOC(IOWR, 0x45, 16)
+MADVISE = IOC(IOWR, 0x48, 12)
 GEM_CLOSE = IOC(IOW, 0x09, 8)
+VERSION = IOC(IOWR, 0x00, 64)
+GET_CAP = IOC(IOWR, 0x0c, 16)
+SYNCOBJ_CREATE = IOC(IOWR, 0xbf, 8)
+SYNCOBJ_DESTROY = IOC(IOWR, 0xc0, 8)
+SYNCOBJ_WAIT = IOC(IOWR, 0xc3, 40)
+SYNCOBJ_RESET = IOC(IOWR, 0xc4, 16)
+SYNCOBJ_SIGNAL = IOC(IOWR, 0xc5, 16)
+
+BO_NOEXEC, BO_HEAP = 1, 2
+WAIT_ALL, WAIT_FOR_SUBMIT = 1, 2
+REQ_FS = 1
 
 JOB_WRITE_VALUE = 2
 WV_IMM32 = 6
@@ -60,6 +88,12 @@ JOB_SIZE = 64                   # заголовок 32 + нагрузка 24, �
 # запоминает FAULTADDRESS.  Служба MEECHO пишет туда же (0x2010040).
 FAULT_OFF = 0x10040
 FAULT_VALUE = 0xbadc0de5
+
+# Режим api: в его адресном пространстве много буферов, и FAULT_OFF от
+# первого попадает в буфер 100 КиБ (0x2008000-0x2021000).  Пусто
+# наверняка - 0x2100040: та же таблица последнего уровня (0x2000000-
+# 0x21fffff), между буфером 100 КиБ и буфером 3 МиБ (с 0x2200000).
+API_FAULT_OFF = 0x100040
 
 
 def render_node():
@@ -379,5 +413,328 @@ def probe_fault():
     return 0 if failures == 0 else 1
 
 
+# ---- режимы api и two (веха 11.6) -----------------------------------------
+
+import ctypes
+import errno as _errno
+
+
+def err(e):
+    return _errno.errorcode.get(e.errno, str(e.errno))
+
+
+def try_ioctl(fd, req, fmt, *vals):
+    """(значения, None) или (None, имя ошибки)."""
+    try:
+        return ioctl(fd, req, fmt, *vals), None
+    except OSError as e:
+        return None, err(e)
+
+
+def now_ns():
+    return time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+
+
+def addr_of(buf):
+    return ctypes.addressof(buf)
+
+
+def u32_array(vals):
+    a = (ctypes.c_uint32 * max(1, len(vals)))(*vals)
+    return a, ctypes.addressof(a)
+
+
+def create(fd, size, flags):
+    v, e = try_ioctl(fd, CREATE_BO, "<IIIIQ", size, flags, 0, 0, 0)
+    if e:
+        print("create 0x%x flags %d: %s" % (size, flags, e))
+        return None
+    print("create 0x%x flags %d: handle %d va 0x%x" % (size, flags, v[2],
+          v[4]))
+    return v[2], v[4]
+
+
+def map_bo(fd, handle, size):
+    off = ioctl(fd, MMAP_BO, "<IIQ", handle, 0, 0)[2]
+    return off, mmap.mmap(fd, size, mmap.MAP_SHARED,
+                          mmap.PROT_READ | mmap.PROT_WRITE, offset=off)
+
+
+def submit(fd, jc, handles, out=0, req=0, in_syncs=()):
+    ha, hp = u32_array(handles)
+    sa, sp = u32_array(list(in_syncs))
+    return try_ioctl(fd, SUBMIT, "<QQIIQII", jc, sp if in_syncs else 0,
+                     len(in_syncs), out, hp, len(handles), req)
+
+
+def wait_bo(fd, handle, deadline):
+    v, e = try_ioctl(fd, WAIT_BO, "<IIq", handle, 0, deadline)
+    return e or "ok"
+
+
+def sync_create(fd, flags=0):
+    return ioctl(fd, SYNCOBJ_CREATE, "<II", 0, flags)[0]
+
+
+def sync_wait(fd, handles, flags, deadline):
+    ha, hp = u32_array(handles)
+    v, e = try_ioctl(fd, SYNCOBJ_WAIT, "<QqIIIIQ", hp, deadline,
+                     len(handles), flags, 0, 0, 0)
+    return (e or "ok"), (v[4] if v else None)
+
+
+def sync_array(fd, req, handles):
+    ha, hp = u32_array(handles)
+    v, e = try_ioctl(fd, req, "<QII", hp, len(handles), 0)
+    return e or "ok"
+
+
+def chain_into(m, va, n, tag, base=0x1000):
+    for i in range(n):
+        m[base + 4 * i:base + 4 * i + 4] = struct.pack("<I", 0)
+    for i in range(n):
+        nxt = va + JOB_SIZE * (i + 1) if i + 1 < n else 0
+        write_value_job(m, JOB_SIZE * i, i + 1, nxt, va + base + 4 * i,
+                        (tag << 24) | i)
+
+
+def wrong(m, n, tag, base=0x1000):
+    words = struct.unpack_from("<%dI" % n, m, base)
+    return sum(1 for i in range(n) if words[i] != ((tag << 24) | i))
+
+
+def probe_api():
+    node = render_node()
+    fd = os.open(node, os.O_RDWR)
+    print("render node %s" % node)
+    dmesg0 = os.popen("dmesg").read().splitlines()
+
+    # Версия: строки по указателям, длины назад.
+    name = ctypes.create_string_buffer(32)
+    date = ctypes.create_string_buffer(32)
+    desc = ctypes.create_string_buffer(32)
+    v = ioctl(fd, VERSION, "<iii4xQQQQQQ", 0, 0, 0, 32, addr_of(name), 32,
+              addr_of(date), 32, addr_of(desc))
+    print("version: %d.%d.%d name '%s' (%d) date '%s' (%d) desc '%s' (%d)" %
+          (v[0], v[1], v[2], name.value.decode(), v[3], date.value.decode(),
+           v[5], desc.value.decode(), v[7]))
+    name = ctypes.create_string_buffer(32)
+    v = ioctl(fd, VERSION, "<iii4xQQQQQQ", 0, 0, 0, 4, addr_of(name), 0, 0,
+              0, 0)
+    print("version, name buffer of 4: '%s', name_len %d" % (
+          name.value.decode(), v[3]))
+
+    for cap in (0x13, 0x5, 0x6, 0x14, 0x7777):
+        r, e = try_ioctl(fd, GET_CAP, "<QQ", cap, 0)
+        print("cap 0x%x: %s" % (cap, e or r[1]))
+
+    for p in range(45):
+        r, e = try_ioctl(fd, GET_PARAM, "<IIQ", p, 0, 0)
+        print("param %d: %s" % (p, e or "0x%x" % r[2]))
+    r, e = try_ioctl(fd, GET_PARAM, "<IIQ", 0, 1, 0)
+    print("param 0 with pad 1: %s" % (e or "0x%x" % r[2]))
+
+    # Места буферов: та же последовательность, что у drmtest.c.
+    b = {}
+    b[0] = create(fd, 0x4000, 0)
+    b[1] = create(fd, 0x1000, BO_NOEXEC)
+    b[2] = create(fd, 0x300000, BO_NOEXEC)
+    b[3] = create(fd, 0x19000, 0)
+    b[4] = create(fd, 0x100000, BO_NOEXEC | BO_HEAP)
+    create(fd, 0, 0)
+    create(fd, 0x1000, BO_HEAP)
+    create(fd, 0x1000, 8)
+    b[5] = create(fd, 5000, BO_NOEXEC)
+    for h in (b[3][0], 99):
+        r, e = try_ioctl(fd, GET_BO_OFFSET, "<IIQ", h, 0, 0)
+        print("get_bo_offset %d: %s" % (h, e or "0x%x" % r[2]))
+    for h, f in ((b[0][0], 0), (b[4][0], 0), (b[0][0], 1)):
+        r, e = try_ioctl(fd, MMAP_BO, "<IIQ", h, f, 0)
+        print("mmap_bo %d flags %d: %s" % (h, f, e or "token 0x%x" % r[2]))
+    for i in range(2):
+        r, e = try_ioctl(fd, GEM_CLOSE, "<II", b[1][0], 0)
+        print("gem_close %d%s: %s" % (b[1][0], " again" if i else "",
+              e or "ok"))
+    b[1] = create(fd, 0x1000, BO_NOEXEC)
+    for h, madv in ((b[0][0], 1), (b[0][0], 7), (77, 0)):
+        r, e = try_ioctl(fd, MADVISE, "<III", h, madv, 0)
+        print("madvise %d %d: %s" % (h, madv, e or "retained %d" % r[2]))
+
+    print("wait_bo %d idle, deadline 0: %s" % (b[0][0], wait_bo(fd, b[0][0],
+          0)))
+    print("wait_bo 99: %s" % wait_bo(fd, 99, 0))
+
+    # Объекты синхронизации и цепочка с ними.
+    so = sync_create(fd)
+    print("syncobj create: handle %d" % so)
+    print("syncobj wait %d (no fence): %s" % (so, sync_wait(fd, [so], 0,
+          now_ns() + 10**9)[0]))
+    print("syncobj wait %d for submit, 1 ms: %s" % (so, sync_wait(fd, [so],
+          WAIT_FOR_SUBMIT, now_ns() + 10**6)[0]))
+    h0, va0 = b[0]
+    off, m = map_bo(fd, h0, 0x4000)
+    chain_into(m, va0, 64, 0x5a)
+    r, e = submit(fd, va0, [h0], out=so)
+    wb = wait_bo(fd, h0, now_ns() + 2 * 10**9)
+    sw, first = sync_wait(fd, [so], 0, now_ns() + 10**9)
+    print("chain of 64 with out_sync %d: submit %s, wait_bo %s, syncobj "
+          "wait %s first %s, %d wrong word(s)" % (so, e or "ok", wb, sw,
+          first, wrong(m, 64, 0x5a)))
+    print("syncobj reset %d: %s; wait: %s" % (so, sync_array(fd,
+          SYNCOBJ_RESET, [so]), sync_wait(fd, [so], 0, now_ns())[0]))
+    print("syncobj signal %d: %s; wait: %s" % (so, sync_array(fd,
+          SYNCOBJ_SIGNAL, [so]), sync_wait(fd, [so], 0, now_ns())[0]))
+    so2 = sync_create(fd, 1)
+    print("syncobj create signaled: handle %d; wait all %d %d: %s" % (so2,
+          so, so2, sync_wait(fd, [so, so2], WAIT_ALL, now_ns())[0]))
+    r, e = try_ioctl(fd, SYNCOBJ_DESTROY, "<II", so, 0)
+    print("syncobj destroy %d: %s; wait: %s" % (so, e or "ok", sync_wait(fd,
+          [so], 0, now_ns())[0]))
+
+    so = sync_create(fd)
+    print("submit jc 0: %s" % (submit(fd, 0, [h0])[1] or "ok"))
+    print("submit bo 99: %s" % (submit(fd, va0, [99])[1] or "ok"))
+    r, e = try_ioctl(fd, SUBMIT, "<QQIIQII", va0, 0, 0, 0, 0x10, 1, 0)
+    print("submit bad array: %s" % (e or "ok"))
+    print("submit out_sync 77: %s" % (submit(fd, va0, [h0], out=77)[1] or
+          "ok"))
+    print("submit requirements 4: %s" % (submit(fd, va0, [h0], req=4)[1] or
+          "ok"))
+    wait_bo(fd, h0, now_ns() + 2 * 10**9)
+
+    # Долгая цепочка: занятый буфер со сроком в прошлом и со сроком 1 мс.
+    n = 32768
+    hl, val = create(fd, 0x400000, 0)
+    offl, ml = map_bo(fd, hl, 0x400000)
+    for i in range(n):
+        nxt = val + JOB_SIZE * (i + 1) if i + 1 < n else 0
+        write_value_job(ml, JOB_SIZE * i, (i % 65535) + 1, nxt, val +
+                        0x3ff000 + 4 * (i % 1024), i)
+    submit(fd, val, [hl])
+    a = wait_bo(fd, hl, 0)
+    t = now_ns()
+    c = wait_bo(fd, hl, t + 10**6)
+    d = wait_bo(fd, hl, now_ns() + 5 * 10**9)
+    print("long chain of %d: wait_bo deadline past: %s; deadline +1 ms: %s; "
+          "then: %s (%.1f ms)" % (n, a, c, d, (now_ns() - t) / 1e6))
+
+    # Отказ задания: что видят WAIT_BO и ожидание объекта.
+    m[0x3000:0x3008] = struct.pack("<II", 0xdeadbeef, 0xdeadbeef)
+    write_value_job(m, 0, 1, 0, va0 + API_FAULT_OFF, FAULT_VALUE)
+    r, e = submit(fd, va0, [h0], out=so)
+    wb = wait_bo(fd, h0, now_ns() + 2 * 10**9)
+    sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+    print("fault at 0x%x with out_sync %d: submit %s; wait_bo %s; syncobj "
+          "wait %s; header status 0x%x" % (va0 + API_FAULT_OFF, so,
+          e or "ok", wb, sw, struct.unpack_from("<I", m, 0)[0]))
+    chain_into(m, va0, 64, 0x6b)
+    submit(fd, va0, [h0], out=so)
+    wait_bo(fd, h0, now_ns() + 2 * 10**9)
+    print("chain after the fault: %d wrong word(s)" % wrong(m, 64, 0x6b))
+
+    # Куча: задание пишет в неё, первые 2 МиБ и следующие.  Через секунду:
+    # panfrost платы через ~0.5 с после отказа ловит таймаут планировщика и
+    # сбрасывает ускоритель, и задание, попавшее на сброс, теряется молча
+    # (заголовок 0, ожидания - ok); куча проверяется не на этом.
+    time.sleep(1)
+    hh, vah = create(fd, 0x400000, BO_NOEXEC | BO_HEAP)
+    for at in (0x1000, 0x300000):
+        write_value_job(m, 0, 1, 0, vah + at, 0x12345678)
+        r, e = submit(fd, va0, [h0, hh], out=so)
+        wb = wait_bo(fd, h0, now_ns() + 2 * 10**9)
+        sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+        print("heap write at +0x%x: submit %s, wait_bo %s, syncobj %s, "
+              "header status 0x%x" % (at, e or "ok", wb, sw,
+              struct.unpack_from("<I", m, 0)[0]))
+
+    m.close()
+    ml.close()
+    os.close(fd)
+    dmesg1 = os.popen("dmesg").read().splitlines()
+    new = dmesg1[len(dmesg0):] if dmesg1[:len(dmesg0)] == dmesg0 else \
+        [l for l in dmesg1 if l not in set(dmesg0)]
+    print("\ndmesg, new lines:\n" + "\n".join(new))
+    return 0
+
+
+def client(tag, rounds, fault_at, out):
+    """Один клиент: своё открытие узла, свой буфер, rounds цепочек."""
+    fd = os.open(render_node(), os.O_RDWR)
+    v = ioctl(fd, CREATE_BO, "<IIIIQ", 0x4000, 0, 0, 0, 0)
+    h, va = v[2], v[4]
+    off, m = map_bo(fd, h, 0x4000)
+    so = sync_create(fd)
+    bad = 0
+    lines = ["client %s: va 0x%x" % (tag, va)]
+    for k in range(rounds):
+        if k == fault_at:
+            write_value_job(m, 0, 1, 0, va + FAULT_OFF, FAULT_VALUE)
+            submit(fd, va, [h], out=so)
+            wb = wait_bo(fd, h, now_ns() + 2 * 10**9)
+            sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+            lines.append("client %s: fault at round %d: wait_bo %s, syncobj "
+                         "wait %s" % (tag, k, wb, sw))
+            continue
+        chain_into(m, va, 64, (tag == "A") and 0xa0 or 0xb0)
+        submit(fd, va, [h], out=so)
+        sw, first = sync_wait(fd, [so], 0, now_ns() + 2 * 10**9)
+        if sw != "ok" or wrong(m, 64, (tag == "A") and 0xa0 or 0xb0):
+            bad += 1
+    lines.append("client %s: %d chains of 64, %d bad" % (tag, rounds -
+                 (1 if fault_at is not None else 0), bad))
+    m.close()
+    os.close(fd)
+    os.write(out, ("\n".join(lines) + "\n").encode())
+
+
+def probe_two():
+    g = gpu_regs()
+    dmesg0 = os.popen("dmesg").read().splitlines()
+    pa, pb = os.pipe(), os.pipe()
+    kids = []
+    for tag, fa, p in (("A", 50, pa), ("B", None, pb)):
+        pid = os.fork()
+        if pid == 0:
+            os.close(p[0])
+            client(tag, 200, fa, p[1])
+            os._exit(0)
+        os.close(p[1])
+        kids.append((pid, p[0]))
+    seen = {0: set(), 1: set()}
+    t0 = time.monotonic()
+    left = set(pid for pid, _ in kids)
+    while left and time.monotonic() - t0 < 60:
+        for js in (0, 1):
+            cfg = rd(g, 0x1818 + 0x80 * js)
+            if cfg:
+                seen[js].add(cfg & 0xf)
+        for pid in list(left):
+            if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                left.discard(pid)
+    out = []
+    for pid, fdr in kids:
+        if pid in left:
+            os.waitpid(pid, 0)
+        out.append(os.read(fdr, 65536).decode())
+    print("".join(out).rstrip())
+    print("address spaces seen in JS1 CONFIG: %s; in JS0: %s" % (
+          sorted(seen[1]), sorted(seen[0])))
+    dmesg1 = os.popen("dmesg").read().splitlines()
+    new = dmesg1[len(dmesg0):] if dmesg1[:len(dmesg0)] == dmesg0 else \
+        [l for l in dmesg1 if l not in set(dmesg0)]
+    print("\ndmesg, new lines:\n" + "\n".join(new))
+    return 0
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["api"]:
+        sys.exit(probe_api())
+    if sys.argv[1:] == ["two"]:
+        pc = DEV + "/power/control"
+        orig = open(pc).read().strip()
+        open(pc, "w").write("on")
+        try:
+            sys.exit(probe_two())
+        finally:
+            open(pc, "w").write(orig)
     sys.exit(main())

@@ -47,6 +47,12 @@
 #define NODE		"/dev/dri/renderD128"
 #define JOB_SIZE	64
 #define FAULT_OFF	0x10040u
+/*
+ * api: FAULT_OFF from the first buffer lands in the 100 KiB one
+ * (0x2008000-0x2021000); 0x2100040 is empty for sure - the same
+ * last-level table, between it and the 3 MiB one at 0x2200000.
+ */
+#define API_FAULT_OFF	0x100040u
 #define FAULT_VALUE	0xbadc0de5u
 
 static int direct_mmap_said;
@@ -72,6 +78,7 @@ ename(int e)
 	case ENOTTY:	return "ENOTTY";
 	case EPERM:	return "EPERM";
 	case EACCES:	return "EACCES";
+	case EOPNOTSUPP: return "ENOTSUP";	/* Python's name for it */
 	}
 	snprintf(buf, sizeof(buf), "E%d", e);
 	return buf;
@@ -136,7 +143,7 @@ map_bo(int fd, struct bo *b)
 	struct drm_panfrost_mmap_bo mb;
 	struct cdev_mmap cm;
 	void *p;
-	int e;
+	int e, r;
 
 	memset(&mb, 0, sizeof(mb));
 	mb.handle = b->handle;
@@ -144,20 +151,27 @@ map_bo(int fd, struct bo *b)
 		return e;
 	p = mmap(NULL, b->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
 	    (off_t)mb.offset);
-	if (p == MAP_FAILED && errno == EINVAL) {
-		if (!direct_mmap_said++)
-			printf("(mmap(2): EINVAL - this VFS predates character "
-			    "device mmap; MIOCMMAP to the driver directly)\n");
+	if (p == MAP_FAILED) {
+		/*
+		 * EINVAL: a VFS from before 11.6 (no ENODEV, so libc never
+		 * asked the driver).  Anything else: say it, and what the
+		 * driver itself answers.
+		 */
+		e = errno;
 		memset(&cm, 0, sizeof(cm));
 		cm.cm_len = b->size;
 		cm.cm_prot = PROT_READ | PROT_WRITE;
 		cm.cm_flags = MAP_SHARED;
 		cm.cm_offset = (off_t)mb.offset;
-		if ((e = xioctl(fd, MIOCMMAP, &cm)) != 0)
-			return e;
+		r = xioctl(fd, MIOCMMAP, &cm);
+		if (!direct_mmap_said++)
+			printf("(mmap(2): %s; MIOCMMAP 0x%lx to the driver "
+			    "directly: %s)\n", ename(e), (unsigned long)MIOCMMAP,
+			    ename(r));
+		if (r != 0)
+			return r;
 		p = cm.cm_ret;
-	} else if (p == MAP_FAILED)
-		return errno;
+	}
 	b->m = p;
 	return 0;
 }
@@ -478,15 +492,16 @@ api(void)
 	(void)wait_bo(fd, h0, now_ns() + 2000000000LL);
 
 	/* Долгая цепочка: занятый буфер со сроком в прошлом и со сроком 1 мс. */
-	n = 4000;
-	if (create(fd, 0x40000, 0, &bl) != 0 || (e = map_bo(fd, &bl)) != 0) {
+	n = 32768;
+	if (create(fd, 0x400000, 0, &bl) != 0 || (e = map_bo(fd, &bl)) != 0) {
 		printf("long chain: no buffer\n");
 		return 1;
 	}
 	hl = bl.handle;
 	for (i = 0; i < n; i++)
-		write_value_job(bl.m, JOB_SIZE * i, i + 1, i + 1 < n ? bl.va +
-		    JOB_SIZE * (i + 1) : 0, bl.va + 0x3f000 + 4 * (i % 1024), i);
+		write_value_job(bl.m, JOB_SIZE * i, (i % 65535) + 1, i + 1 < n ?
+		    bl.va + JOB_SIZE * (i + 1) : 0, bl.va + 0x3ff000 +
+		    4 * (i % 1024), i);
 	(void)submit(fd, bl.va, &hl, 1, 0, 0);
 	{
 		const char *a, *c, *d;
@@ -503,16 +518,18 @@ api(void)
 	/* Отказ задания: что видят WAIT_BO и ожидание объекта. */
 	*(uint32_t *)(b[0].m + 0x3000) = 0xdeadbeef;
 	*(uint32_t *)(b[0].m + 0x3004) = 0xdeadbeef;
-	write_value_job(b[0].m, 0, 1, 0, b[0].va + FAULT_OFF, FAULT_VALUE);
+	write_value_job(b[0].m, 0, 1, 0, b[0].va + API_FAULT_OFF,
+	    FAULT_VALUE);
 	e = submit(fd, b[0].va, &h0, 1, so, 0);
 	{
 		const char *wb = wait_bo(fd, h0, now_ns() + 2000000000LL);
 		const char *sw = sync_wait(fd, &so, 1, 0, now_ns() +
 		    2000000000LL, NULL);
 
-		printf("fault with out_sync %u: submit %s; wait_bo %s; syncobj "
-		    "wait %s; header status 0x%x\n", so, ename(e), wb, sw,
-		    *(uint32_t *)b[0].m);
+		printf("fault at 0x%llx with out_sync %u: submit %s; wait_bo "
+		    "%s; syncobj wait %s; header status 0x%x\n",
+		    (unsigned long long)(b[0].va + API_FAULT_OFF), so,
+		    ename(e), wb, sw, *(uint32_t *)b[0].m);
 	}
 	chain_into(&b[0], 64, 0x6b);
 	(void)submit(fd, b[0].va, &h0, 1, so, 0);
@@ -520,7 +537,12 @@ api(void)
 	printf("chain after the fault: %u wrong word(s)\n", wrong(&b[0], 64,
 	    0x6b));
 
-	/* Куча: задание пишет в неё, первые 2 МиБ и следующие. */
+	/*
+	 * Куча: задание пишет в неё, первые 2 МиБ и следующие.  Через
+	 * секунду, как у jobprobe.py: там panfrost после отказа сбрасывает
+	 * ускоритель по таймауту, и куча проверяется не на этом.
+	 */
+	sleep(1);
 	if (create(fd, 0x400000, PANFROST_BO_NOEXEC | PANFROST_BO_HEAP, &bh) ==
 	    0) {
 		for (i = 0; i < 2; i++) {

@@ -141,6 +141,7 @@ struct mali_vm {
 	uint64_t fault_addr;
 	int expect_fault;		/* the self-test asked for one */
 	unsigned faults;		/* how many so far, for the log */
+	unsigned grows;			/* faults that grew a heap */
 };
 
 /* mali_find.c */
@@ -171,13 +172,21 @@ void mali_mmu_reset(void);
  * owns the memory (anonymous memory of its own, page by page, so that no
  * large buffer needs contiguous RAM), places it in one GPU address space,
  * and maps it into the client that asks (vm_remap).
+ *
+ * A heap (PANFROST_BO_HEAP) is the exception: only its place in the
+ * address space is taken at creation, and its memory comes 2 MiB at a time
+ * as the GPU faults on it (mali_bo_grow()); no processor ever maps it.
  */
+#define MALI_HEAP_PIECE	0x200000u	/* what a fault in a heap brings in */
+
 struct mali_bo {
 	TAILQ_ENTRY(mali_bo) link;	/* in its address space, by address */
 	struct mali_vm *vm;
 	uint32_t flags;			/* PANFROST_BO_* */
 	size_t size;			/* a whole number of pages */
-	void *cpu;			/* this service's mapping */
+	size_t mem;			/* bytes of memory behind it */
+	void *cpu;			/* this service's mapping; NULL: a heap */
+	void **pieces;			/* a heap's, NULL until a fault */
 	phys_bytes *pages;		/* the physical address of each page */
 	uint64_t va;			/* in the GPU address space */
 	unsigned refs;			/* a handle, a job, a wait each hold one */
@@ -199,6 +208,7 @@ void mali_bo_for_cpu(struct mali_bo *bo);
 int mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
 	int writable, void **where);
 struct mali_bo *mali_bo_at(struct mali_vm *vm, uint64_t va);
+int mali_bo_grow(struct mali_bo *bo, uint64_t va, uint64_t *piece);
 size_t mali_bo_total(void);
 
 /*

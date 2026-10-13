@@ -341,9 +341,11 @@ irq_handle(int i)
 	 * The job line is cleared before its handler, as panfrost does: the
 	 * handler may start the next job, and a short one could be done -
 	 * its bit up - before a clear after the handler took it with the
-	 * old one.  The MMU line is cleared after: switching an address
-	 * space off raises its fault bit again (measured on the board), and
-	 * the clear after the handler is what takes that second bit.
+	 * old one.  The MMU line is cleared by its handler, bit by bit at
+	 * the right moments (mali_mmu.c): before the flush that lets a heap's
+	 * access go on, which may fault again at once, and again after the
+	 * switch-off of a window, which raises its fault bit again (measured
+	 * on the board).  A clear here, after it, could take a new fault.
 	 */
 	if (i == MALI_IRQ_JOB && s != 0)
 		mali_wr(gpu, clear[i], s);
@@ -367,7 +369,7 @@ irq_handle(int i)
 		log_info(&mali_log, "line %d (%s): status 0x%08x\n",
 		    mali.info.irq[i], irq_names[i], s);
 
-	if (i != MALI_IRQ_JOB && s != 0)
+	if (i == MALI_IRQ_GPU && s != 0)
 		mali_wr(gpu, clear[i], s);
 	(void)sys_irqenable(&mali.irq_hook[i]);
 }

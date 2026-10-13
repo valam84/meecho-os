@@ -21,6 +21,14 @@
  * entry goes into a page table: otherwise a job could read what the
  * page's previous owner left in RAM.
  *
+ * A heap grows on demand, as under Linux (PORTING-LOG, "Этап 11.6, куча"):
+ * Mesa asks for 128 MiB of tiler heap per GL context and a frame uses a
+ * few.  Creating one takes only its place in the address space; a
+ * translation fault inside it brings in the 2 MiB piece that holds the
+ * address - memory, cleaned, mapped - and the access that faulted goes on
+ * (mali_mmu.c).  Memory counts against the limits as it comes, so the
+ * limits are of memory, not of promises.
+ *
  * The place in the GPU address space follows panfrost (drm_mm, best fit,
  * from 32 MiB to 4 GiB): a buffer that is not code is aligned to 2 MiB if
  * it is that big; code is aligned to its own size, so that it never
@@ -223,7 +231,7 @@ va_alloc(struct mali_vm *vm, size_t size, uint32_t flags, uint64_t *va,
 static void
 bo_destroy(struct mali_bo *bo)
 {
-	size_t npages = bo->size / MALI_PAGE;
+	size_t npages = bo->size / MALI_PAGE, i;
 
 	/*
 	 * Out of the GPU's tables first, and out of the MMU's caches: the
@@ -235,17 +243,53 @@ bo_destroy(struct mali_bo *bo)
 	}
 	if (bo->cpu != NULL && bo->cpu != MAP_FAILED)
 		munmap(bo->cpu, bo->size);
-	bo->vm->mem -= bo->size;
-	total -= bo->size;
+	if (bo->pieces != NULL)
+		for (i = 0; i < bo->size / MALI_HEAP_PIECE; i++)
+			if (bo->pieces[i] != NULL)
+				munmap(bo->pieces[i], MALI_HEAP_PIECE);
+	bo->vm->mem -= bo->mem;
+	total -= bo->mem;
+	free(bo->pieces);
 	free(bo->pages);
 	free(bo);
 }
 
 /*
+ * A heap: its place, and nothing behind it yet - no memory, no entries in
+ * the tables; the GPU's first access to each 2 MiB of it faults, and the
+ * fault brings the piece in (mali_bo_grow()).
+ */
+static struct mali_bo *
+heap_new(struct mali_bo *bo, int *err)
+{
+	struct mali_bo *before;
+	uint64_t va;
+	int r;
+
+	if ((bo->pieces = calloc(bo->size / MALI_HEAP_PIECE,
+	    sizeof(*bo->pieces))) == NULL) {
+		bo_destroy(bo);
+		*err = ENOMEM;
+		return NULL;
+	}
+	if ((r = va_alloc(bo->vm, bo->size, bo->flags, &va, &before)) != OK) {
+		bo_destroy(bo);
+		*err = r;
+		return NULL;
+	}
+	bo->va = va;
+	if (before != NULL)
+		TAILQ_INSERT_BEFORE(before, bo, link);
+	else
+		TAILQ_INSERT_TAIL(&bo->vm->bos, bo, link);
+	bo->mmap_offset = MMAP_OFFSET_BASE + va;
+	return bo;
+}
+
+/*
  * A new buffer of size bytes in vm, with PANFROST_BO_* flags, placed and
- * mapped on the GPU.  The caller checks the flags; a heap is backed
- * whole, here, from the start (it may grow on demand under Linux; it
- * does no harm to have it all, and it is never mapped by a processor).
+ * mapped on the GPU.  The caller checks the flags.  A heap is placed and
+ * left empty (heap_new()).
  */
 struct mali_bo *
 mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
@@ -263,15 +307,7 @@ mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
 		*err = EINVAL;
 		return NULL;
 	}
-	if (total + size > limit_total || vm->mem + size > limit_vm) {
-		*err = ENOMEM;
-		return NULL;
-	}
-	npages = size / MALI_PAGE;
-
-	if ((bo = calloc(1, sizeof(*bo))) == NULL ||
-	    (bo->pages = calloc(npages, sizeof(*bo->pages))) == NULL) {
-		free(bo);
+	if ((bo = calloc(1, sizeof(*bo))) == NULL) {
 		*err = ENOMEM;
 		return NULL;
 	}
@@ -279,6 +315,21 @@ mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
 	bo->flags = flags;
 	bo->size = size;
 	bo->refs = 1;
+	if (flags & PANFROST_BO_HEAP)
+		return heap_new(bo, err);
+
+	if (total + size > limit_total || vm->mem + size > limit_vm) {
+		free(bo);
+		*err = ENOMEM;
+		return NULL;
+	}
+	npages = size / MALI_PAGE;
+	if ((bo->pages = calloc(npages, sizeof(*bo->pages))) == NULL) {
+		free(bo);
+		*err = ENOMEM;
+		return NULL;
+	}
+	bo->mem = size;
 	vm->mem += size;
 	total += size;
 
@@ -349,6 +400,62 @@ mali_bo_at(struct mali_vm *vm, uint64_t va)
 		if (va >= bo->va && va < bo->va + bo->size)
 			return bo;
 	return NULL;
+}
+
+/*
+ * The heap bo grows by the 2 MiB piece that holds GPU address va: memory,
+ * cleaned to RAM, into the tables - panfrost's panfrost_mmu_map_fault_addr().
+ * Called from the MMU line, the access that faulted waiting; mapping the
+ * piece flushes the MMU's caches of it (mali_vm_map()), and that command is
+ * what lets the access go on.  *piece is where the piece starts.  OK if the
+ * piece is there now - EEXIST if it was before, which the caller answers
+ * with a flush of its own; ENOMEM past the limits or without memory.
+ */
+int
+mali_bo_grow(struct mali_bo *bo, uint64_t va, uint64_t *piece)
+{
+	static phys_bytes pages[MALI_HEAP_PIECE / MALI_PAGE];
+	size_t i = (size_t)((va - bo->va) / MALI_HEAP_PIECE), k;
+	void *p;
+	int r;
+
+	if (!(bo->flags & PANFROST_BO_HEAP) || va < bo->va ||
+	    va >= bo->va + bo->size)
+		return EINVAL;
+	*piece = bo->va + (uint64_t)i * MALI_HEAP_PIECE;
+	if (bo->pieces[i] != NULL)
+		return EEXIST;
+	if (total + MALI_HEAP_PIECE > limit_total ||
+	    bo->vm->mem + MALI_HEAP_PIECE > limit_vm)
+		return ENOMEM;
+
+	p = mmap(NULL, MALI_HEAP_PIECE, PROT_READ | PROT_WRITE,
+	    MAP_ANON | MAP_PRIVATE | MAP_PREALLOC, -1, 0);
+	if (p == MAP_FAILED)
+		return ENOMEM;
+	for (k = 0; k < MALI_HEAP_PIECE / MALI_PAGE; k++) {
+		if ((r = sys_umap(SELF, VM_D, (vir_bytes)p + k * MALI_PAGE,
+		    MALI_PAGE, &pages[k])) != OK) {
+			log_warn(&mali_log, "no physical address for page %zu "
+			    "of a heap piece: %d\n", k, r);
+			munmap(p, MALI_HEAP_PIECE);
+			return ENOMEM;
+		}
+	}
+	/* VM's zeros to RAM, before the GPU can read the pages. */
+	cache(CACHE_CLEAN_INVALIDATE, p, MALI_HEAP_PIECE);
+
+	/* Never code, as panfrost maps it: read, write, no execute. */
+	if ((r = mali_vm_map(bo->vm, *piece, pages, MALI_HEAP_PIECE / MALI_PAGE,
+	    MALI_PTE_READ | MALI_PTE_WRITE | MALI_PTE_XN)) != OK) {
+		munmap(p, MALI_HEAP_PIECE);
+		return r;
+	}
+	bo->pieces[i] = p;
+	bo->mem += MALI_HEAP_PIECE;
+	bo->vm->mem += MALI_HEAP_PIECE;
+	total += MALI_HEAP_PIECE;
+	return OK;
 }
 
 /* Before a job: what a processor wrote, to memory. */

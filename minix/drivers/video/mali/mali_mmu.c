@@ -33,6 +33,16 @@
  * free again; the faulting address space gets one back, cleared and
  * unmasked first, when its next job starts.  Nothing of the fault reaches
  * any other address space.
+ *
+ * One fault is resolved instead: a translation fault inside a heap, which
+ * is how a heap grows (mali_bo_grow()).  The access that faulted waits in
+ * the MMU; the fault is cleared first, then the piece is mapped, and the
+ * flush of the MMU's caches that the mapping ends with is what lets it go
+ * on - kbase's order, and kbase says why: the flush restarts every stalled
+ * access, one may fault at once, and a bit still up from the old fault
+ * would hide the new one.  The same reason keeps the line's clear in here
+ * rather than after the handler (mali.c): a clear after a flush could take
+ * the next fault of the same window with the old one.
  */
 
 #include <minix/drivers.h>
@@ -47,6 +57,7 @@
 
 #include "mali.h"
 #include "malireg.h"
+#include "panfrost_drm.h"
 
 #define NENT		512
 
@@ -476,14 +487,75 @@ exception_name(uint32_t fs)
 }
 
 /*
- * A fault in window as; bits are its MMU_INT_STAT bits.  Taken the way
- * panfrost takes one it cannot resolve: cleared, the window switched off,
- * which fails whatever job is stalled on the fault.  Measured on the board
+ * A fault in window as that may be a heap's: a translation fault (of any
+ * level - the piece may lack a table as well as an entry), not a bus
+ * error, at an address inside a heap of the address space in the window.
+ * Then the heap grows by the piece that holds the address and the access
+ * that faulted goes on: OK.  Anything else is for as_fault() to take.
+ */
+static int
+heap_fault(int as, struct mali_vm *vm, uint32_t bits, uint32_t fs,
+	uint64_t addr)
+{
+	struct mali_bo *bo;
+	uint64_t piece;
+	u64_t t0, t1;
+	int r;
+
+	if (vm == NULL || bits != MMU_INT_PAGE_FAULT(as) ||
+	    !MALI_EXC_TRANSLATION(AS_FAULT_EXCEPTION(fs)) ||
+	    (bo = mali_bo_at(vm, addr)) == NULL ||
+	    !(bo->flags & PANFROST_BO_HEAP))
+		return ESRCH;
+
+	/* Cleared before the flush that lets the access go on: see above. */
+	mali_wr(gpu(), MMU_INT_CLEAR, MMU_INT_PAGE_FAULT(as));
+	read_frclock_64(&t0);
+	r = mali_bo_grow(bo, addr, &piece);
+	read_frclock_64(&t1);
+	if (r == EEXIST) {
+		/*
+		 * The piece is there already: a second access faulted on it
+		 * before the first one's flush.  Panfrost only clears such a
+		 * fault; kbase sends the flush anyway, because the access may
+		 * still be waiting for one, and so does this.
+		 */
+		log_debug(&mali_log, "%s: heap fault at 0x%08llx, the piece at "
+		    "0x%08llx is there already\n", vm->name,
+		    (unsigned long long)addr, (unsigned long long)piece);
+		(void)as_flush(as, piece, MALI_HEAP_PIECE, AS_COMMAND_FLUSH_PT);
+	} else if (r != OK) {
+		log_warn(&mali_log, "%s: the heap at 0x%08llx cannot grow at "
+		    "0x%08llx (%zu KiB of %zu): %d\n", vm->name,
+		    (unsigned long long)bo->va, (unsigned long long)addr,
+		    bo->mem / 1024, bo->size / 1024, r);
+		return r;
+	} else {
+		vm->grows++;
+		log_debug(&mali_log, "%s: heap fault at 0x%08llx (status "
+		    "0x%08x): 2 MiB at 0x%08llx mapped in %u us, %zu KiB of "
+		    "%zu\n", vm->name, (unsigned long long)addr, fs,
+		    (unsigned long long)piece,
+		    frclock_64_to_micros(delta_frclock_64(t0, t1)),
+		    bo->mem / 1024, bo->size / 1024);
+	}
+	/*
+	 * A job of this window that failed meanwhile, for a reason of its
+	 * own, waits for its MMU half (mali_sched.c); this was it.
+	 */
+	mali_sched_mmu_fault(as, bo->vm);
+	return OK;
+}
+
+/*
+ * A fault in window as; bits are its MMU_INT_STAT bits.  A heap's grows
+ * the heap (heap_fault()).  Any other is taken the way panfrost takes one
+ * it cannot resolve: cleared, the window switched off, which fails
+ * whatever job is stalled on the fault.  Measured on the board
  * (PORTING-LOG, "Линия MMU"): the clear takes, and the switch-off raises
  * the bit again - the access that waited faults once more as the tables
- * go - while the job fails at once (JOB_BUS_FAULT).  The caller's clear on
- * return takes that second bit; as_enable() clears again before unmasking
- * whatever the order.
+ * go - while the job fails at once (JOB_BUS_FAULT).  A second clear takes
+ * that bit; as_enable() clears again before unmasking whatever the order.
  */
 static void
 as_fault(int as, uint32_t bits)
@@ -497,6 +569,9 @@ as_fault(int as, uint32_t bits)
 	fs = mali_rd(gpu(), AS_FAULTSTATUS(as));
 	addr = ((uint64_t)mali_rd(gpu(), AS_FAULTADDRESS_HI(as)) << 32) |
 	    mali_rd(gpu(), AS_FAULTADDRESS_LO(as));
+
+	if (heap_fault(as, vm, bits, fs, addr) == OK)
+		return;
 
 	snprintf(line, sizeof(line), "line %d (mmu): status 0x%08x; address "
 	    "space %d %s 0x%08x (%s 0x%02x, %s access, source 0x%x) at "
@@ -531,6 +606,7 @@ as_fault(int as, uint32_t bits)
 		    mali_rd(gpu(), JOB_INT_RAWSTAT),
 		    mali_rd(gpu(), JS_STATUS(0)), mali_rd(gpu(), JS_STATUS(1)),
 		    mali_rd(gpu(), GPU_STATUS));
+	mali_wr(gpu(), MMU_INT_CLEAR, bits);
 
 	if (vm == NULL) {
 		log_warn(&mali_log, "address space %d faulted with nobody's "
@@ -553,7 +629,10 @@ as_fault(int as, uint32_t bits)
 	mali_sched_mmu_fault(as, vm);
 }
 
-/* The MMU line: s is MMU_INT_STAT. */
+/*
+ * The MMU line: s is MMU_INT_STAT.  Every bit of it is cleared here, each
+ * at its moment (as_fault(), heap_fault()); the caller clears nothing.
+ */
 void
 mali_mmu_irq(uint32_t s)
 {

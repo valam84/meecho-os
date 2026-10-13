@@ -6,6 +6,7 @@
 #   sem_*(3)       declared by <semaphore.h>, implemented by nothing else
 #   pthread_sigmask(3)  (__libc_thr_sigsetmask)
 #   <uchar.h>      C11 char32_t conversions, UTF-8 whatever the locale
+#   <poll.h>       poll() that lets the other threads run (poll.c)
 #   <linux/input-event-codes.h>  FreeBSD's header (external/bsd/evdev)
 #
 # The headers go to /usr/include/gfxcompat, not /usr/include, and the code
@@ -21,13 +22,13 @@
 
 LIB=	gfxcompat
 
-SRCS=	threads.c semaphore.c sigmask.c uchar.c
+SRCS=	threads.c poll.c semaphore.c sigmask.c uchar.c
 
 CPPFLAGS+=	-I${.CURDIR}/include
 
 .PATH:	${.CURDIR}/include ${NETBSDSRCDIR}/external/bsd/evdev/dist
 
-INCS=		pthread.h threads.h uchar.h input-event-codes.h
+INCS=		pthread.h threads.h uchar.h poll.h input-event-codes.h
 INCSDIR=	/usr/include/gfxcompat
 INCSDIR_input-event-codes.h=	/usr/include/gfxcompat/linux
 

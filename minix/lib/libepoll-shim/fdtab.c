@@ -122,6 +122,24 @@ ms_between(const struct timespec *a, const struct timespec *b)
 }
 
 /*
+ * The wait itself.  A program whose threads are libmthread's must not
+ * block the process in poll(2) while another thread could run: fuzzel's
+ * main thread waits here for the list another thread loads.  libgfxcompat's
+ * gfx_poll() shares the wait among the threads; it is asked for weakly -
+ * linked in only beside its thrd_create(), that is, in programs that start
+ * threads - and the wait is poll(2) itself in every other program.
+ */
+int gfx_poll(struct pollfd *, nfds_t, int) __attribute__((__weak__));
+
+static int
+shim_poll(struct pollfd *fds, nfds_t n, int timeout)
+{
+	if (gfx_poll != NULL)
+		return gfx_poll(fds, n, timeout);
+	return poll(fds, n, timeout);
+}
+
+/*
  * poll(2), with timers and signalfd signals; "mask", if given, is the
  * signal mask to wait with (epoll_pwait()).  Answers as poll(2) does.
  */
@@ -156,7 +174,7 @@ int shim_wait(struct pollfd *fds, nfds_t n, int timeout,
 
 		shim_signalled = 0;
 		sigprocmask(SIG_SETMASK, &waitmask, NULL);
-		r = poll(fds, n, t);
+		r = shim_poll(fds, n, t);
 		err = errno;
 		sigprocmask(SIG_SETMASK, &cur, NULL);
 
@@ -171,7 +189,7 @@ int shim_wait(struct pollfd *fds, nfds_t n, int timeout,
 
 		/* What the timers and signals made ready since. */
 		if (fired || shim_signalled) {
-			int r2 = poll(fds, n, 0);
+			int r2 = shim_poll(fds, n, 0);
 
 			if (r2 >= 0)
 				r = r2;
@@ -239,7 +257,7 @@ int epoll_shim_poll(struct pollfd *fds, nfds_t n, int timeout)
 			if (sigismember(&sigs, i))
 				break;
 		if (i == NSIG)
-			return poll(fds, n, timeout);
+			return shim_poll(fds, n, timeout);
 	}
 	return shim_wait(fds, n, timeout, NULL);
 }

@@ -2,11 +2,16 @@
  * C11 thrd_create/thrd_join over libmthread's POSIX names: a trampoline
  * between C11's int-returning start function and POSIX's.  The rest of
  * <threads.h> is inline in the header.
+ *
+ * The first thread also makes the program's waits shared among threads
+ * (poll.c): from then on a thread in poll(2) lets the others run.
  */
 #include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <threads.h>
+
+void gfx_poll_threaded(void);
 
 struct start { thrd_start_t fn; void *arg; };
 
@@ -36,6 +41,7 @@ thrd_create(thrd_t *t, thrd_start_t fn, void *arg)
 
 	if ((s = malloc(sizeof(*s))) == NULL)
 		return thrd_nomem;
+	gfx_poll_threaded();
 	s->fn = fn;
 	s->arg = arg;
 	pthread_attr_init(&attr);

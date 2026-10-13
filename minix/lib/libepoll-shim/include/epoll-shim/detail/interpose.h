@@ -39,6 +39,9 @@ int epoll_shim_poll(struct pollfd *, nfds_t, int);
 #define read(fd, buf, n)	epoll_shim_read(fd, buf, n)
 #define write(fd, buf, n)	epoll_shim_write(fd, buf, n)
 #define close(fd)		epoll_shim_close(fd)
+/* libgfxcompat's <poll.h> may have redirected poll() first; this one wins,
+ * and waits in libgfxcompat's gfx_poll() in its turn (fdtab.c). */
+#undef poll
 #define poll(fds, n, timeout)	epoll_shim_poll(fds, n, timeout)
 #endif
 

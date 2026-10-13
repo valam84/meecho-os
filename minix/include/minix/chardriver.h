@@ -32,5 +32,6 @@ void chardriver_task(const struct chardriver *cdp);
 
 void chardriver_reply_task(endpoint_t endpt, cdev_id_t id, int r);
 void chardriver_reply_select(endpoint_t endpt, devminor_t minor, int ops);
+int chardriver_open_minor(devminor_t minor);
 
 #endif /* _MINIX_CHARDRIVER_H */

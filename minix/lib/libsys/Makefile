@@ -13,6 +13,7 @@ SRCS+=  \
 	alloc_util.c \
 	assert.c \
 	asynsend.c \
+	cdevfd.c \
 	clock_time.c \
 	closenb.c \
 	copyfd.c \

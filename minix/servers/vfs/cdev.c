@@ -16,11 +16,14 @@
  *   cdev_select: initiate a select call on a device
  *   cdev_cancel: cancel an I/O request, blocking until it has been cancelled
  *   cdev_reply:  process the result of a character driver request
+ *   do_cdevfd:   a driver's descriptors of its own device, for a process
+ *                waiting on it (the cdevfd(2) back-call)
  */
 
 #include "fs.h"
 #include "vnode.h"
 #include "file.h"
+#include "vmnt.h"
 #include <string.h>
 #include <fcntl.h>
 #include <sys/ttycom.h>
@@ -529,4 +532,140 @@ cdev_reply(void)
 		printf("VFS: char driver %u sent unknown reply %x\n",
 		    who_e, call_nr);
 	}
+}
+
+/*
+ * The cdevfd(2) back-call: descriptors of a character driver's own device,
+ * for a process that is waiting on a request to that driver.  DRM's PRIME
+ * and sync files are built on it (the mali service): a buffer or a fence
+ * is a minor of the GPU's device, handed to the process as a descriptor in
+ * answer to an ioctl, passed on like any descriptor (fork, SCM_RIGHTS over
+ * a socket), and named again by its number in an ioctl to the driver,
+ * which asks here what it is.
+ *
+ * CDEVFD_NEW gives the process a new descriptor of the given minor.  No
+ * open goes to the driver - it made the thing and counts the open itself -
+ * but the last close of the file does, as for any open.  The file is a
+ * PFS node, as for a cloned device; lseek(2) to its end says the size the
+ * driver gives (a dma-buf's size, which is how Mesa learns it).
+ *
+ * CDEVFD_GET answers which minor of the caller's device a descriptor of the
+ * process is.  Nothing about any other file is said: one of another device
+ * is EINVAL, as a closed number is EBADF.
+ *
+ * What makes it safe to give a driver: the process must be suspended on a
+ * request to the caller right now (an ioctl, so its descriptor table is
+ * not in use by anyone), and the device is the one that request was made
+ * to.  A driver may thus touch only the descriptor tables of processes
+ * that are asking it something, and only with files of its own device -
+ * less than copyfd(2), which a root service may use on any process and
+ * any file.  If the process is being interrupted, unpause() has cleared
+ * its blocked state before cancelling, and the call is refused.
+ */
+int
+do_cdevfd(void)
+{
+  struct fproc *rfp;
+  struct filp *f;
+  struct vnode *vp;
+  struct vmnt *vmp;
+  struct node_details res;
+  endpoint_t endpt;
+  devmajor_t major;
+  devminor_t minor;
+  mode_t bits;
+  uint64_t size;
+  int r, slot, fd, flags;
+
+  endpt = job_m_in.m_lsys_vfs_cdevfd.endpt;
+  if (isokendpt(endpt, &slot) != OK) return(EINVAL);
+  rfp = &fproc[slot];
+
+  if (rfp->fp_blocked_on != FP_BLOCKED_ON_CDEV ||
+      rfp->fp_cdev.endpt != who_e)
+	return(EPERM);
+  major = major(rfp->fp_cdev.dev);
+  if (!dmap_driver_match(who_e, major)) return(EPERM);
+
+  switch (job_m_in.m_lsys_vfs_cdevfd.what) {
+  case CDEVFD_GET:
+	fd = job_m_in.m_lsys_vfs_cdevfd.fd;
+	if (fd < 0 || fd >= OPEN_MAX || (f = rfp->fp_filp[fd]) == NULL ||
+	    f->filp_count == 0 || f->filp_mode == FILP_CLOSED)
+		return(EBADF);
+	vp = f->filp_vno;
+	if (vp == NULL || !S_ISCHR(vp->v_mode) || major(vp->v_sdev) != major)
+		return(EINVAL);
+	return(minor(vp->v_sdev));
+
+  case CDEVFD_NEW:
+	break;
+
+  default:
+	return(EINVAL);
+  }
+
+  flags = job_m_in.m_lsys_vfs_cdevfd.flags;
+  minor = job_m_in.m_lsys_vfs_cdevfd.minor;
+  size = job_m_in.m_lsys_vfs_cdevfd.size;
+
+  if (flags & ~(O_ACCMODE | O_CLOEXEC)) return(EINVAL);
+  switch (flags & O_ACCMODE) {
+  case O_RDONLY:	bits = R_BIT; break;
+  case O_WRONLY:	bits = W_BIT; break;
+  case O_RDWR:		bits = R_BIT | W_BIT; break;
+  default:		return(EINVAL);
+  }
+  if (minor < 0 || minor(makedev(major, minor)) != minor) return(EINVAL);
+  if ((off_t)size < 0) return(EINVAL);
+
+  /* As memfd_create(2) makes its file: vmnt, vnode, then the descriptor. */
+  if ((vmp = find_vmnt(PFS_PROC_NR)) == NULL) return(EIO);
+  if ((r = lock_vmnt(vmp, VMNT_READ)) != OK) return(r);
+
+  if ((vp = get_free_vnode()) == NULL) {
+	unlock_vmnt(vmp);
+	return(err_code);
+  }
+  lock_vnode(vp, VNODE_OPCL);
+
+  if ((r = get_fd(rfp, 0, bits, &fd, &f)) != OK) {
+	unlock_vnode(vp);
+	unlock_vmnt(vmp);
+	return(r);
+  }
+
+  r = req_newnode(PFS_PROC_NR, rfp->fp_effuid, rfp->fp_effgid,
+	I_CHAR_SPECIAL | S_IRUSR | S_IWUSR, makedev(major, minor), &res);
+  if (r != OK) {
+	unlock_filp(f);			/* still unclaimed: count is zero */
+	unlock_vnode(vp);
+	unlock_vmnt(vmp);
+	return(r);
+  }
+
+  vp->v_fs_e = res.fs_e;
+  vp->v_inode_nr = res.inode_nr;
+  vp->v_mode = res.fmode;
+  vp->v_uid = res.uid;
+  vp->v_gid = res.gid;
+  vp->v_size = (off_t)size;
+  vp->v_seals = 0;
+  vp->v_vmnt = NULL;
+  vp->v_dev = NO_DEV;
+  vp->v_sdev = makedev(major, minor);
+  vp->v_fs_count = 1;
+  vp->v_ref_count = 1;
+
+  rfp->fp_filp[fd] = f;
+  f->filp_count = 1;
+  f->filp_vno = vp;
+  f->filp_flags = flags & O_ACCMODE;
+  if (flags & O_CLOEXEC)
+	FD_SET(fd, &rfp->fp_cloexec_set);
+
+  unlock_filp(f);			/* and the vnode, now the filp has it */
+  unlock_vmnt(vmp);
+
+  return(fd);
 }

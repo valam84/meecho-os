@@ -287,6 +287,10 @@ int copyfd(endpoint_t endpt, int fd, int what);
 #define COPYFD_CLOEXEC	0x8000	/* with COPYFD_TO: set close-on-exec flag */
 #define COPYFD_FLAGS	0xF000	/* flags mask */
 int closenb(int fd);
+int cdevfd_new(endpoint_t endpt, devminor_t minor, int flags, uint64_t size);
+int cdevfd_get(endpoint_t endpt, int fd);
+#define CDEVFD_NEW	0	/* a new descriptor of a minor of the caller's */
+#define CDEVFD_GET	1	/* the minor of a descriptor of the caller's */
 
 /*
  * These are also the event numbers used in PROC_EVENT messages, but in order

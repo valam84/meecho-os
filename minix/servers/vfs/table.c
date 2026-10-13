@@ -80,4 +80,5 @@ int (* const call_vec[NR_VFS_CALLS])(void) = {
 	CALL(VFS_GETPEERNAME)	= do_getpeername,	/* getpeername(2) */
 	CALL(VFS_SHUTDOWN)	= do_shutdown,		/* shutdown(2) */
 	CALL(VFS_MEMFD_CREATE)	= do_memfd_create,	/* memfd_create(2) */
+	CALL(VFS_CDEVFD)	= do_cdevfd,		/* cdevfd(2) */
 };

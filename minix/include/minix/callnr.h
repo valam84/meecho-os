@@ -134,7 +134,8 @@
 #define VFS_GETPEERNAME		(VFS_BASE + 62)
 #define VFS_SHUTDOWN		(VFS_BASE + 63)
 #define VFS_MEMFD_CREATE	(VFS_BASE + 64)
+#define VFS_CDEVFD		(VFS_BASE + 65)
 
-#define NR_VFS_CALLS		65	/* highest number from base plus one */
+#define NR_VFS_CALLS		66	/* highest number from base plus one */
 
 #endif /* !_MINIX_CALLNR_H */

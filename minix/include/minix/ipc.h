@@ -1536,6 +1536,18 @@ typedef struct {
 _ASSERT_MSG_SIZE(mess_lsys_vfs_copyfd);
 
 typedef struct {
+	endpoint_t endpt;
+	int what;
+	int fd;
+	int flags;
+	devminor_t minor;
+	uint64_t size;
+
+	uint8_t padding[88];
+} mess_lsys_vfs_cdevfd;
+_ASSERT_MSG_SIZE(mess_lsys_vfs_cdevfd);
+
+typedef struct {
 	devmajor_t major;
 	size_t labellen;
 	vir_bytes label;
@@ -2672,6 +2684,7 @@ typedef struct noxfer_message {
 		mess_lsys_sched_scheduling_stop m_lsys_sched_scheduling_stop;
 		mess_lsys_tty_fkey_ctl	m_lsys_tty_fkey_ctl;
 		mess_lsys_vfs_copyfd	m_lsys_vfs_copyfd;
+		mess_lsys_vfs_cdevfd	m_lsys_vfs_cdevfd;
 		mess_lsys_vfs_mapdriver	m_lsys_vfs_mapdriver;
 		mess_lsys_vfs_socketpath m_lsys_vfs_socketpath;
 		mess_lsys_vm_getref	m_lsys_vm_getref;

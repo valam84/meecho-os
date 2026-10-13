@@ -133,6 +133,27 @@ void chardriver_announce(void)
 }
 
 /*===========================================================================*
+ *				chardriver_open_minor			     *
+ *===========================================================================*/
+int chardriver_open_minor(devminor_t minor)
+{
+/* A minor the driver opened itself, with no open request from VFS: one it
+ * gave a process a descriptor of with cdevfd_new() (a buffer or a fence of
+ * the GPU service).  Requests for a minor nobody opened are dropped below,
+ * without a reply - after a restart they are stale - so without this the
+ * first ioctl on such a descriptor would wait forever (found on QEMU,
+ * port/test/cdevfd).  ENFILE, not the panic of set_open_dev(), when the
+ * table is full: the driver can refuse the descriptor instead.
+ */
+  if (is_open_dev(minor))
+	return OK;
+  if (next_open_devs_slot >= MAX_NR_OPEN_DEVICES)
+	return ENFILE;
+  set_open_dev(minor);
+  return OK;
+}
+
+/*===========================================================================*
  *				chardriver_reply_task			     *
  *===========================================================================*/
 void chardriver_reply_task(endpoint_t endpt, cdev_id_t id, int r)

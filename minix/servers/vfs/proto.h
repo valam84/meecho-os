@@ -37,6 +37,7 @@ int cdev_io(int op, dev_t dev, endpoint_t proc_e, vir_bytes buf, off_t pos,
 int cdev_select(dev_t dev, int ops);
 int cdev_cancel(dev_t dev, endpoint_t endpt, cp_grant_id_t grant);
 void cdev_reply(void);
+int do_cdevfd(void);
 
 /* comm.c */
 int drv_sendrec(endpoint_t drv_e, message *reqm);

@@ -13,7 +13,8 @@ SRCS+= 	accept.c access.c adjtime.c bind.c brk.c sbrk.c m_closefrom.c getsid.c \
 	ioctl.c issetugid.c kill.c link.c listen.c loadname.c lseek.c \
 	memfd_create.c minix_rs.c mkdir.c mkfifo.c mknod.c mmap.c mount.c \
 	msync.c nanosleep.c \
-	getpgid.c open.c pathconf.c pipe.c poll.c posix_spawn.c pread.c ptrace.c pwrite.c \
+	getpgid.c open.c pathconf.c pipe.c poll.c posix_fadvise.c \
+	posix_spawn.c pread.c ptrace.c pwrite.c \
 	read.c readlink.c reboot.c recvfrom.c recvmmsg.c recvmsg.c rename.c \
 	rmdir.c select.c sem.c sendmmsg.c sendmsg.c sendto.c setgroups.c setsid.c \
 	setgid.c settimeofday.c setuid.c shmat.c shmctl.c shmget.c stime.c \

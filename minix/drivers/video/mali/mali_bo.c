@@ -41,9 +41,15 @@
  * of a page with different attributes are undefined behaviour, which is
  * why Linux's write-combining mapping is not an option here).  So a
  * buffer a processor has touched is cleaned before each job that uses it
- * and invalidated after: what the client wrote reaches the GPU, what the
- * GPU wrote reaches the client, and no line the processor fetched
- * speculatively meanwhile hides it.  A buffer no processor maps - a heap,
+ * and cleaned and invalidated after: what the client wrote reaches the
+ * GPU, what the GPU wrote reaches the client, no line the processor
+ * fetched speculatively meanwhile hides it - and what the client wrote
+ * while the job ran stays.  An invalidate alone would drop a dirty line,
+ * and with it a write the client made to another part of the buffer
+ * during the job (a ring it fills, a stream it maps unsynchronized: under
+ * Linux the mapping is write-combining, and such writes are simply in
+ * memory).  Only a line both wrote during the same job loses one side's
+ * bytes - a race in the client wherever it runs.  A buffer no processor maps - a heap,
  * a render target never read back - costs nothing.
  */
 
@@ -466,12 +472,15 @@ mali_bo_for_gpu(struct mali_bo *bo)
 		cache(CACHE_CLEAN_INVALIDATE, bo->cpu, bo->size);
 }
 
-/* After a job: what the GPU wrote, to a processor that looks. */
+/*
+ * After a job: what the GPU wrote, to a processor that looks - and what
+ * the processor wrote meanwhile, to memory first (see above).
+ */
 void
 mali_bo_for_cpu(struct mali_bo *bo)
 {
 	if (bo->cpu_access)
-		cache(CACHE_INVALIDATE, bo->cpu, bo->size);
+		cache(CACHE_CLEAN_INVALIDATE, bo->cpu, bo->size); /* not INVALIDATE */
 }
 
 /*

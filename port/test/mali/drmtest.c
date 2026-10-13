@@ -1141,6 +1141,43 @@ test_hang(void)
 	CHECK(model_errors == 0, "model: %s", model_error_text);
 }
 
+/*
+ * Запись процессора в буфер, пока задание с ним идёт (кольцо, поток с
+ * MAP_UNSYNCHRONIZED): чистка после задания не смеет её выбросить - и
+ * она доходит до ОЗУ.  Сброс без чистки (DC IVAC) терял её.
+ */
+static void
+test_cpu_during_job(void)
+{
+	struct bo b, x;
+	uint32_t h[2];
+	unsigned char *ram;
+	int a;
+
+	printf("запись процессора, пока задание идёт\n");
+	start();
+	a = open_ctx(USER_A);
+	CHECK(create(a, USER_A, 0x4000, 0, &b) == OK && map(a, USER_A, &b,
+	    PROT_READ | PROT_WRITE, MAP_SHARED, 0) == OK, "b");
+	CHECK(create(a, USER_A, 0x2000, PANFROST_BO_NOEXEC, &x) == OK &&
+	    map(a, USER_A, &x, PROT_READ | PROT_WRITE, MAP_SHARED, 0) == OK,
+	    "x");
+	h[0] = b.handle;
+	h[1] = x.handle;
+	write_chain(&b, 2, 0x71);
+	CHECK(submit(a, USER_A, b.va, h, 2, 0, 0) == OK, "submit");
+	memset(x.cpu + 0x40, 0x5c, 64);		/* задание уже начато */
+	CHECK(model_run(1) == 2 && model_line(MALI_IRQ_JOB) == 1, "ran");
+	CHECK((unsigned char)x.cpu[0x40] == 0x5c, "the processor's write "
+	    "during the job is gone: 0x%02x", (unsigned char)x.cpu[0x40]);
+	ram = model_ram(model_pa(x.cpu + 0x40), 64);
+	CHECK(ram != NULL && ram[0] == 0x5c, "the write did not reach RAM: "
+	    "0x%02x", ram ? ram[0] : 0);
+	CHECK(wrong_words(&b, 2, 0x71) == 0, "the job's own words");
+	CHECK(mali_chardriver.cdr_close(a) == OK, "close");
+	CHECK(model_errors == 0, "model: %s", model_error_text);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1153,6 +1190,7 @@ main(int argc, char *argv[])
 	test_fault(1);
 	test_memory();
 	test_heap();
+	test_cpu_during_job();
 	test_hang();
 
 	printf("mali drm: %u проверок, отказов %u\n", checks, failures);

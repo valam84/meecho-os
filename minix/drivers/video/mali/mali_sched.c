@@ -29,7 +29,7 @@
  * anything.
  *
  * Caches: before a job, the buffers it uses that a processor touched are
- * cleaned; after it, invalidated (mali_bo.c).  The GPU's own caches are
+ * cleaned; after it, cleaned and invalidated (mali_bo.c).  The GPU's own caches are
  * cleaned and invalidated at both ends of every job by the slot's
  * configuration, as panfrost does.
  */

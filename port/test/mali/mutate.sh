@@ -75,6 +75,7 @@ grow-await@mali_mmu.c@	mali_sched_mmu_fault(as, bo->vm);@	;
 grow-leak@mali_bo.c@				munmap(bo->pieces\[i\], MALI_HEAP_PIECE);@				;
 grow-no-clean@mali_bo.c@	cache(CACHE_CLEAN_INVALIDATE, p, MALI_HEAP_PIECE);@	;
 grow-no-limit@mali_bo.c@	if (total + MALI_HEAP_PIECE > limit_total ||@	if (0 \&\&
+inval-drops@mali_bo.c@cache(CACHE_CLEAN_INVALIDATE, \(\w*\)->cpu, \(\w*\)->size); /\* not INVALIDATE \*/@cache(CACHE_INVALIDATE, \1->cpu, \2->size);
 grow-read-only@mali_bo.c@MALI_PTE_READ | MALI_PTE_WRITE | MALI_PTE_XN)) != OK) {@MALI_PTE_READ | MALI_PTE_XN)) != OK) {
 '
 

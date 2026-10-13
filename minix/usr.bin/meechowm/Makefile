@@ -1,8 +1,9 @@
-# meechowm: the compositor of stage 11.4 (meechowm.h says what is whose).
-# Built on the Wayland stack in external/mit; static, as the userland is.
+# meechowm: the compositor of stage 11.4, with the strip of 11.7 (meechowm.h
+# and wm.h say what is whose).  Built on the Wayland stack in external/mit;
+# static, as the userland is.
 
 PROG=	meechowm
-SRCS=	meechowm.c fbout.c input.c hid2evdev.c
+SRCS=	meechowm.c strip.c layout.c ipc.c fbout.c input.c hid2evdev.c
 MAN=
 
 WLPROTOCOLSDIST=	${NETBSDSRCDIR}/external/mit/wayland-protocols/dist

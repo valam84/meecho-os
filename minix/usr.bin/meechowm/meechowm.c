@@ -1,5 +1,5 @@
 /*
- * meechowm - the compositor of MEECHO (stage 11.4).
+ * meechowm - the compositor of MEECHO (stage 11.4; the strip, 11.7).
  *
  * Grown from tinywl, the example compositor of wlroots (CC0; its comments
  * are kept where the code is still its), with MEECHO's screen and input in
@@ -9,18 +9,41 @@
  * there (fbout.c); keys and the mouse come from the input server
  * (input.c).
  *
+ * Windows do not float: each is a column on a strip that scrolls
+ * sideways, a strip per workspace, the workspaces one above another
+ * (strip.c; wm.h says which part is where).  The keys, with Super (or
+ * Alt, MEECHOWM_MOD=alt):
+ *
+ *   Left Right / h l            focus the column beside
+ *   Up Down / k j               the workspace above, below
+ *   Shift + any of those        move the focused column there
+ *   r                           its next width: 1/3, 1/2, 2/3 of the screen
+ *   f                           all of the screen, or back
+ *   c                           put it in the middle
+ *   q                           close it
+ *   Return                      a terminal (MEECHOWM_TERM, foot)
+ *   1 .. 9                      workspace 1 .. 9
+ *   Shift+e                     end the compositor (and so does Alt+Escape)
+ *   the wheel                   focus the column left or right
+ *
+ * A click focuses the column under the pointer.  The same commands come
+ * over a socket (ipc.c): "meechowm -m focus right", "meechowm -m state".
+ *
  *   meechowm [-s startup command]
+ *   meechowm -m command [argument ...]
  *
  * Environment: MEECHOWM_FB (default /dev/fb0; without it, no screen - the
  * compositor runs headless, 1280x720), MEECHOWM_KBD, MEECHOWM_MOUSE,
- * XKB_CONFIG_ROOT.  Alt+Escape ends it, and the console has the screen
- * back.
+ * MEECHOWM_MOD (super or alt), MEECHOWM_TERM, MEECHOWM_GAP (pixels, 8),
+ * MEECHOWM_WIDTH (a new column's: 1/3, 1/2, 2/3 or 1), MEECHOWM_SOCK,
+ * XKB_CONFIG_ROOT.  When it ends, the console has the screen back.
  */
 #include <assert.h>
 #include <getopt.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
@@ -40,58 +63,16 @@
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include "layout.h"
 #include "meechowm.h"
+#include "wm.h"
 
 /* For brevity's sake, struct members are annotated where they are used. */
-enum tinywl_cursor_mode {
-	TINYWL_CURSOR_PASSTHROUGH,
-	TINYWL_CURSOR_MOVE,
-	TINYWL_CURSOR_RESIZE,
-};
-
-struct tinywl_server {
-	struct mc_fb *fb;		/* the screen; NULL: headless */
-	struct wl_display *wl_display;
-	struct wlr_backend *backend;
-	struct wlr_renderer *renderer;
-	struct wlr_allocator *allocator;
-	struct wlr_scene *scene;
-	struct wlr_scene_output_layout *scene_layout;
-
-	struct wlr_xdg_shell *xdg_shell;
-	struct wl_listener new_xdg_toplevel;
-	struct wl_listener new_xdg_popup;
-	struct wl_list toplevels;
-
-	struct wlr_cursor *cursor;
-	struct wlr_xcursor_manager *cursor_mgr;
-	struct wl_listener cursor_motion;
-	struct wl_listener cursor_motion_absolute;
-	struct wl_listener cursor_button;
-	struct wl_listener cursor_axis;
-	struct wl_listener cursor_frame;
-
-	struct wlr_seat *seat;
-	struct wl_listener new_input;
-	struct wl_listener request_cursor;
-	struct wl_listener pointer_focus_change;
-	struct wl_listener request_set_selection;
-	struct wl_list keyboards;
-	enum tinywl_cursor_mode cursor_mode;
-	struct tinywl_toplevel *grabbed_toplevel;
-	double grab_x, grab_y;
-	struct wlr_box grab_geobox;
-	uint32_t resize_edges;
-
-	struct wlr_output_layout *output_layout;
-	struct wl_list outputs;
-	struct wl_listener new_output;
-};
-
 struct tinywl_output {
 	struct wl_list link;
 	struct tinywl_server *server;
@@ -99,21 +80,6 @@ struct tinywl_output {
 	struct wl_listener frame;
 	struct wl_listener request_state;
 	struct wl_listener destroy;
-};
-
-struct tinywl_toplevel {
-	struct wl_list link;
-	struct tinywl_server *server;
-	struct wlr_xdg_toplevel *xdg_toplevel;
-	struct wlr_scene_tree *scene_tree;
-	struct wl_listener map;
-	struct wl_listener unmap;
-	struct wl_listener commit;
-	struct wl_listener destroy;
-	struct wl_listener request_move;
-	struct wl_listener request_resize;
-	struct wl_listener request_maximize;
-	struct wl_listener request_fullscreen;
 };
 
 struct tinywl_popup {
@@ -132,7 +98,82 @@ struct tinywl_keyboard {
 	struct wl_listener destroy;
 };
 
-static void focus_toplevel(struct tinywl_toplevel *toplevel) {
+/*
+ * A window's server-side decoration: what the strip draws for it (the
+ * focus ring) in place of its own title bar and shadow.  It lives as long
+ * as the client keeps it, which may be less or more than the window.
+ */
+struct mw_decoration {
+	struct wlr_xdg_toplevel_decoration_v1 *wlr;
+	struct tinywl_toplevel *toplevel;
+	struct wl_listener request_mode;
+	struct wl_listener destroy;
+};
+
+/*
+ * The compositor's keys, all with its modifier; those marked shift with
+ * Shift too (whose letters come in capitals).  vi's h j k l stand beside
+ * the arrows.
+ */
+static const struct binding {
+	bool shift;
+	xkb_keysym_t sym;
+	const char *command;
+} bindings[] = {
+	{ false, XKB_KEY_Left,	"focus left" },
+	{ false, XKB_KEY_h,	"focus left" },
+	{ false, XKB_KEY_Right,	"focus right" },
+	{ false, XKB_KEY_l,	"focus right" },
+	{ false, XKB_KEY_Up,	"focus up" },
+	{ false, XKB_KEY_k,	"focus up" },
+	{ false, XKB_KEY_Down,	"focus down" },
+	{ false, XKB_KEY_j,	"focus down" },
+	{ true,	 XKB_KEY_Left,	"move left" },
+	{ true,	 XKB_KEY_H,	"move left" },
+	{ true,	 XKB_KEY_Right,	"move right" },
+	{ true,	 XKB_KEY_L,	"move right" },
+	{ true,	 XKB_KEY_Up,	"move up" },
+	{ true,	 XKB_KEY_K,	"move up" },
+	{ true,	 XKB_KEY_Down,	"move down" },
+	{ true,	 XKB_KEY_J,	"move down" },
+	{ false, XKB_KEY_r,	"width next" },
+	{ false, XKB_KEY_f,	"maximize" },
+	{ false, XKB_KEY_c,	"center" },
+	{ false, XKB_KEY_q,	"close" },
+	{ false, XKB_KEY_Return, "terminal" },
+	{ false, XKB_KEY_1,	"workspace 1" },
+	{ false, XKB_KEY_2,	"workspace 2" },
+	{ false, XKB_KEY_3,	"workspace 3" },
+	{ false, XKB_KEY_4,	"workspace 4" },
+	{ false, XKB_KEY_5,	"workspace 5" },
+	{ false, XKB_KEY_6,	"workspace 6" },
+	{ false, XKB_KEY_7,	"workspace 7" },
+	{ false, XKB_KEY_8,	"workspace 8" },
+	{ false, XKB_KEY_9,	"workspace 9" },
+	{ true,	 XKB_KEY_E,	"quit" },
+};
+
+static void process_cursor_motion(struct tinywl_server *server, uint32_t time);
+
+static uint32_t now_ms(void) {
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000);
+}
+
+/* A command of the compositor's own, from a key or the wheel. */
+static void run_command(struct tinywl_server *server, const char *command) {
+	static struct mw_reply reply;
+	reply.len = 0;
+	reply.error = false;
+	reply.buf[0] = '\0';
+	wm_command(server, command, &reply);
+	if (reply.error) {
+		wlr_log(WLR_ERROR, "%s: %s", command, reply.buf);
+	}
+}
+
+void focus_toplevel(struct tinywl_toplevel *toplevel) {
 	/* Note: this function only deals with keyboard focus. */
 	if (toplevel == NULL) {
 		return;
@@ -153,7 +194,11 @@ static void focus_toplevel(struct tinywl_toplevel *toplevel) {
 		 */
 		struct wlr_xdg_toplevel *prev_toplevel =
 			wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
-		if (prev_toplevel != NULL) {
+		/* MEECHO: not one that has just unmapped itself - a client
+		 * that attaches no buffer resets its surface, and a reset
+		 * surface may not be configured.  The strip moves the focus
+		 * away from it at that very moment. */
+		if (prev_toplevel != NULL && prev_toplevel->base->initialized) {
 			wlr_xdg_toplevel_set_activated(prev_toplevel, false);
 		}
 	}
@@ -175,6 +220,14 @@ static void focus_toplevel(struct tinywl_toplevel *toplevel) {
 	}
 }
 
+/*
+ * The strip moved under the pointer: whatever is under it now gets the
+ * pointer, as if it had moved there.
+ */
+void wm_pointer_refresh(struct tinywl_server *server) {
+	process_cursor_motion(server, now_ms());
+}
+
 static void keyboard_handle_modifiers(
 		struct wl_listener *listener, void *data) {
 	/* This event is raised when a modifier key, such as shift or alt, is
@@ -193,31 +246,22 @@ static void keyboard_handle_modifiers(
 		&keyboard->wlr_keyboard->modifiers);
 }
 
-static bool handle_keybinding(struct tinywl_server *server, xkb_keysym_t sym) {
+static bool handle_keybinding(struct tinywl_server *server, xkb_keysym_t sym,
+		bool shift) {
 	/*
 	 * Here we handle compositor keybindings. This is when the compositor is
 	 * processing keys, rather than passing them on to the client for its own
 	 * processing.
 	 *
-	 * This function assumes Alt is held down.
+	 * This function assumes the compositor's modifier is held down.
 	 */
-	switch (sym) {
-	case XKB_KEY_Escape:
-		wl_display_terminate(server->wl_display);
-		break;
-	case XKB_KEY_F1:
-		/* Cycle to the next toplevel */
-		if (wl_list_length(&server->toplevels) < 2) {
-			break;
+	for (size_t i = 0; i < sizeof(bindings) / sizeof(bindings[0]); i++) {
+		if (bindings[i].sym == sym && bindings[i].shift == shift) {
+			run_command(server, bindings[i].command);
+			return true;
 		}
-		struct tinywl_toplevel *next_toplevel =
-			wl_container_of(server->toplevels.prev, next_toplevel, link);
-		focus_toplevel(next_toplevel);
-		break;
-	default:
-		return false;
 	}
-	return true;
+	return false;
 }
 
 static void keyboard_handle_key(
@@ -238,12 +282,19 @@ static void keyboard_handle_key(
 
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
-	if ((modifiers & WLR_MODIFIER_ALT) &&
-			event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-		/* If alt is held down and this button was _pressed_, we attempt to
-		 * process it as a compositor keybinding. */
+	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+		bool shift = (modifiers & WLR_MODIFIER_SHIFT) != 0;
 		for (int i = 0; i < nsyms; i++) {
-			handled = handle_keybinding(server, syms[i]);
+			if ((modifiers & WLR_MODIFIER_ALT) &&
+					syms[i] == XKB_KEY_Escape) {
+				/* tinywl's way out, kept for whoever is at
+				 * the monitor and knows it. */
+				wl_display_terminate(server->wl_display);
+				handled = true;
+			} else if (modifiers & server->mod) {
+				handled |= handle_keybinding(server, syms[i],
+					shift);
+			}
 		}
 	}
 
@@ -404,85 +455,13 @@ static struct tinywl_toplevel *desktop_toplevel_at(
 	while (tree != NULL && tree->node.data == NULL) {
 		tree = tree->node.parent;
 	}
-	return tree->node.data;
-}
-
-static void reset_cursor_mode(struct tinywl_server *server) {
-	/* Reset the cursor mode to passthrough. */
-	server->cursor_mode = TINYWL_CURSOR_PASSTHROUGH;
-	server->grabbed_toplevel = NULL;
-}
-
-static void process_cursor_move(struct tinywl_server *server) {
-	/* Move the grabbed toplevel to the new position. */
-	struct tinywl_toplevel *toplevel = server->grabbed_toplevel;
-	wlr_scene_node_set_position(&toplevel->scene_tree->node,
-		server->cursor->x - server->grab_x,
-		server->cursor->y - server->grab_y);
-}
-
-static void process_cursor_resize(struct tinywl_server *server) {
-	/*
-	 * Resizing the grabbed toplevel can be a little bit complicated, because we
-	 * could be resizing from any corner or edge. This not only resizes the
-	 * toplevel on one or two axes, but can also move the toplevel if you resize
-	 * from the top or left edges (or top-left corner).
-	 *
-	 * Note that some shortcuts are taken here. In a more fleshed-out
-	 * compositor, you'd wait for the client to prepare a buffer at the new
-	 * size, then commit any movement that was prepared.
-	 */
-	struct tinywl_toplevel *toplevel = server->grabbed_toplevel;
-	double border_x = server->cursor->x - server->grab_x;
-	double border_y = server->cursor->y - server->grab_y;
-	int new_left = server->grab_geobox.x;
-	int new_right = server->grab_geobox.x + server->grab_geobox.width;
-	int new_top = server->grab_geobox.y;
-	int new_bottom = server->grab_geobox.y + server->grab_geobox.height;
-
-	if (server->resize_edges & WLR_EDGE_TOP) {
-		new_top = border_y;
-		if (new_top >= new_bottom) {
-			new_top = new_bottom - 1;
-		}
-	} else if (server->resize_edges & WLR_EDGE_BOTTOM) {
-		new_bottom = border_y;
-		if (new_bottom <= new_top) {
-			new_bottom = new_top + 1;
-		}
-	}
-	if (server->resize_edges & WLR_EDGE_LEFT) {
-		new_left = border_x;
-		if (new_left >= new_right) {
-			new_left = new_right - 1;
-		}
-	} else if (server->resize_edges & WLR_EDGE_RIGHT) {
-		new_right = border_x;
-		if (new_right <= new_left) {
-			new_right = new_left + 1;
-		}
-	}
-
-	struct wlr_box *geo_box = &toplevel->xdg_toplevel->base->geometry;
-	wlr_scene_node_set_position(&toplevel->scene_tree->node,
-		new_left - geo_box->x, new_top - geo_box->y);
-
-	int new_width = new_right - new_left;
-	int new_height = new_bottom - new_top;
-	wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_width, new_height);
+	/* MEECHO: a buffer outside every window's tree (the cursor's, a
+	 * drag icon's) has none. */
+	return tree != NULL ? tree->node.data : NULL;
 }
 
 static void process_cursor_motion(struct tinywl_server *server, uint32_t time) {
-	/* If the mode is non-passthrough, delegate to those functions. */
-	if (server->cursor_mode == TINYWL_CURSOR_MOVE) {
-		process_cursor_move(server);
-		return;
-	} else if (server->cursor_mode == TINYWL_CURSOR_RESIZE) {
-		process_cursor_resize(server);
-		return;
-	}
-
-	/* Otherwise, find the toplevel under the pointer and send the event along. */
+	/* Find the toplevel under the pointer and send the event along. */
 	double sx, sy;
 	struct wlr_seat *seat = server->seat;
 	struct wlr_surface *surface = NULL;
@@ -558,16 +537,15 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
 	/* Notify the client with pointer focus that a button press has occurred */
 	wlr_seat_pointer_notify_button(server->seat,
 			event->time_msec, event->button, event->state);
-	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
-		/* If you released any buttons, we exit interactive move/resize mode. */
-		reset_cursor_mode(server);
-	} else {
-		/* Focus that client if the button was _pressed_ */
+	if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
+		/* Focus that client's column if the button was _pressed_ */
 		double sx, sy;
 		struct wlr_surface *surface = NULL;
 		struct tinywl_toplevel *toplevel = desktop_toplevel_at(server,
 				server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-		focus_toplevel(toplevel);
+		if (toplevel != NULL) {
+			strip_focus(toplevel);
+		}
 	}
 }
 
@@ -577,6 +555,15 @@ static void server_cursor_axis(struct wl_listener *listener, void *data) {
 	struct tinywl_server *server =
 		wl_container_of(listener, server, cursor_axis);
 	struct wlr_pointer_axis_event *event = data;
+	/* MEECHO: with the compositor's modifier, the wheel goes along the
+	 * strip - down (or right) to the column on the right. */
+	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+	if (keyboard != NULL &&
+			(wlr_keyboard_get_modifiers(keyboard) & server->mod) &&
+			event->delta != 0) {
+		run_command(server, event->delta > 0 ? "focus right" : "focus left");
+		return;
+	}
 	/* Notify the client with pointer focus of the axis event. */
 	wlr_seat_pointer_notify_axis(server->seat,
 			event->time_msec, event->orientation, event->delta,
@@ -716,24 +703,30 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
 }
 
+static void decoration_apply(struct mw_decoration *decoration) {
+	/* The mode may be set only once the surface has had its first
+	 * commit; until then it is set at that commit. */
+	if (decoration->wlr->toplevel->base->initialized) {
+		wlr_xdg_toplevel_decoration_v1_set_mode(decoration->wlr,
+			WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+	}
+}
+
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	/* Called when the surface is mapped, or ready to display on-screen. */
 	struct tinywl_toplevel *toplevel = wl_container_of(listener, toplevel, map);
 
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
 
-	focus_toplevel(toplevel);
+	/* MEECHO: a column on the strip, and the focus with it. */
+	strip_map(toplevel);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	/* Called when the surface is unmapped, and should no longer be shown. */
 	struct tinywl_toplevel *toplevel = wl_container_of(listener, toplevel, unmap);
 
-	/* Reset the cursor mode if the grabbed toplevel was unmapped. */
-	if (toplevel == toplevel->server->grabbed_toplevel) {
-		reset_cursor_mode(toplevel->server);
-	}
-
+	strip_unmap(toplevel);
 	wl_list_remove(&toplevel->link);
 }
 
@@ -743,10 +736,16 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 
 	if (toplevel->xdg_toplevel->base->initial_commit) {
 		/* When an xdg_surface performs an initial commit, the compositor must
-		 * reply with a configure so the client can map the surface. tinywl
-		 * configures the xdg_toplevel with 0,0 size to let the client pick the
-		 * dimensions itself. */
-		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+		 * reply with a configure so the client can map the surface.
+		 * MEECHO: with the size of the column it will have, tiled on every
+		 * edge, and with the strip's decoration rather than its own. */
+		strip_initial_commit(toplevel);
+		if (toplevel->decoration != NULL) {
+			decoration_apply(toplevel->decoration);
+		}
+	} else {
+		/* Its geometry may have moved within its surface. */
+		strip_commit(toplevel);
 	}
 }
 
@@ -758,82 +757,33 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->unmap.link);
 	wl_list_remove(&toplevel->commit.link);
 	wl_list_remove(&toplevel->destroy.link);
-	wl_list_remove(&toplevel->request_move.link);
-	wl_list_remove(&toplevel->request_resize.link);
 	wl_list_remove(&toplevel->request_maximize.link);
 	wl_list_remove(&toplevel->request_fullscreen.link);
+	if (toplevel->decoration != NULL) {
+		toplevel->decoration->toplevel = NULL;
+	}
 
 	free(toplevel);
-}
-
-static void begin_interactive(struct tinywl_toplevel *toplevel,
-		enum tinywl_cursor_mode mode, uint32_t edges) {
-	/* This function sets up an interactive move or resize operation, where the
-	 * compositor stops propagating pointer events to clients and instead
-	 * consumes them itself, to move or resize windows. */
-	struct tinywl_server *server = toplevel->server;
-
-	server->grabbed_toplevel = toplevel;
-	server->cursor_mode = mode;
-
-	if (mode == TINYWL_CURSOR_MOVE) {
-		server->grab_x = server->cursor->x - toplevel->scene_tree->node.x;
-		server->grab_y = server->cursor->y - toplevel->scene_tree->node.y;
-	} else {
-		struct wlr_box *geo_box = &toplevel->xdg_toplevel->base->geometry;
-
-		double border_x = (toplevel->scene_tree->node.x + geo_box->x) +
-			((edges & WLR_EDGE_RIGHT) ? geo_box->width : 0);
-		double border_y = (toplevel->scene_tree->node.y + geo_box->y) +
-			((edges & WLR_EDGE_BOTTOM) ? geo_box->height : 0);
-		server->grab_x = server->cursor->x - border_x;
-		server->grab_y = server->cursor->y - border_y;
-
-		server->grab_geobox = *geo_box;
-		server->grab_geobox.x += toplevel->scene_tree->node.x;
-		server->grab_geobox.y += toplevel->scene_tree->node.y;
-
-		server->resize_edges = edges;
-	}
-}
-
-static void xdg_toplevel_request_move(
-		struct wl_listener *listener, void *data) {
-	/* This event is raised when a client would like to begin an interactive
-	 * move, typically because the user clicked on their client-side
-	 * decorations. Note that a more sophisticated compositor should check the
-	 * provided serial against a list of button press serials sent to this
-	 * client, to prevent the client from requesting this whenever they want. */
-	struct tinywl_toplevel *toplevel = wl_container_of(listener, toplevel, request_move);
-	begin_interactive(toplevel, TINYWL_CURSOR_MOVE, 0);
-}
-
-static void xdg_toplevel_request_resize(
-		struct wl_listener *listener, void *data) {
-	/* This event is raised when a client would like to begin an interactive
-	 * resize, typically because the user clicked on their client-side
-	 * decorations. Note that a more sophisticated compositor should check the
-	 * provided serial against a list of button press serials sent to this
-	 * client, to prevent the client from requesting this whenever they want. */
-	struct wlr_xdg_toplevel_resize_event *event = data;
-	struct tinywl_toplevel *toplevel = wl_container_of(listener, toplevel, request_resize);
-	begin_interactive(toplevel, TINYWL_CURSOR_RESIZE, event->edges);
 }
 
 static void xdg_toplevel_request_maximize(
 		struct wl_listener *listener, void *data) {
 	/* This event is raised when a client would like to maximize itself,
 	 * typically because the user clicked on the maximize button on client-side
-	 * decorations. tinywl doesn't support maximization, but to conform to
-	 * xdg-shell protocol we still must send a configure.
-	 * wlr_xdg_surface_schedule_configure() is used to send an empty reply.
-	 * However, if the request was sent before an initial commit, we don't do
-	 * anything and let the client finish the initial surface setup. */
+	 * decorations.  MEECHO: maximized is all of the screen's width, as
+	 * "maximize" makes it; either way the client gets a configure, as
+	 * xdg-shell wants, unless the request came before its initial commit. */
 	struct tinywl_toplevel *toplevel =
 		wl_container_of(listener, toplevel, request_maximize);
-	if (toplevel->xdg_toplevel->base->initialized) {
-		wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+	if (!toplevel->xdg_toplevel->base->initialized) {
+		return;
 	}
+	if (toplevel->ws != NULL && toplevel->xdg_toplevel->requested.maximized !=
+			(toplevel->width == MC_W_FULL)) {
+		strip_maximize(toplevel);
+		wm_pointer_refresh(toplevel->server);
+	}
+	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
 }
 
 static void xdg_toplevel_request_fullscreen(
@@ -855,10 +805,12 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	struct tinywl_toplevel *toplevel = calloc(1, sizeof(*toplevel));
 	toplevel->server = server;
 	toplevel->xdg_toplevel = xdg_toplevel;
+	/* MEECHO: out of sight until it is mapped (strip.c). */
 	toplevel->scene_tree =
-		wlr_scene_xdg_surface_create(&toplevel->server->scene->tree, xdg_toplevel->base);
+		wlr_scene_xdg_surface_create(server->hidden, xdg_toplevel->base);
 	toplevel->scene_tree->node.data = toplevel;
 	xdg_toplevel->base->data = toplevel->scene_tree;
+	toplevel->width = toplevel->width_was = server->default_width;
 
 	/* Listen to the various events it can emit */
 	toplevel->map.notify = xdg_toplevel_map;
@@ -871,11 +823,8 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	toplevel->destroy.notify = xdg_toplevel_destroy;
 	wl_signal_add(&xdg_toplevel->events.destroy, &toplevel->destroy);
 
-	/* cotd */
-	toplevel->request_move.notify = xdg_toplevel_request_move;
-	wl_signal_add(&xdg_toplevel->events.request_move, &toplevel->request_move);
-	toplevel->request_resize.notify = xdg_toplevel_request_resize;
-	wl_signal_add(&xdg_toplevel->events.request_resize, &toplevel->request_resize);
+	/* cotd; MEECHO: no interactive move or resize - columns do not
+	 * float, and their widths are presets. */
 	toplevel->request_maximize.notify = xdg_toplevel_request_maximize;
 	wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
 	toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
@@ -930,13 +879,81 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
+static void decoration_request_mode(struct wl_listener *listener, void *data) {
+	/* Whatever the client asks for, the strip decorates: it draws the
+	 * focus ring, and a title bar would only take a column's height. */
+	struct mw_decoration *decoration =
+		wl_container_of(listener, decoration, request_mode);
+	decoration_apply(decoration);
+}
+
+static void decoration_destroy(struct wl_listener *listener, void *data) {
+	struct mw_decoration *decoration =
+		wl_container_of(listener, decoration, destroy);
+	if (decoration->toplevel != NULL) {
+		decoration->toplevel->decoration = NULL;
+	}
+	wl_list_remove(&decoration->request_mode.link);
+	wl_list_remove(&decoration->destroy.link);
+	free(decoration);
+}
+
+static void server_new_decoration(struct wl_listener *listener, void *data) {
+	struct wlr_xdg_toplevel_decoration_v1 *wlr = data;
+	struct mw_decoration *decoration = calloc(1, sizeof(*decoration));
+	if (decoration == NULL) {
+		return;
+	}
+	decoration->wlr = wlr;
+	/* The window's tree is its xdg surface's data, and the window is
+	 * that tree's (server_new_xdg_toplevel). */
+	struct wlr_scene_tree *tree = wlr->toplevel->base->data;
+	decoration->toplevel = tree != NULL ? tree->node.data : NULL;
+	if (decoration->toplevel != NULL) {
+		decoration->toplevel->decoration = decoration;
+	}
+	decoration->request_mode.notify = decoration_request_mode;
+	wl_signal_add(&wlr->events.request_mode, &decoration->request_mode);
+	decoration->destroy.notify = decoration_destroy;
+	wl_signal_add(&wlr->events.destroy, &decoration->destroy);
+	decoration_apply(decoration);
+}
+
 /* A device from input.c, handed to tinywl's own handling. */
 static void mc_new_input(void *data, struct wlr_input_device *device) {
 	struct tinywl_server *server = data;
 	server_new_input(&server->new_input, device);
 }
 
+/* MEECHO: the strip's settings, from the environment. */
+static void settings(struct tinywl_server *server) {
+	const char *v;
+	char *end;
+
+	server->mod = WLR_MODIFIER_LOGO;
+	if ((v = getenv("MEECHOWM_MOD")) != NULL && strcmp(v, "alt") == 0) {
+		server->mod = WLR_MODIFIER_ALT;
+	}
+	server->terminal = (v = getenv("MEECHOWM_TERM")) != NULL ? v : "foot";
+	server->gap = 8;
+	if ((v = getenv("MEECHOWM_GAP")) != NULL) {
+		long g = strtol(v, &end, 10);
+		if (*v != '\0' && *end == '\0' && g >= 0 && g <= 64) {
+			server->gap = (int)g;
+		}
+	}
+	server->default_width = MC_W_HALF;
+	if ((v = getenv("MEECHOWM_WIDTH")) != NULL && mc_width_parse(v) >= 0) {
+		server->default_width = mc_width_parse(v);
+	}
+}
+
 int main(int argc, char *argv[]) {
+	/* MEECHO: a command to the running compositor, and nothing else. */
+	if (argc >= 2 && strcmp(argv[1], "-m") == 0) {
+		return ipc_send(argc - 2, argv + 2);
+	}
+
 	wlr_log_init(getenv("MEECHOWM_DEBUG") ? WLR_DEBUG : WLR_INFO, NULL);
 	char *startup_cmd = NULL;
 
@@ -947,16 +964,19 @@ int main(int argc, char *argv[]) {
 			startup_cmd = optarg;
 			break;
 		default:
-			printf("Usage: %s [-s startup command]\n", argv[0]);
+			printf("Usage: %s [-s startup command]\n"
+			    "       %s -m command [argument ...]\n", argv[0], argv[0]);
 			return 0;
 		}
 	}
 	if (optind < argc) {
-		printf("Usage: %s [-s startup command]\n", argv[0]);
+		printf("Usage: %s [-s startup command]\n"
+		    "       %s -m command [argument ...]\n", argv[0], argv[0]);
 		return 0;
 	}
 
 	struct tinywl_server server = {0};
+	settings(&server);
 	/* The Wayland display is managed by libwayland. It handles accepting
 	 * clients from the Unix socket, managing Wayland globals, and so on. */
 	server.wl_display = wl_display_create();
@@ -1030,6 +1050,8 @@ int main(int argc, char *argv[]) {
 	setenv("WLR_SCENE_DISABLE_DIRECT_SCANOUT", "1", 1);
 	server.scene = wlr_scene_create();
 	server.scene_layout = wlr_scene_attach_output_layout(server.scene, server.output_layout);
+	/* MEECHO: the desktop's background, the focus ring and the workspaces. */
+	strip_init(&server);
 
 	/* Set up xdg-shell version 3. The xdg-shell is a Wayland protocol which is
 	 * used for application windows. For more detail on shells, refer to
@@ -1041,6 +1063,12 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);
 	server.new_xdg_popup.notify = server_new_xdg_popup;
 	wl_signal_add(&server.xdg_shell->events.new_popup, &server.new_xdg_popup);
+
+	/* MEECHO: windows are decorated by the strip, not by themselves. */
+	server.decoration_mgr = wlr_xdg_decoration_manager_v1_create(server.wl_display);
+	server.new_decoration.notify = server_new_decoration;
+	wl_signal_add(&server.decoration_mgr->events.new_toplevel_decoration,
+			&server.new_decoration);
 
 	/*
 	 * Creates a cursor, which is a wlroots utility for tracking the cursor
@@ -1065,7 +1093,6 @@ int main(int argc, char *argv[]) {
 	 *
 	 * And more comments are sprinkled throughout the notify functions above.
 	 */
-	server.cursor_mode = TINYWL_CURSOR_PASSTHROUGH;
 	server.cursor_motion.notify = server_cursor_motion;
 	wl_signal_add(&server.cursor->events.motion, &server.cursor_motion);
 	server.cursor_motion_absolute.notify = server_cursor_motion_absolute;
@@ -1100,7 +1127,7 @@ int main(int argc, char *argv[]) {
 
 	/*
 	 * MEECHO: the keyboard and the mouse, from the input server; then the
-	 * screen, whose size the one output takes.
+	 * screen, whose size the one output and the strip take.
 	 */
 	mc_input_start(wl_display_get_event_loop(server.wl_display),
 		mc_new_input, &server);
@@ -1111,6 +1138,7 @@ int main(int argc, char *argv[]) {
 		mc_fb_size(server.fb, &width, &height);
 	else
 		wlr_log(WLR_INFO, "no screen: headless, %dx%d", width, height);
+	strip_screen(&server, width, height);
 	wlr_headless_add_output(server.backend, (unsigned)width,
 		(unsigned)height);
 
@@ -1120,12 +1148,17 @@ int main(int argc, char *argv[]) {
 		wlr_backend_destroy(server.backend);
 		return 1;
 	}
+	/* MEECHO: and one for commands, beside it. */
+	if (!ipc_start(&server)) {
+		wlr_log(WLR_ERROR, "no command socket: keys only");
+	}
 
 	/* Start the backend. This will enumerate outputs and inputs, become the DRM
 	 * master, etc */
 	if (!wlr_backend_start(server.backend)) {
 		wlr_backend_destroy(server.backend);
 		wl_display_destroy(server.wl_display);
+		ipc_stop();
 		return 1;
 	}
 
@@ -1133,9 +1166,7 @@ int main(int argc, char *argv[]) {
 	 * startup command if requested. */
 	setenv("WAYLAND_DISPLAY", socket, true);
 	if (startup_cmd) {
-		if (fork() == 0) {
-			execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
-		}
+		wm_spawn(startup_cmd);
 	}
 	/* Run the Wayland event loop. This does not return until you exit the
 	 * compositor. Starting the backend rigged up all of the necessary event
@@ -1148,10 +1179,12 @@ int main(int argc, char *argv[]) {
 
 	/* Once wl_display_run returns, we destroy all clients then shut down the
 	 * server. */
+	ipc_stop();
 	wl_display_destroy_clients(server.wl_display);
 
 	wl_list_remove(&server.new_xdg_toplevel.link);
 	wl_list_remove(&server.new_xdg_popup.link);
+	wl_list_remove(&server.new_decoration.link);
 
 	wl_list_remove(&server.cursor_motion.link);
 	wl_list_remove(&server.cursor_motion_absolute.link);

@@ -1,9 +1,12 @@
-/*	at.c - fstatat, unlinkat, fchmodat, fchownat		MEECHO
+/*	at.c - fstatat, unlinkat, fchmodat, fchownat, openat, faccessat
+ *								MEECHO
  *
  * Всё семейство *at() объявлено в <sys/stat.h>, <unistd.h> и <fcntl.h> с
  * самого начала, но реализовано из него было только utimensat(2), да и тот
  * отказывает на настоящем дескрипторе каталога. Обнаружилось на OpenSSH:
- * без этих четырёх не компонуются sshd-session и sshd-auth.
+ * без первых четырёх не компонуются sshd-session и sshd-auth. openat(2) и
+ * faccessat(2) понадобились fuzzel (этап 11.7): он обходит каталоги XDG
+ * дескрипторами.
  *
  * Настоящая поддержка - это разрешение пути относительно дескриптора внутри
  * VFS, то есть новый параметр у каждого вызова, который берёт путь. Здесь
@@ -17,8 +20,9 @@
  *   поведение точное. Это подавляющее большинство обращений.
  * - Для настоящего дескриптора каталога вызов НЕ атомарен: между сменой
  *   каталога и обратной сменой рабочий каталог процесса другой. Программе
- *   с несколькими нитями или с сигналом, который сам ходит по путям, это
- *   видно. Одинокому процессу - нет.
+ *   с сигналом, который сам ходит по путям, это видно. Одинокому процессу -
+ *   нет; и нитям libmthread тоже нет: они переключаются только в её
+ *   собственных вызовах, а между at_enter() и at_leave() таких нет.
  * - Если сохранить текущий каталог не удалось, вызов отказывает и никуда не
  *   переходит: испортить процессу рабочий каталог хуже, чем отказать.
  */
@@ -29,6 +33,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdarg.h>
 #include <unistd.h>
 
 /*
@@ -146,6 +151,52 @@ fchownat(int fd, const char *path, uid_t owner, gid_t group, int flags)
 
 	r = (flags & AT_SYMLINK_NOFOLLOW) ? lchown(path, owner, group) :
 	    chown(path, owner, group);
+
+	at_leave(saved);
+	return r;
+}
+
+int
+openat(int fd, const char *path, int flags, ...)
+{
+	va_list ap;
+	mode_t mode = 0;
+	int saved, r;
+
+	if (flags & O_CREAT) {		/* третий аргумент есть только тогда */
+		va_start(ap, flags);
+		mode = (mode_t)va_arg(ap, int);
+		va_end(ap);
+	}
+	if (at_enter(fd, path, &saved) == -1)
+		return -1;
+
+	r = open(path, flags, mode);
+
+	at_leave(saved);
+	return r;
+}
+
+/*
+ * AT_EACCESS - проверка по действующим, а не реальным id. access(2)
+ * смотрит на реальные, поэтому с AT_EACCESS ответ точен, только пока они
+ * совпадают (программа не set-id); иначе - отказ, а не неверный ответ.
+ * AT_SYMLINK_NOFOLLOW не выражается через access(2) вовсе - отказ.
+ */
+int
+faccessat(int fd, const char *path, int mode, int flags)
+{
+	int saved, r;
+
+	if ((flags & ~AT_EACCESS) != 0 || ((flags & AT_EACCESS) &&
+	    (getuid() != geteuid() || getgid() != getegid()))) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (at_enter(fd, path, &saved) == -1)
+		return -1;
+
+	r = access(path, mode);
 
 	at_leave(saved);
 	return r;

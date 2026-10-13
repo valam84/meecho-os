@@ -6,6 +6,9 @@ PROG=	meechowm
 SRCS=	meechowm.c strip.c layers.c layout.c ipc.c fbout.c input.c \
 	hid2evdev.c
 MAN=
+# Super+d: the launcher and command palette, over fuzzel; the panel, over
+# yambar (both external/mit).
+SCRIPTS=	meechowm-palette.sh meechowm-bar.sh
 
 WLPROTOCOLSDIST=	${NETBSDSRCDIR}/external/mit/wayland-protocols/dist
 WLROOTSPROTO=		${NETBSDSRCDIR}/external/mit/wlroots/dist/protocol

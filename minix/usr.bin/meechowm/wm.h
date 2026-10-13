@@ -151,6 +151,8 @@ void layers_init(struct tinywl_server *server);
 void layers_arrange(struct tinywl_server *server);
 bool layers_hold_keyboard(struct tinywl_server *server);
 void layers_click(struct tinywl_server *server, struct wlr_surface *surface);
+struct mw_reply;
+void layers_state(struct tinywl_server *server, struct mw_reply *reply);
 
 /* strip.c */
 void strip_init(struct tinywl_server *server);

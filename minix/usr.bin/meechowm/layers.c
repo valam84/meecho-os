@@ -244,6 +244,29 @@ new_layer_surface(struct wl_listener *listener, void *data)
 	    wlr->namespace != NULL ? wlr->namespace : "-", (int)l->layer);
 }
 
+/* For "state": a line per layer surface that is mapped. */
+void
+layers_state(struct tinywl_server *s, struct mw_reply *r)
+{
+	static const char *const kb[] = { "none", "exclusive", "on-demand" };
+	struct mw_layer *l;
+	unsigned k;
+
+	wl_list_for_each(l, &s->layer_surfaces, link) {
+		if (!l->wlr->surface->mapped)
+			continue;
+		k = (unsigned)l->wlr->current.keyboard_interactive;
+		wm_reply(r, "layer %s %d %d %d %d %d keyboard %s %s\n",
+		    l->wlr->namespace != NULL && l->wlr->namespace[0] != '\0' ?
+		    l->wlr->namespace : "-", (int)l->wlr->current.layer,
+		    l->scene->tree->node.x, l->scene->tree->node.y,
+		    l->wlr->surface->current.width,
+		    l->wlr->surface->current.height,
+		    k < sizeof(kb) / sizeof(kb[0]) ? kb[k] : "?",
+		    s->layer_focus == l ? "focus" : "-");
+	}
+}
+
 void
 layers_init(struct tinywl_server *s)
 {

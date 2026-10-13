@@ -665,6 +665,7 @@ state(struct tinywl_server *s, struct mw_reply *r)
 			    t->xdg_toplevel->title : "-");
 		}
 	}
+	layers_state(s, r);
 }
 
 /* "left" and "up" are -1, "right" and "down" +1, anything else 0. */

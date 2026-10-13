@@ -320,6 +320,10 @@ context_stop(struct proc *p)
 	 * CPU but is never the one running when a tick arrives - is counted
 	 * too. The loop is a loop because a tick's worth of counts may have
 	 * accumulated more than once; in practice it runs zero or one times.
+	 *
+	 * The process's user and system time are charged from the same count,
+	 * for the same reason: on this port such a process is not merely
+	 * unlucky with the tick but never sees one - see charge_tick().
 	 */
 	tpt = tsc_per_tick[cpu];
 
@@ -327,6 +331,7 @@ context_stop(struct proc *p)
 	while (tpt > 0 && p->p_tick_cycles >= tpt) {
 		p->p_tick_cycles -= tpt;
 		cpuavg_increment(&p->p_cpuavg, kclockinfo.uptime, system_hz);
+		charge_tick(p);
 	}
 
 	/*

@@ -25,6 +25,7 @@ void set_boottime(time_t);
 time_t get_boottime(void);
 void set_kernel_timer(minix_timer_t *tp, clock_t t, tmr_func_t f, int arg);
 void reset_kernel_timer(minix_timer_t *tp);
+void charge_tick(struct proc *p);
 void ser_dump_proc(void);
 
 void cycles_accounting_init(void);

@@ -117,6 +117,9 @@ void context_stop(struct proc * p)
 		 * previous second, but that is not a problem.
 		 */
 		cpuavg_increment(&p->p_cpuavg, kclockinfo.uptime, system_hz);
+
+		/* And its user and system time, for the same reason. */
+		charge_tick(p);
 	}
 
 	/*

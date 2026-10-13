@@ -70,11 +70,8 @@ init_clock(void)
  */
 int timer_int_handler(void)
 {
-	/* Update user and system accounting times. Charge the current process
-	 * for user time. If the current process is not billable, that is, if a
-	 * non-user process is running, charge the billable process for system
-	 * time as well.  Thus the unbillable process' user time is the billable
-	 * user's system time.
+	/* User and system time are not charged here: see charge_tick(). What
+	 * the tick still does per process is the virtual and profile timers.
 	 */
 
 	struct proc * p, * billp;
@@ -104,13 +101,6 @@ int timer_int_handler(void)
 		}
 	}
 
-	/* Update user and system accounting times. Charge the current process
-	 * for user time. If the current process is not billable, that is, if a
-	 * non-user process is running, charge the billable process for system
-	 * time as well.  Thus the unbillable process' user time is the billable
-	 * user's system time.
-	 */
-
 	/*
 	 * The boot watchdog.  Deliberately here, in the timer tick: the
 	 * tick keeps arriving even when one process has taken the CPU
@@ -125,12 +115,6 @@ int timer_int_handler(void)
 
 	p = get_cpulocal_var(proc_ptr);
 	billp = get_cpulocal_var(bill_ptr);
-
-	p->p_user_time++;
-
-	if (! (priv(p)->s_flags & BILLABLE)) {
-		billp->p_sys_time++;
-	}
 
 	/* Decrement virtual timers, if applicable. We decrement both the
 	 * virtual and the profile timer of the current process, and if the
@@ -183,6 +167,39 @@ int timer_int_handler(void)
 	arch_timer_int_handler();
 
 	return(1);					/* reenable interrupts */
+}
+
+/*
+ * Charge one clock tick of CPU time to process 'p'.  The architecture's
+ * context_stop() calls this each time 'p' has run a tick's worth of cycles,
+ * from the same count that feeds the CPU average.
+ *
+ * The rule is the one the timer interrupt used to apply: charge 'p' for
+ * user time, and if 'p' is not billable - a server, a driver or the kernel
+ * itself, working for someone - charge the process being billed on this CPU
+ * the same amount of system time.  Thus the unbillable process' user time is
+ * the billable user's system time.
+ *
+ * What changed is the clock.  Charging whoever was running when the timer
+ * fired misses a process that runs in bursts shorter than a tick, and not by
+ * chance: a process woken by a kernel timer starts right after a tick on the
+ * boot CPU, and a CPU coming out of idle may restart its timer a full tick
+ * from the moment the process begins - aarch64 does.  Measured on the board,
+ * 9 ms bursts out of every 10 ms ran 9 seconds and were charged nothing.
+ * Counting cycles charges what was run, to within a tick over a process's
+ * lifetime (PORTING-LOG.md, "Время процесса у событийных программ").
+ */
+void
+charge_tick(struct proc *p)
+{
+	struct proc *billp;
+
+	p->p_user_time++;
+
+	if (!(priv(p)->s_flags & BILLABLE)) {
+		billp = get_cpulocal_var(bill_ptr);
+		billp->p_sys_time++;
+	}
 }
 
 /*===========================================================================*

@@ -131,6 +131,18 @@ imp_foot() {
 	    $(git -C "$SRC/foot" ls-tree --name-only HEAD | grep -E '\.[ch]$')
 }
 
+# fuzzel (stage 11.7: the launcher and the command palette), without icons:
+# no libpng, no SVG back end, no cairo - so the bundled nanosvg (nanosvg.c,
+# nanosvgrast.c, 3rd-party/) is left out.  Its own copy of the layer-shell
+# protocol comes with it.
+imp_fuzzel() {
+	from_git external/mit/fuzzel/dist fuzzel LICENSE README.md \
+	    CHANGELOG.md fuzzel.ini srgb.py \
+	    external/wlr-layer-shell-unstable-v1.xml \
+	    $(git -C "$SRC/fuzzel" ls-tree --name-only HEAD |
+	    grep -E '\.[ch]$' | grep -v '^nanosvg')
+}
+
 # One header of FreeBSD's (sys/dev/evdev, BSD-2): the key and button codes
 # Linux keeps in its GPL <linux/input-event-codes.h>, same numbers.
 imp_evdev() {
@@ -140,7 +152,8 @@ imp_evdev() {
 }
 
 ALL="libffi wayland wayland_protocols pixman libdrm libxkbcommon
-	xkeyboard_config wlroots freetype fontconfig tllist fcft foot evdev"
+	xkeyboard_config wlroots freetype fontconfig tllist fcft foot fuzzel
+	evdev"
 [ $# -gt 0 ] || set -- $ALL
 for p in "$@"; do
 	p=${p//-/_}

@@ -144,6 +144,8 @@ d--755 0 0
 #endif
 	dev d--755 0 0
 #include "proto.dev"
+		pts d--755 0 0
+		$
 	$
 #include "proto.common.etc"
 #if RAMDISK_DYNAMIC == 1

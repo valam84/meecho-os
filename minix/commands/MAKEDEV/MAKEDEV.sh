@@ -19,6 +19,7 @@ RAMDISK_DEVICES="
 	console
 	fb0
 	input
+	ptmx
 	random
 	urandom
 	ttyp0 ttyp1 ttyp2 ttyp3 ttyp4 ttyp5 ttyp6 ttyp7

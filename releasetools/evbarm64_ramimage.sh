@@ -313,8 +313,20 @@ minix-service up /service/uds ||
 
 # Псевдотерминалы. Интерактивной сессии по ssh без них не будет: шеллу
 # нужен управляющий терминал, а openpty(3) берёт его у этого драйвера.
-minix-service up /service/pty -dev /dev/ptyp0 ||
+# gid - группа tty, её получают узлы /dev/pts/N (как в etc/usr/rc).
+minix-service up /service/pty -dev /dev/ptyp0 \
+    -args "gid=$(stat -f %g /dev/ptmx)" ||
     echo "WARNING: no pseudo terminals"
+
+# Unix98 ones too: /dev/ptmx and its slaves on ptyfs.  posix_openpt(3)
+# needs them - foot does (stage 11.4) - and openpty(3) prefers them, falling
+# back to the pairs above when ptyfs is not there.  The label is "ptyfs"
+# because pty finds the file system by it in DS.
+if [ -x /service/ptyfs ]
+then
+	mount -t ptyfs -o rslabel=ptyfs none /dev/pts >/dev/null ||
+	    echo "WARNING: no Unix98 pseudo terminals"
+fi
 
 # Networking (8.4).  The driver first: LWIP watches DS for "drv.net.*" and
 # would pick up a driver started later just as well, but starting it first

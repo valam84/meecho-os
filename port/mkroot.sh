@@ -212,14 +212,25 @@ fi
 
 # Псевдотерминалы. Без них ssh пускает, но интерактивной сессии не даёт:
 # шеллу нужен управляющий терминал, а openpty(3) берёт его у этого
-# драйвера. Пара /dev/ptypN + /dev/ttypN, майор 9; ptyfs и /dev/pts тут
-# не нужны - openpty(3) на MINIX сначала пробует путь Unix98, а он
-# требует ptyfs, и молча откатывается на пары, которые работают у root.
-# sshd отводит терминал до того, как сбросит права, то есть как root.
+# драйвера. Пара /dev/ptypN + /dev/ttypN, майор 9, и Unix98 ниже. gid -
+# группа tty: её получают узлы /dev/pts/N (grantpt(3)), так же зовёт
+# апстримный etc/usr/rc. sshd отводит терминал до того, как сбросит
+# права, то есть как root.
 if [ -x /service/pty ]
 then
-	minix-service up /service/pty -dev /dev/ptyp0 ||
+	minix-service up /service/pty -dev /dev/ptyp0 \
+	    -args "gid=$(stat -f %g /dev/ptmx)" ||
 	    echo "WARNING: no pseudo terminals"
+fi
+
+# Unix98 pseudo terminals: /dev/ptmx, slaves on ptyfs at /dev/pts.
+# posix_openpt(3) needs them - the terminal of the desktop, foot, does
+# (stage 11.4); openpty(3) prefers them and falls back to the pairs above.
+# The label is "ptyfs" because pty finds the file system by it in DS.
+if [ -x /service/ptyfs ]
+then
+	mount -t ptyfs -o rslabel=ptyfs none /dev/pts >/dev/null ||
+	    echo "WARNING: no Unix98 pseudo terminals"
 fi
 
 # ssh. Ключ хоста делается ЗДЕСЬ, на первой загрузке, а не кладётся в образ:

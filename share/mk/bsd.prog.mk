@@ -485,7 +485,12 @@ CFLAGS+= -flto
 .if ${USE_BITCODE:Uyes} == "no"
 #LSC Gold linker seems to require the library directory to be set up if
 #    a sysroot parameter has been given.
-LDFLAGS+= -L ${DESTDIR}/usr/lib
+# MEECHO: last on the link line, after LDADD, not in LDFLAGS.  LDFLAGS
+# comes first, and ld searches the -L directories in the order given for
+# every -l, wherever it stands: -L${OBJDIR} -lfoo in LDADD found the libfoo
+# an earlier build had installed, not the one built beside the program.
+# NetBSD's USE_COMBINE rule above puts its DESTDIR -L at the end as well.
+_PROGLDLIBDIR= -L${DESTDIR}/usr/lib
 .endif # ${USE_BITCODE:U} == "no"
 .endif # defined(__MINIX)
 
@@ -626,7 +631,7 @@ ${_P}: .gdbinit ${LIBCRT0} ${LIBCRTI} ${OBJS.${_P}} ${LIBC} ${LIBCRTBEGIN} \
 	${_MKTARGET_LINK}
 	${_CCLINK.${_P}} \
 	    ${_LDFLAGS.${_P}} ${_LDSTATIC.${_P}} -o ${.TARGET} \
-	    ${OBJS.${_P}} ${_PROGLDOPTS} ${_LDADD.${_P}}
+	    ${OBJS.${_P}} ${_PROGLDOPTS} ${_LDADD.${_P}} ${_PROGLDLIBDIR}
 .if defined(CTFMERGE)
 	${CTFMERGE} ${CTFMFLAGS} -o ${.TARGET} ${OBJS.${_P}}
 .endif

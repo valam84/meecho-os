@@ -15559,7 +15559,10 @@ UTF-8 при любой локали, и FreeBSD'шный `<linux/input-event-co
 - **Пакет из библиотеки и программ** (fontconfig) — программы берут
   библиотеку из её каталога объектов (`PRINTOBJDIR`), как `xmlwf` у expat:
   один проход строит обе, а в `DESTDIR` библиотека попадает лишь при
-  `install`.
+  `install`. **Верно это стало только с порядком `-L` в `bsd.prog.mk`**
+  («Своя библиотека раньше установленной»): до того `-lfontconfig` молча
+  брал `libfontconfig.a`, оставшуюся в `DESTDIR` от прошлой сборки, если
+  она там была.
 - **Образ корня берёт `/etc` только из ramdisk** — `etc/fonts` добавлен в
   то, что `evbarm64_rootproto.py` берёт из `DESTDIR`. Раскладка — NetBSD'шная:
   `/etc/fonts/fonts.conf`, шаблоны в `/etc/fonts/conf.avail`, в `conf.d`
@@ -15656,15 +15659,18 @@ NetBSD в 2013 году, — со всеми CVE тринадцати лет: bi
   установленную 2.1.0, а не собранную рядом. Здесь это было громко —
   `undefined reference` на пять функций API 2.8
   (`XML_SetAllocTrackerActivationThreshold`…); при совпадающем API та же
-  компоновка с прошлой версией прошла бы **молча**. `xmlwf` теперь
-  называет архив путём (`${EXPATLIB.expat}`).
+  компоновка с прошлой версией прошла бы **молча**. `xmlwf` назвал архив
+  путём (`${EXPATLIB.expat}`); после общей починки возвращена строка
+  NetBSD (`-L${EXPATOBJDIR.expat} -lexpat`) — «Своя библиотека раньше
+  установленной».
 - **У программ fontconfig — то же самое, и молча** (`-L${FONTCONFIGOBJDIR}
   -lfontconfig`, см. «Стек Wayland в дереве»: «один проход строит обе»
   верно, только пока в `DESTDIR` нет прежней `libfontconfig.a`). В этом
   обновлении `fc-*` взяли архив, собранный с `expat.h` 2.1.0, а `DPADD`
   на архив в obj не перекомпонует их и на следующем проходе;
   перекомпонованы вручную, удалением в obj. Makefile fontconfig не
-  тронут — общая починка (порядок `-L` в `bsd.prog.mk`) отдельно.
+  тронут — общая починка (порядок `-L` в `bsd.prog.mk`) отдельно
+  (сделана — «Своя библиотека раньше установленной»).
 
 **Проверка.** `build-dirs.sh external/mit/expat external/mit/fontconfig`
 и весь стек по `port/gfx/README` — без единого предупреждения; `foot`,
@@ -15676,3 +15682,81 @@ NetBSD в 2013 году, — со всеми CVE тринадцати лет: bi
 fontconfig разбирает системный и стендовый `fonts.conf` новым expat,
 `fc-match` находит DejaVu. Набор тестов самого expat на машине не
 гонялся.
+
+## Своя библиотека раньше установленной: порядок `-L` в `bsd.prog.mk` (2026-10-13)
+
+**Дефект сборочной системы MINIX** — не возраст и не архитектура: так
+было бы на любой машине, где obj и `DESTDIR` разошлись. Программа,
+которая берёт библиотеку своего пакета из её каталога объектов
+(`-L${OBJDIR} -lfoo` в `LDADD` или `PROGDPLIBS`), получала ту
+`libfoo.a`, что лежала в `DESTDIR` от прошлой сборки. Строка компоновки
+была такой:
+
+    gcc -L ~/dest-evbarm64/usr/lib -static -o fc-list fc-list.o \
+        -L~/obj-evbarm64/.../libfontconfig -lfontconfig ...
+
+`-L ${DESTDIR}/usr/lib` приходил из `LDFLAGS`, а `LDFLAGS` стоит раньше
+`LDADD`. ld ищет каждую `-l` по всем каталогам `-L` в том порядке, в
+каком они даны, где бы `-l` ни стояла, — значит, первым был `DESTDIR`.
+При совпадающем API это молча (`fc-*` после обновления expat), при новом
+— `undefined reference` (`xmlwf`).
+
+- **Откуда строка.** `4684ddb6a` («LLVM Minix changes», 2013-12-06),
+  продолжение `1d71e39b7` («Gold linker support»): «Gold linker seems to
+  require the library directory to be set up if a sysroot parameter has
+  been given». Ставится на пути без биткода (`USE_BITCODE=no`), у
+  биткодного правила свой `-L` прямо в команде.
+- **Этому порту строка не нужна вовсе.** GCC собран с sysroot =
+  `DESTDIR` (`-print-sysroot`), и драйвер сам отдаёт ld `-L
+  DESTDIR/usr/lib` и `DESTDIR/lib` — **после** всех `-L` командной
+  строки (видно в строке `collect2` под `-v`). Значит, явный `-L` мог
+  только навредить. Убирать его не стали: он писался под i386 с Gold, и
+  проверить там нечем. Перенесён в конец команды (`_PROGLDLIBDIR` после
+  `${_LDADD}`) — так же, как свой `-L ${DESTDIR}/usr/lib` ставит
+  правило `USE_COMBINE` самого NetBSD.
+- **Кого задевало** — всех, у кого `-L` в `LDADD`/`PROGDPLIBS` указывает
+  на библиотеку, которая ещё и ставится: `fc-*` (fontconfig), `xmlwf`
+  (expat), `bzip2` (`libbz2`), `openssl(1)` (`libssl`, `libcrypto`),
+  OpenSSH (`libcrypt`, `libz`, `libcrypto`), `ld.elf_so`
+  (`-L${CLIBOBJ}` перед `-lc_pic`: NetBSD хочет копию из obj). Частные
+  библиотеки (`libmandoc`, `libssh`, `libinstall`, `libarchive_fe`,
+  `libapps`, `libcommon` texinfo, netpgp) не ставятся, их брало верно;
+  правило `*.test` у `lib/libcrypt` `LDFLAGS` не берёт — не задевало
+  никогда. **Сегодня у всех ставящихся obj и `DESTDIR` побайтно равны**
+  (`cmp`), так что ни одна программа от правки не меняется; меняется
+  случай, когда копии разошлись.
+- **`xmlwf`** вернулся к строке NetBSD (`-L${EXPATOBJDIR.expat}
+  -lexpat`): обход «архив путём» больше не нужен, `bin/Makefile.inc`
+  expat снова совпадает с импортом. `DPADD` на архив в obj у fontconfig
+  теперь согласован с тем, что компонуется.
+- **Не тронуто:** `SHLIB_SHFLAGS` в `bsd.lib.mk` и `LDFLAGS` в
+  `bsd.lua.mk` той же формы, но только под `USE_BITCODE=yes` (LLVM i386,
+  `-march=x86`), куда `evbarm64` не попадает; разделяемые библиотеки
+  здесь явного `-L DESTDIR` не получают вовсе. Программы со своей
+  командой компоновки через `${LDFLAGS}` этот `-L` потеряли — с sysroot
+  компилятора это ничего не меняет.
+
+**Проверка — A/B на помеченной копии.** В `DESTDIR` кладётся
+`libfontconfig.a`, которой `objcopy --add-symbol
+meecho_stale_libfontconfig=0,local` дал метку в каждом члене (по коду та
+же, только видно, откуда взята), программы в obj удаляются, затем
+`MAKEVERBOSE=4 port/build-dirs.sh external/mit/fontconfig`:
+
+| | строка компоновки | метки в `fc-cache` / `fc-list` / `fc-match` |
+|---|---|---|
+| до правки | `-L DESTDIR … -L obj -lfontconfig …` | 27 / 28 / 29 |
+| после | `-L obj -lfontconfig … -lm -L DESTDIR` | 0 / 0 / 0 |
+
+`fc-list` после правки побайтно равен компоновке с архивом из obj,
+названным путём, и не равен компоновке с помеченной копией. Тот же опыт
+с `libexpat.a` на строке NetBSD — `xmlwf` без меток. `bzip2` и
+`ld.elf_so` (оба задеты): та же команда с `-L DESTDIR` первым и
+последним даёт побайтно одно и то же. Сравнивать надо так, а не с
+прежним двоичным файлом в obj: тот был скомпонован до пересборки libc
+(13.10, 15:49) и отличается по ней, а не по порядку `-L`. Стек
+`port/gfx/README` с пустых obj — 46 с, предупреждения только известные
+(`#warning` libdrm, «since version not increasing» сканера); семь
+установленных программ (`foot`, `meechowm`, `fc-*`, `xmlwf`, `wlhello`)
+побайтно те же, что до правки. `qemu-meechowm.py` на пересобранном
+стеке — **4 из 4** (окно, курсор в (400,300), окно foot с текстом,
+экран свободен после остановки).

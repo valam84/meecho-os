@@ -484,6 +484,24 @@ draw(int all)
 }
 
 /*
+ * The console's pixels: the buffer on the screen now - which is not always
+ * the same one (a compositor shows its own scanout buffers, and gives the
+ * first back when it is done) - cleared, and all of the console on it.
+ */
+static void
+take_screen(void)
+{
+	struct device dev;
+
+	if (arch_get_device(con.minor, &dev) != OK)
+		return;
+	con.fb = (uint8_t *)(vir_bytes)dev.dv_base;
+	memset(con.fb, 0, (size_t)con.height * con.stride);
+	arch_fb_flush(con.minor, 0, (size_t)con.height * con.stride);
+	draw(1);
+}
+
+/*
  * Set the grid up for the frame buffer and ask tty for the console's text.
  * Without tty's answer (an older tty, or none) there is no console, and the
  * frame buffer is the programs' alone.
@@ -544,9 +562,14 @@ fbcon_attach(int minor, int kmess)
 	printf("fb: console on the screen, %ux%u characters\n", con.cols,
 	    con.rows);
 
-	/* Clear the test card away, then take what tty has so far. */
-	memset(con.fb, 0, (size_t)con.height * con.stride);
-	draw(1);
+	/*
+	 * Clear the test card away, then take what tty has so far.  Not if a
+	 * program has the screen already - a compositor started before the
+	 * card's time was up: its frame stays, and the console waits for the
+	 * screen to be given back, as it does when the program comes later.
+	 */
+	if (!con.paused)
+		take_screen();
 	fbcon_pull();
 	return OK;
 }
@@ -686,5 +709,5 @@ fbcon_pause(int paused)
 {
 	con.paused = paused;
 	if (!paused && con.attached)
-		draw(1);
+		take_screen();
 }

@@ -9,6 +9,13 @@ SRCS+=	__sigaction14_sigtramp.c __sigtramp2.S
 
 CPPFLAGS += -I.
 
+.if !defined(__MINIX)
+# MINIX: not here.  qp.c gives the long double (binary128) helpers GCC
+# calls - __addtf3, __divtf3, __trunctfdf2 and the rest - because NetBSD's
+# own libgcc is built without them.  The port's compiler is an external GCC
+# whose libgcc has them all (soft-fp), and libgcc is on every link line;
+# with both, a program that needs one helper from each archive does not
+# link: "multiple definition of __floatsitf" (fontconfig, stage 11.4).
 .PATH: ${ARCHDIR}/softfloat
 SRCS+=	qp.c
 CPPFLAGS+=	-DSOFTFLOATAARCH64_FOR_GCC -DEXCEPTIONS_WITH_SOFTFLOAT
@@ -20,3 +27,4 @@ SRCS.softfloat= softfloat-wrapper.c
 SRCS+= ${SRCS.softfloat}
 CPPFLAGS+=      -I${ARCHDIR}/softfloat -I${.CURDIR}/softfloat \
 		-I${.CURDIR}/softfloat/bits64
+.endif

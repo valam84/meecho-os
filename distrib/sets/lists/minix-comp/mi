@@ -1654,6 +1654,7 @@
 ./usr/include/sys/ioc_fbd.h                             minix-comp
 ./usr/include/sys/ioc_file.h                            minix-comp
 ./usr/include/sys/ioc_memory.h                          minix-comp
+./usr/include/sys/ioc_mmap.h                            minix-comp
 ./usr/include/sys/ioc_net.h                             minix-comp
 ./usr/include/sys/ioc_sound.h                           minix-comp
 ./usr/include/sys/ioc_tape.h                            minix-comp

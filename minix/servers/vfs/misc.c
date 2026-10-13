@@ -346,6 +346,20 @@ int dupvm(struct fproc *rfp, int pfd, int *vmfd, struct filp **newfilp)
 	}
 
 	/*
+	 * A character device: VM has nothing to map, only the driver knows
+	 * what the device's memory is.  ENODEV tells libc to ask the driver
+	 * itself (MIOCMMAP, <sys/ioc_mmap.h>), which maps it into the caller
+	 * and says where; a driver that does not know the request leaves
+	 * mmap(2) failing with ENODEV, as POSIX says.  Without a console line:
+	 * this is how such a mapping is made now, not a mistake - the GPU's
+	 * buffers (stage 11.6) are mapped so, one by one.
+	 */
+	if (S_ISCHR(f->filp_vno->v_mode)) {
+		unlock_filp(f);
+		return ENODEV;
+	}
+
+	/*
 	 * A memory object has no file system behind it to peek at: VM
 	 * keeps its pages itself.  Anything else without one - a pipe, a
 	 * socket - cannot be mapped at all, and must be refused here

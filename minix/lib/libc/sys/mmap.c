@@ -9,6 +9,8 @@
 /* INCLUDES HERE */
 
 #include <sys/mman.h>
+#include <sys/ioctl.h>
+#include <sys/ioc_mmap.h>
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
@@ -67,10 +69,49 @@ int minix_vfs_mmap(endpoint_t who, off_t offset, size_t len,
 	return _syscall(VM_PROC_NR, VM_VFS_MMAP, &m);
 }
 
+/*
+ * A character device: VM refuses it with ENODEV (it has nothing to map;
+ * VFS says so), and only the driver knows the device's memory.  So the
+ * same question goes to the driver, on the same descriptor
+ * (<sys/ioc_mmap.h>).  A driver that does not know the request says
+ * ENOTTY, and mmap(2) fails with ENODEV, as before; anything else it says
+ * is its answer about this mapping.  Not in libminc: a system service
+ * maps no device of another, and libminc has no ioctl(2).
+ */
+#ifndef _LIBMINC
+static void *mmap_cdev(void *addr, size_t len, int prot, int flags,
+	int fd, off_t offset)
+{
+	struct cdev_mmap cm;
+
+	memset(&cm, 0, sizeof(cm));
+	cm.cm_addr = addr;
+	cm.cm_len = len;
+	cm.cm_prot = prot;
+	cm.cm_flags = flags;
+	cm.cm_offset = offset;
+
+	if (ioctl(fd, MIOCMMAP, &cm) != 0) {
+		if (errno == ENOTTY)
+			errno = ENODEV;
+		return MAP_FAILED;
+	}
+	return cm.cm_ret;
+}
+#endif /* !_LIBMINC */
+
 void *mmap(void *addr, size_t len, int prot, int flags,
 	int fd, off_t offset)
 {
-	return minix_mmap_for(SELF, addr, len, prot, flags, fd, offset);
+	void *p;
+
+	p = minix_mmap_for(SELF, addr, len, prot, flags, fd, offset);
+#ifndef _LIBMINC
+	if (p == MAP_FAILED && errno == ENODEV && fd >= 0 &&
+	    !(flags & MAP_ANON))
+		p = mmap_cdev(addr, len, prot, flags, fd, offset);
+#endif
+	return p;
 }
 
 int munmap(void *addr, size_t len)

@@ -67,6 +67,9 @@ etc/mtree/NetBSD.dist.base, and DESTDIR gets them from
   test/qemu-shot.py  a picture of the desktop as a PNG: panel, foot, a
                      window, with -p the palette open; the frame comes
                      from /dev/fb0 through gzip and uuencode on the console
+  test/qemu-mode.py  the screen's mode changed under a running desktop
+                     (meechowm -m mode), against state and pixels, and
+                     the console taking the new size after it
   test/board-shot.sh the board's screen as a PNG, over ssh from Git Bash:
                      fbart says the geometry, dd reads /dev/fb0, fbpng.py
                      (in WSL) writes it

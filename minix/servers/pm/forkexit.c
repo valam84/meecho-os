@@ -37,6 +37,9 @@ static int tell_parent(struct mproc *child, vir_bytes addr);
 static void tell_tracer(struct mproc *child);
 static void tracer_died(struct mproc *child);
 static void cleanup(register struct mproc *rmp);
+static int job_status(struct mproc *parent, struct mproc *child,
+	vir_bytes addr);
+static int pgrp_stopped(pid_t procgrp);
 
 /*===========================================================================*
  *				do_fork					     *
@@ -405,11 +408,31 @@ exit_proc(
 		/* Notify new parent. */
 		if (rmp->mp_flags & ZOMBIE)
 			check_parent(rmp, TRUE /*try_cleanup*/);
+
+		/* A stopped child loses the one process that was there to
+		 * continue it; INIT never will.  POSIX gives a process group
+		 * orphaned this way SIGHUP and SIGCONT, and here a group is
+		 * the whole session (setpgid() is setsid()), so the rule is
+		 * taken per child.  If the child survives SIGHUP, it runs.
+		 */
+		else if (rmp->mp_flags & JOB_STOPPED) {
+			sig_proc(rmp, SIGHUP, TRUE /*trace*/, FALSE /*ksig*/);
+			if ((rmp->mp_flags & (IN_USE | EXITING)) == IN_USE)
+				sig_proc(rmp, SIGCONT, TRUE /*trace*/,
+					FALSE /*ksig*/);
+		}
 	}
   }
 
-  /* Send a hangup to the process' process group if it was a session leader. */
-  if (procgrp != 0) check_sig(-procgrp, SIGHUP, FALSE /* ksig */);
+  /* Send a hangup to the process' process group if it was a session leader,
+   * and a SIGCONT after it if any of the group is stopped, so that the
+   * hangup is acted upon.
+   */
+  if (procgrp != 0) {
+	check_sig(-procgrp, SIGHUP, FALSE /* ksig */);
+	if (pgrp_stopped(procgrp))
+		check_sig(-procgrp, SIGCONT, FALSE /* ksig */);
+  }
 }
 
 /*===========================================================================*
@@ -484,7 +507,7 @@ do_wait4(void)
  */
   register struct mproc *rp;
   vir_bytes addr;
-  int i, pidarg, options, children, waited_for;
+  int i, r, pidarg, options, children, waited_for;
 
   /* Set internal variables. */
   pidarg  = m_in.m_lc_pm_wait4.pid;		/* 1st param */
@@ -544,6 +567,16 @@ do_wait4(void)
 				cleanup(rp);
 			return(SUSPEND);
 		}
+
+		/* The child stopped or continued, and the caller asked to
+		 * hear of that; each stop and each continue is told once.
+		 */
+		if (((options & WUNTRACED) && (rp->mp_flags & JOB_STOPNEWS)) ||
+		    ((options & WCONTINUED) && (rp->mp_flags & JOB_CONTNEWS))) {
+			if ((r = job_status(mp, rp, addr)) != OK)
+				return(r);
+			return(rp->mp_pid);
+		}
 	}
   }
 
@@ -554,6 +587,9 @@ do_wait4(void)
 		return(0);    /* parent does not want to wait */
 	}
 	mp->mp_flags |= WAITING;	     /* parent wants to wait */
+	mp->mp_flags &= ~(WAIT_UNTRACED | WAIT_CONTINUED);
+	if (options & WUNTRACED) mp->mp_flags |= WAIT_UNTRACED;
+	if (options & WCONTINUED) mp->mp_flags |= WAIT_CONTINUED;
 	mp->mp_wpid = (pid_t) pidarg;	     /* save pid for later */
 	mp->mp_waddr = addr;		     /* save rusage addr for later */
 	return(SUSPEND);		     /* do not reply, let it wait */
@@ -585,6 +621,98 @@ wait_test(
   	 -pidarg == child->mp_procgrp);
 
   return (parent_waiting && right_child);
+}
+
+/*===========================================================================*
+ *				job_news				     *
+ *===========================================================================*/
+void
+job_news(
+	struct mproc *child			/* stopped or continued process */
+)
+{
+/* The child has just stopped (JOB_STOPNEWS) or continued (JOB_CONTNEWS). If
+ * the parent waits for news of that kind about it, give the news now;
+ * otherwise send the parent a SIGCHLD, unless it asked for none on stops
+ * and continues (SA_NOCLDSTOP).  A later wait4() picks the news up.  As
+ * with an exit, the parent gets one of the two, not both.
+ */
+  struct mproc *p_mp;
+  unsigned want;
+  int r;
+
+  p_mp = &mproc[child->mp_parent];
+
+  /* The child is about to be INIT's, and exit_proc() looks after it. */
+  if (p_mp->mp_flags & EXITING)
+	return;
+
+  want = (child->mp_flags & JOB_STOPNEWS) ? WAIT_UNTRACED : WAIT_CONTINUED;
+  if (wait_test(p_mp, child) && (p_mp->mp_flags & want)) {
+	r = job_status(p_mp, child, p_mp->mp_waddr);
+
+	p_mp->mp_flags &= ~WAITING;
+	reply(child->mp_parent, (r == OK) ? child->mp_pid : r);
+  }
+  else if (!(p_mp->mp_sigact[SIGCHLD].sa_flags & SA_NOCLDSTOP))
+	sig_proc(p_mp, SIGCHLD, TRUE /*trace*/, FALSE /* ksig */);
+}
+
+/*===========================================================================*
+ *				job_status				     *
+ *===========================================================================*/
+static int
+job_status(
+	struct mproc *parent,			/* process calling wait4() */
+	struct mproc *child,			/* its stopped or continued child */
+	vir_bytes addr				/* struct rusage, or 0 */
+)
+{
+/* Put the news of the child's stop or continue into the parent's wait4()
+ * reply, with the child's own times if the parent asked for resource usage,
+ * and mark the news told.  If the usage cannot be copied out, return the
+ * error and keep the news for the next wait4().
+ */
+  struct rusage r_usage;
+  clock_t user_time, sys_time;
+  int r;
+
+  if (addr) {
+	memset(&r_usage, 0, sizeof(r_usage));
+	if (sys_times(child->mp_endpoint, &user_time, &sys_time, NULL,
+	    NULL) == OK)
+		set_rusage_times(&r_usage, user_time, sys_time);
+
+	if ((r = sys_datacopy(SELF, (vir_bytes)&r_usage, parent->mp_endpoint,
+	    addr, sizeof(r_usage))) != OK)
+		return r;
+  }
+
+  if (child->mp_flags & JOB_STOPNEWS) {
+	parent->mp_reply.m_pm_lc_wait4.status = W_STOPCODE(child->mp_stopsig);
+	child->mp_flags &= ~JOB_STOPNEWS;
+  } else {
+	parent->mp_reply.m_pm_lc_wait4.status = W_CONTCODE();
+	child->mp_flags &= ~JOB_CONTNEWS;
+  }
+  return OK;
+}
+
+/*===========================================================================*
+ *				pgrp_stopped				     *
+ *===========================================================================*/
+static int
+pgrp_stopped(pid_t procgrp)
+{
+/* Is any process of the process group stopped by a stop signal? */
+  struct mproc *rmp;
+
+  for (rmp = &mproc[0]; rmp < &mproc[NR_PROCS]; rmp++) {
+	if ((rmp->mp_flags & (IN_USE | JOB_STOPPED)) ==
+	    (IN_USE | JOB_STOPPED) && rmp->mp_procgrp == procgrp)
+		return TRUE;
+  }
+  return FALSE;
 }
 
 /*===========================================================================*

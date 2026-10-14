@@ -16,6 +16,16 @@
  *   check_sig:		check which processes to signal with sig_proc()
  *   check_pending:	check if a pending signal can now be delivered
  *   restart_sigs: 	restart signal work after finishing a VFS call
+ *
+ * MEECHO: job control.  A stop signal (SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU)
+ * whose action is the default stops a user process until it gets SIGCONT;
+ * upstream MINIX had no such state and took the default action of every
+ * signal it did not ignore to be termination, so "kill -STOP" ended the
+ * process.  The stop reuses the kernel stop that signal delivery already
+ * uses (stop_proc(), PROC_STOPPED); JOB_STOPPED is what keeps
+ * try_resume_proc() from undoing it.  While stopped, signals other than
+ * SIGKILL and SIGCONT stay pending.  The parent hears of the stop and the
+ * continue through wait4(WUNTRACED/WCONTINUED) or SIGCHLD (forkexit.c).
  */
 
 #include "pm.h"
@@ -33,6 +43,13 @@
 static int unpause(struct mproc *rmp);
 static int sig_send(struct mproc *rmp, int signo);
 static void sig_proc_exit(struct mproc *rmp, int signo);
+static void job_discard(struct mproc *rmp, int signo);
+static void job_stop(struct mproc *rmp, int signo, int ksig);
+static void job_continue(struct mproc *rmp);
+
+/* The signals whose default action is to stop the process. */
+#define SIG_IS_STOP(sig) ((sig) == SIGSTOP || (sig) == SIGTSTP || \
+	(sig) == SIGTTIN || (sig) == SIGTTOU)
 
 /*===========================================================================*
  *				do_sigaction				     *
@@ -46,7 +63,11 @@ int do_sigaction(void)
   assert(!(mp->mp_flags & (PROC_STOPPED | VFS_CALL | UNPAUSED | EVENT_CALL)));
 
   sig_nr = m_in.m_lc_pm_sig.nr;
-  if (sig_nr == SIGKILL) return(OK);
+  /* Neither can be caught or ignored; SIGSTOP joins SIGKILL now that it
+   * stops rather than kills.  (POSIX wants EINVAL for an attempt; upstream
+   * chose to say nothing, and the two are kept alike.)
+   */
+  if (sig_nr == SIGKILL || sig_nr == SIGSTOP) return(OK);
   if (sig_nr < 1 || sig_nr >= _NSIG) return(EINVAL);
 
   svp = &mp->mp_sigact[sig_nr];
@@ -274,9 +295,10 @@ static void try_resume_proc(struct mproc *rmp)
    * do not resume it now.  Most likely it will be unpausing, in which case the
    * process must remain stopped.  Otherwise, it will still be resumed once the
    * VFS or event call is replied to.  If the process has died, do not resume
-   * it either.
+   * it either.  A process stopped by a stop signal stays stopped until
+   * SIGCONT, whatever the signal work that stopped it along the way.
    */
-  if (rmp->mp_flags & (VFS_CALL | EVENT_CALL | EXITING))
+  if (rmp->mp_flags & (VFS_CALL | EVENT_CALL | EXITING | JOB_STOPPED))
 	return;
 
   if ((r = sys_resume(rmp->mp_endpoint)) != OK)
@@ -422,6 +444,12 @@ sig_proc(
 	return;
   }
 
+  /* A stop signal and SIGCONT cancel each other's pending instances. This
+   * happens when the signal is generated, so also when it must wait itself.
+   */
+  if (!(rmp->mp_flags & PRIV_PROC))
+	job_discard(rmp, signo);
+
   if (rmp->mp_flags & (VFS_CALL | EVENT_CALL)) {
 	sigaddset(&rmp->mp_sigpending, signo);
 	if(ksig)
@@ -479,7 +507,26 @@ sig_proc(
 	return;
   }
 
-  /* Handle user processes now. See if the signal cannot be safely ignored. */
+  /* Handle user processes now. SIGCONT continues a stopped process even if
+   * the process ignores or blocks it.  A handler for it runs once the
+   * process is running, after the signals that waited while it was stopped
+   * and in the same order as any pending signals: check_pending() delivers
+   * them all, SIGCONT among them if it is caught.
+   */
+  if (signo == SIGCONT && (rmp->mp_flags & JOB_STOPPED)) {
+	job_continue(rmp);
+
+	if (sigismember(&rmp->mp_catch, SIGCONT)) {
+		sigaddset(&rmp->mp_sigpending, SIGCONT);
+		if (ksig)
+			sigaddset(&rmp->mp_ksigpending, SIGCONT);
+	}
+	if (!(rmp->mp_flags & (VFS_CALL | EVENT_CALL)))
+		check_pending(rmp);
+	return;
+  }
+
+  /* See if the signal cannot be safely ignored. */
   badignore = ksig && sigismember(&noign_sset, signo) && (
 	  sigismember(&rmp->mp_ignore, signo) ||
 	  sigismember(&rmp->mp_sigmask, signo));
@@ -501,6 +548,19 @@ sig_proc(
 	 * (except SIGKILL) in order not to confuse the debugger. The signals
 	 * will be delivered using the check_pending() calls in do_trace().
 	 */
+	sigaddset(&rmp->mp_sigpending, signo);
+	if(ksig)
+		sigaddset(&rmp->mp_ksigpending, signo);
+	return;
+  }
+  if ((rmp->mp_flags & JOB_STOPPED) && signo != SIGKILL) {
+	/* A stopped process gets its signals once SIGCONT has continued it;
+	 * only SIGKILL acts at once.  A stop signal that would only stop it
+	 * again has nothing left to do.
+	 */
+	if (SIG_IS_STOP(signo) && !sigismember(&rmp->mp_catch, signo))
+		return;
+
 	sigaddset(&rmp->mp_sigpending, signo);
 	if(ksig)
 		sigaddset(&rmp->mp_ksigpending, signo);
@@ -534,6 +594,11 @@ sig_proc(
 	/* Signal defaults to being ignored. */
 	return;
   }
+  else if (SIG_IS_STOP(signo)) {
+	/* Signal defaults to stopping the process. */
+	job_stop(rmp, signo, ksig);
+	return;
+  }
 
   /* Terminate process */
   sig_proc_exit(rmp, signo);
@@ -560,6 +625,92 @@ sig_proc_exit(
   else {
   	exit_proc(rmp, 0, FALSE /*dump_core*/);
   }
+}
+
+/*===========================================================================*
+ *				job_discard				     *
+ *===========================================================================*/
+static void
+job_discard(
+	struct mproc *rmp,		/* process the signal is generated for */
+	int signo			/* the signal */
+)
+{
+/* POSIX: generating a stop signal discards a pending SIGCONT, and generating
+ * SIGCONT discards pending stop signals, whatever their disposition.  Of two
+ * that cross, the later one wins.
+ */
+  int i;
+
+  if (SIG_IS_STOP(signo)) {
+	sigdelset(&rmp->mp_sigpending, SIGCONT);
+	sigdelset(&rmp->mp_ksigpending, SIGCONT);
+  } else if (signo == SIGCONT) {
+	for (i = 1; i < _NSIG; i++) {
+		if (SIG_IS_STOP(i)) {
+			sigdelset(&rmp->mp_sigpending, i);
+			sigdelset(&rmp->mp_ksigpending, i);
+		}
+	}
+  }
+}
+
+/*===========================================================================*
+ *				job_stop				     *
+ *===========================================================================*/
+static void
+job_stop(
+	struct mproc *rmp,		/* process to stop */
+	int signo,			/* the stop signal */
+	int ksig			/* signal comes from the kernel */
+)
+{
+/* Take the default action of a stop signal: stop the process until SIGCONT.
+ * The kernel stop is the one signal delivery uses; it may already be in
+ * place, when the signal waited for a VFS reply.  If the process is still
+ * sending a message, it cannot be stopped yet: the signal waits for the
+ * SIGSNDELAY that process_ksig() turns into a check_pending().
+ */
+
+  /* Stopped, init would collect no orphans and no zombies. */
+  if (rmp->mp_pid == INIT_PID)
+	return;
+
+  if ((rmp->mp_flags & DELAY_CALL) || (!(rmp->mp_flags & PROC_STOPPED) &&
+      !stop_proc(rmp, TRUE /*may_delay*/))) {
+	sigaddset(&rmp->mp_sigpending, signo);
+	if (ksig)
+		sigaddset(&rmp->mp_ksigpending, signo);
+	return;
+  }
+
+  rmp->mp_flags |= JOB_STOPPED | JOB_STOPNEWS;
+  rmp->mp_flags &= ~JOB_CONTNEWS;
+  rmp->mp_stopsig = (char) signo;
+
+  job_news(rmp);
+}
+
+/*===========================================================================*
+ *				job_continue				     *
+ *===========================================================================*/
+static void
+job_continue(
+	struct mproc *rmp		/* stopped process to continue */
+)
+{
+/* SIGCONT for a stopped process: let it run again.  Should a VFS or event
+ * call hold it, try_resume_proc() leaves the resume to restart_sigs().
+ */
+  assert(rmp->mp_flags & PROC_STOPPED);
+
+  rmp->mp_flags &= ~(JOB_STOPPED | JOB_STOPNEWS);
+  rmp->mp_flags |= JOB_CONTNEWS;
+  rmp->mp_stopsig = 0;
+
+  try_resume_proc(rmp);
+
+  job_news(rmp);
 }
 
 /*===========================================================================*

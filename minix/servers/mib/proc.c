@@ -246,7 +246,8 @@ get_lwp_stat(int mslot, uint64_t * wcptr, char * wmptr, size_t wmsz,
 	if (mp->mp_flags & EXITING)
 		return LSDEAD;
 
-	if ((mp->mp_flags & TRACE_STOPPED) || RTS_ISSET(kp, RTS_P_STOP))
+	if ((mp->mp_flags & (TRACE_STOPPED | JOB_STOPPED)) ||
+	    RTS_ISSET(kp, RTS_P_STOP))
 		return LSSTOP;
 
 	if (proc_is_runnable(kp))
@@ -1266,7 +1267,8 @@ mib_minix_proc_data(struct mib_call * call, struct mib_node * node __unused,
 		mpd.mpd_flags |= MPDF_SYSTEM;
 	if (mflags & (TRACE_ZOMBIE | ZOMBIE))
 		mpd.mpd_flags |= MPDF_ZOMBIE;
-	else if ((mflags & TRACE_STOPPED) || RTS_ISSET(kp, RTS_P_STOP))
+	else if ((mflags & (TRACE_STOPPED | JOB_STOPPED)) ||
+	    RTS_ISSET(kp, RTS_P_STOP))
 		mpd.mpd_flags |= MPDF_STOPPED;
 	else if (proc_is_runnable(kp))
 		mpd.mpd_flags |= MPDF_RUNNABLE;

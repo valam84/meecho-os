@@ -29,6 +29,7 @@ void exit_proc(struct mproc *rmp, int exit_status, int dump_core);
 void exit_restart(struct mproc *rmp);
 int do_wait4(void);
 int wait_test(struct mproc *rmp, struct mproc *child);
+void job_news(struct mproc *child);
 
 /* getset.c */
 int do_get(void);

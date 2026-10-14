@@ -51,20 +51,29 @@
 #define	_W_INT(w)	(*(int *)(void *)&(w))	/* convert union wait to int */
 #endif
 
+/*
+ * MEECHO: the continued status, WIFCONTINUED and WCONTINUED below are those
+ * of NetBSD-current; the 2015 tree had no job control to report on.  The
+ * status of a continued child has the stopped bits in its low byte too,
+ * so WIFSTOPPED must tell the two apart.
+ */
 #define	_WSTATUS(x)	(_W_INT(x) & 0177)
 #define	_WSTOPPED	0177		/* _WSTATUS if process is stopped */
-#define WIFSTOPPED(x)	(_WSTATUS(x) == _WSTOPPED)
+#define	_WCONTINUED	0177777		/* process has continued */
+#define WIFSTOPPED(x)	(_WSTATUS(x) == _WSTOPPED && !WIFCONTINUED(x))
 #define WSTOPSIG(x)	((int)(((unsigned int)_W_INT(x)) >> 8) & 0xff)
 #define WIFSIGNALED(x)	(_WSTATUS(x) != _WSTOPPED && _WSTATUS(x) != 0)
 #define WTERMSIG(x)	(_WSTATUS(x))
 #define WIFEXITED(x)	(_WSTATUS(x) == 0)
 #define WEXITSTATUS(x)	((int)(((unsigned int)_W_INT(x)) >> 8) & 0xff)
+#define WIFCONTINUED(x)	(_W_INT(x) == _WCONTINUED)
 #if defined(_XOPEN_SOURCE) || defined(_NETBSD_SOURCE) || defined(_KERNEL)
 #define	WCOREFLAG	0200
 #define WCOREDUMP(x)	(_W_INT(x) & WCOREFLAG)
 
 #define	W_EXITCODE(ret, sig)	((ret) << 8 | (sig))
 #define	W_STOPCODE(sig)		((sig) << 8 | _WSTOPPED)
+#define	W_CONTCODE()		(_WCONTINUED)
 #endif
 
 /*
@@ -79,6 +88,7 @@
 #define WNOHANG		0x00000001	/* don't hang in wait */
 #define WUNTRACED	0x00000002	/* tell about stopped,
 					   untraced children */
+#define	WCONTINUED	0x00000010	/* tell about continued children */
 #if defined(_XOPEN_SOURCE) || defined(_NETBSD_SOURCE)
 #define	WALTSIG		0x00000004	/* wait for processes that exit
 					   with an alternate signal (i.e.

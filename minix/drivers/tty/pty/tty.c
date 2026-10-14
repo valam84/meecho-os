@@ -42,6 +42,34 @@ static ssize_t do_write(devminor_t minor, u64_t position, endpoint_t endpt,
 	cp_grant_id_t grant, size_t size, int flags, cdev_id_t id);
 static int do_cancel(devminor_t minor, endpoint_t endpt, cdev_id_t id);
 static int do_select(devminor_t minor, unsigned int ops, endpoint_t endpt);
+static int tty_access(tty_t *tp, endpoint_t user, int signo);
+static int tty_hold(tty_t *tp, int op, devminor_t minor, endpoint_t endpt,
+	cp_grant_id_t grant, unsigned long size, int flags, endpoint_t user,
+	cdev_id_t id);
+static int tty_unhold(tty_t *tp, endpoint_t endpt, cdev_id_t id);
+static void tty_held_retry(void);
+static void tty_held_timeout(int arg);
+static void tty_fg_changed(tty_t *tp);
+static void tty_ctty(tty_t *tp, endpoint_t user);
+static void tty_release(tty_t *tp);
+
+/* Requests of background processes, held while their group is stopped; see
+ * tty_access().  The same as in the tty driver.
+ */
+#define NR_HELD		16
+static struct held {
+  tty_t *tp;			/* the terminal, or NULL for a free slot */
+  int op;			/* CDEV_READ, CDEV_WRITE or CDEV_IOCTL */
+  devminor_t minor;
+  endpoint_t endpt;		/* VFS, which made the request */
+  cp_grant_id_t grant;
+  unsigned long size;		/* bytes, or the ioctl request */
+  int flags;
+  endpoint_t user;		/* the process making an ioctl */
+  cdev_id_t id;
+} held[NR_HELD];
+static int nr_held;
+static minix_timer_t held_tmr;
 
 static struct chardriver tty_tab = {
 	.cdr_open	= do_open,
@@ -234,6 +262,14 @@ static ssize_t do_read(devminor_t minor, u64_t UNUSED(position),
   if ((tp = line2tty(minor)) == NULL)
 	return ENXIO;
 
+  /* A background process reading its controlling terminal (job control). */
+  r = tty_access(tp, (endpoint_t) id, SIGTTIN);
+  if (r == JOBCTL_SIGNALLED)
+	return tty_hold(tp, CDEV_READ, minor, endpt, grant, size, flags, NONE,
+	    id);
+  if (r != OK)
+	return r;
+
   /* Check if there is already a process hanging in a read, check if the
    * parameters are correct, do I/O.
    */
@@ -303,6 +339,18 @@ static ssize_t do_write(devminor_t minor, u64_t UNUSED(position),
   if ((tp = line2tty(minor)) == NULL)
 	return ENXIO;
 
+  /* A background process writing its controlling terminal, when TOSTOP
+   * says that it may not (job control).
+   */
+  if (tp->tty_termios.c_lflag & TOSTOP) {
+	r = tty_access(tp, (endpoint_t) id, SIGTTOU);
+	if (r == JOBCTL_SIGNALLED)
+		return tty_hold(tp, CDEV_WRITE, minor, endpt, grant, size,
+		    flags, NONE, id);
+	if (r != OK)
+		return r;
+  }
+
   /* Check if there is already a process hanging in a write, check if the
    * parameters are correct, do I/O.
    */
@@ -347,10 +395,28 @@ int tty_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
  * by the IOCTL system call.
  */
   tty_t *tp;
+  pid_t pgrp, sid;
   int i, r;
 
   if ((tp = line2tty(minor)) == NULL)
 	return ENXIO;
+
+  /* What changes the terminal, a background process may not do, as if it
+   * were writing (job control; POSIX names tcsetattr(), tcdrain(),
+   * tcflush(), tcflow() and tcsendbreak()).  The master side's ioctls come
+   * here too, from a process that is not of the terminal's session.
+   */
+  switch (request) {
+  case TIOCSETA: case TIOCSETAW: case TIOCSETAF: case TIOCDRAIN:
+  case TIOCFLUSH: case TIOCSTART: case TIOCSTOP: case TIOCSBRK:
+  case TIOCCBRK: case TIOCSWINSZ:
+	r = tty_access(tp, user_endpt, SIGTTOU);
+	if (r == JOBCTL_SIGNALLED)
+		return tty_hold(tp, CDEV_IOCTL, minor, endpt, grant, request,
+		    flags, user_endpt, id);
+	if (r != OK)
+		return r;
+  }
 
   r = OK;
   switch (request) {
@@ -437,14 +503,38 @@ int tty_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 	break;
     case TIOCSCTTY:
 	/* Process sets this tty as its controlling tty */
-	tp->tty_pgrp = user_endpt;
+	tty_ctty(tp, user_endpt);
 	break;
-	
-/* These Posix functions are allowed to fail if _POSIX_JOB_CONTROL is 
- * not defined.
- */
-    case TIOCGPGRP:     
-    case TIOCSPGRP:	
+
+    case TIOCGPGRP:	/* tcgetpgrp() */
+    case TIOCGSID:	/* tcgetsid() */
+	/* Only for a process whose controlling terminal this is: PM knows. */
+	r = jobctl(JOBCTL_GETFG, user_endpt, tp->tty_session, 0, 0, &sid,
+	    &pgrp);
+	if (r != OK)
+		break;
+	i = (request == TIOCGPGRP) ? pgrp : sid;
+	r = sys_safecopyto(endpt, grant, 0, (vir_bytes) &i, sizeof(i));
+	break;
+
+    case TIOCSPGRP:	/* tcsetpgrp() */
+	r = sys_safecopyfrom(endpt, grant, 0, (vir_bytes) &i, sizeof(i));
+	if (r != OK)
+		break;
+	r = jobctl(JOBCTL_SETFG, user_endpt, tp->tty_session, i, 0, NULL,
+	    NULL);
+	if (r == JOBCTL_SIGNALLED)
+		return tty_hold(tp, CDEV_IOCTL, minor, endpt, grant, request,
+		    flags, user_endpt, id);
+	/* A read of what is now the background steps aside, and a held
+	 * request of the new foreground may go ahead.
+	 */
+	if (r == OK) {
+		tty_fg_changed(tp);
+		tty_held_retry();
+	}
+	break;
+
     default:
 	r = ENOTTY;
   }
@@ -472,7 +562,7 @@ static int do_open(devminor_t minor, int access, endpoint_t user_endpt)
 	return EIO;
 
   if (!(access & CDEV_NOCTTY)) {
-	tp->tty_pgrp = user_endpt;
+	tty_ctty(tp, user_endpt);
 	r = CDEV_CTTY;
   }
   tp->tty_openct++;
@@ -496,7 +586,7 @@ static int do_close(devminor_t minor)
 	return ENXIO;
 
   if (--tp->tty_openct == 0) {
-	tp->tty_pgrp = 0;
+	tty_release(tp);
 	tty_icancel(tp);
 	(*tp->tty_ocancel)(tp, 0);
 	(*tp->tty_close)(tp, 0);
@@ -521,6 +611,10 @@ static int do_cancel(devminor_t minor, endpoint_t endpt, cdev_id_t id)
 
   if ((tp = line2tty(minor)) == NULL)
 	return ENXIO;
+
+  /* A request held for a background process (job control). */
+  if ((r = tty_unhold(tp, endpt, id)) != EDONTREPLY)
+	return r;
 
   /* Check the parameters carefully, to avoid cancelling twice. */
   r = EDONTREPLY;
@@ -845,17 +939,29 @@ int count;			/* number of input characters */
 	}
 
 	if (tp->tty_termios.c_lflag & ISIG) {
-		/* Check for INTR, QUIT and STATUS characters. */
+		/* Check for INTR, QUIT, SUSP and STATUS characters. */
 		int sig = -1;
 		if (ch == tp->tty_termios.c_cc[VINTR])
 			sig = SIGINT;
 		else if(ch == tp->tty_termios.c_cc[VQUIT])
 			sig = SIGQUIT;
+		else if(ch == tp->tty_termios.c_cc[VSUSP])
+			sig = SIGTSTP;
 		else if(ch == tp->tty_termios.c_cc[VSTATUS])
 			sig = SIGINFO;
 
 		if(sig >= 0) {
-			sigchar(tp, sig, 1);
+			/* SUSP (^Z) stops the foreground job.  It discards
+			 * typed input like the others, but not output, as in
+			 * NetBSD: what the job wrote before it stopped is
+			 * still shown.
+			 */
+			sigchar(tp, sig, sig != SIGTSTP);
+			if (sig == SIGTSTP &&
+			    !(tp->tty_termios.c_lflag & NOFLSH)) {
+				tp->tty_incount = tp->tty_eotct = 0;
+				tp->tty_intail = tp->tty_inhead;
+			}
 			(void) tty_echo(tp, ch);
 			continue;
 		}
@@ -1207,18 +1313,14 @@ register tty_t *tp;
 int sig;			/* SIGINT, SIGQUIT, SIGKILL or SIGHUP */
 int mayflush;
 {
-/* Process a SIGINT, SIGQUIT or SIGKILL char from the keyboard or SIGHUP from
- * a tty close, "stty 0", or a real RS-232 hangup.  PM will send the signal to
- * the process group (INT, QUIT), all processes (KILL), or the session leader
- * (HUP).
+/* Process a SIGINT, SIGQUIT, SIGTSTP or SIGINFO char from the keyboard, a new
+ * window size, or SIGHUP from a close of the master side or "stty 0".  PM
+ * sends the signal to the foreground process group of the session whose
+ * controlling terminal this is, or SIGHUP to its leader.
  */
-  int status;
 
-  if (tp->tty_pgrp != 0)  {
-      if (OK != (status = sys_kill(tp->tty_pgrp, sig))) {
-        panic("Error; call to sys_kill failed: %d", status);
-      }
-  }
+  if (tp->tty_session != 0)
+	(void) jobctl(JOBCTL_KILL, NONE, tp->tty_session, 0, sig, NULL, NULL);
 
   if (mayflush && !(tp->tty_termios.c_lflag & NOFLSH)) {
 	tp->tty_incount = tp->tty_eotct = 0;	/* kill earlier input */
@@ -1262,6 +1364,7 @@ static int tty_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
   int s;
 
   system_hz = sys_hz();
+  init_timer(&held_tmr);
 
   tty_gid = -1;
   if (env_argc > 1)
@@ -1316,5 +1419,249 @@ int enable;			/* set timer if true, otherwise unset */
   } else {
   	/* Remove the timer from the active and expired lists. */
   	cancel_timer(&tty_ptr->tty_tmr);
+  }
+}
+
+/*===========================================================================*
+ *				tty_access				     *
+ *===========================================================================*/
+static int tty_access(tty_t *tp, endpoint_t user, int signo)
+{
+/* Job control.  A terminal that is a session's controlling terminal belongs
+ * to that session (tty_session).  Process groups and sessions are PM's, and
+ * so is the terminal's foreground process group, which PM keeps with the
+ * session: every question about it is a question about process groups.  The
+ * terminal asks (jobctl(), PM_JOBCTL) and does what the answer says.
+ *
+ * POSIX: a process in a background group of its controlling terminal that
+ * reads it - or writes it with TOSTOP set, or changes its settings - gets its
+ * group SIGTTIN or SIGTTOU, and the request waits until the group is in the
+ * foreground.  Such a request is held aside (tty_hold()), not in the
+ * terminal's read, write or ioctl slot, which the foreground needs: the
+ * shell reads its next command while the job it has put in the background
+ * waits to read.  A held request is tried again when the foreground changes,
+ * and once a second - as NetBSD's ttypause() does, so that a group that is
+ * continued in the background is stopped again.  A signal that the process
+ * catches cancels the request (VFS), and so does its end.
+ *
+ * May 'user' read (SIGTTIN) or change (SIGTTOU) the terminal?  The answer is
+ * OK, an error for the request, or JOBCTL_SIGNALLED: the group has been sent
+ * the signal, and the request is to be held.  VFS names a read or write by
+ * the endpoint of the process that made it (cdev_io(): the id is proc_e),
+ * and that is the process asked about.
+ */
+  int r;
+
+  /* Not a controlling terminal, the kernel writing, or a dead line. */
+  if (tp->tty_session == 0 || user == KERNEL || user == NONE ||
+      tp->tty_termios.c_ospeed == B0)
+	return OK;
+
+  r = jobctl(JOBCTL_ACCESS, user, tp->tty_session, 0, signo, NULL, NULL);
+  if (r == ESRCH)
+	return OK;	/* it is exiting: VFS cancels the request anyway */
+  return r;
+}
+
+/*===========================================================================*
+ *				tty_hold				     *
+ *===========================================================================*/
+static int tty_hold(tty_t *tp, int op, devminor_t minor, endpoint_t endpt,
+	cp_grant_id_t grant, unsigned long size, int flags, endpoint_t user,
+	cdev_id_t id)
+{
+/* Hold a request of a background process until its group is in the
+ * foreground.  With no room left the call fails with EINTR, which is what it
+ * is: interrupted by the signal its group has been sent.
+ */
+  struct held *hp;
+
+  for (hp = &held[0]; hp < &held[NR_HELD]; hp++) {
+	if (hp->tp != NULL)
+		continue;
+	hp->tp = tp;
+	hp->op = op;
+	hp->minor = minor;
+	hp->endpt = endpt;
+	hp->grant = grant;
+	hp->size = size;
+	hp->flags = flags;
+	hp->user = user;
+	hp->id = id;
+	if (nr_held++ == 0)
+		set_timer(&held_tmr, system_hz, tty_held_timeout, 0);
+	return EDONTREPLY;
+  }
+  return EINTR;
+}
+
+/*===========================================================================*
+ *				tty_unhold				     *
+ *===========================================================================*/
+static int tty_unhold(tty_t *tp, endpoint_t endpt, cdev_id_t id)
+{
+/* VFS cancels a request: if it is a held one, let it go.  EAGAIN is what VFS
+ * turns into EINTR for the process, like a cancelled read.
+ */
+  struct held *hp;
+
+  for (hp = &held[0]; hp < &held[NR_HELD]; hp++) {
+	if (hp->tp == tp && hp->endpt == endpt && hp->id == id) {
+		hp->tp = NULL;
+		nr_held--;
+		return EAGAIN;
+	}
+  }
+  return EDONTREPLY;
+}
+
+/*===========================================================================*
+ *				tty_held_retry				     *
+ *===========================================================================*/
+static void tty_held_retry(void)
+{
+/* Try the held requests again.  Each goes through its door afresh: in the
+ * foreground it goes ahead, still in the background it is held again and
+ * its group signalled again - which a stopped group does not notice.  A
+ * request held anew takes the first free slot, never one after the slot
+ * being tried, so no request is tried twice in one round; a retry that
+ * starts another (a held TIOCSPGRP) asks for one more round instead.
+ */
+  static int busy, again;
+  struct held h, *hp;
+  tty_t *tp;
+  int r;
+
+  if (busy) {
+	again = TRUE;
+	return;
+  }
+  busy = TRUE;
+  do {
+	again = FALSE;
+	for (hp = &held[0]; hp < &held[NR_HELD]; hp++) {
+		if ((tp = hp->tp) == NULL)
+			continue;
+		/* The terminal's slot for this kind of request is taken:
+		 * next time.
+		 */
+		if ((hp->op == CDEV_READ &&
+		    (tp->tty_incaller != NONE || tp->tty_inleft > 0)) ||
+		    (hp->op == CDEV_WRITE &&
+		    (tp->tty_outcaller != NONE || tp->tty_outleft > 0)))
+			continue;
+		h = *hp;
+		hp->tp = NULL;
+		nr_held--;
+		switch (h.op) {
+		case CDEV_READ:
+			r = do_read(h.minor, 0, h.endpt, h.grant, h.size,
+			    h.flags, h.id);
+			break;
+		case CDEV_WRITE:
+			r = do_write(h.minor, 0, h.endpt, h.grant, h.size,
+			    h.flags, h.id);
+			break;
+		default:
+			r = tty_ioctl(h.minor, h.size, h.endpt, h.grant,
+			    h.flags, h.user, h.id);
+			break;
+		}
+		if (r != EDONTREPLY)
+			chardriver_reply_task(h.endpt, h.id, r);
+	}
+  } while (again);
+  busy = FALSE;
+
+  if (nr_held > 0)
+	set_timer(&held_tmr, system_hz, tty_held_timeout, 0);
+}
+
+/*===========================================================================*
+ *				tty_held_timeout			     *
+ *===========================================================================*/
+static void tty_held_timeout(int UNUSED(arg))
+{
+  tty_held_retry();
+}
+
+/*===========================================================================*
+ *				tty_fg_changed				     *
+ *===========================================================================*/
+static void tty_fg_changed(tty_t *tp)
+{
+/* Another group is the foreground.  A read that a process of the old one
+ * started is still in the terminal's read slot - a job stopped by SUSP
+ * stops inside its read - and the shell that takes the terminal back is
+ * about to read its next command.  So the read steps aside: as a background
+ * read, it is held, and goes on once its group is the foreground again.  If
+ * it has received part of its bytes already (MIN), it ends with them.
+ */
+  endpoint_t endpt;
+  cdev_id_t id;
+  int r;
+
+  if (tp->tty_inleft == 0 || tp->tty_incaller == NONE)
+	return;
+
+  r = tty_access(tp, (endpoint_t) tp->tty_inid, SIGTTIN);
+  if (r == OK)
+	return;
+
+  endpt = tp->tty_incaller;
+  id = tp->tty_inid;
+  settimer(tp, FALSE);
+  if (r == JOBCTL_SIGNALLED && tp->tty_incum == 0)
+	r = tty_hold(tp, CDEV_READ, TTYPX_MINOR + tp->tty_index, endpt, tp->tty_ingrant,
+	    tp->tty_inleft, 0, NONE, id);
+  else if (tp->tty_incum > 0)
+	r = tp->tty_incum;
+  tp->tty_inleft = tp->tty_incum = 0;
+  tp->tty_incaller = NONE;
+  if (r != EDONTREPLY)
+	chardriver_reply_task(endpt, id, r);
+}
+
+/*===========================================================================*
+ *				tty_ctty				     *
+ *===========================================================================*/
+static void tty_ctty(tty_t *tp, endpoint_t user)
+{
+/* 'user' makes the terminal its controlling terminal; VFS has decided that
+ * it may: it leads a session that has none.  The terminal now belongs to
+ * that session, and PM makes the leader's group its foreground.
+ */
+  pid_t sid;
+
+  if (jobctl(JOBCTL_CTTY, user, 0, 0, 0, &sid, NULL) != OK)
+	sid = 0;
+  if (tp->tty_session != 0 && tp->tty_session != sid)
+	(void) jobctl(JOBCTL_RELEASE, NONE, tp->tty_session, 0, 0, NULL,
+	    NULL);
+  tp->tty_session = sid;
+}
+
+/*===========================================================================*
+ *				tty_release				     *
+ *===========================================================================*/
+static void tty_release(tty_t *tp)
+{
+/* The terminal is closed for good: it belongs to no session any more, and
+ * what its background processes wait for will not come.  VFS closes it that
+ * way when the leader of its session exits.
+ */
+  struct held *hp;
+
+  if (tp->tty_session != 0) {
+	(void) jobctl(JOBCTL_RELEASE, NONE, tp->tty_session, 0, 0, NULL,
+	    NULL);
+	tp->tty_session = 0;
+  }
+  for (hp = &held[0]; hp < &held[NR_HELD]; hp++) {
+	if (hp->tp == tp) {
+		hp->tp = NULL;
+		nr_held--;
+		chardriver_reply_task(hp->endpt, hp->id, EIO);
+	}
   }
 }

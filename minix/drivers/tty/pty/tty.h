@@ -47,7 +47,8 @@ typedef struct tty {
   char tty_reprint;		/* 1 when echoed input messed up, else 0 */
   char tty_escaped;		/* 1 when LNEXT (^V) just seen, else 0 */
   char tty_inhibited;		/* 1 when STOP (^S) just seen (stops output) */
-  endpoint_t tty_pgrp;		/* endpoint of controlling process */
+  pid_t tty_session;		/* session whose controlling tty this is, or
+				 * 0; PM keeps its foreground process group */
   char tty_openct;		/* count of number of opens of this tty */
 
   /* Information about incomplete I/O requests is stored here. */

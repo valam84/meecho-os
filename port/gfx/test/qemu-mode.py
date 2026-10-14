@@ -16,9 +16,14 @@ half a screen wide - and then:
        - the screen itself, read back through /dev/fb0 (fbart): the frame's
          geometry, and blue and red in the middles of their columns
   3. a mode the screen does not have and one that is not a mode at all:
-     an error, exit status 1, the screen as it was
+     an error, exit status 1, the screen as it was; fbmode(8) from the
+     console while the compositor has the screen: refused, status 1
   4. 1024x768, then the compositor quits: the console has the screen at
      that size, with text on it (fbcon_resize())
+  5. fbmode from the console, nobody owning the screen: the list with
+     1024x768 current; 1920x1080, 800x600 and 1280x720, each the frame's
+     geometry and the console's text drawn in it; a mode the screen does
+     not have (status 1) and a word that is not a mode (status 2)
 
     python3 port/gfx/test/qemu-mode.py [-x]
 
@@ -234,6 +239,10 @@ def main():
         out = run("meechowm -m mode 12x")
         record("3. not a mode at all: an error, status 1",
                "error:" in out and "END=1" in out, out.strip())
+        out = run("fbmode 800x600")
+        record("3. fbmode while the compositor has the screen: refused",
+               "a program has the screen" in out and "END=1" in out,
+               out.strip())
         st = state()
         record("3. the screen as it was", settled(st, 1280, 720), "%s" % st)
 
@@ -247,6 +256,33 @@ def main():
         record("4. the console has the screen at 1024x768, with text",
                geo == (1024, 768, 4096) and ink > 200,
                "%s, ink %d" % (geo, ink))
+
+        out = run("fbmode").strip().split("\n")
+        got = [l.strip() for l in out if re.match(r"\d+x\d+@\d+", l.strip())]
+        record("5. fbmode: the list, 1024x768 current",
+               got == ["1280x720@60", "1920x1080@60", "1024x768@60 current",
+                       "800x600@60"], "%s" % got)
+        for w, h in ((1920, 1080), (800, 600), (1280, 720)):
+            out = run("fbmode %dx%d" % (w, h))
+            record("5. fbmode %dx%d: taken" % (w, h),
+                   "%dx%d@60" % (w, h) in out and "END=0" in out,
+                   out.strip())
+            run("echo the console at %dx%d" % (w, h))
+            time.sleep(2)
+            geo, _, ink = fbart("-x 0 -y 0 -w %d -h %d -s 4" % (w, h))
+            record("5. fbmode %dx%d: the frame, the console's text on it"
+                   % (w, h), geo == (w, h, w * 4) and ink > 200,
+                   "%s, ink %d" % (geo, ink))
+        out = run("fbmode 640x480")
+        record("5. fbmode, a mode the screen does not have: status 1",
+               "not a mode of the screen" in out and "END=1" in out,
+               out.strip())
+        out = run("fbmode 12x")
+        record("5. fbmode, not a mode at all: status 2",
+               "END=2" in out, out.strip())
+        geo = fbart("-w 1 -h 1")[0]
+        record("5. the screen as it was", geo == (1280, 720, 5120),
+               "%s" % (geo,))
         rc = 0 if failed == 0 else 1
         send("/sbin/poweroff")
         time.sleep(5)

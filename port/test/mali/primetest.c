@@ -439,8 +439,17 @@ test_prime(void)
 	    "of handle 99");
 	CHECK(export_bo(ca, USER_A, a.handle, 0x1234, &d3) == EINVAL,
 	    "export with flags 0x1234");
-	CHECK(export_bo(ca, USER_A, hp.handle, 0, &d3) == EINVAL, "a heap "
-	    "exported");
+	CHECK(export_bo(ca, USER_A, hp.handle, 0, &d3) == OK, "a heap: not "
+	    "exported, as panfrost exports one");
+	CHECK(import_bo(cb, USER_A, d3, 0x200000, &imp2) == EINVAL, "a heap "
+	    "imported");
+	memset(&cm, 0, sizeof(cm));
+	cm.cm_len = 0x200000;
+	cm.cm_prot = PROT_READ;
+	cm.cm_flags = MAP_SHARED;
+	CHECK(io(model_fd_minor(USER_A, d3), MIOCMMAP, &cm, USER_A) == EINVAL,
+	    "a heap's descriptor mapped");
+	CHECK(model_fd_close(USER_A, d3) == OK, "close");
 
 	/* Ввоз: тот же контекст - тот же номер; другой - новый, свой адрес. */
 	CHECK(import_bo(ca, USER_A, d1, 0x4000, &imp) == OK && imp.handle ==
@@ -694,8 +703,8 @@ test_syncfile(void)
 	CHECK(submit(ca, USER_A, a.va, &a.handle, 1, NULL, 0, so, 0) == OK &&
 	    so_export(ca, USER_A, so, 1, &d) == OK, "a failing job");
 	CHECK(model_run(1) == 0 && model_line(MALI_IRQ_JOB) == 1, "it failed");
-	CHECK(info(d, USER_A, &st, &n) == OK && st == -EIO, "status %d (%d)",
-	    st, -EIO);
+	CHECK(info(d, USER_A, &st, &n) == OK && st == -EINVAL, "status %d "
+	    "(%d, as panfrost)", st, -EINVAL);
 	sin = syncobj(cb, USER_A, 0);
 	chain_to(&b, b.va, 2, 0x25);
 	CHECK(so_import(cb, USER_A, d, 1, &sin) == OK && submit(cb, USER_A,

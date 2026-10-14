@@ -58,7 +58,8 @@ close-frees-early@mali_drm.c@if (c->state == CTX_CLOSING \&\& c->jobs == 0)@if (
 close-leaks@mali_drm.c@mali_bo_unref((struct mali_bo \*)c->bo\[i\]);@;
 vircopy-vfs@mali_drm.c@sys_vircopy(c->user, (vir_bytes)ptr@sys_vircopy(c->endpt, (vir_bytes)ptr
 wait-bo-past@mali_drm.c@		return EBUSY;@		return ETIMEDOUT;
-fence-ok@mali_drm.c@p->out->error = j->result == OK ? 0 : EIO;@p->out->error = 0;
+fence-ok@mali_drm.c@p->out->error = j->result == OK ? 0 : j->result == EIO ? EINVAL :@p->out->error = 0 ? 0 : 0 ? 0 :
+fence-error@mali_drm.c@j->result == EIO ? EINVAL :@j->result == EIO ? EIO :
 wait-error@mali_drm.c@return f->error != 0 ? EIO : OK;@return OK;
 no-out-fence@mali_drm.c@		syncobj_set(out, p->out);@		;
 mmap-part@mali_drm.c@if (len != mem->size ||@if (

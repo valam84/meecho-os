@@ -1,0 +1,77 @@
+render node /dev/dri/renderD130, mode prime
+cap prime: 3
+create 0x4000 flags 0: handle 1 va 0x2000000
+create 0x400000 flags 0: handle 2 va 0x2400000
+create 0x200000 flags 3: handle 3 va 0x2200000
+create 0x100000 flags 1: handle 1 va 0x2000000
+create 0x4000 flags 0: handle 2 va 0x2100000
+create 0x400000 flags 0: handle 3 va 0x2400000
+export 1: ok; close-on-exec 1, lseek to the end 0x4000, back to 0
+export 1 again, no flags: ok; close-on-exec 0
+export 99: ENOENT
+export 1, flags 0x1234: EINVAL
+export the heap 3: ok
+import into the exporter: handle 1
+import into B: handle 4, address 0x2104000 (A's 0x2000000)
+import the second export into B: handle 4
+import -1: EBADF
+import a pipe: EINVAL
+import the render node: EINVAL
+B's mapping of the import: the pattern equal
+mmap of the descriptor: the pattern equal, a write through it visible to A
+B's GPU writes 64 words into the import: submit ok, wait ok; A sees 0 wrong
+A's GPU writes 64 words into it: submit ok, wait ok; B sees 0 wrong
+B's long chain names the shared buffer: submit ok; A's wait_bo, deadline past: EBUSY; then: ok
+A closes handle 1 and both descriptors: ok; B's mapping: the pattern equal
+B exports its import: ok
+A imports it back: handle 1, address 0x2000000
+A's new mapping: the pattern equal
+child: import handle 1, size 0x4000, address 0x2000000, the pattern equal; its GPU writes 64 words: submit ok, wait ok
+A sees the child's words: 0 wrong
+sync file of a sync object without a fence: EINVAL
+long chain in A: submit ok, sync file ok; at once: not ready, status 0, 1 fence(s)
+B imports the sync file into sync object 2: ok
+B's job after it: submit ok; its sync object at once: ETIME
+the sync file within 5 s: ready, status 1, 1 fence(s)
+B's job: ok; the word both write: 0xb0b0b0b0 (B's 0xb0b0b0b0, A's 0xfde7)
+Mesa's fence: export ok, import ok, wait ok
+sync file of a signaled sync object: ok, ready, status 1, 1 fence(s)
+merged with a running one: ok; at once: not ready, status 0, 1 fence(s)
+  within 5 s: ready, status 1, 1 fence(s)
+merge with a pipe: ENOENT
+import a pipe as a sync file: EINVAL
+import a dma-buf as a sync file: EINVAL
+import -1 as a sync file: EINVAL
+import a sync file into sync object 99: ENOENT
+export sync object 99 as a sync file: ENOENT
+export with flags 2: EINVAL
+sync object 5 as a descriptor: ok; into B: handle 4
+A signals it: ok; B's wait: ok
+B resets it: ok; A's wait: EINVAL
+into A itself: handle 6
+a sync file as a sync object: EINVAL
+a dma-buf as a sync object: EINVAL
+transfer: ENOTSUP
+dma-buf sync 0x1: ok
+dma-buf sync 0x5: ok
+dma-buf sync 0x3: ok
+dma-buf sync 0x7: ok
+dma-buf sync 0x0: EINVAL
+dma-buf sync 0x8: EINVAL
+dma-buf export sync file of the busy buffer: ok; at once: not ready, status 0, 1 fence(s); within 5 s: ready
+dma-buf sync start, the buffer busy: ok; then the buffer: ok
+dma-buf export sync file, flags 0: EINVAL
+dma-buf import sync file into the shared buffer: ok; A's wait_bo on it, deadline past: EBUSY; then: ok
+dma-buf import of a pipe: EINVAL
+a job that faults: submit ok, sync file ok; within 5 s: ready, status -22, 1 fence(s)
+B's job after the failed one: submit ok, wait ok, its word 0xb2b2b2b2
+
+dmesg, new lines:
+[  131.840065] panfrost fde60000.gpu: Unhandled Page fault in AS0 at VA 0x0000000010000040
+               Reason: TODO
+               raw fault status: 0x7C1003C2
+               decoded fault status: SLAVE FAULT
+               exception type 0xC2: TRANSLATION_FAULT_2
+               access type 0x3: WRITE
+               source id 0x7C10
+[  131.840203] panfrost fde60000.gpu: js fault, js=1, status=JOB_BUS_FAULT, head=0x2000000, tail=0x2000000

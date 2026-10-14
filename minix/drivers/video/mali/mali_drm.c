@@ -803,8 +803,14 @@ pjob_done(struct mali_job *j)
 		}
 		c->failed++;
 	}
+	/*
+	 * The fence's error is panfrost's for a job that failed - EINVAL
+	 * (ref-prime.txt: a sync file of a faulting job says -22); a wait on
+	 * it still fails EIO (wait_state()).
+	 */
 	p->out->signaled = 1;
-	p->out->error = j->result == OK ? 0 : EIO;
+	p->out->error = j->result == OK ? 0 : j->result == EIO ? EINVAL :
+	    j->result;
 	fence_unref(p->out);
 	pjob_release_in(p);
 	for (i = 0; i < j->nbos; i++)
@@ -1337,8 +1343,9 @@ do_timeline(struct call *c, void *arg)
 
 /*
  * PRIME_HANDLE_TO_FD: the buffer as a dma-buf descriptor.  DRM_CLOEXEC and
- * DRM_RDWR are O_CLOEXEC and O_RDWR (drm.h).  A heap is not exported, as
- * panfrost will not ("growable"); its memory is its context's.
+ * DRM_RDWR are O_CLOEXEC and O_RDWR (drm.h).  A heap is exported as the
+ * board's panfrost (6.1) exports it (ref-prime.txt), but nobody can import
+ * or map it: its pieces are its context's, there is nothing to share.
  */
 static int
 do_prime_handle_to_fd(struct call *c, void *arg)
@@ -1350,8 +1357,6 @@ do_prime_handle_to_fd(struct call *c, void *arg)
 		return EINVAL;
 	if ((bo = bo_get(c->ctx, a->handle)) == NULL)
 		return ENOENT;
-	if (bo->flags & PANFROST_BO_HEAP)
-		return EINVAL;
 	return obj_export(c, OBJ_DMABUF, bo->mem, (a->flags & DRM_CLOEXEC) |
 	    ((a->flags & DRM_RDWR) ? O_RDWR : O_RDONLY),
 	    (uint64_t)bo->mem->size, &a->fd);

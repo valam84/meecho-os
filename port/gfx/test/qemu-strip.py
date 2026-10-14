@@ -45,8 +45,8 @@ they go, workspaces strictly between on and off the screen.
  10a. Super+d: the palette (meechowm-palette, fuzzel) over the strip, with
      the keyboard; "third" and Enter make the focused column a third (416)
  11. a command that is not one: an error, and exit status 1
- 12. Super+Shift+e: the compositor ends, and the panel (yambar) with it;
-     the console has the screen
+ 12. Super+Shift+e: the compositor ends with status 0, and the panel
+     (yambar) with it; the console has the screen
 
 At the first failure the tail of the compositor's log is printed.  Log of
 the whole run: ~/qemu-strip.log.
@@ -314,7 +314,11 @@ def main():
              "minix-service up /service/fb -dev /dev/fb0 -args virtual=1; "
              "echo UP''DONE")
         expect(r"UPDONE", 60)
-        send("MEECHOWM_DEBUG=1 meechowm > /tmp/mwm.log 2>&1 & MWM=$!")
+        # Its exit status to a file, for step 12: an interactive ash frees
+        # a finished job when it shows the next prompt, and wait $MWM
+        # after that answers 127, whatever the compositor's status was.
+        send("rm -f /tmp/mwm.rc; (MEECHOWM_DEBUG=1 meechowm > /tmp/mwm.log "
+             "2>&1; echo $? > /tmp/mwm.rc) & MWM=$!")
         send("n=0; while [ $n -lt 90 ] && ! meechowm -m state >/dev/null "
              "2>&1; do sleep 2; n=$((n+1)); done; echo WA''ITED $n")
         expect(r"WAITED \d+", 300)
@@ -536,6 +540,13 @@ def main():
         out = expect(r"ALIVE|GONE", 60)
         record("12. Super+Shift+e ends the compositor", "GONE" in out,
                "it is still running")
+        # ...and ends well: it used to abort() in wl_display_destroy on a
+        # layer shell listener it had not taken off (status 134).
+        send("echo RC=$(cat /tmp/mwm.rc 2>/dev/null || echo none)")
+        m = re.search(r"RC=(\d+|none)", expect(r"RC=(\d+|none)", 60))
+        rc = m.group(1) if m else "?"
+        record("12. the compositor exits with status 0", rc == "0",
+               "status %s%s" % (rc, " (SIGABRT)" if rc == "134" else ""))
         send("n=0; while [ $n -lt 10 ] && ps -ax -o command | "
              "grep -q '^[y]ambar'; do sleep 2; n=$((n+1)); done; "
              "ps -alx | grep '[y]ambar'; echo BA''R $n")

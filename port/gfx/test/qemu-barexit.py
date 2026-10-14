@@ -5,10 +5,10 @@ Boots the disk root in its own WORK_DIR (~/obj-evbarm64/work-barexit) with
 the frame buffer driver at virtual=1, as qemu-strip.py does, starts
 meechowm and in it meechowm-bar - yambar, a thread per module and one for
 the bar - and once the panel is a layer of the compositor's, ends the
-compositor (meechowm -m quit).  yambar has lost its display then and must
-go by itself; the stand looks for it with ps for -t seconds, and if it is
-still there prints what it waits on (ps -l: wait channel) and a few
-seconds of trace(1) attached to it.
+compositor (meechowm -m quit), which must exit with status 0.  yambar has
+lost its display then and must go by itself; the stand looks for it with
+ps for -t seconds, and if it is still there prints what it waits on (ps
+-l: wait channel) and a few seconds of trace(1) attached to it.
 
     python3 port/gfx/test/qemu-barexit.py [-k] [-s cores] [-t seconds]
                                           [-r rounds] [-e]
@@ -127,7 +127,10 @@ def main():
                    "> /tmp/bar.log 2>&1")
         for rnd in range(1, a.r + 1):
             tag = "round %d: " % rnd if a.r > 1 else ""
-            send("MEECHOWM_DEBUG=1 meechowm > /tmp/mwm.log 2>&1 & MWM=$!")
+            # The exit status to a file: ash frees a finished job at the
+            # next prompt, and wait $MWM then says 127 (qemu-strip.py).
+            send("rm -f /tmp/mwm.rc; (MEECHOWM_DEBUG=1 meechowm > "
+                 "/tmp/mwm.log 2>&1; echo $? > /tmp/mwm.rc) & MWM=$!")
             send("n=0; while [ $n -lt 90 ] && ! meechowm -m state >/dev/null "
                  "2>&1; do sleep 2; n=$((n+1)); done; echo WA''ITED $n")
             expect(r"WAITED \d+", 300)
@@ -148,8 +151,17 @@ def main():
                       "echo AL''IVE; else echo GO''NE; fi")
             record(tag + "the compositor ends", "GONE" in out,
                    "it is still running")
+            m = re.search(r"RC=(\d+|none)",
+                          run("echo RC=$(cat /tmp/mwm.rc 2>/dev/null || "
+                              "echo none)"))
+            rc = m.group(1) if m else "?"
+            record(tag + "with status 0", rc == "0",
+                   "status %s%s" % (rc, " (SIGABRT)" if rc == "134" else ""))
             out = run("grep -iE 'assert|abort|ERROR' /tmp/mwm.log | tail -5")
-            if re.search(r"(?i)assert|abort", out.split("\n", 1)[-1]):
+            # Not the command itself, which the terminal echoes twice and
+            # which says "assert|abort" too.
+            if re.search(r"(?i)assert|abort", "\n".join(
+                    l for l in out.splitlines() if "RU''NDONE" not in l)):
                 print("      the compositor's last words:")
                 show(out)
             t0 = time.time()

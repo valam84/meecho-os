@@ -409,7 +409,12 @@ def main():
              "grep 'cursor at' /tmp/mwm.log | tail -1; echo MO''VED")
         out = expect(r"MOVED", 120)
         m = re.findall(r"cursor at (\d+),(\d+)", out)
-        print("      cursor at %s" % (",".join(m[-1]) if m else "?"))
+        # Where every report gone alone would leave it: the corner, then
+        # 300 and 200.  The motion a read sums before the edge stops it
+        # ends short (73 for -127, +100, +100 from the left edge).
+        record("8. the cursor at 300,200",
+               bool(m) and m[-1] == ("300", "200"),
+               ",".join(m[-1]) if m else "no 'cursor at' in the log")
         check("8. a click on green", [("green", 8, HALF, True),
                                       ("blue", 644, HALF, False)])
 

@@ -1323,8 +1323,9 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   OpenCL C, их делают хостовые `mesa_clc`/`panfrost_compile` (LLVM 21) при
   импорте. **libdrm на MINIX раньше не видела ни одного устройства**
   (`DRM_MAJOR` 18 против 226, шина без реализации) — три места под
-  `__minix`. GBM грузит бэкенд `dlopen()`, в статической программе его нет —
-  EGL берётся на платформе surfaceless. Тест — `port/test/gles/glcube.c`
+  `__minix`. GBM грузил бэкенд `dlopen()` — с
+  2026-10-14 он вшит в libgbm (ниже, «стол на GLES»); `glcube` берёт
+  EGL на платформе surfaceless. Тест — `port/test/gles/glcube.c`
   (`build.sh`): куб в FBO, `glReadPixels`, `/dev/fb0`; на QEMU доходит до
   открытия `/dev/dri/renderD128`. Чего не было в системе и что найдено
   замером — `sched_*` (только `SCHED_OTHER`), `__libc_thr_yield`,
@@ -1483,6 +1484,32 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   перерисовка кадра; снятое — `port/cb2-xray/meecho-xray.txt`.
   Разбор — `PORTING-LOG.md`, «Рентген, часть первая», «…вторая» и
   «Рентген на плате».
+- **Стол на GLES (2026-10-14, плата; QEMU — pixman): кадр рисует Mali
+  прямо в буфер развёртки.** meechowm (`render.c`) берёт GLES2 wlroots
+  поверх Mesa, если `/dev/dri/renderD128` открывается, иначе pixman
+  (`MEECHOWM_RENDERER=gles2|pixman`; `meechowm -m frames` — кто рисует,
+  `path direct|copy` и цена кадра). `rc` корня поднимает `mali` после
+  `fb` (`gpu=0` — нет). **Прямой путь:** `fb` публикует буферы в DS
+  (`fb.scanout.*`), служба ввозит их вызовом
+  `DRM_IOCTL_MEECHO_SCANOUT_IMPORT` (`mali/meecho_drm.h`: только
+  опубликованный буфер целиком, названный отображением клиента —
+  иначе клиент отдал бы ускорителю любую свою память), `FBIOC_FLIP` с
+  `FB_FLIP_GPU` ничего не чистит, `fb` сбрасывает кэш такого буфера
+  перед `read(2)`; `MEECHOWM_SCANOUT=copy` — копия, для сравнения.
+  Десять движений обзора: 0,18 с композитора + 0,07 `mali` против
+  1,53 с у pixman; ~12 % рентгена — его клиент (свой pixman). Что
+  помнить: **tinywl рисовал кадр на каждый сигнал** —
+  `build_state()` без проверки «нужен ли кадр», которую делает только
+  `wlr_scene_output_commit()` (40 пустых кадров в секунду в покое;
+  курсор ставит `needs_frame` без повреждений — ему `commit` без
+  буфера); **libdrm на MINIX узнаёт узел по дескриптору** (клон-minor
+  контекста → `renderD128`); **`sys_umap` — только свой адрес**, для
+  чужого `SYS_UMAP_REMOTE` (в libsys aarch64 его нет — `mali_umap.c`),
+  и страниц разделяемого отображения нет в таблице, пока их не
+  тронули; **`vm REMAP_RO`** — отдельное право. Кадр на GPU упирается
+  в 200 МГц ускорителя (11.8). Стенд на плате —
+  `port/gfx/test/board-glesbench.sh pixman|gles2`. Разбор —
+  `PORTING-LOG.md`, «Стол на GLES».
 - **Перезапуск службы виден на столе (2026-10-14, QEMU): `meechowm-notify`**
   (`minix/usr.bin/meechowm-notify`, запускает `meecho-desktop`) —
   карточка layer-shell в правом верхнем углу, «lwip restarted», pid,

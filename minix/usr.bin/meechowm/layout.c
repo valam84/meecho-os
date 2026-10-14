@@ -118,3 +118,12 @@ mc_strip_center(const int *w, int n, int focus, int area_w, int gap)
 	strip_span(w, n, focus, gap, &start, &total);
 	return start + w[focus] / 2 - (area_w - 2 * gap) / 2;
 }
+
+/* In integers: c + (v - c) * zoom / 1000, the half away from c. */
+int
+mc_zoom(int v, int c, int zoom)
+{
+	long d = (long)(v - c) * zoom;
+
+	return c + (int)(d >= 0 ? (d + 500) / 1000 : -((-d + 500) / 1000));
+}

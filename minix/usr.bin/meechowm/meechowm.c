@@ -31,6 +31,10 @@
  *   i                           the focused window's passport: its
  *                               process, as the system knows it
  *                               (passport.c); i again puts it away
+ *   o                           the overview: the camera pulled back, every
+ *                               workspace in sight (overview.c); in it the
+ *                               arrows alone move the focus, a click takes
+ *                               a window, o again, Return or Esc go back
  *   1 .. 9                      workspace 1 .. 9
  *   Shift+e                     end the compositor (and so does Alt+Escape)
  *   the wheel                   focus the column left or right
@@ -165,6 +169,7 @@ static const struct binding {
 	{ false, XKB_KEY_d,	"launcher" },
 	{ false, XKB_KEY_x,	"xray" },	/* the system on view */
 	{ false, XKB_KEY_i,	"passport" },	/* the focused window's */
+	{ false, XKB_KEY_o,	"overview" },	/* the camera pulled back */
 	{ false, XKB_KEY_1,	"workspace 1" },
 	{ false, XKB_KEY_2,	"workspace 2" },
 	{ false, XKB_KEY_3,	"workspace 3" },
@@ -180,6 +185,17 @@ static const struct binding {
 /* The keys that are the compositor's without its modifier. */
 static const struct binding bare_bindings[] = {
 	{ false, XKB_KEY_Print,	"spawn meechowm-shot" },
+	{ true,	 XKB_KEY_Print,	"spawn meechowm-shot -r" },	/* an area */
+};
+
+/* And in the overview, where the windows are pictures: the way about. */
+static const struct binding overview_bindings[] = {
+	{ false, XKB_KEY_Left,	"focus left" },
+	{ false, XKB_KEY_Right,	"focus right" },
+	{ false, XKB_KEY_Up,	"focus up" },
+	{ false, XKB_KEY_Down,	"focus down" },
+	{ false, XKB_KEY_Return, "overview off" },
+	{ false, XKB_KEY_Escape, "overview off" },
 };
 
 static void process_cursor_motion(struct tinywl_server *server, uint32_t time);
@@ -412,11 +428,20 @@ static void keyboard_handle_key(
 			} else if (modifiers & server->mod) {
 				handled |= handle_keybinding(server, syms[i],
 					shift);
+			} else if (overview_on(server)) {
+				for (size_t b = 0; b < sizeof(overview_bindings) /
+				    sizeof(overview_bindings[0]); b++) {
+					if (overview_bindings[b].sym == syms[i]) {
+						run_command(server,
+						    overview_bindings[b].command);
+						handled = true;
+					}
+				}
 			} else {
 				for (size_t b = 0; b < sizeof(bare_bindings) /
 				    sizeof(bare_bindings[0]); b++) {
 					if (bare_bindings[b].sym == syms[i] &&
-					    !shift) {
+					    bare_bindings[b].shift == shift) {
 						run_command(server,
 						    bare_bindings[b].command);
 						handled = true;
@@ -662,6 +687,13 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
 	struct tinywl_server *server =
 		wl_container_of(listener, server, cursor_button);
 	struct wlr_pointer_button_event *event = data;
+	/* MEECHO: in the overview a click is the overview's (overview.c). */
+	if (overview_on(server)) {
+		if (event->state == WL_POINTER_BUTTON_STATE_PRESSED)
+			(void)overview_click(server, server->cursor->x,
+			    server->cursor->y);
+		return;
+	}
 	/* Notify the client with pointer focus that a button press has occurred */
 	wlr_seat_pointer_notify_button(server->seat,
 			event->time_msec, event->button, event->state);
@@ -874,14 +906,17 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
 
-	/* MEECHO: a column on the strip, and the focus with it. */
+	/* MEECHO: a column on the strip, and the focus with it; a handle
+	 * for task bars (toplevels.c). */
 	strip_map(toplevel);
+	toplevels_map(toplevel);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	/* Called when the surface is unmapped, and should no longer be shown. */
 	struct tinywl_toplevel *toplevel = wl_container_of(listener, toplevel, unmap);
 
+	toplevels_unmap(toplevel);
 	strip_unmap(toplevel);
 	wl_list_remove(&toplevel->link);
 }
@@ -1311,6 +1346,9 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.seat->events.request_set_selection,
 			&server.request_set_selection);
 
+	/* MEECHO: the windows, for task bars - the panel among them. */
+	toplevels_init(&server);
+
 	/*
 	 * MEECHO: the keyboard and the mouse, from the input server; then the
 	 * screen, whose size the one output and the strip take.
@@ -1394,6 +1432,7 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.request_cursor.link);
 	wl_list_remove(&server.pointer_focus_change.link);
 	wl_list_remove(&server.request_set_selection.link);
+	toplevels_fini();
 
 	wl_list_remove(&server.new_output.link);
 

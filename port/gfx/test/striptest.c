@@ -225,6 +225,48 @@ motion(void)
 	}
 }
 
+/*
+ * The camera of the overview: by hand, half the size about the middle of
+ * a 1280 screen puts its edges at 320 and 960; the middle stays; a pixel
+ * either side of it rounds away from it.  Then over all coordinates and
+ * zooms: within half a pixel of the exact value, in order - boxes that
+ * touched or had a gap still do - and the middle fixed.
+ */
+static void
+camera(void)
+{
+	int v, w, z, c, a, b;
+	double exact;
+
+	CHECK(mc_zoom(0, 640, 500) == 320, "0 at half: %d", mc_zoom(0, 640, 500));
+	CHECK(mc_zoom(1280, 640, 500) == 960, "1280 at half");
+	CHECK(mc_zoom(640, 640, 500) == 640, "the middle stays");
+	CHECK(mc_zoom(641, 640, 500) == 641 && mc_zoom(639, 640, 500) == 639,
+	    "a pixel off the middle, halves away from it");
+	CHECK(mc_zoom(-720, 360, 500) == -180, "a workspace above, at half");
+	CHECK(mc_zoom(1234, 567, 1000) == 1234, "1000: no zoom");
+
+	for (c = 0; c <= 1080; c += 360)
+		for (z = 100; z <= 1000; z += 37) {
+			CHECK(mc_zoom(c, c, z) == c, "%d fixed at %d", c, z);
+			a = mc_zoom(-3000, c, z);
+			for (v = -3000; v <= 3000; v += 7) {
+				b = mc_zoom(v, c, z);
+				exact = c + (double)(v - c) * z / 1000.0;
+				CHECK(b - exact <= 0.5 && exact - b <= 0.5,
+				    "%d about %d at %d: %d, not %.2f", v, c, z, b,
+				    exact);
+				CHECK(b >= a, "%d about %d at %d: %d below %d", v,
+				    c, z, b, a);
+				a = b;
+			}
+			for (v = -50; v <= 50; v++)
+				for (w = v; w <= v + 3; w++)
+					CHECK(mc_zoom(v, c, z) <= mc_zoom(w, c, z),
+					    "order of %d, %d", v, w);
+		}
+}
+
 int
 main(void)
 {
@@ -232,6 +274,7 @@ main(void)
 	walk();
 	properties();
 	motion();
+	camera();
 	printf("striptest: %ld checks, %ld failed\n", checks, failed);
 	return failed != 0;
 }

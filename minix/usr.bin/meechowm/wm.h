@@ -9,6 +9,9 @@
  *   layers.c     layer surfaces: panels and launchers over and under it
  *   passport.c   what the system knows of a window's process, in its
  *                frame (the x-ray view's click, Super+i)
+ *   toplevels.c  the windows, told to task bars and window switchers
+ *                (wlr-foreign-toplevel-management)
+ *   overview.c   the camera pulled back from the strip (Mod+o)
  *   ipc.c        the commands over a socket (meechowm -m)
  */
 #ifndef MEECHOWM_WM_H
@@ -25,6 +28,7 @@ struct mc_fb;
 struct mw_workspace;
 struct mw_decoration;
 struct mw_layer;
+struct wlr_foreign_toplevel_handle_v1;
 struct wlr_surface;
 
 struct tinywl_server {
@@ -100,6 +104,15 @@ struct tinywl_server {
 	uint32_t anim_start;		/* the clock's start, in ms */
 	bool animating;
 	struct wl_event_source *anim_timer;
+
+	/*
+	 * The overview (overview.c): the camera's size, per mille of the
+	 * screen's - 1000 on the strip - where it was when the clock last
+	 * started, and its tree while it is anything but full size.
+	 */
+	bool overview;
+	int zoom, from_zoom;
+	struct wlr_scene_tree *ov;
 };
 
 struct tinywl_toplevel {
@@ -125,6 +138,17 @@ struct tinywl_toplevel {
 	bool shown;			/* drawn before: it moves, not jumps */
 	int cfg_width, cfg_height;	/* the size last asked of it */
 	struct mw_decoration *decoration;
+
+	/* Its picture in the overview (overview.c), while that shows. */
+	struct wlr_scene_buffer *ov_buf;
+
+	/* Its handle for task bars (toplevels.c), while it is mapped. */
+	struct wlr_foreign_toplevel_handle_v1 *ftl;
+	struct wl_listener ftl_activate;
+	struct wl_listener ftl_close;
+	struct wl_listener ftl_maximize;
+	struct wl_listener ftl_title;
+	struct wl_listener ftl_app_id;
 };
 
 /* A workspace: a strip of columns. */
@@ -137,6 +161,7 @@ struct mw_workspace {
 	int view;			/* layout.h */
 	int at_y, from_y, to_y;		/* its tree's y: 0 on the screen,
 					 * the screen's height above or below */
+	struct wlr_scene_rect *ov_card;	/* under it in the overview */
 };
 
 /* What a command answers: text, and whether it failed. */
@@ -177,11 +202,30 @@ void strip_unmap(struct tinywl_toplevel *toplevel);
 void strip_commit(struct tinywl_toplevel *toplevel);
 void strip_focus(struct tinywl_toplevel *toplevel);
 void strip_maximize(struct tinywl_toplevel *toplevel);
+void strip_animate(struct tinywl_server *server);
 void wm_command(struct tinywl_server *server, const char *line,
 	struct mw_reply *reply);
 void wm_reply(struct mw_reply *reply, const char *fmt, ...)
 	__attribute__((__format__(__printf__, 2, 3)));
 void wm_spawn(const char *cmd);
+
+/* overview.c */
+bool overview_on(const struct tinywl_server *server);
+int overview_target(const struct tinywl_server *server);
+void overview_set(struct tinywl_server *server, int on);
+void overview_place(struct tinywl_server *server);
+void overview_tick(struct tinywl_server *server, bool done);
+void overview_commit(struct tinywl_toplevel *toplevel);
+void overview_unmap(struct tinywl_toplevel *toplevel);
+void overview_ws_gone(struct mw_workspace *ws);
+bool overview_click(struct tinywl_server *server, double x, double y);
+
+/* toplevels.c */
+void toplevels_init(struct tinywl_server *server);
+void toplevels_fini(void);
+void toplevels_map(struct tinywl_toplevel *toplevel);
+void toplevels_unmap(struct tinywl_toplevel *toplevel);
+void toplevels_width(struct tinywl_toplevel *toplevel);
 
 /* ipc.c */
 bool ipc_start(struct tinywl_server *server);

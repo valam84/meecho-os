@@ -34,6 +34,8 @@
  *   terminal                     the terminal (MEECHOWM_TERM, foot)
  *   launcher                     the launcher (MEECHOWM_LAUNCHER)
  *   anim MS                      how long a move takes; 0: no motion
+ *   overview [on|off]            the camera pulled back, or not; alone,
+ *                                the other way (overview.c)
  *   state                        the layout, as text (for the stands)
  *   quit
  */
@@ -152,6 +154,7 @@ ws_tidy(struct tinywl_server *s)
 		if (ws == s->ws || !wl_list_empty(&ws->columns) ||
 		    ws->link.next == &s->workspaces)
 			continue;
+		overview_ws_gone(ws);
 		wlr_scene_node_destroy(&ws->tree->node);
 		wl_list_remove(&ws->link);
 		free(ws);
@@ -265,6 +268,7 @@ anim_begin(struct tinywl_server *s)
 		wl_list_for_each(t, &ws->columns, column_link)
 			t->from_x = t->at_x;
 	}
+	s->from_zoom = s->zoom;
 	s->anim_start = now_ms();
 	if (!s->animating) {
 		s->animating = true;
@@ -287,6 +291,9 @@ anim_tick(void *data)
 	long el = (long)(uint32_t)(now_ms() - s->anim_start);
 	bool done = el >= s->anim_ms;
 
+	if (s->ov != NULL)		/* the camera too (overview.c) */
+		s->zoom = mc_ease(s->from_zoom, overview_target(s), el,
+		    s->anim_ms);
 	wl_list_for_each(ws, &s->workspaces, link) {
 		ws->at_y = mc_ease(ws->from_y, ws->to_y, el, s->anim_ms);
 		wlr_scene_node_set_position(&ws->tree->node, 0, ws->at_y);
@@ -298,6 +305,7 @@ anim_tick(void *data)
 		}
 	}
 	ring_update(s);
+	overview_tick(s, done);
 	if (!done) {
 		wl_event_source_timer_update(s->anim_timer, 16);
 		return 0;
@@ -305,6 +313,21 @@ anim_tick(void *data)
 	s->animating = false;
 	wm_pointer_refresh(s);		/* what is under the pointer now */
 	return 0;
+}
+
+/*
+ * The camera goes to the overview's size or back (overview.c): on the
+ * clock if things move, at once if they do not.
+ */
+void
+strip_animate(struct tinywl_server *s)
+{
+	if (s->anim_ms > 0) {
+		anim_begin(s);
+		return;
+	}
+	s->zoom = overview_target(s);
+	overview_tick(s, true);
 }
 
 /*
@@ -357,6 +380,7 @@ relayout(struct mw_workspace *ws, bool centre)
 		anim_begin(s);
 	if (ws == s->ws)
 		ring_update(s);
+	overview_place(s);
 }
 
 /* The workspace's focus, and the keyboard's if it is on the screen. */
@@ -456,6 +480,7 @@ strip_init(struct tinywl_server *s)
 		goto nomem;
 	wlr_scene_node_set_enabled(&s->ws->tree->node, true);
 	wlr_scene_node_reparent(&s->ring->node, s->ws->tree);
+	s->zoom = s->from_zoom = 1000;	/* the camera at full size */
 	if ((s->anim_timer = wl_event_loop_add_timer(
 	    wl_display_get_event_loop(s->wl_display), anim_tick, s)) == NULL)
 		goto nomem;
@@ -536,6 +561,7 @@ strip_unmap(struct tinywl_toplevel *t)
 
 	if (ws == NULL)
 		return;
+	overview_unmap(t);
 	if ((next = col_next(t, 1)) == NULL)
 		next = col_next(t, -1);
 	wl_list_remove(&t->column_link);
@@ -551,6 +577,7 @@ strip_commit(struct tinywl_toplevel *t)
 {
 	if (t->ws != NULL)
 		place(t);
+	overview_commit(t);		/* its picture there, if it shows */
 }
 
 /* A click: the column under the pointer takes the focus. */
@@ -577,6 +604,7 @@ strip_maximize(struct tinywl_toplevel *t)
 		t->width_was = t->width;
 		t->width = MC_W_FULL;
 	}
+	toplevels_width(t);
 	relayout(t->ws, false);
 }
 
@@ -645,10 +673,10 @@ state(struct tinywl_server *s, struct mw_reply *r)
 	int wi = 0, ci;
 
 	wm_reply(r, "screen %dx%d area %d,%d %dx%d gap %d workspaces %d "
-	    "active %d animating %d\n", s->width, s->height, s->area.x,
-	    s->area.y, s->area.width, s->area.height, s->gap,
-	    wl_list_length(&s->workspaces), ws_number(s->ws),
-	    s->animating ? 1 : 0);
+	    "active %d animating %d overview %d zoom %d\n", s->width,
+	    s->height, s->area.x, s->area.y, s->area.width, s->area.height,
+	    s->gap, wl_list_length(&s->workspaces), ws_number(s->ws),
+	    s->animating ? 1 : 0, s->overview ? 1 : 0, s->zoom);
 	wl_list_for_each(ws, &s->workspaces, link) {
 		wm_reply(r, "workspace %d %s view %d columns %d y %d\n", ++wi,
 		    ws == s->ws ? "active" : "-", ws->view,
@@ -756,6 +784,7 @@ cmd_width(struct tinywl_server *s, const char *arg, struct mw_reply *r)
 	if (t == NULL)
 		return;
 	t->width = p;
+	toplevels_width(t);
 	relayout(s->ws, false);
 	wm_pointer_refresh(s);
 }
@@ -912,7 +941,16 @@ wm_command(struct tinywl_server *s, const char *line, struct mw_reply *r)
 		}
 		s->anim_ms = (int)ms;
 	}
-	else if (strcmp(verb, "state") == 0) {
+	else if (strcmp(verb, "overview") == 0) {
+		if (arg[0] != '\0' && strcmp(arg, "on") != 0 &&
+		    strcmp(arg, "off") != 0) {
+			r->error = true;
+			wm_reply(r, "error: overview %s: on, off or nothing\n",
+			    arg);
+			return;
+		}
+		overview_set(s, arg[0] == '\0' ? -1 : strcmp(arg, "on") == 0);
+	} else if (strcmp(verb, "state") == 0) {
 		state(s, r);
 		return;
 	} else if (strcmp(verb, "modes") == 0) {

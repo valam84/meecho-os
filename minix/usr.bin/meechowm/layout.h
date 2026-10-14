@@ -51,4 +51,15 @@ void mc_strip_place(const int *w, int n, int view, int area_x, int gap,
  */
 int mc_ease(int a, int b, long t, long d);
 
+/*
+ * The overview: the camera pulled back.  Everything - every workspace, at
+ * the place it has below or above the one on the screen, every column of
+ * its strip - is drawn at zoom/1000 of its size about the point c, the
+ * middle of the area, which stays where it is.  Answers where a
+ * coordinate v goes, rounded to the nearest pixel, halves away from c.
+ * A box goes by its two edges, so boxes that touch or have a gap between
+ * them still do: v <= w gives mc_zoom(v) <= mc_zoom(w).
+ */
+int mc_zoom(int v, int c, int zoom);
+
 #endif

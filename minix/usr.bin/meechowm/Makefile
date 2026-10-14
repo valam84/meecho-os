@@ -4,7 +4,7 @@
 
 PROG=	meechowm
 SRCS=	meechowm.c strip.c layers.c layout.c ipc.c fbout.c input.c \
-	mousesplit.c hid2evdev.c passport.c
+	mousesplit.c hid2evdev.c passport.c toplevels.c overview.c
 MAN=
 # The passport's font: Spleen 8x16, the screen console's (sys/dev/wsfont).
 CPPFLAGS.passport.c+=	-I${NETBSDSRCDIR}/sys

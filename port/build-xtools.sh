@@ -2,7 +2,7 @@
 #
 # Сборка внешнего кросс-тулчейна для цели aarch64-elf64-minix.
 #
-#	bash build-xtools.sh [binutils|gcc|headers|all]
+#	bash build-xtools.sh [binutils|gcc|cxx|headers|all]
 #
 # Собирает binutils 2.46 и GCC 15.2 из исходников пакетов Ubuntu
 # (binutils-source, gcc-15-source) с патчами из port/toolchain/ и ставит
@@ -31,6 +31,7 @@ WHAT="${1:-all}"
 
 TARGET=aarch64-elf64-minix
 PREFIX="${PREFIX:-$HOME/xtools-aarch64}"
+PREFIX_CXX="${PREFIX_CXX:-$HOME/xtools-aarch64-cxx}"
 SYSROOT="${SYSROOT:-$HOME/dest-evbarm64}"
 WORK="${WORK:-$HOME/xtools-build}"
 PATCHES="${PATCHES:-$PORT/toolchain}"
@@ -103,6 +104,51 @@ build_gcc() {
 	echo "==> gcc готов"
 }
 
+# The second pass: C and C++ with libstdc++, now that the sysroot has the C
+# library (Mesa's GLSL compiler and state tracker are C++, stage 11.6).  It
+# goes to a prefix of its own, ~/xtools-aarch64-cxx: the first pass is
+# what every build uses, and swapping its cc1 and libgcc under them is a
+# separate decision.  The same binutils, from the first prefix.
+#
+# libstdc++ is static and single-threaded (gthr-single): libmthread's
+# threads are user-level, switch only in its own calls, and C++ code that
+# takes a std::mutex runs to the next such call anyway.  Its target
+# configuration is NetBSD's (patch: configure.host, crossconfig.m4).
+build_cxx() {
+	unpack "${GCC_TAR}" "gcc-${GCC_VER}" \
+		"${PATCHES}/gcc-${GCC_VER}-aarch64-minix.patch"
+	[ -f "${SYSROOT}/usr/lib/libc.a" ] || {
+		echo "нет ${SYSROOT}/usr/lib/libc.a — сначала libc" >&2; exit 1; }
+	local bld="${WORK}/build-gcc-cxx" cxx="${PREFIX_CXX}"
+	rm -rf "${bld}"; mkdir -p "${bld}"; cd "${bld}"
+	export PATH="${PREFIX}/bin:${PATH}"
+	"${WORK}/gcc-${GCC_VER}/configure" \
+		--target=${TARGET} --prefix="${cxx}" --with-sysroot="${SYSROOT}" \
+		--with-as="${PREFIX}/bin/${TARGET}-as" \
+		--with-ld="${PREFIX}/bin/${TARGET}-ld" \
+		--enable-languages=c,c++ --disable-shared --disable-threads \
+		--disable-nls --disable-multilib --disable-bootstrap \
+		--disable-libssp --disable-libquadmath --disable-libatomic \
+		--disable-libgomp --disable-libsanitizer --disable-libvtv \
+		--disable-libitm --disable-libstdcxx-pch \
+		--with-gnu-as --with-gnu-ld
+	make -j"${JOBS}" all-gcc
+	# fixincludes copies sysroot headers into include-fixed, where they
+	# shadow the tree's own (CLAUDE.md, "fixincludes") - and its stdio.h
+	# breaks C++ ("typedef _BSD_SIZE_T_ size_t" declares nothing).  Emptied
+	# before anything is built against it, and again where it is installed.
+	find gcc/include-fixed -mindepth 1 ! -name README -delete
+	make -j"${JOBS}" all-target-libgcc
+	make -j"${JOBS}" all-target-libstdc++-v3
+	make install-gcc install-target-libgcc install-target-libstdc++-v3
+	local fixed
+	fixed=$(dirname "$("${cxx}/bin/${TARGET}-gcc" -print-libgcc-file-name)")/include-fixed
+	find "${fixed}" -mindepth 1 ! -name README -delete
+	printf '#include <vector>\nint main(){std::vector<int> v{1,2};return v.size()-2;}\n' |
+		"${cxx}/bin/${TARGET}-g++" -static -x c++ - -o "${bld}/cxx-probe"
+	echo "==> g++ и libstdc++ готовы в ${cxx}"
+}
+
 # GCC creates its private limits.h while the target sysroot is still empty.
 # In that bootstrap state it deliberately omits include_next <limits.h>, so
 # the compiler never sees such target definitions as SSIZE_MAX and PATH_MAX
@@ -129,7 +175,8 @@ refresh_headers() {
 case "${WHAT}" in
 binutils)	build_binutils ;;
 gcc)		build_gcc ;;
+cxx)		build_cxx ;;
 headers)	refresh_headers ;;
 all)		build_binutils; build_gcc ;;
-*)		echo "usage: $0 [binutils|gcc|headers|all]" >&2; exit 1 ;;
+*)		echo "usage: $0 [binutils|gcc|cxx|headers|all]" >&2; exit 1 ;;
 esac

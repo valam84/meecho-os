@@ -299,7 +299,7 @@ index 000000000..627411e92
 +#define USE_LD_AS_NEEDED 1
 +#endif
 diff --git a/gcc/ginclude/stddef.h b/gcc/ginclude/stddef.h
-index bacf24d24..3c1516297 100644
+index bacf24d24..b0156d0ad 100644
 --- a/gcc/ginclude/stddef.h
 +++ b/gcc/ginclude/stddef.h
 @@ -46,15 +46,20 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
@@ -334,6 +334,24 @@ index bacf24d24..3c1516297 100644
  
  /* Sequent's header files use _PTRDIFF_T_ in some conflicting way.
     Just ignore it.  */
+@@ -376,7 +381,7 @@ typedef __WINT_TYPE__ wint_t;
+ #undef __need_wint_t
+ #endif
+ 
+-#if defined(__NetBSD__)
++#if defined(__NetBSD__) || defined(__minix)
+ /*  The references to _GCC_PTRDIFF_T_, _GCC_SIZE_T_, and _GCC_WCHAR_T_
+     are probably typos and should be removed before 2.8 is released.  */
+ #ifdef _GCC_PTRDIFF_T_
+@@ -404,7 +409,7 @@ typedef __WINT_TYPE__ wint_t;
+ #undef _WCHAR_T_
+ #undef _BSD_WCHAR_T_
+ #endif
+-#endif /* __NetBSD__ */
++#endif /* __NetBSD__ || __minix */
+ 
+ #endif /* __sys_stdtypes_h */
+ 
 diff --git a/libgcc/config.host b/libgcc/config.host
 index 6a88ee5a2..51a394892 100644
 --- a/libgcc/config.host
@@ -365,3 +383,44 @@ index 6a88ee5a2..51a394892 100644
  aarch64*-*-fuchsia*)
  	tmake_file="${tmake_file} ${cpu_type}/t-aarch64"
  	tmake_file="${tmake_file} ${cpu_type}/t-lse t-slibgcc-libgcc"
+diff --git a/libstdc++-v3/configure b/libstdc++-v3/configure
+index 819a1d828..fe2cd758c 100755
+--- a/libstdc++-v3/configure
++++ b/libstdc++-v3/configure
+@@ -45746,7 +45746,7 @@ $as_echo "#define HAVE_TLS 1" >>confdefs.h
+ 
+   fi
+     ;;
+-  *-netbsd* | *-openbsd*)
++  *-netbsd* | *-openbsd* | *-minix*)
+     SECTION_FLAGS='-ffunction-sections -fdata-sections'
+ 
+ 
+diff --git a/libstdc++-v3/configure.host b/libstdc++-v3/configure.host
+index 253e5a9ad..4f4226a2b 100644
+--- a/libstdc++-v3/configure.host
++++ b/libstdc++-v3/configure.host
+@@ -296,6 +296,10 @@ case "${host_os}" in
+   netbsd*)
+     os_include_dir="os/bsd/netbsd"
+     ;;
++  minix*)
++    # MINIX 3's C library is NetBSD's: its ctype tables and masks too.
++    os_include_dir="os/bsd/netbsd"
++    ;;
+   openbsd*)
+     os_include_dir="os/bsd/openbsd"
+     ;;
+diff --git a/libstdc++-v3/crossconfig.m4 b/libstdc++-v3/crossconfig.m4
+index b3269cb88..f4ed4997e 100644
+--- a/libstdc++-v3/crossconfig.m4
++++ b/libstdc++-v3/crossconfig.m4
+@@ -198,7 +198,7 @@ case "${host}" in
+     AC_CHECK_FUNCS(_wfopen)
+     GCC_CHECK_TLS
+     ;;
+-  *-netbsd* | *-openbsd*)
++  *-netbsd* | *-openbsd* | *-minix*)
+     SECTION_FLAGS='-ffunction-sections -fdata-sections'
+     AC_SUBST(SECTION_FLAGS) 
+     GLIBCXX_CHECK_LINKER_FEATURES

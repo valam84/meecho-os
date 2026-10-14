@@ -39,6 +39,7 @@
 #include "spinlock.h"
 #include "arch_proto.h"
 #include "kernel/ktrace.h"
+#include "kernel/ipcflow.h"
 
 #include <minix/syslib.h>
 
@@ -996,6 +997,12 @@ int mini_send(
 	hook_ipc_msgsend(&caller_ptr->p_sendmsg, caller_ptr, dst_ptr);
 #endif
   }
+
+  /* Delivered or queued: either way it has left the sender (ipcflow.h). */
+  if (flags & FROM_KERNEL)
+	IPCFLOW_COUNT_KERNEL(caller_ptr, dst_ptr);
+  else
+	IPCFLOW_COUNT(caller_ptr, dst_ptr);
   return(OK);
 }
 
@@ -1176,6 +1183,7 @@ int mini_notify(
   }
 
   dst_ptr = proc_addr(dst_p);
+  IPCFLOW_COUNT(caller_ptr, dst_ptr);	/* delivered or pending, it is sent */
 
   /* Check to see if target is blocked waiting for this message. A process 
    * can be both sending and receiving during a SENDREC system call.
@@ -1381,6 +1389,7 @@ int try_deliver_senda(struct proc *caller_ptr,
 			done = FALSE;
 			continue;
 		}
+		IPCFLOW_COUNT(caller_ptr, dst_ptr);	/* recorded: delivered */
 		dst_ptr->p_delivermsg = tabent.msg;
 		dst_ptr->p_delivermsg.m_source = caller_ptr->p_endpoint;
 		dst_ptr->p_misc_flags |= MF_DELIVERMSG;
@@ -1579,6 +1588,7 @@ static int try_one(endpoint_t receive_e, struct proc *src_ptr,
 	tabent.flags = flags | AMF_DONE;
 	if (!asyn_record(src_ptr, table_v, i, &tabent))
 		break;
+	IPCFLOW_COUNT(src_ptr, dst_ptr);	/* recorded: delivered */
 	r = OK;
 	dst_ptr->p_delivermsg = tabent.msg;
 	dst_ptr->p_delivermsg.m_source = src_ptr->p_endpoint;

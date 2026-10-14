@@ -21,6 +21,7 @@
 #include "kernel/system.h"
 #include "kernel/clock.h"
 #include "kernel/ktrace.h"
+#include "kernel/ipcflow.h"
 
 #if defined(__aarch64__)
 #include <minix/fdt.h>
@@ -232,6 +233,27 @@ int do_getinfo(struct proc * caller, message * m_ptr)
 	length = fdt_size((const void *)src_vir);
 	break;
     }
+#endif
+#if IPCFLOW
+    case GET_IPCFLOW: {
+	/*
+	 * One row of the message matrix: what the process with endpoint
+	 * val_len2_e has sent, by receiver.  A row and not the matrix, which
+	 * is half a megabyte and would hold the big lock while it is copied;
+	 * kept here and not on the stack, which is 8 KB.
+	 */
+	static struct ipcflow row;
+
+	if ((r = ipcflow_row(m_ptr->m_lsys_krn_sys_getinfo.val_len2_e,
+	    &row)) != OK)
+		return r;
+	length = sizeof(row);
+	src_vir = (vir_bytes) &row;
+	break;
+    }
+#else
+    case GET_IPCFLOW:
+	return EINVAL;	/* quietly, as GET_KTRACE without its counters */
 #endif
 #if KTRACE
     case GET_KTRACE: {

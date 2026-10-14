@@ -92,9 +92,30 @@
  * see port/PORTING-LOG.md, "Из чего складывается вход в ядро".
  *
  * Set to 1, rebuild the kernel, and set it back afterwards, the same way
- * DEBUG_DUMPIPC is used.
+ * DEBUG_DUMPIPC is used.  Or leave the source alone and build a kernel of
+ * one's own with DBG="-O2 -DKTRACE=1" in an object directory of its own
+ * (port/kbuild-variant.sh): the tree and the kernel others boot are shared.
  */
+#ifndef KTRACE
 #define KTRACE				0
+#endif
+
+/*
+ * IPCFLOW keeps the matrix of who sends messages to whom - a cell per pair
+ * of process table slots - and hands it out a row at a time through
+ * GET_IPCFLOW and /proc/<pid>/ipc; <minix/ipcflow.h> says what is counted.
+ * It is the desktop's x-ray view of the system (stage 11.7), so unlike
+ * KTRACE it is on in an ordinary build: one increment per message, under
+ * the big kernel lock.  Zero is for measuring that price by building both
+ * ways, as KTRACE's was - see port/PORTING-LOG.md, "Рентген, часть первая".
+ *
+ * DEBUG_IPCSTATS above is its ancestor and a different thing: counted at
+ * the receiver, without notifications or kernel tasks, wiped by both row
+ * and column when a slot is freed, and printed on the console.
+ */
+#ifndef IPCFLOW
+#define IPCFLOW				1
+#endif
 
 /*
  * DEBUG_STOPRACE checks, where the kernel starts serving a process's own

@@ -36,6 +36,7 @@
 #include "kernel/vm.h"
 #include "kernel/clock.h"
 #include "kernel/ktrace.h"
+#include "kernel/ipcflow.h"
 #include <stdlib.h>
 #include <stddef.h>
 #include <assert.h>
@@ -105,6 +106,7 @@ static int kernel_call_dispatch(struct proc * caller, message *msg)
 
   KTRACE_KCALL(call_nr);
   KTRACE_CHARGE(caller, KT_PROC_KCALL);
+  IPCFLOW_COUNT(caller, proc_addr(SYSTEM));	/* a message to SYSTEM */
 
   /* See if the caller made a valid request and try to handle it. */
   if (call_nr < 0 || call_nr >= NR_SYS_CALLS) {	/* check call number */
@@ -574,6 +576,9 @@ void clear_endpoint(struct proc * rc)
    * Check all processes.
    */
   clear_ipc_refs(rc, EDEADSRCDST);
+
+  /* What was sent to it goes to the senders' "gone" column (ipcflow.c). */
+  ipcflow_clear(rc);
 
   /* Finally, if the process was blocked on a VM request, remove it from the
    * queue of processes waiting to be processed by VM.

@@ -341,6 +341,7 @@
 #   define GET_CPUTICKS	  25	/* get per-state ticks for a cpu */
 #   define GET_DTB	  26	/* get the device tree the kernel booted with */
 #   define GET_KTRACE	  27	/* get the kernel event counters (KTRACE) */
+#   define GET_IPCFLOW	  28	/* get one row of the message matrix */
 
 /* Subfunctions for SYS_PRIVCTL */
 #define SYS_PRIV_ALLOW		1	/* Allow process to run */

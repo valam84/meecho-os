@@ -9,22 +9,49 @@
  *   input.c      the keyboard and the mouse: the input server's devices
  *                (/dev/kbdmux, /dev/mousemux) as wlroots input devices
  *   hid2evdev.c  HID keyboard usages to evdev key codes
+ *   render.c     who draws: the GPU (GLES2 over Mesa and the mali
+ *                service) or the CPU (pixman); a frame read by the CPU
  *
- * wlroots itself draws with pixman into the buffers of a headless output
- * the size of the screen; fbout.c takes each frame from there.
+ * wlroots itself draws into the buffers of a headless output the size of
+ * the screen; fbout.c takes each frame from there.
  */
 #ifndef MEECHOWM_H
 #define MEECHOWM_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <pixman.h>
 
+struct wlr_allocator;
+struct wlr_backend;
 struct wlr_buffer;
 struct wlr_input_device;
 struct wlr_output;
+struct wlr_renderer;
 struct wl_event_loop;
+
+/* render.c */
+bool mc_render_create(struct wlr_backend *backend, struct wlr_renderer **r,
+	struct wlr_allocator **a);
+/* A frame's pixels for the CPU, a wlr_buffer of memory or a dma-buf. */
+bool mc_buffer_begin(struct wlr_buffer *buffer, void **data,
+	uint32_t *format, size_t *stride);
+void mc_buffer_end(struct wlr_buffer *buffer);
+uint64_t mc_now_ns(void);
+/* What the frames cost, for "meechowm -m frames". */
+struct mc_frame_stats {
+	const char *renderer;	/* "gles2" or "pixman" */
+	unsigned long built;	/* frames wlroots drew */
+	unsigned long shown;	/* ... and flipped onto the screen */
+	uint64_t render_ns;	/* drawing: wlr_scene_output_build_state() */
+	uint64_t sync_ns;	/* waiting for the GPU to finish a frame */
+	uint64_t copy_ns;	/* copying into a scanout buffer */
+	uint64_t flip_ns;	/* FBIOC_FLIP */
+	uint64_t copied;	/* bytes copied */
+};
+extern struct mc_frame_stats mc_stats;
 
 /* fbout.c */
 struct mc_fb;

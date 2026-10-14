@@ -3,7 +3,8 @@
  *
  * Grown from tinywl, the example compositor of wlroots (CC0; its comments
  * are kept where the code is still its), with MEECHO's screen and input in
- * place of DRM/KMS and libinput: see meechowm.h.  wlroots draws with pixman
+ * place of DRM/KMS and libinput: see meechowm.h.  wlroots draws - with
+ * GLES2 on the GPU where there is one, with pixman where not (render.c) -
  * into the buffers of a headless output the size of the screen, and each
  * frame is copied to the frame buffer driver's scanout buffers and shown
  * there (fbout.c); keys and the mouse come from the input server
@@ -56,8 +57,10 @@
  * MEECHOWM_WIDTH (a new column's: 1/3, 1/2, 2/3 or 1), MEECHOWM_ANIM_MS
  * (how long a move takes, 200; 0: things jump), MEECHOWM_SOCK,
  * MEECHOWM_SOFT_CURSOR (set: the cursor drawn into the frames even where
- * the display has a window for it - to compare), XKB_CONFIG_ROOT.  When it
- * ends, the console has the screen back.
+ * the display has a window for it - to compare), MEECHOWM_RENDERER (gles2
+ * or pixman; unset, GLES2 if the GPU takes it), MEECHOWM_DRI (the render
+ * node, /dev/dri/renderD128), XKB_CONFIG_ROOT.  When it ends, the console
+ * has the screen back.
  */
 #include <assert.h>
 #include <errno.h>
@@ -760,11 +763,40 @@ static void output_frame(struct wl_listener *listener, void *data) {
 	 * Render the scene if needed and commit the output - in two steps,
 	 * so that the frame can be put on the screen between them: the
 	 * state built here carries the buffer drawn into and what changed.
+	 *
+	 * "If needed" is asked here: wlr_scene_output_commit() asks it, and
+	 * wlr_scene_output_build_state() does not - it draws a frame on every
+	 * call.  Clients commit without damage dozens of times a second (for
+	 * their frame callbacks), and each such commit asks for a frame: with
+	 * pixman a frame of no damage was 0.1 ms, on the GPU it is a render
+	 * pass submitted and waited for, 2.8 ms, forty times a second on an
+	 * idle desktop (PORTING-LOG, "Стол на GLES").  The cursor and the
+	 * frame callbacks below are served either way.
+	 *
+	 * And the output's needs_frame alone is not a reason to draw either:
+	 * wlroots sets it on every move of the hardware cursor, which the
+	 * display controller's window shows without a frame.  So the scene is
+	 * asked with needs_frame set aside - is anything damaged? - and an
+	 * output that only needs a frame gets a commit without a buffer: that
+	 * clears needs_frame (while it stays set, the next move of the cursor
+	 * asks for no frame, and the cursor would stop), and costs nothing.
 	 */
+	struct wlr_output *wo = output->wlr_output;
+	bool needs = wo->needs_frame;
+	wo->needs_frame = false;
+	bool damaged = wlr_scene_output_needs_frame(scene_output);
+	wo->needs_frame = needs;
+
 	struct wlr_output_state state;
 	wlr_output_state_init(&state);
-	if (wlr_scene_output_build_state(scene_output, &state, NULL) &&
-	    (state.committed & WLR_OUTPUT_STATE_BUFFER)) {
+	uint64_t t0 = mc_now_ns();
+	bool built = damaged &&
+	    wlr_scene_output_build_state(scene_output, &state, NULL);
+	if (!damaged && needs)
+		wlr_output_commit_state(wo, &state);
+	if (built && (state.committed & WLR_OUTPUT_STATE_BUFFER)) {
+		mc_stats.render_ns += mc_now_ns() - t0;
+		mc_stats.built++;
 		/* Without damage in the state, all of the frame is new. */
 		if (output->server->fb != NULL)
 			mc_fb_present(output->server->fb, state.buffer,
@@ -1199,28 +1231,17 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	/* Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The user
-	 * can also specify a renderer using the WLR_RENDERER env var.
+	/* MEECHO: the renderer - GLES2 on the GPU, or pixman - and the
+	 * allocator to go with it (render.c, MEECHOWM_RENDERER).
 	 * The renderer is responsible for defining the various pixel formats it
 	 * supports for shared memory, this configures that for clients. */
-	server.renderer = wlr_renderer_autocreate(server.backend);
-	if (server.renderer == NULL) {
+	if (!mc_render_create(server.backend, &server.renderer,
+	    &server.allocator)) {
 		wlr_log(WLR_ERROR, "failed to create wlr_renderer");
 		return 1;
 	}
 
 	wlr_renderer_init_wl_display(server.renderer, server.wl_display);
-
-	/* Autocreates an allocator for us.
-	 * The allocator is the bridge between the renderer and the backend. It
-	 * handles the buffer creation, allowing wlroots to render onto the
-	 * screen */
-	server.allocator = wlr_allocator_autocreate(server.backend,
-		server.renderer);
-	if (server.allocator == NULL) {
-		wlr_log(WLR_ERROR, "failed to create wlr_allocator");
-		return 1;
-	}
 
 	/* This creates some hands-off wlroots interfaces. The compositor is
 	 * necessary for clients to allocate surfaces, the subcompositor allows to

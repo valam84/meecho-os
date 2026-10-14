@@ -8,7 +8,8 @@
  * scanout buffer that is not on the screen, and FBIOC_FLIP shows that one:
  * the driver cleans the rows out of the cache and returns once the
  * controller has taken the new address at a frame start, so the frame on
- * the screen is never the one being written.
+ * the screen is never the one being written.  A frame the GPU drew is a
+ * dma-buf, read through its mapping once the GPU is done (render.c).
  *
  * Only what changed is copied.  A scanout buffer misses every change made
  * while another one was being shown, so each keeps its own region of what
@@ -159,11 +160,10 @@ mc_fb_cursor_sync(struct mc_fb *fb, struct wlr_output *output)
 			    b->height, fb->cmap.max_w, fb->cmap.max_h);
 			return -1;
 		}
-		if (!wlr_buffer_begin_data_ptr_access(b,
-		    WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride))
+		if (!mc_buffer_begin(b, &data, &format, &stride))
 			return 0;	/* the next frame, then */
 		if (format != DRM_FORMAT_ARGB8888) {
-			wlr_buffer_end_data_ptr_access(b);
+			mc_buffer_end(b);
 			wlr_log(WLR_ERROR, "a cursor in format 0x%08x: drawn "
 			    "into the frames", format);
 			return -1;
@@ -189,7 +189,7 @@ mc_fb_cursor_sync(struct mc_fb *fb, struct wlr_output *output)
 			}
 			c.flags |= FB_CURSOR_IMAGE;
 		}
-		wlr_buffer_end_data_ptr_access(b);
+		mc_buffer_end(b);
 		c.x = (int32_t)oc->x - oc->hotspot_x;
 		c.y = (int32_t)oc->y - oc->hotspot_y;
 	}
@@ -272,24 +272,15 @@ mc_fb_present(struct mc_fb *fb, struct wlr_buffer *buffer,
 	pixman_box32_t *box, ext;
 	uint32_t next, format, i;
 	size_t stride, w;
+	uint64_t t0;
 	void *data;
 	int n, y;
 
-	if (!wlr_buffer_begin_data_ptr_access(buffer,
-	    WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride))
-		return;
 	if (buffer->width != (int)fb->map.width ||
 	    buffer->height != (int)fb->map.height) {
 		wlr_log(WLR_ERROR, "a frame of %dx%d for a screen of %ux%u",
 		    buffer->width, buffer->height, fb->map.width,
 		    fb->map.height);
-		wlr_buffer_end_data_ptr_access(buffer);
-		return;
-	}
-	if (format != DRM_FORMAT_XRGB8888 && format != DRM_FORMAT_ARGB8888) {
-		wlr_log(WLR_ERROR, "a frame in format 0x%08x; the screen takes "
-		    "XRGB8888", format);
-		wlr_buffer_end_data_ptr_access(buffer);
 		return;
 	}
 
@@ -311,12 +302,21 @@ mc_fb_present(struct mc_fb *fb, struct wlr_buffer *buffer,
 	 * wlroots hands over such frames - a client's commit without damage
 	 * still makes one, for its frame callback - and a flip of nothing
 	 * would cost a frame's wait (and, with no rows named, a cleaning of
-	 * the whole buffer out of the cache in the driver).
+	 * the whole buffer out of the cache in the driver).  Asked before the
+	 * frame is opened: one the GPU draws would be waited for.
 	 */
-	if (!pixman_region32_not_empty(&fb->lacks[next])) {
-		wlr_buffer_end_data_ptr_access(buffer);
+	if (!pixman_region32_not_empty(&fb->lacks[next]))
+		return;
+	/* A frame the GPU draws: mc_buffer_begin() waits for it. */
+	if (!mc_buffer_begin(buffer, &data, &format, &stride))
+		return;
+	if (format != DRM_FORMAT_XRGB8888 && format != DRM_FORMAT_ARGB8888) {
+		wlr_log(WLR_ERROR, "a frame in format 0x%08x; the screen takes "
+		    "XRGB8888", format);
+		mc_buffer_end(buffer);
 		return;
 	}
+	t0 = mc_now_ns();
 	box = pixman_region32_rectangles(&fb->lacks[next], &n);
 	for (; n > 0; n--, box++) {
 		w = (size_t)(box->x2 - box->x1) * 4;
@@ -325,22 +325,27 @@ mc_fb_present(struct mc_fb *fb, struct wlr_buffer *buffer,
 			    (size_t)box->x1 * 4,
 			    (char *)data + (size_t)y * stride +
 			    (size_t)box->x1 * 4, w);
+		mc_stats.copied += w * (size_t)(box->y2 - box->y1);
 	}
 	ext = *pixman_region32_extents(&fb->lacks[next]);
 	wlr_log(WLR_DEBUG, "frame %lu: buffer %u, format 0x%08x stride %zu, "
 	    "rows %d..%d, columns %d..%d", fb->frames, next, format, stride,
 	    ext.y1, ext.y2, ext.x1, ext.x2);
 	pixman_region32_clear(&fb->lacks[next]);
-	wlr_buffer_end_data_ptr_access(buffer);
+	mc_buffer_end(buffer);
+	mc_stats.copy_ns += mc_now_ns() - t0;
 
 	memset(&flip, 0, sizeof(flip));
 	flip.buf = next;
 	flip.y0 = ext.y1 > 0 ? (uint32_t)ext.y1 : 0;
 	flip.y1 = ext.y2 > ext.y1 ? (uint32_t)ext.y2 : 0;
+	t0 = mc_now_ns();
 	if (ioctl(fb->fd, FBIOC_FLIP, &flip) != 0) {
 		wlr_log_errno(WLR_ERROR, "FBIOC_FLIP to buffer %u", next);
 		return;
 	}
+	mc_stats.flip_ns += mc_now_ns() - t0;
+	mc_stats.shown++;
 	fb->shown = next;
 	fb->flips++;
 }

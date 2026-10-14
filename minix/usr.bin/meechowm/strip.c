@@ -37,6 +37,7 @@
  *   overview [on|off]            the camera pulled back, or not; alone,
  *                                the other way (overview.c)
  *   state                        the layout, as text (for the stands)
+ *   frames [reset]               who draws, and what the frames cost
  *   quit
  */
 #include <sys/types.h>
@@ -807,6 +808,36 @@ cmd_workspace(struct tinywl_server *s, const char *arg, struct mw_reply *r)
 	    wl_list_length(&s->workspaces));
 }
 
+/*
+ * "frames": who draws and what the frames have cost since the start or the
+ * last "frames reset" - milliseconds in all, of the compositor's own time:
+ * drawing (the scene into a buffer), waiting for the GPU, copying into the
+ * scanout buffer, flipping (render.c, fbout.c).
+ */
+static void
+cmd_frames(const char *arg, struct mw_reply *r)
+{
+	if (strcmp(arg, "reset") == 0) {
+		const char *who = mc_stats.renderer;
+
+		memset(&mc_stats, 0, sizeof(mc_stats));
+		mc_stats.renderer = who;
+		wm_reply(r, "ok\n");
+		return;
+	}
+	if (arg[0] != '\0') {
+		r->error = true;
+		wm_reply(r, "error: frames %s: reset or nothing\n", arg);
+		return;
+	}
+	wm_reply(r, "renderer %s built %lu shown %lu render_ms %.1f "
+	    "sync_ms %.1f copy_ms %.1f flip_ms %.1f copied_mib %.1f\n",
+	    mc_stats.renderer != NULL ? mc_stats.renderer : "none",
+	    mc_stats.built, mc_stats.shown, mc_stats.render_ns / 1e6,
+	    mc_stats.sync_ns / 1e6, mc_stats.copy_ns / 1e6,
+	    mc_stats.flip_ns / 1e6, mc_stats.copied / 1048576.0);
+}
+
 /* "modes": what the screen can be given, the one it has marked "current". */
 static void
 cmd_modes(struct tinywl_server *s, struct mw_reply *r)
@@ -952,6 +983,9 @@ wm_command(struct tinywl_server *s, const char *line, struct mw_reply *r)
 		overview_set(s, arg[0] == '\0' ? -1 : strcmp(arg, "on") == 0);
 	} else if (strcmp(verb, "state") == 0) {
 		state(s, r);
+		return;
+	} else if (strcmp(verb, "frames") == 0) {
+		cmd_frames(arg, r);
 		return;
 	} else if (strcmp(verb, "modes") == 0) {
 		cmd_modes(s, r);

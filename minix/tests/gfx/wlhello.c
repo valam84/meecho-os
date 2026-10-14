@@ -25,7 +25,14 @@
  * layer, which takes its height off what windows may use - its exclusive
  * zone.  It draws at the size the compositor gives it.
  *
- *   wlhello [-f] [-c 0xAARRGGBB] [-t seconds] [-T title]
+ * With -q it keeps no time: it waits for the compositor without a timeout
+ * and lives until it is closed.  Between two events it then sends no
+ * message at all - what the x-ray stand (port/gfx/test/qemu-xray.py)
+ * needs to read its row of the message matrix and /proc/ktrace as counts
+ * of one moment.  Without -q it wakes five times a second to look at the
+ * clock.
+ *
+ *   wlhello [-f] [-q] [-c 0xAARRGGBB] [-t seconds] [-T title]
  *   wlhello -L top|bottom [-H height] [-c 0xAARRGGBB] [-t seconds]
  */
 #include <sys/mman.h>
@@ -240,13 +247,15 @@ main(int argc, char **argv)
 	struct zwlr_layer_surface_v1 *ls;
 	const char *title = "wlhello", *edge = NULL;
 	time_t end;
-	int c, secs = 3, height = 32;
+	int c, secs = 3, height = 32, quiet = 0;
 
-	while ((c = getopt(argc, argv, "c:ft:T:L:H:")) != -1) {
+	while ((c = getopt(argc, argv, "c:fqt:T:L:H:")) != -1) {
 		if (c == 'c')
 			colour = (uint32_t)strtoul(optarg, NULL, 0);
 		else if (c == 'f')
 			fill = 1;
+		else if (c == 'q')
+			quiet = 1;
 		else if (c == 't')
 			secs = atoi(optarg);
 		else if (c == 'T')
@@ -322,7 +331,7 @@ main(int argc, char **argv)
 	fflush(stdout);
 
 	end = time(NULL) + (secs < 0 ? 0 : secs);
-	while (time(NULL) < end) {
+	while (quiet || time(NULL) < end) {
 		struct pollfd p = { wl_display_get_fd(dpy), POLLIN, 0 };
 
 		if (resize) {
@@ -334,7 +343,8 @@ main(int argc, char **argv)
 			fflush(stdout);
 		}
 		wl_display_flush(dpy);
-		if (poll(&p, 1, 200) > 0 && wl_display_dispatch(dpy) == -1)
+		if (poll(&p, 1, quiet ? -1 : 200) > 0 &&
+		    wl_display_dispatch(dpy) == -1)
 			break;
 	}
 	wl_display_disconnect(dpy);

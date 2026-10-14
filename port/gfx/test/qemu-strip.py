@@ -557,9 +557,12 @@ def main():
                before == 1 and not left,
                "%d running before; still there: %s" %
                (before, "; ".join(left) or "none"))
+        # Blue's column was there; the console's ground is the desktop's
+        # since both take it from MEECHO's palette (minix/share/style), so
+        # the ground alone no longer tells them apart - blue gone does.
         c = colour_at(320, SCREEN_H // 2)
         record("12. the console has the screen back",
-               c not in (BACKGROUND, RED, GREEN, BLUE), "0x%06x" % c)
+               c not in (RED, GREEN, BLUE), "0x%06x" % c)
         send("grep -E 'ERROR|command:' /tmp/mwm.log | tail -20")
         send("/sbin/poweroff")
         time.sleep(5)

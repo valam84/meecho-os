@@ -119,12 +119,11 @@ def main():
         expect(r"UPDONE", 60)
         bar = "meechowm-bar"
         if a.e:
-            # The configuration meechowm-bar writes, then yambar itself
+            # The configuration meechowm-bar gives it (MEECHO's, made
+            # from the palette: minix/share/style), then yambar itself
             # with a log at info level.
-            run("sed -n \"/<<'EOF'/,/^EOF/p\" /usr/bin/meechowm-bar | "
-                "sed '1d;$d' > /tmp/bar.yml; wc -l /tmp/bar.yml")
-            bar = ("GFX_POLL_DEBUG=1 yambar -d info -s -c /tmp/bar.yml "
-                   "> /tmp/bar.log 2>&1")
+            bar = ("GFX_POLL_DEBUG=1 yambar -d info -s "
+                   "-c /usr/share/meecho/bar.yml > /tmp/bar.log 2>&1")
         for rnd in range(1, a.r + 1):
             tag = "round %d: " % rnd if a.r > 1 else ""
             # The exit status to a file: ash frees a finished job at the

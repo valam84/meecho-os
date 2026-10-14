@@ -294,7 +294,14 @@ main(int argc, char **argv)
 	static const EGLint ctx_attr[] = {
 		EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE
 	};
+	/*
+	 * EGL_SURFACE_TYPE said outright: eglChooseConfig() takes it as
+	 * EGL_WINDOW_BIT when it is left out, and the surfaceless platform
+	 * has pbuffer configs only - none would match (on the board: EGL up
+	 * on Panfrost, and no config).  The cube draws into an FBO anyway.
+	 */
 	static const EGLint cfg_attr[] = {
+		EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
 		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_NONE
 	};
 	int frames = 600, n = 512, offscreen = 0, opt, i;

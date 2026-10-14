@@ -244,6 +244,19 @@ static void __attribute__((constructor)) init(void)
 static void
 free_plugin(struct plugin plug)
 {
+#if defined(__minix)
+    /* MEECHO: a compiled-in plugin's lib is RTLD_DEFAULT (init() above),
+     * which glibc defines as NULL and NetBSD's <dlfcn.h> as (void *)-2, so
+     * the test below let dlclose(RTLD_DEFAULT) through for every one.  And
+     * in a static program dlerror() is libc's stub, which answers "Service
+     * unavailable" always - with or without that dlclose - so each exit
+     * logged fifteen "dlclose(): Service unavailable".  Nothing was
+     * dlopen()ed for these; there is nothing to close or to ask about. */
+    if (plug.lib == RTLD_DEFAULT) {
+        free(plug.name);
+        return;
+    }
+#endif
     dlerror();
 
     if (plug.lib != NULL)

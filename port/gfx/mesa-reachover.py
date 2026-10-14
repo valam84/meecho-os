@@ -27,7 +27,8 @@ What it writes:
                     symlink named by its path (BUILDSYMLINKS), and the flags
                     meson gave each of its targets
 Products, as static libraries (the userland is static): libgallium (the
-driver: Mesa, GLSL, NIR, Gallium, Panfrost), libEGL, libGLESv2, libgbm.
+driver: Mesa, GLSL, NIR, Gallium, Panfrost), libEGL, libGLESv2, libgbm
+(with its DRI backend: one library may be made of several meson targets).
 """
 
 import collections
@@ -49,6 +50,9 @@ PRODUCTS = [
     ("libEGL", "src/egl/libEGL.so.1.0.0", True, False),
     ("libGLESv2", "src/mesa/glapi/es2api/libGLESv2.so.2.0.0", True, False),
     ("libgbm", "src/gbm/libgbm.so.1.0.0", True, False),
+    # GBM's backend, which libgbm would dlopen() from /usr/lib/gbm: in a
+    # static program it is linked into libgbm instead (lib/libgbm/Makefile)
+    ("libgbm", "src/gbm/backends/dri/dri_gbm.so", True, False),
 ]
 
 PUBLIC_HEADERS = ["include/EGL", "include/GLES2", "include/GLES3",
@@ -186,7 +190,8 @@ def main():
         for o in chosen:
             if o not in bld.cc:
                 die("no compile command for " + o)
-        libs[lib] = chosen
+        have = libs.setdefault(lib, [])
+        have += [o for o in chosen if o not in have]
 
     # What they read: ninja's dependency records, and the sources.
     every = sorted({o for objs in libs.values() for o in objs})

@@ -5,6 +5,7 @@
 void buf_init(char *ptr, size_t len, off_t start);
 void buf_printf(char *fmt, ...) __attribute__((__format__(__printf__, 1, 2)));
 void buf_append(char *data, size_t len);
+off_t buf_start(void);
 ssize_t buf_result(void);
 
 /* cpuinfo.c */

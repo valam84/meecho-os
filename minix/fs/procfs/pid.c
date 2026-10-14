@@ -4,11 +4,13 @@
 
 #include <sys/mman.h>
 #include <minix/vm.h>
+#include <minix/ipcflow.h>
 
 static void pid_psinfo(int slot);
 static void pid_cmdline(int slot);
 static void pid_environ(int slot);
 static void pid_map(int slot);
+static void pid_ipc(int slot);
 
 /*
  * The files that are dynamically created in each PID directory.  The data
@@ -20,6 +22,7 @@ struct file pid_files[] = {
 	{ "cmdline",	REG_ALL_MODE,	(data_t) pid_cmdline	},
 	{ "environ",	REG_ALL_MODE,	(data_t) pid_environ	},
 	{ "map",	REG_ALL_MODE,	(data_t) pid_map	},
+	{ "ipc",	REG_ALL_MODE,	(data_t) pid_ipc	},
 	{ NULL,		0,		(data_t) NULL		}
 };
 
@@ -227,4 +230,72 @@ pid_map(int slot)
 			count++;
 		}
 	} while (r == MAX_VRI_COUNT);
+}
+
+/*
+ * The messages this process has sent, by receiver: its row of the kernel's
+ * message matrix (<minix/ipcflow.h>).  A line a receiver, the count last,
+ * so that the file reads by eye and by script alike:
+ *
+ *   version 1
+ *   freq F            what tsc counts per second
+ *   tsc T             the counter when the row was taken
+ *   self SLOT ENDPOINT   SLOT numbered as /proc/ktrace's "proc" rows are
+ *   kernel N          of the row, sent by the kernel in its name
+ *   to SLOT ENDPOINT PID NAME COUNT
+ *   gone N            sent to processes that have since gone
+ *
+ * Endpoints and names are the kernel's, taken with the counts; the pid is
+ * PM's, from this server's own table, and for a slot reused in between can
+ * be the new tenant's.  Kernel tasks have negative pids, as their
+ * directories here do.
+ *
+ * A row can be longer than one read (a server that answers every process
+ * has a line for each), and each read produces the file anew: the parts
+ * after the first come from the row the first part took, as long as it is
+ * still this slot's tenant's.  Otherwise a line could move across the
+ * boundary between two reads, and the sums this file is read for would
+ * count it twice or not at all.
+ */
+static void
+pid_ipc(int slot)
+{
+	static struct ipcflow row;	/* kilobytes; not on the stack */
+	static int row_slot = -1;
+	struct minix_proc_data mpd;
+	endpoint_t e;
+	pid_t pid;
+	int i;
+
+	if (slot < NR_TASKS)
+		e = (endpoint_t)(slot - NR_TASKS);	/* a task's own number */
+	else {
+		if ((pid = pid_from_slot(slot)) <= 0 || is_zombie(slot))
+			return;
+		if (get_proc_data(pid, &mpd) != OK)
+			return;
+		e = mpd.mpd_endpoint;
+	}
+
+	if (buf_start() == 0 || row_slot != slot || row.if_endpoint != e) {
+		row_slot = -1;
+		if (sys_getinfo(GET_IPCFLOW, &row, sizeof(row), NULL, e) != OK)
+			return;
+		row_slot = slot;
+	}
+
+	buf_printf("version %lu\n", (unsigned long)row.if_version);
+	buf_printf("freq %lu\n", (unsigned long)row.if_freq);
+	buf_printf("tsc %lu\n", (unsigned long)row.if_tsc);
+	buf_printf("self %d %d\n", row.if_slot, row.if_endpoint);
+	buf_printf("kernel %lu\n", (unsigned long)row.if_kernel);
+	for (i = 0; i < IF_NPROC; i++) {
+		if (row.if_count[i] == 0)
+			continue;
+		buf_printf("to %d %d %d %s %lu\n", i, row.if_dst[i],
+		    (int)pid_from_slot(i),
+		    row.if_name[i][0] != '\0' ? row.if_name[i] : "-",
+		    (unsigned long)row.if_count[i]);
+	}
+	buf_printf("gone %lu\n", (unsigned long)row.if_count[IF_GONE]);
 }

@@ -5,7 +5,7 @@
 
 static char *buf;
 static size_t left, used;
-static off_t skip;
+static off_t skip, buf_start_off;
 
 /*
  * Initialize the buffer for fresh use.  The output is to be stored into 'ptr'
@@ -20,6 +20,7 @@ buf_init(char * ptr, size_t len, off_t start)
 
 	buf = ptr;
 	skip = start;
+	buf_start_off = start;
 	left = MIN(len, BUF_SIZE - 1);
 	used = 0;
 }
@@ -111,6 +112,18 @@ buf_append(char * data, size_t len)
 
 	used += len;
 	left -= len;
+}
+
+/*
+ * Where in the file this read starts.  A generator whose output can be
+ * longer than one read (BUF_SIZE) produces it again for every read, and may
+ * want the next part from the same snapshot as the first: pid.c, "ipc".
+ */
+off_t
+buf_start(void)
+{
+
+	return buf_start_off;
 }
 
 /*

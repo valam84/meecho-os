@@ -145,4 +145,57 @@ typedef char fb_modes_fits[(sizeof(struct fb_modes) <= 4095) ? 1 : -1];
 #define FB_VPLUG_SMALL	2
 #define FBIOC_VPLUG	_IOW('V', 0x45, uint32_t)
 
+/*
+ * The cursor (stage 11.7): a small picture the display controller lays over
+ * the frame by itself - a window of its own with per-pixel alpha (Esmart0 on
+ * the RK3566) - so that moving the pointer is a few registers, not a frame
+ * drawn, copied, cleaned out of the cache and shown.
+ *
+ * FBIOC_CURSOR_MAP maps the cursor's image buffers into the owner of the
+ * screen (FBIOC_MAP first, or EPERM): nbuf buffers of max_w x max_h pixels,
+ * stride bytes a row, ARGB8888 premultiplied - the word is 0xAARRGGBB with
+ * the colour already multiplied by the alpha, as pixman and wlroots draw.
+ * ENODEV: this display has no window for a cursor, and the compositor draws
+ * it into its frames itself.
+ *
+ * FBIOC_CURSOR shows the top-left w x h of buffer "buf" with its top-left
+ * corner at (x, y) on the screen - partly or wholly off the screen is fine,
+ * the driver shows what is on it - or hides the cursor (FB_CURSOR_SHOW
+ * clear).  FB_CURSOR_IMAGE says the buffer was drawn into since it was last
+ * named: the driver cleans it out of the cache, as FBIOC_FLIP does a frame.
+ * The controller takes the change at its next frame start; nothing waits
+ * for it.  The buffer named before is still read until then, so a new
+ * picture goes into the other one.
+ *
+ * read(2) of the device shows the cursor too, blended over the frame as the
+ * controller blends it: it answers what is on the screen, and the virtual
+ * display (no controller at all) has its cursor there only.  The cursor goes
+ * when the owner closes the device.
+ */
+#define FB_CURSOR_MAX		64
+#define FB_CURSOR_BUFFERS	2
+#define FB_FORMAT_ARGB8888	0x34325241u	/* fourcc 'AR24', premultiplied */
+
+struct fb_cursor_map {
+	uint32_t	max_w, max_h;	/* pixels */
+	uint32_t	stride;		/* bytes from one row to the next */
+	uint32_t	format;		/* FB_FORMAT_ARGB8888 */
+	uint32_t	nbuf;		/* buffers below */
+	uint32_t	_pad;
+	uint64_t	addr[FB_CURSOR_BUFFERS];	/* in the caller */
+};
+
+#define FB_CURSOR_SHOW		0x1	/* else hidden */
+#define FB_CURSOR_IMAGE		0x2	/* "buf" was drawn into */
+
+struct fb_cursor {
+	uint32_t	flags;
+	uint32_t	buf;
+	uint32_t	w, h;		/* of the picture in "buf" */
+	int32_t		x, y;		/* its top-left corner on the screen */
+};
+
+#define FBIOC_CURSOR_MAP	_IOR('V', 0x46, struct fb_cursor_map)
+#define FBIOC_CURSOR		_IOW('V', 0x47, struct fb_cursor)
+
 #endif /* _FB_IOC_H */

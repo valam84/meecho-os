@@ -146,6 +146,20 @@ static int shown;			/* the one the controller reads */
 static endpoint_t owner = NONE;		/* who has mapped them */
 
 /*
+ * The cursor's pictures (FBIOC_CURSOR_MAP, FBIOC_CURSOR): made on the first
+ * map and kept, for the reason the scanout buffers are.  "cur" is what the
+ * owner asked for last, kept to be put back after a mode change and to be
+ * blended into what read(2) answers.
+ */
+#define CURSOR_STRIDE	(FB_CURSOR_MAX * BYTES_PER_PIXEL)
+#define CURSOR_BYTES	(CURSOR_STRIDE * FB_CURSOR_MAX)
+static vir_bytes cur_vir[FB_CURSOR_BUFFERS];
+static phys_bytes cur_phys[FB_CURSOR_BUFFERS];
+static int ncur;
+static struct fb_cursor cur;		/* flags 0: hidden */
+static unsigned long cur_moves;
+
+/*
  * virtual=1: no display at all, the buffers only - for QEMU, which has no
  * controller this driver knows.  Everything above the hardware works as on
  * the board (mapping, flipping, the console, reading the screen back), and
@@ -965,6 +979,169 @@ do_flip(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 }
 
 /*
+ * The cursor as "cur" says, on the controller for mode m.  The virtual
+ * display has none: there the cursor exists in what read(2) answers only.
+ */
+static void
+put_cursor(const struct videomode *m)
+{
+	if (virtual_mode || ncur == 0)
+		return;
+	(void)vop2_cursor((cur.flags & FB_CURSOR_SHOW) != 0, cur_phys[cur.buf],
+	    CURSOR_STRIDE, cur.x, cur.y, cur.w, cur.h, m->hdisplay,
+	    m->vdisplay);
+}
+
+/* FBIOC_CURSOR_MAP: the cursor's pictures, mapped into the owner. */
+static int
+do_cursor_map(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
+{
+	struct fb_cursor_map m;
+	void *v;
+	int i;
+
+	if (user_ep != owner)
+		return EPERM;
+	while (ncur < FB_CURSOR_BUFFERS) {
+		/* Below 4 GiB, as the window's address register needs. */
+		if ((v = alloc_contig(CURSOR_BYTES, 0, &cur_phys[ncur])) ==
+		    NULL) {
+			log_warn(&fb_log, "no memory for cursor buffer %d\n",
+			    ncur);
+			return ENOMEM;
+		}
+		memset(v, 0, CURSOR_BYTES);
+		cur_vir[ncur] = (vir_bytes)v;
+		(void)sys_cachectl(CACHE_CLEAN, v, CURSOR_BYTES);
+		ncur++;
+	}
+
+	memset(&m, 0, sizeof(m));
+	m.max_w = m.max_h = FB_CURSOR_MAX;
+	m.stride = CURSOR_STRIDE;
+	m.format = FB_FORMAT_ARGB8888;
+	m.nbuf = ncur;
+	for (i = 0; i < ncur; i++) {
+		v = vm_remap(user_ep, sef_self(), NULL, (void *)cur_vir[i],
+		    CURSOR_BYTES);
+		if (v == MAP_FAILED) {
+			log_warn(&fb_log, "cannot map cursor buffer %d into %d\n",
+			    i, user_ep);
+			return ENOMEM;
+		}
+		m.addr[i] = (uint64_t)(uintptr_t)v;
+	}
+	log_info(&fb_log, "%d cursor buffer(s) mapped into %d\n", ncur,
+	    user_ep);
+	return sys_safecopyto(ep, gid, 0, (vir_bytes)&m, sizeof(m));
+}
+
+/* FBIOC_CURSOR: show, move, change or hide the cursor. */
+static int
+do_cursor(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
+{
+	struct fb_cursor c;
+	int r;
+
+	if (user_ep != owner)
+		return EPERM;
+	if ((r = sys_safecopyfrom(ep, gid, 0, (vir_bytes)&c, sizeof(c))) != OK)
+		return r;
+	if (c.flags & ~(FB_CURSOR_SHOW | FB_CURSOR_IMAGE))
+		return EINVAL;
+	if ((c.flags & FB_CURSOR_SHOW) && (c.buf >= (uint32_t)ncur ||
+	    c.w == 0 || c.h == 0 || c.w > FB_CURSOR_MAX ||
+	    c.h > FB_CURSOR_MAX))
+		return EINVAL;
+	if ((c.flags & FB_CURSOR_IMAGE) && c.buf < (uint32_t)ncur)
+		(void)sys_cachectl(CACHE_CLEAN, (void *)cur_vir[c.buf],
+		    CURSOR_BYTES);
+	if (!(c.flags & FB_CURSOR_SHOW))
+		c.buf = cur.buf;		/* nothing else to keep */
+	c.flags &= FB_CURSOR_SHOW;
+	cur = c;
+	cur_moves++;
+	put_cursor(&mode);
+	return OK;
+}
+
+/* The owner is gone, or the console comes back: no cursor. */
+static void
+hide_cursor(void)
+{
+	if (!(cur.flags & FB_CURSOR_SHOW))
+		return;
+	cur.flags = 0;
+	put_cursor(&mode);
+}
+
+/*
+ * What read(2) answers is the screen, so the cursor is in it: after
+ * fb_read() has copied bytes pos..pos+size-1 of the frame on the screen to
+ * the reader, the rows of it under the cursor are copied again, blended as
+ * the controller blends them - Cd = Cs + (1 - As) Cd, the cursor
+ * premultiplied.
+ */
+void
+arch_fb_read_overlay(int minor, u64_t pos, size_t size, endpoint_t ep,
+	cp_grant_id_t gid)
+{
+	uint32_t row[FB_CURSOR_MAX];
+	const uint32_t *src, *img;
+	uint32_t d, s, a, v, out;
+	u64_t start, end, seg0, seg1;
+	int x0, y0, x1, y1, x, y, c, sh;
+	size_t n;
+
+	if (minor != 0 || status <= 0 || !(cur.flags & FB_CURSOR_SHOW) ||
+	    ncur == 0 || size == 0)
+		return;
+	x0 = cur.x < 0 ? 0 : cur.x;
+	y0 = cur.y < 0 ? 0 : cur.y;
+	x1 = cur.x + (int)cur.w > mode.hdisplay ? mode.hdisplay :
+	    cur.x + (int)cur.w;
+	y1 = cur.y + (int)cur.h > mode.vdisplay ? mode.vdisplay :
+	    cur.y + (int)cur.h;
+	if (x1 <= x0 || y1 <= y0)
+		return;
+	start = pos;
+	end = pos + size;
+	for (y = y0; y < y1; y++) {
+		seg0 = (u64_t)y * fb_stride + (u64_t)x0 * BYTES_PER_PIXEL;
+		seg1 = (u64_t)y * fb_stride + (u64_t)x1 * BYTES_PER_PIXEL;
+		if (seg1 <= start || seg0 >= end)
+			continue;
+		if (seg0 < start)	/* whole pixels only: round inwards */
+			seg0 += (start - seg0 + BYTES_PER_PIXEL - 1) /
+			    BYTES_PER_PIXEL * BYTES_PER_PIXEL;
+		if (seg1 > end)
+			seg1 -= (seg1 - end + BYTES_PER_PIXEL - 1) /
+			    BYTES_PER_PIXEL * BYTES_PER_PIXEL;
+		if (seg1 <= seg0)
+			continue;
+		src = (const uint32_t *)(buf_vir[shown] + (size_t)seg0);
+		x = (int)((seg0 - (u64_t)y * fb_stride) / BYTES_PER_PIXEL);
+		img = (const uint32_t *)(cur_vir[cur.buf] +
+		    (size_t)(y - cur.y) * CURSOR_STRIDE) + (x - cur.x);
+		n = (size_t)(seg1 - seg0) / BYTES_PER_PIXEL;
+		for (c = 0; c < (int)n; c++) {
+			d = src[c];
+			s = img[c];
+			a = 255 - (s >> 24);
+			out = 0;
+			for (sh = 0; sh < 24; sh += 8) {
+				v = ((s >> sh) & 0xff) +
+				    (((d >> sh) & 0xff) * a + 127) / 255;
+				out |= (v > 255 ? 255 : v) << sh;
+			}
+			row[c] = out | (d & 0xff000000u);
+		}
+		(void)sys_safecopyto(ep, gid, (vir_bytes)(seg0 - start),
+		    (vir_bytes)row, n * BYTES_PER_PIXEL);
+	}
+}
+
+/*
  * The hardware for mode m, in bring-up's order: the pixel clock, then the
  * display controller - its port in standby while it is described, and
  * scanning the buffer on the screen - then the encoder and its PHY last.
@@ -985,6 +1162,7 @@ program_mode(struct videomode *m)
 	m->dot_clock = got;
 	if ((r = vop2_set_mode(m, buf_phys[shown], fb_stride)) != OK)
 		return r;
+	put_cursor(m);			/* vop2_set_mode() took it away */
 	return dwhdmi_set_mode(m, hdmi_mode);
 }
 
@@ -1187,8 +1365,23 @@ arch_fb_release(int minor)
 	if (owner != NONE)
 		log_info(&fb_log, "the screen is given back by %d\n", owner);
 	owner = NONE;
+	hide_cursor();
 	if (shown != 0)
 		(void)show(0);
+}
+
+/* The cursor as the driver was last asked for it. */
+static void
+report_cursor(void)
+{
+	if (cur.flags & FB_CURSOR_SHOW)
+		log_info(&fb_log, "cursor: at %d,%d, %ux%u, buffer %u; %lu "
+		    "update(s)\n", cur.x, cur.y, cur.w, cur.h, cur.buf,
+		    cur_moves);
+	else
+		log_info(&fb_log, "cursor: hidden; %lu update(s)\n", cur_moves);
+	if (!virtual_mode && ncur > 0)
+		vop2_report_cursor();
 }
 
 /* Which buffer the controller's window names, by its address register. */
@@ -1222,6 +1415,7 @@ report_state(void)
 		    nbuf, owner);
 		modes_line(stats, sizeof(stats));
 		log_info(&fb_log, "%s\n", stats);
+		report_cursor();
 		fbcon_stats(stats, sizeof(stats));
 		log_info(&fb_log, "%s\n", stats);
 		return;
@@ -1235,6 +1429,7 @@ report_state(void)
 	log_info(&fb_log, "%s\n", stats);
 	(void)vop2_scanning(&line);
 	report_window();
+	report_cursor();
 	fbcon_stats(stats, sizeof(stats));
 	log_info(&fb_log, "%s\n", stats);
 }
@@ -1455,13 +1650,16 @@ arch_fb_ioctl(int minor, unsigned long request, endpoint_t ep,
 	if (minor != 0)
 		return ENXIO;
 	if (request == FBIOC_MAP || request == FBIOC_FLIP ||
-	    request == FBIOC_MODES || request == FBIOC_SETMODE) {
+	    request == FBIOC_MODES || request == FBIOC_SETMODE ||
+	    request == FBIOC_CURSOR_MAP || request == FBIOC_CURSOR) {
 		if (status <= 0)
 			return ENXIO;
 		switch (request) {
 		case FBIOC_MAP:		return do_map(ep, gid, user_ep);
 		case FBIOC_FLIP:	return do_flip(ep, gid, user_ep);
 		case FBIOC_MODES:	return do_modes(ep, gid);
+		case FBIOC_CURSOR_MAP:	return do_cursor_map(ep, gid, user_ep);
+		case FBIOC_CURSOR:	return do_cursor(ep, gid, user_ep);
 		default:		return do_setmode(ep, gid, user_ep);
 		}
 	}

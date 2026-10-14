@@ -33,6 +33,15 @@ void arch_fb_release(int minor);
  */
 void arch_fb_tick(int minor);
 
+/*
+ * After read(2) has copied bytes pos..pos+size-1 of the frame to the
+ * reader: whatever the display controller lays over the frame by itself
+ * (on AArch64, the cursor) is copied over them as well, so that a read
+ * shows the screen.  Nothing where the controller lays nothing.
+ */
+void arch_fb_read_overlay(int minor, u64_t pos, size_t size, endpoint_t ep,
+	cp_grant_id_t gid);
+
 #define FB_MESSAGE "Hello, world! From framebuffer!\n"
 #define FB_DEV_NR 1
 

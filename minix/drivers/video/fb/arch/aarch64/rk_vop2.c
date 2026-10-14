@@ -35,6 +35,9 @@
  * No reset line is named in the tree and the vendor kernel never resets the
  * block, so neither does this file: it writes every register the picture
  * depends on, rather than trusting what reset or a previous user left.
+ *
+ * The cursor is a second window, Esmart0, in the layer above Smart0, with
+ * the mixer between them blending by the cursor's own alpha (vop2_cursor()).
  */
 
 #include <minix/drivers.h>
@@ -121,6 +124,21 @@
 #define SMART0_COLOR_KEY_CTRL	0x1cd0
 #define SMART0_BG_EN		0x1cd4
 
+/* Esmart0, the cursor: the same register layout as Smart0, 0x400 lower. */
+#define ESMART0_CTRL0		0x1800
+#define ESMART0_REGION0_CTRL	0x1810
+#define ESMART0_REGION0_YRGB_MST 0x1814
+#define ESMART0_REGION0_CBR_MST	0x1818
+#define ESMART0_REGION0_VIR	0x181c
+#define ESMART0_REGION0_ACT_INFO 0x1820
+#define ESMART0_REGION0_DSP_INFO 0x1824
+#define ESMART0_REGION0_DSP_ST	0x1828
+#define ESMART0_REGION0_SCL_CTRL 0x1830
+#define ESMART0_REGION0_SCL_FACTOR 0x1834
+#define ESMART0_REGION0_SCL_OFFSET 0x183c
+#define ESMART0_COLOR_KEY_CTRL	0x18d0
+#define ESMART0_BG_EN		0x18d4
+
 /* HDR, bypassed */
 #define VOP_SDR2HDR_CTRL	0x2010
 #define VOP_HDR2SDR_CTRL	0x2020
@@ -131,14 +149,36 @@
  * of the chain, the rest above it disabled.  These are the vendor's
  * one-display defaults and the board's values; the mixers between the
  * layers are set to pass the layer below through unchanged.
+ *
+ * One difference, for the cursor: Esmart0 (layer id 2) is in layer 1,
+ * right above Smart0, and Cluster1 (1), which was there, in layer 2 - the
+ * swap the vendor's vop2_setup_layer_mixer_for_vp() makes when Esmart0 is
+ * the plane at zpos 1.  The board's Linux, with one plane, shows
+ * 0x54706213; the windows above layer 1 stay disabled either way.
  */
-#define LAYER_SEL_SMART0_FIRST	0x54706213
+#define LAYER_SEL_SMART0_FIRST	0x54706123
+#define LAYER_SEL_LINUX		0x54706213
 #define PORT_SEL_ALL_ON_VP0	0x00000755
 #define MIX_SRC_COLOR		0x00000020
 #define MIX_DST_COLOR		0x00ff0060
 #define MIX_SRC_ALPHA		0x00000020
 #define MIX_DST_ALPHA		0x00000074
 #define NR_MIXERS		5
+
+/*
+ * MIX0 - layer 1 over layer 0 - while the cursor is on: the words
+ * vop2_parse_alpha() makes for a premultiplied ARGB window at zpos 1 with
+ * global alpha 0xff over a premultiplied destination - per-pixel alpha,
+ * source factor one, destination factor one minus the source alpha, that
+ * is Cd = Cs + (1 - As) Cd.  DST_COLOR and DST_ALPHA are the pass-through
+ * mixer's words; what changes is that the source is blended at all.
+ */
+#define MIX_CURSOR_SRC_COLOR	0x00ff0124	/* per pixel, factor one, on */
+#define MIX_CURSOR_SRC_ALPHA	0x00000024	/* per pixel, factor one */
+
+/* Smaller than 4x4 on the screen, a window is not shown (the vendor's
+ * minimum; its own cursor planes are hidden then too). */
+#define WIN_MIN			4
 
 /*
  * Pipeline delays, in pixels: the background has to wait for the slowest
@@ -148,6 +188,15 @@
 #define SMART_DLY		0x14141414
 
 static struct disp_regs *regs;
+
+/*
+ * A frame buffer address was committed and may not have been taken yet.
+ * The commit bit cannot say whose commit it carries - the cursor commits
+ * through the same bit - so the address keeps its own note: cleared
+ * whenever the bit is seen clear, which means every commit before it was
+ * taken.
+ */
+static int addr_pending;
 
 static uint32_t
 rd(unsigned off)
@@ -291,6 +340,9 @@ vop2_set_mode(const struct videomode *m, phys_bytes fb, unsigned stride)
 	wr(SMART0_CTRL0, 0);
 	wr(SMART0_REGION0_CTRL, REGION_EN);
 
+	/* No cursor: the caller puts it back for the new mode if it had one. */
+	wr(ESMART0_REGION0_CTRL, 0);
+
 	/* Commit, then let the port run. */
 	wr(VOP_REG_CFG_DONE, CFG_DONE_EN | CFG_DONE_VP0);
 	wr(VP0_DSP_CTRL, DSP_CTRL_PRE_DITHER_DOWN | DSP_CTRL_OUT_MODE_AAAA);
@@ -301,6 +353,7 @@ vop2_set_mode(const struct videomode *m, phys_bytes fb, unsigned stride)
 		    rd(VOP_REG_CFG_DONE));
 		return EIO;
 	}
+	addr_pending = 0;
 	return OK;
 }
 
@@ -335,17 +388,92 @@ wait_taken(void)
  * buffer shown two commits ago, and the next call waits for this one.  The
  * wait cost a busy frame per flip - a quarter of a core while the cursor
  * moved, on the board.
+ *
+ * Only an address commit is waited for, not the cursor's: a pending cursor
+ * move is taken at the same frame start as this address, and waiting for it
+ * would bring the busy frame back whenever the pointer moves over a window
+ * that draws.
  */
 int
 vop2_scanout(phys_bytes fb, int wait)
 {
+	int r = OK;
+
 	if (fb > 0xffffffffUL)
 		return EINVAL;
-	if (wait_taken() != OK)
+	if (addr_pending && (r = wait_taken()) != OK)
 		return ETIMEDOUT;
 	wr(SMART0_REGION0_YRGB_MST, (uint32_t)fb);
 	wr(VOP_REG_CFG_DONE, CFG_DONE_EN | CFG_DONE_VP0);
-	return wait ? wait_taken() : OK;
+	addr_pending = 1;
+	if (wait) {
+		if ((r = wait_taken()) == OK)
+			addr_pending = 0;
+	}
+	return r;
+}
+
+/*
+ * The cursor: buffer "img" (physical, ARGB8888 premultiplied, "stride"
+ * bytes a row), its top-left w x h, with that corner at (x, y) on a screen
+ * of hdisplay x vdisplay - or hidden.  The part off the screen is cut off
+ * by starting the fetch further into the buffer and making the window
+ * smaller; less than 4x4 left on the screen is not shown.  Committed, not
+ * waited for.  Answers whether the cursor is on the screen now.
+ *
+ * Shown, the window is enabled and MIX0 blends it by its alpha; hidden,
+ * both go back to what vop2_set_mode() leaves.  A frame start between two
+ * of these writes, with an earlier commit pending, takes a mix of the old
+ * and the new for one frame - a cursor a frame late in one corner, which
+ * is what not waiting costs.
+ */
+int
+vop2_cursor(int show, phys_bytes img, unsigned stride, int x, int y,
+	unsigned w, unsigned h, unsigned hdisplay, unsigned vdisplay)
+{
+	int x0, y0, x1, y1, n;
+	phys_bytes a;
+
+	x0 = x < 0 ? 0 : x;
+	y0 = y < 0 ? 0 : y;
+	x1 = x + (int)w > (int)hdisplay ? (int)hdisplay : x + (int)w;
+	y1 = y + (int)h > (int)vdisplay ? (int)vdisplay : y + (int)h;
+	if (x1 - x0 < WIN_MIN || y1 - y0 < WIN_MIN)
+		show = 0;
+	a = img + (phys_bytes)(y0 - y) * stride + (phys_bytes)(x0 - x) * 4;
+	if (show && a + (phys_bytes)(y1 - y0) * stride > 0x100000000ULL)
+		show = 0;			/* the address register: 32 bits */
+
+	/* Every commit before this one has been taken: the address too. */
+	if (!(rd(VOP_REG_CFG_DONE) & CFG_DONE_VP0))
+		addr_pending = 0;
+
+	if (!show) {
+		wr(ESMART0_REGION0_CTRL, 0);
+		wr(VOP_OVL_MIX(0) + 0x0, MIX_SRC_COLOR);
+		wr(VOP_OVL_MIX(0) + 0x8, MIX_SRC_ALPHA);
+	} else {
+		wr(ESMART0_REGION0_YRGB_MST, (uint32_t)a);
+		wr(ESMART0_REGION0_CBR_MST, 0);
+		wr(ESMART0_REGION0_VIR, stride / 4);
+		wr(ESMART0_REGION0_SCL_FACTOR, 0);
+		wr(ESMART0_REGION0_SCL_CTRL, SCL_CTRL_BILINEAR);
+		wr(ESMART0_REGION0_SCL_OFFSET, 0);
+		wr(ESMART0_BG_EN, 0);
+		wr(ESMART0_COLOR_KEY_CTRL, 0);
+		n = (y1 - y0 - 1) << 16 | (x1 - x0 - 1);
+		wr(ESMART0_REGION0_ACT_INFO, (uint32_t)n);
+		wr(ESMART0_REGION0_DSP_INFO, (uint32_t)n);
+		wr(ESMART0_REGION0_DSP_ST, (uint32_t)y0 << 16 | (uint32_t)x0);
+		wr(ESMART0_CTRL0, 0);
+		wr(ESMART0_REGION0_CTRL, REGION_EN);	/* format 0: ARGB8888 */
+		wr(VOP_OVL_MIX(0) + 0x0, MIX_CURSOR_SRC_COLOR);
+		wr(VOP_OVL_MIX(0) + 0x4, MIX_DST_COLOR);
+		wr(VOP_OVL_MIX(0) + 0x8, MIX_CURSOR_SRC_ALPHA);
+		wr(VOP_OVL_MIX(0) + 0xc, MIX_DST_ALPHA);
+	}
+	wr(VOP_REG_CFG_DONE, CFG_DONE_EN | CFG_DONE_VP0);
+	return show;
 }
 
 /*
@@ -420,7 +548,7 @@ static const struct {
 	{ "DSP_IF_EN",		VOP_DSP_IF_EN,		0x00000002 },
 	{ "DSP_IF_POL",		VOP_DSP_IF_POL,		0x100000b0 },
 	{ "OVL_CTRL",		VOP_OVL_CTRL,		0x00000000 },
-	{ "OVL_LAYER_SEL",	VOP_OVL_LAYER_SEL,	0x54706213 },
+	{ "OVL_LAYER_SEL",	VOP_OVL_LAYER_SEL,	LAYER_SEL_LINUX },
 	{ "OVL_PORT_SEL",	VOP_OVL_PORT_SEL,	0x00000755 },
 	{ "MIX0 DST_COLOR",	VOP_OVL_MIX(0) + 4,	0x00ff0060 },
 	{ "VP0_BG_MIX_CTRL",	VOP_VP0_BG_MIX_CTRL,	0x2a000000 },
@@ -459,6 +587,25 @@ vop2_report(void)
 		    "0x%08x)%s\n", reference[i].name, reference[i].off, v,
 		    reference[i].val, v == reference[i].val ? "" :
 		    reference[i].off == SMART0_REGION0_YRGB_MST ?
-		    " differs: IOMMU address there" : " DIFFERS");
+		    " differs: IOMMU address there" :
+		    reference[i].off == VOP_OVL_LAYER_SEL &&
+		    v == LAYER_SEL_SMART0_FIRST ?
+		    " differs: Esmart0 in layer 1, for the cursor" : " DIFFERS");
 	}
+}
+
+/* The cursor's window and mixer as the controller has them. */
+void
+vop2_report_cursor(void)
+{
+	uint32_t st = rd(ESMART0_REGION0_DSP_ST), act = rd(ESMART0_REGION0_ACT_INFO);
+
+	log_info(&fb_log, "vop2 cursor: Esmart0 %s, at %u,%u, %ux%u, fetch "
+	    "0x%08x, stride %u; MIX0 0x%08x 0x%08x 0x%08x 0x%08x; layers "
+	    "0x%08x\n", (rd(ESMART0_REGION0_CTRL) & REGION_EN) ? "on" : "off",
+	    st & 0x1fff, (st >> 16) & 0x1fff, (act & 0x1fff) + 1,
+	    ((act >> 16) & 0x1fff) + 1, rd(ESMART0_REGION0_YRGB_MST),
+	    (rd(ESMART0_REGION0_VIR) & 0xffff) * 4, rd(VOP_OVL_MIX(0) + 0x0),
+	    rd(VOP_OVL_MIX(0) + 0x4), rd(VOP_OVL_MIX(0) + 0x8),
+	    rd(VOP_OVL_MIX(0) + 0xc), rd(VOP_OVL_LAYER_SEL));
 }

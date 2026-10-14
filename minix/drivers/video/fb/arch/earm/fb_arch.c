@@ -336,6 +336,13 @@ arch_fb_tick(int UNUSED(minor))
 	/* Nothing watched here: the mode is the boot loader's. */
 }
 
+void
+arch_fb_read_overlay(int UNUSED(minor), u64_t UNUSED(pos),
+	size_t UNUSED(size), endpoint_t UNUSED(ep), cp_grant_id_t UNUSED(gid))
+{
+	/* No overlay here: the frame is the screen. */
+}
+
 int
 arch_fb_init(int minor, struct edid_info *info)
 {

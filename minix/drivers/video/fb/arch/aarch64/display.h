@@ -111,6 +111,14 @@ uint32_t vop2_window_addr(int *pending);
 void vop2_report(void);
 
 /*
+ * vop2_cursor() lays a picture over the frame - a second window, blended by
+ * its alpha - or takes it away; vop2_report_cursor() prints that window.
+ */
+int vop2_cursor(int show, phys_bytes img, unsigned stride, int x, int y,
+	unsigned w, unsigned h, unsigned hdisplay, unsigned vdisplay);
+void vop2_report_cursor(void);
+
+/*
  * dw_hdmi.c - the encoder and its PHY.
  *
  * dwhdmi_hpd() is whether a monitor is plugged in.  dwhdmi_read_edid()

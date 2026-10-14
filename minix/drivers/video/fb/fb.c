@@ -170,6 +170,8 @@ fb_read(devminor_t minor, u64_t pos, endpoint_t ep, cp_grant_id_t gid,
 
 	r = sys_safecopyto(ep, gid, 0, (vir_bytes)(dev.dv_base + (size_t)pos),
 	    size);
+	if (r == OK)
+		arch_fb_read_overlay(minor, pos, size, ep, gid);
 
 	return (r != OK) ? r : size;
 }

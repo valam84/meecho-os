@@ -1,0 +1,147 @@
+# PRIME и sync file на плате (веха 11.6, вторая часть), 2026-10-14.
+#
+# Плата BIGTREETECH CB2, MEECHO с корнем на eMMC (корень сессии стола,
+# 80079c71d + стол 11.7).  Загрузка - комплект от HEAD d25fc7628:
+# kernel.bin 5eed7ed3 (TLS, время по тактам), boot.mba 5e90b922 (VFS с
+# cdevfd(2), PM с часами процессорного времени; VM побайтно та, что стояла
+# на плате, - её код совпадает с VM от HEAD).  Служба mali (3eec2ed5) и
+# pftest (379e051e) от HEAD, положены по ssh; служба запущена
+#   minix-service up /service/mali -dev /dev/dri/renderD128
+# Стол (meechowm, foot, yambar) во время прогона работал на мониторе.
+#
+# Сверка с ref-prime.txt (panfrost, Linux 6.1 на той же плате): 66 из 66
+# содержательных строк совпали; отличаются имя узла (у Linux renderD130)
+# и последняя строка - время прогона (time(1)).  Отказ задания - тот же
+# адрес 0x10000040, что в dmesg под Linux.
+
+## pftest prime
+
+render node /dev/dri/renderD128, mode prime
+cap prime: 3
+create 0x4000 flags 0: handle 1 va 0x2000000
+create 0x400000 flags 0: handle 2 va 0x2400000
+create 0x200000 flags 3: handle 3 va 0x2200000
+create 0x100000 flags 1: handle 1 va 0x2000000
+create 0x4000 flags 0: handle 2 va 0x2100000
+create 0x400000 flags 0: handle 3 va 0x2400000
+export 1: ok; close-on-exec 1, lseek to the end 0x4000, back to 0
+export 1 again, no flags: ok; close-on-exec 0
+export 99: ENOENT
+export 1, flags 0x1234: EINVAL
+export the heap 3: ok
+import into the exporter: handle 1
+import into B: handle 4, address 0x2104000 (A's 0x2000000)
+import the second export into B: handle 4
+import -1: EBADF
+import a pipe: EINVAL
+import the render node: EINVAL
+B's mapping of the import: the pattern equal
+mmap of the descriptor: the pattern equal, a write through it visible to A
+B's GPU writes 64 words into the import: submit ok, wait ok; A sees 0 wrong
+A's GPU writes 64 words into it: submit ok, wait ok; B sees 0 wrong
+B's long chain names the shared buffer: submit ok; A's wait_bo, deadline past: EBUSY; then: ok
+A closes handle 1 and both descriptors: ok; B's mapping: the pattern equal
+B exports its import: ok
+A imports it back: handle 1, address 0x2000000
+A's new mapping: the pattern equal
+child: import handle 1, size 0x4000, address 0x2000000, the pattern equal; its GPU writes 64 words: submit ok, wait ok
+A sees the child's words: 0 wrong
+sync file of a sync object without a fence: EINVAL
+long chain in A: submit ok, sync file ok; at once: not ready, status 0, 1 fence(s)
+B imports the sync file into sync object 2: ok
+B's job after it: submit ok; its sync object at once: ETIME
+the sync file within 5 s: ready, status 1, 1 fence(s)
+B's job: ok; the word both write: 0xb0b0b0b0 (B's 0xb0b0b0b0, A's 0xfde7)
+Mesa's fence: export ok, import ok, wait ok
+sync file of a signaled sync object: ok, ready, status 1, 1 fence(s)
+merged with a running one: ok; at once: not ready, status 0, 1 fence(s)
+  within 5 s: ready, status 1, 1 fence(s)
+merge with a pipe: ENOENT
+import a pipe as a sync file: EINVAL
+import a dma-buf as a sync file: EINVAL
+import -1 as a sync file: EINVAL
+import a sync file into sync object 99: ENOENT
+export sync object 99 as a sync file: ENOENT
+export with flags 2: EINVAL
+sync object 5 as a descriptor: ok; into B: handle 4
+A signals it: ok; B's wait: ok
+B resets it: ok; A's wait: EINVAL
+into A itself: handle 6
+a sync file as a sync object: EINVAL
+a dma-buf as a sync object: EINVAL
+transfer: ENOTSUP
+dma-buf sync 0x1: ok
+dma-buf sync 0x5: ok
+dma-buf sync 0x3: ok
+dma-buf sync 0x7: ok
+dma-buf sync 0x0: EINVAL
+dma-buf sync 0x8: EINVAL
+dma-buf export sync file of the busy buffer: ok; at once: not ready, status 0, 1 fence(s); within 5 s: ready
+dma-buf sync start, the buffer busy: ok; then the buffer: ok
+dma-buf export sync file, flags 0: EINVAL
+dma-buf import sync file into the shared buffer: ok; A's wait_bo on it, deadline past: EBUSY; then: ok
+dma-buf import of a pipe: EINVAL
+a job that faults: submit ok, sync file ok; within 5 s: ready, status -22, 1 fence(s)
+B's job after the failed one: submit ok, wait ok, its word 0xb2b2b2b2
+        0.32 real         0.01 user         0.00 sys
+
+## kmsg -f: служба mali (подъём, самопроверка, прогон)
+
+mali(info)gpu at 0xfde60000 (16384 bytes), lines gpu 71 job 72 mmu 73
+mali(info)clock "bus" 27 of 0xfdd20000, clock "gpu" 1 (firmware's), power domain 7, cru 0xfdd20000, pmu 0xfdd90000
+mali(info)supply vdd_gpu: always on, on at boot, 900000 uV at boot
+mali(info)found: CLKSEL_CON6 0x00004191: cpll/2 = 500000 kHz, aclk /2, pclk /5
+mali(info)found: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU off, bus idle
+mali(info)the GPU clock comes from cpll/2; setting gpll/6 = 200000 kHz on the PLL path, aclk /2, pclk /5
+mali(info)power domain PD_GPU is off (status 0x7f, idle 0x1ee, ack 0x1ee); switching it on
+mali(info)power domain PD_GPU is on
+mali(info)Mali-G52, product 0x7402 r1p0 status 0 (GPU_ID 0x74021000)
+mali(info)soft reset complete
+mali(info)features: L2 0x07110206 core 0x00000002 tiler 0x00000209 mem 0x00000001 mmu 0x00002823 (35-bit VA, 40-bit PA)
+mali(info)present: shader 0x1 tiler 0x1 L2 0x1 stack 0x1, address spaces 0xff, job slots 0x7, 768 threads, coherency 0x0
+mali(info)config: jm 0x00000000 shader 0x00000000 tiler 0x00000000 l2/mmu 0x00000000
+mali(info)cores ready: shader 0x1 tiler 0x1 L2 0x1
+mali(info)up: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+mali(info)up: gates 0x00000000 (source open, clk_gpu open), resets 0x00000000 (released), PD_GPU on
+mali(info)this driver against the board (port/cb2-gpu/ref-on.txt):
+mali(info)  CLKSEL_CON6    0x00004155 (reference 0x00004155)
+mali(info)  CLKGATE_CON2   0x00000000 (reference 0x000001c0)
+mali(info)  SOFTRST_CON2   0x00000000 (reference 0x00000000)
+mali(info)  PWR_STATUS     0x0000007e (reference 0x0000007e)
+mali(info)  IDLE_ACK       0x000001ec (reference 0x000001ec)
+mali(info)  IDLE_ST        0x000001ec (reference 0x000001ec)
+mali(info)  GPU_ID         0x74021000 (reference 0x74021000)
+mali(info)  L2_FEATURES    0x07110206 (reference 0x07110206)
+mali(info)  CORE_FEATURES  0x00000002 (reference 0x00000002)
+mali(info)  TILER_FEATURES 0x00000209 (reference 0x00000209)
+mali(info)  MEM_FEATURES   0x00000001 (reference 0x00000001)
+mali(info)  MMU_FEATURES   0x00002823 (reference 0x00002823)
+mali(info)  AS_PRESENT     0x000000ff (reference 0x000000ff)
+mali(info)  JS_PRESENT     0x00000007 (reference 0x00000007)
+mali(info)  THREAD_MAX     0x00000300 (reference 0x00000300)
+mali(info)  THREAD_FEATURES 0x0a046000 (reference 0x0a046000)
+mali(info)  COHERENCY      0x00000000 (reference 0x00000000)
+mali(info)  SHADER_PRESENT 0x00000001 (reference 0x00000001)
+mali(info)  TILER_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  L2_PRESENT     0x00000001 (reference 0x00000001)
+mali(info)  STACK_PRESENT  0x00000001 (reference 0x00000001)
+mali(info)  SHADER_READY   0x00000001 (reference 0x00000001)
+mali(info)  TILER_READY    0x00000001 (reference 0x00000001)
+mali(info)  L2_READY       0x00000001 (reference 0x00000001)
+mali(info)  GPU_STATUS     0x00000000 (reference 0x00000000)
+mali(info)  JM_CONFIG      0x000f0000 (reference 0x000f0000)
+mali(info)0 register(s) differ from the reference
+mali(info)address space 0: tables at 0x7718d000, 2 pages at GPU address 0x2000000; TRANSTAB 0x000000007718d007 (reference ...007) MEMATTR 0x00888d88 (reference 0x00888d88) TRANSCFG 0x00000000 (reference 0)
+mali(info)a chain of 64 WRITE_VALUE jobs started on slot 1 (config 0x87b00)
+mali(info)/dev/dri/renderD128 is served: buffers up to 768 MiB in all, 512 MiB per client
+mali(info)line 71 (gpu): cache clean completed - the line works
+mali(info)line 72 (job): slot 1 done - the line works
+mali(info)chain of 64: done in 4340 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+mali(info)the GPU filled the buffer through its own MMU: every word checked by the processor
+mali(info)slot 1 config 0x00007b00 (reference 0x00007b00), status 0x0, address space status 0x0
+mali(info)client 2 is gone (0 failed job(s))
+mali(warn)line 73 (mmu): status 0x00000004; address space 2 fault status 0x7c1003c2 (translation fault 0xc2, write access, source 0x7c10) at 0x0000000010000040, in client 0
+mali(info)address space 2 off: mmu rawstat 0x00000000 after the clear, 0x00000004 after the switch-off, mask 0x00030003; job rawstat 0x00020000, slot status 0x00 0x48, GPU_STATUS 0x30
+mali(warn)client 0: the job at 0x02000000 failed, slot status 0x48; GPU address space fault 0x7c1003c2 at 0x10000040
+mali(info)client 0 is gone (1 failed job(s))
+mali(info)client 1 is gone (0 failed job(s))

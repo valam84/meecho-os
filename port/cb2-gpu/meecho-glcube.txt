@@ -1,0 +1,100 @@
+# glcube на плате: OpenGL ES через Mesa/Panfrost на Mali-G52 (веха 11.6,
+# третья часть), 2026-10-14.
+#
+# Та же загрузка, что в meecho-prime.txt (kernel.bin 5eed7ed3, boot.mba
+# 5e90b922), служба mali 3eec2ed5.  glcube - port/test/gles/glcube.c,
+# статически против Mesa 26.2.4 дерева (build.sh), положен по ssh в
+# /usr/tests/gles.  Прогоны по порядку; первые два - до двух правок, после
+# которых он заработал.
+
+## 1. Без EGL_SURFACE_TYPE: EGL поднят на Panfrost, конфигурации нет
+##    MESA_LOG_LEVEL=debug EGL_LOG_LEVEL=debug glcube -o -n 2 -q
+##
+## eglChooseConfig() по умолчанию требует EGL_WINDOW_BIT, у surfaceless
+## есть только pbuffer-конфигурации.  Правка - в glcube.c.
+
+ok   eglGetPlatformDisplay(surfaceless)
+MESA-EGL: debug: using driver panfrost for 3
+MESA-EGL: warning: MESA-LOADER: failed to retrieve device information
+MESA-EGL: debug: using driver panfrost for 3
+MESA-EGL: debug: did not find extension DRI_SWRastLoader version 1
+MESA-EGL: debug: did not find extension DRI_MutableRenderBufferLoader version 1
+MESA-EGL: debug: did not find extension DRI_KopperLoader version 1
+MESA-EGL: warning: MESA-LOADER: failed to retrieve device information
+MESA-EGL: debug: using driver panfrost for 4
+MESA-EGL: warning: MESA-LOADER: failed to retrieve device information
+MESA-EGL: debug: using driver panfrost for 4
+MESA-EGL: debug: No DRI config supports native format PIPE_FORMAT_R16G16B16A16_UNORM
+MESA-EGL: debug: No DRI config supports native format PIPE_FORMAT_R16G16B16X16_UNORM
+ok   eglInitialize: EGL 1.5, Mesa Project
+MESA-EGL: debug: eglPrintConfigDebug: nothing to print
+FAIL an ES2 config
+GLCUBE 3 checks, 1 failed
+
+## 2. С конфигурацией: SIGSEGV в mthread_mutex_lock() из
+##    panfrost_bo_unreference() - мьютекс bo_map_lock обнулён calloc'ом и
+##    не инициализирован (glibc такой считает готовым, libmthread - нет).
+##    Правка - в libmthread (pthread_compat.c).  Из журнала ядра:
+
+VM: pagefault: SIGSEGV 65659 bad addr 0x14; err 0x6 nopage read
+glcube-c  65659 pc 0xbea700 lr 0x6583e8 0x402690 
+PM: coredump signal 11 for 366 / glcube-crash
+
+## 3. Без экрана, 60 кадров: glcube -o -n 60 -q
+
+ok   eglGetPlatformDisplay(surfaceless)
+ok   eglInitialize: EGL 1.5, Mesa Project
+ok   an ES2 config
+ok   eglCreateContext (ES 2)
+ok   made current, no surface
+GL_VENDOR   Mesa
+GL_RENDERER Mali-G52 r1 MC1 (Panfrost)
+GL_VERSION  OpenGL ES 3.1 Mesa 26.2.4
+GLSL        OpenGL ES GLSL ES 3.10
+ok   the renderer is the Mali (not software): Mali-G52 r1 MC1 (Panfrost)
+ok   vertex shader compiled
+ok   fragment shader compiled
+ok   program linked
+ok   framebuffer complete
+ok   the middle of the first frame is the cube: 0xd5432d
+ok   its corner is the clear colour: 0x101828
+ok   frames 0 and 20 differ: it turns
+ok   glGetError() clean: 0x0
+GLCUBE 60 frames 512x512 in 2.90 s: 20.7 frames/s
+GLCUBE 14 checks, 0 failed
+
+## 4. На мониторе (/dev/fb0, 1920x1080, композитор не запущен):
+##    glcube -n 500 -q
+##
+## Снимок экрана посреди прогона (board-shot.sh): куб 512x512 в середине
+## на цвете очистки, вокруг - чёрное.  Предупреждение загрузчика Mesa
+## "failed to retrieve device information" безвредно: drmGetDevice2() по
+## дескриптору на MINIX отвечает ошибкой (не разобрано - перечисление
+## drmGetDevices2() работает), и Mesa лишь не узнаёт номер PCI, которого
+## у Mali всё равно нет.
+
+ok   eglGetPlatformDisplay(surfaceless)
+MESA-EGL: warning: MESA-LOADER: failed to retrieve device information
+MESA-EGL: warning: MESA-LOADER: failed to retrieve device information
+MESA-EGL: warning: MESA-LOADER: failed to retrieve device information
+ok   eglInitialize: EGL 1.5, Mesa Project
+ok   an ES2 config
+ok   eglCreateContext (ES 2)
+ok   made current, no surface
+GL_VENDOR   Mesa
+GL_RENDERER Mali-G52 r1 MC1 (Panfrost)
+GL_VERSION  OpenGL ES 3.1 Mesa 26.2.4
+GLSL        OpenGL ES GLSL ES 3.10
+ok   the renderer is the Mali (not software): Mali-G52 r1 MC1 (Panfrost)
+ok   vertex shader compiled
+ok   fragment shader compiled
+ok   program linked
+ok   framebuffer complete
+ok   /dev/fb0 mapped
+screen      1920x1080, 3 buffers
+ok   the middle of the first frame is the cube: 0xd5432d
+ok   its corner is the clear colour: 0x101828
+ok   frames 0 and 20 differ: it turns
+ok   glGetError() clean: 0x0
+GLCUBE 500 frames 512x512 in 27.01 s: 18.5 frames/s
+GLCUBE 15 checks, 0 failed

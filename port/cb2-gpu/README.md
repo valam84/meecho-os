@@ -23,6 +23,8 @@ Mali-G52 (Bifrost) платы BIGTREETECH CB2, узел `gpu@fde60000`. Всё �
 | `meecho-heap.txt` | `pftest heap` на MEECHO и журнал службы (`log=3`): 19 ростов, из чего складываются 5,5 мс куска |
 | `ref-cost.txt`, `meecho-cost.txt` | `jobprobe.py cost` и `pftest cost`: та же цепочка с большим буфером в списке задания, не отображённым и отображённым процессором, — цена обслуживания кэша службой (у panfrost без `WB_MMAP` она ноль) |
 | `ref-prime.txt` | `jobprobe.py prime` (2026-10-14, 11.6, вторая часть): буферы и заборы дескрипторами под panfrost — вывоз и ввоз между двумя контекстами и ребёнком через сокет, `lseek` размера, `mmap` dma-buf, неявный порядок на общем буфере, sync file (poll, слияние, сведения, задание после чужого, упавшее задание), объект синхронизации целиком, ioctl dma-buf — **эталон PRIME и sync file**; на MEECHO — `pftest prime` |
+| `meecho-prime.txt` | `pftest prime` на MEECHO (2026-10-14, загрузка от HEAD с `cdevfd`) и журнал службы: 66 из 66 строк как в `ref-prime.txt`, отличаются только имя узла и время |
+| `meecho-glcube.txt` | `port/test/gles/glcube.c` на плате (2026-10-14, 11.6, третья часть): Mesa на Panfrost, GLES 3.1, куб без экрана и на мониторе, 18,5 кадра/с; два первых прогона — до правок в тесте и в libmthread |
 
 Снимать (плата под Armbian, по ssh, под root):
 

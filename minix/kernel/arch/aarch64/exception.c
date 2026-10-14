@@ -214,6 +214,15 @@ util_stacktrace(void)
 static int probe_mode = -1;
 static volatile int probe_sink;
 
+/*
+ * The mode when the command line names none. The board's boot script takes
+ * no arguments of one's own, so a kernel for it carries its mode in:
+ * DBG="-O2 -DPANICPROBE=1 -DPANICPROBE_MODE=2".
+ */
+#ifndef PANICPROBE_MODE
+#define PANICPROBE_MODE	0
+#endif
+
 static void __attribute__((noinline))
 probe_c(int mode)
 {
@@ -243,7 +252,8 @@ panic_probe(void)
 	char *v;
 
 	if (probe_mode < 0)
-		probe_mode = (v = env_get("panicprobe")) != NULL ? atoi(v) : 0;
+		probe_mode = (v = env_get("panicprobe")) != NULL ? atoi(v) :
+		    PANICPROBE_MODE;
 	if (probe_mode == 0 || get_monotonic() < 20 * system_hz)
 		return;
 

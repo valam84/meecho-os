@@ -145,6 +145,21 @@ __libc_static_tls_setup_cb(struct dl_phdr_info *data, size_t len, void *cookie)
 		tls_initaddr = (void *)(phdr->p_vaddr + data->dlpi_addr);
 		tls_initsize = phdr->p_filesz;
 		tls_size = phdr->p_memsz;
+#if defined(__minix) && defined(__HAVE_TLS_VARIANT_I)
+		/*
+		 * The block goes right past the 16-byte TCB, which is where
+		 * the linker expects it only if the segment wants no more than
+		 * 16-byte alignment; past that its offsets assume padding this
+		 * code does not leave.  Loud, rather than every thread-local
+		 * one word off.
+		 */
+		if (phdr->p_align > sizeof(struct tls_tcb)) {
+			static const char msg[] = "TLS segment aligned past "
+			    "the TCB, not supported, terminating\n";
+			write(STDERR_FILENO, msg, sizeof(msg) - 1);
+			_exit(127);
+		}
+#endif
 	}
 	return 0;
 }

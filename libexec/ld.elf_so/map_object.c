@@ -95,10 +95,11 @@ _rtld_map_object(const char *path, int fd, const struct stat *sb)
 #endif
 	Elf_Addr	 phdr_vaddr;
 	size_t		 phdr_memsz;
-#if defined(__minix) && (defined(__HAVE_TLS_VARIANT_I) || defined(__HAVE_TLS_VARIANT_II))
+/* Used below only when !__minix; declared under the same condition. */
+#if !defined(__minix)
 	caddr_t		 gap_addr;
 	size_t		 gap_size;
-#endif /* defined(__minix) */
+#endif /* !defined(__minix) */
 	int i;
 #ifdef RTLD_LOADER
 	Elf_Addr	 clear_vaddr;
@@ -389,7 +390,17 @@ _rtld_map_object(const char *path, int fd, const struct stat *sb)
 
 #if defined(__HAVE_TLS_VARIANT_I) || defined(__HAVE_TLS_VARIANT_II)
 	if (phtls != NULL)
+#if defined(__minix)
+		/*
+		 * relocbase, not mapbase: the same for a library, linked at
+		 * 0, but not for the program itself, which ld.elf_so maps
+		 * here (from AT_EXECFD) at its own address - NetBSD's kernel
+		 * maps that one, so this line never saw it there.
+		 */
+		obj->tlsinit = mapbase - base_vaddr + tls_vaddr;
+#else
 		obj->tlsinit = mapbase + tls_vaddr;
+#endif
 #endif
 
 	obj->mapbase = mapbase;

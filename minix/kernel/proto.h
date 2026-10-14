@@ -84,6 +84,15 @@ void enqueue(struct proc *rp);
 void dequeue(struct proc *rp);
 void switch_to_user(void);
 void arch_proc_reset(struct proc *rp);
+#if defined(__aarch64__)
+/*
+ * A process's TPIDR_EL0 - its thread pointer, which TLS is found through -
+ * kept across switches: saved on every way in from EL0, loaded on every way
+ * out, handed on by fork, cleared by exec (arch_system.c).
+ */
+void arch_save_tls(struct proc *p);
+void arch_copy_tls(struct proc *dst, const struct proc *src);
+#endif
 void arch_proc_setcontext(struct proc *rp, struct stackframe_s *state,
 	int user, int restorestyle);
 struct proc * arch_finish_switch_to_user(void);

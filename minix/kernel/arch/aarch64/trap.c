@@ -421,9 +421,11 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 	 * panic, and must not touch the lock at all - this core may be holding
 	 * it, and waiting for itself would replace the panic with a hang.
 	 */
-	if (from_user)
+	if (from_user) {
+		/* Its thread pointer is in the register still; keep it. */
+		arch_save_tls(pr);
 		context_stop(pr);
-	else if (kind == EXC_EL1H_IRQ)
+	} else if (kind == EXC_EL1H_IRQ)
 		context_stop_idle();
 
 	/*

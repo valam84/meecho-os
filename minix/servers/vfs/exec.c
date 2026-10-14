@@ -418,6 +418,36 @@ pm_execfinal:
        sizeof(struct ps_strings) \
 )
 
+/*
+ * Where a static program's own headers are in its memory, for AT_PHDR: the
+ * address PT_PHDR names, or else where the PT_LOAD that maps the file's
+ * start puts them.  0 if the headers are not mapped at all.
+ */
+static vir_bytes elf_phdr_addr(const struct vfs_exec_info *execi)
+{
+	Elf_Ehdr const * const eh = (Elf_Ehdr *) execi->args.hdr;
+	Elf_Phdr const *ph;
+	size_t len;
+	unsigned i;
+
+	if (eh->e_phentsize != sizeof(Elf_Phdr) || eh->e_phnum == 0)
+		return 0;
+	len = (size_t)eh->e_phnum * sizeof(Elf_Phdr);
+	if (eh->e_phoff > execi->args.hdr_len ||
+	    len > execi->args.hdr_len - eh->e_phoff)
+		return 0;
+	ph = (Elf_Phdr const *) (execi->args.hdr + eh->e_phoff);
+	for (i = 0; i < eh->e_phnum; i++)
+		if (ph[i].p_type == PT_PHDR)
+			return execi->args.load_offset + ph[i].p_vaddr;
+	for (i = 0; i < eh->e_phnum; i++)
+		if (ph[i].p_type == PT_LOAD && ph[i].p_offset <= eh->e_phoff &&
+		    eh->e_phoff + len <= ph[i].p_offset + ph[i].p_filesz)
+			return execi->args.load_offset + ph[i].p_vaddr +
+			    (eh->e_phoff - ph[i].p_offset);
+	return 0;
+}
+
 static int stack_prepare_elf(struct vfs_exec_info *execi, char *frame, size_t *frame_size,
 	vir_bytes *vsp)
 {
@@ -428,9 +458,7 @@ static int stack_prepare_elf(struct vfs_exec_info *execi, char *frame, size_t *f
 		(frame + (*frame_size - sizeof(struct ps_strings)));
 
 	size_t const execname_len = strlen(execi->execname);
-
-	if (!execi->is_dyn)
-		return OK;
+	vir_bytes phdr;
 
 	if (execi->args.hdr_len < sizeof(*elf_header)) {
 		printf("VFS: malformed ELF headers for exec\n");
@@ -485,17 +513,24 @@ static int stack_prepare_elf(struct vfs_exec_info *execi, char *frame, size_t *f
 		} \
 	} while(0)
 
-	AUXINFO(aux_vec, AT_BASE, execi->args.load_base);
-	AUXINFO(aux_vec, AT_ENTRY, execi->args.pc);
-	AUXINFO(aux_vec, AT_EXECFD, execi->elf_main_fd);
-#if 0
-	AUXINFO(aux_vec, AT_PHDR, XXX ); /* should be &phdr[0] */
-	AUXINFO(aux_vec, AT_PHENT, elf_header->e_phentsize);
-	AUXINFO(aux_vec, AT_PHNUM, elf_header->e_phnum);
-
-	AUXINFO(aux_vec, AT_RUID, XXX);
-	AUXINFO(aux_vec, AT_RGID, XXX);
-#endif
+	if (execi->is_dyn) {
+		/* ld.elf_so maps the program itself, from AT_EXECFD. */
+		AUXINFO(aux_vec, AT_BASE, execi->args.load_base);
+		AUXINFO(aux_vec, AT_ENTRY, execi->args.pc);
+		AUXINFO(aux_vec, AT_EXECFD, execi->elf_main_fd);
+	} else if ((phdr = elf_phdr_addr(execi)) != 0) {
+		/*
+		 * A static program finds its own headers here: libc's
+		 * dl_iterate_phdr(), and through it the TLS template that
+		 * __libc_static_tls_setup() copies into the main thread's
+		 * block.  A static program used to get no aux vector at all,
+		 * and every initialized thread-local read zero.
+		 */
+		AUXINFO(aux_vec, AT_PHDR, phdr);
+		AUXINFO(aux_vec, AT_PHENT, sizeof(Elf_Phdr));
+		AUXINFO(aux_vec, AT_PHNUM, elf_header->e_phnum);
+		AUXINFO(aux_vec, AT_ENTRY, execi->args.pc);
+	}
 	AUXINFO(aux_vec, AT_EUID, execi->args.new_uid);
 	AUXINFO(aux_vec, AT_EGID, execi->args.new_gid);
 	AUXINFO(aux_vec, AT_PAGESZ, PAGE_SIZE);

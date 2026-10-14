@@ -105,6 +105,12 @@ SUBDIR+= pkgconfig
 .include "${.CURDIR}/time/Makefile.inc"
 .if defined(__MINIX)
 .include "${NETBSDSRCDIR}/minix/lib/libc/sys/Makefile.inc"
+# Static TLS: the main thread's block (__libc_static_tls_setup()), and
+# _rtld_tls_allocate() for libmthread's threads.  Only where the kernel
+# keeps the thread pointer per process - aarch64.
+.if ${MACHINE_ARCH} == "aarch64"
+.include "${.CURDIR}/tls/Makefile.inc"
+.endif
 .else
 .if ${RUMPRUN} != "yes"
 .include "${.CURDIR}/tls/Makefile.inc"

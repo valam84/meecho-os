@@ -36,6 +36,52 @@ void *k_stacks;
  */
 static struct fpu_state fpu_states[NR_PROCS] __aligned(FPU_ALIGN);
 
+/*
+ * Each process's TPIDR_EL0: the thread pointer, through which a thread
+ * finds its thread-local storage (variant I: the block starts 16 bytes past
+ * it).  EL0 writes the register itself - libc for the main thread
+ * (_lwp_setprivate()), libmthread on every switch between its threads - so
+ * all the kernel has to do is what it does for x0-x30: save it on the way
+ * in, load it on the way out.  It never did, and the register was whatever
+ * the last process to set it had left: no program could have TLS (stage
+ * 11.6, Mesa keeps its current GL context in it).
+ *
+ * Kept here, by slot, like the FP areas, not in struct proc: ps and mib
+ * copy the process table, and its layout stays as it is.
+ */
+static reg_t tls_base[NR_TASKS + NR_PROCS];
+
+#define TLS_SLOT(p)	((p)->p_nr + NR_TASKS)
+
+static inline reg_t
+read_tpidr_el0(void)
+{
+	reg_t v;
+
+	__asm__ volatile("mrs %0, tpidr_el0" : "=r"(v));
+	return v;
+}
+
+static inline void
+write_tpidr_el0(reg_t v)
+{
+	__asm__ volatile("msr tpidr_el0, %0" : : "r"(v));
+}
+
+/* On the way in from EL0: the register is p's. */
+void
+arch_save_tls(struct proc *p)
+{
+	tls_base[TLS_SLOT(p)] = read_tpidr_el0();
+}
+
+/* fork: the child's address space is a copy, and so is its thread pointer. */
+void
+arch_copy_tls(struct proc *dst, const struct proc *src)
+{
+	tls_base[TLS_SLOT(dst)] = tls_base[TLS_SLOT(src)];
+}
+
 /*===========================================================================*
  *				arch_proc_reset				     *
  *===========================================================================*/
@@ -43,6 +89,9 @@ void
 arch_proc_reset(struct proc *pr)
 {
 	assert(pr->p_nr < NR_PROCS);
+
+	/* A new program sets its own thread pointer; until then, none. */
+	tls_base[TLS_SLOT(pr)] = 0;
 
 	/*
 	 * The FP state, cleared: a process that has not used FP yet gets
@@ -371,6 +420,9 @@ arch_finish_switch_to_user(void)
 	 * scheduler advisory: the quantum would never end.
 	 */
 	p->p_reg.psr &= ~(reg_t)AARCH64_PSR_I;
+
+	/* And its thread pointer, which arch_save_tls() kept. */
+	write_tpidr_el0(tls_base[TLS_SLOT(p)]);
 
 	return p;
 }

@@ -11,6 +11,7 @@ ucontext.o: ucontextoffsets.h
 
 SRCS+=   \
 	__sigreturn.S \
+	_lwp_tls.S \
 	_do_kernel_call_intr.S \
 	_ipc.S \
 	brksize.S \

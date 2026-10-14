@@ -89,6 +89,12 @@ int do_fork(struct proc * caller, message * m_ptr)
 	gen = 1;			/* generation number wraparound */
   rpc->p_nr = m_ptr->m_lsys_krn_sys_fork.slot;	/* this was obliterated by copy */
   rpc->p_endpoint = _ENDPOINT(gen, rpc->p_nr);	/* new endpoint of slot */
+#if defined(__aarch64__)
+  /* The thread pointer is kept outside struct proc; by slot, so after
+   * p_nr is the child's own (PORTING-LOG, "TLS").
+   */
+  arch_copy_tls(rpc, rpp);
+#endif
 
   rpc->p_reg.retreg = 0;	/* child sees pid = 0 to know it is child */
   rpc->p_user_time = 0;		/* set all the accounting times to 0 */

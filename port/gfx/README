@@ -16,15 +16,34 @@ Where things are:
                              - headers in /usr/include/gfxcompat
   minix/usr.bin/meechowm     the compositor (tinywl with MEECHO's screen and
                              input, and windows as columns on a strip -
-                             the keys are in meechowm.c)
+                             the keys are in meechowm.c), and the desktop's
+                             scripts: meecho-desktop (the whole of it, from
+                             the console), meechowm-bar, -palette, -shot
+  minix/share/style          MEECHO's house style: the palette (the one
+                             place a colour is written), style.awk, and
+                             what is made of them - foot.ini, fuzzel.ini,
+                             the panel's bar.yml, the wallpaper (SVG), the
+                             fontconfig choice; meechowm and the screen
+                             console take style.h from the same palette
   minix/tests/gfx            wlhello, the smallest client, /usr/tests/gfx
+
+The desktop (PLAN.md, 11.7: "the minimal set and the house style"):
+
+  compositor  meechowm        launcher  fuzzel (meechowm-palette)
+  terminal    foot            wallpaper wbg (PNG, SVG through nanosvg)
+  panel       yambar          screenshot grim (meechowm-shot, Print)
+  files       nnn (in foot)   typeface  Go Mono and Go (external/bsd/gofont)
+  editor      vi              monitor   mtop
 
 Packages: libffi 3.8.0, wayland 1.26.0, wayland-protocols 1.49, pixman
 0.46.4 and libdrm 2.4.134 (NetBSD-current's xsrc dists), libxkbcommon
 1.13.2, xkeyboard-config 2.38 (NetBSD's), wlroots 0.20.2, FreeType 2.15.0,
-fontconfig 2.18.3, tllist 1.1.0, fcft 3.3.3, foot 1.28.0; expat is the
-tree's (external/mit/expat).  Licences MIT or BSD-like, FreeType under its
-FTL; nothing GPL is imported (import-stack.sh says what is left out).
+fontconfig 2.18.3, tllist 1.1.0, fcft 3.3.3, foot 1.28.0, fuzzel 1.15.0,
+libyaml 0.2.5, yambar; for the rest of the desktop libpng 1.6.59, wbg
+1.3.0, grim 1.5.0, nnn 5.3 (external/bsd) and the Go fonts
+(external/bsd/gofont); expat is the tree's (external/mit/expat).  Licences
+MIT or BSD-like, FreeType under its FTL, libpng under its own; nothing GPL
+is imported (import-stack.sh says what is left out).
 
 Building, in this order (the first line once per tools build):
 
@@ -35,6 +54,9 @@ Building, in this order (the first line once per tools build):
       external/mit/libxkbcommon external/mit/xkeyboard-config \
       external/mit/wlroots external/mit/freetype external/mit/fontconfig \
       external/mit/tllist external/mit/fcft external/mit/foot \
+      external/mit/libyaml external/mit/fuzzel external/mit/yambar \
+      external/mit/libpng external/mit/wbg external/mit/grim \
+      external/bsd/nnn external/bsd/gofont minix/share/style \
       minix/usr.bin/meechowm minix/tests/gfx
 
 New directories under /usr/include, /usr/share and /etc go into
@@ -92,6 +114,11 @@ with the second-pass g++: -lEGL -lGLESv2 -lgbm -lgallium -ldrm -lz
                      console taking the new size after it, fbmode(8)
                      changing it from the console, and monitors plugged
                      in (the virtual display's: ../test/fb/fbvplug.c)
+  test/qemu-desk.py  the desktop as a user starts it (meecho-desktop), in
+                     MEECHO's style: the Go fonts, the wallpaper, the
+                     panel and foot on the palette's colours, nnn, the
+                     palette, grim against /dev/fb0, Print, the end of
+                     it all, the console back on ink; the frame as a PNG
   test/board-shot.sh the board's screen as a PNG, over ssh from Git Bash:
                      fbart says the geometry, dd reads /dev/fb0, fbpng.py
                      (in WSL) writes it

@@ -180,7 +180,7 @@ imp_evdev() {
 	cp "$SRC/freebsd-evdev/input-event-codes.h" "$dest/"
 }
 
-# The desktop's other programs (stage 11.8, PLAN.md): the wallpaper, the
+# The desktop's other programs (stage 11.7, PLAN.md): the wallpaper, the
 # screenshot, the file manager, and the typeface.
 #
 # libpng 1.6.59 (the libpng licence, permissive): the library, NEON code

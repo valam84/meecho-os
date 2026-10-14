@@ -26,6 +26,11 @@ share its code:
             one it draws for "uds" - so that the comparison can tell names
             apart.  The stripe is the palette's yellow.  The rows go to a
             PNG (-o)
+  mib       "minix-service refresh mib": a boot service, restarted into
+            the endpoint it had - only the count of restarts says so -
+            and the -d twin says "card restart mib restarted"; /proc
+            answers twenty times meanwhile, with both notifiers reading
+            /proc/service
 
 -M NAME runs the same against a mutated copy - one plausible way to lose
 the event - built here into DESTDIR/usr/tests/gfx and removed after; the
@@ -359,6 +364,29 @@ def main():
                   "first line %dx%d: %d pixels off the card for lwip, %d off "
                   "the one for uds; stripe 0x%06x" % (bw, bh, bad, diff,
                                                      stripe))
+
+        # mib: a boot service, restarted into its own endpoint - only the
+        # count of restarts tells; and /proc answers all the while, with
+        # the notifier and its twin reading /proc/service under it
+        send("grep -E 'endpoint|restarts' /proc/service/mib; "
+             "minix-service refresh mib; echo MIB $?")
+        out, mm = expect(r"MIB (\d+)\r?\n", 300)
+        before = re.search(r"endpoint:\s+(-?\d+)", out)
+        put_file("/tmp/proc.sh", "i=0\nwhile [ $i -lt 20 ]; do "
+                 "cat /proc/uptime > /dev/null; i=$((i+1)); sleep 1; done\n"
+                 "grep -E 'endpoint|restarts' /proc/service/mib\n"
+                 "grep '^card restart mib' /tmp/ntd.log")
+        send("sh /tmp/proc.sh; echo PR''OC")
+        out, _ = expect(r"PROC\r?\n", 300)
+        after = re.search(r"endpoint:\s+(-?\d+)", out)
+        card = re.search(r"^card restart mib restarted", out, re.M)
+        same = before is not None and after is not None and \
+            before.group(1) == after.group(1)
+        check("mib", int(mm.group(1)) == 0 and card is not None and same,
+              "refresh %s; endpoint %s -> %s; /proc answered 20 times; "
+              "-d %s" % (mm.group(1), before.group(1) if before else "?",
+                         after.group(1) if after else "?",
+                         "said mib restarted" if card else "said nothing"))
 
         send("meechowm -m quit; sleep 3; /sbin/poweroff")
         time.sleep(8)

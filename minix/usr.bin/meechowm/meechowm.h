@@ -4,7 +4,8 @@
  *
  *   fbout.c      the screen: the frame buffer driver's scanout buffers
  *                (FBIOC_MAP), what was drawn copied into the one not
- *                shown, and shown (FBIOC_FLIP)
+ *                shown, and shown (FBIOC_FLIP); the cursor in the display
+ *                controller's own window (FBIOC_CURSOR)
  *   input.c      the keyboard and the mouse: the input server's devices
  *                (/dev/kbdmux, /dev/mousemux) as wlroots input devices
  *   hid2evdev.c  HID keyboard usages to evdev key codes
@@ -22,6 +23,7 @@
 
 struct wlr_buffer;
 struct wlr_input_device;
+struct wlr_output;
 struct wl_event_loop;
 
 /* fbout.c */
@@ -36,6 +38,10 @@ int mc_fb_set_mode(struct mc_fb *fb, unsigned width, unsigned height,
 /* damage: what changed in the frame, NULL for all of it */
 void mc_fb_present(struct mc_fb *fb, struct wlr_buffer *buffer,
 	const pixman_region32_t *damage);
+/* The cursor in the controller's window: has the driver one; the output's
+ * hardware cursor to it (-1: it does not fit, draw it into the frames). */
+bool mc_fb_has_cursor(const struct mc_fb *fb);
+int mc_fb_cursor_sync(struct mc_fb *fb, struct wlr_output *output);
 void mc_fb_close(struct mc_fb *fb);
 
 /* input.c */

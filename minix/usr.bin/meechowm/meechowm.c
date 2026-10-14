@@ -43,7 +43,9 @@
  * MEECHOWM_MOD (super or alt), MEECHOWM_TERM, MEECHOWM_GAP (pixels, 8),
  * MEECHOWM_WIDTH (a new column's: 1/3, 1/2, 2/3 or 1), MEECHOWM_ANIM_MS
  * (how long a move takes, 200; 0: things jump), MEECHOWM_SOCK,
- * XKB_CONFIG_ROOT.  When it ends, the console has the screen back.
+ * MEECHOWM_SOFT_CURSOR (set: the cursor drawn into the frames even where
+ * the display has a window for it - to compare), XKB_CONFIG_ROOT.  When it
+ * ends, the console has the screen back.
  */
 #include <assert.h>
 #include <errno.h>
@@ -730,6 +732,19 @@ static void output_frame(struct wl_listener *listener, void *data) {
 	}
 	wlr_output_state_finish(&state);
 
+	/*
+	 * The cursor, to the display controller's window: wlroots asks for a
+	 * frame whenever it sets or moves its hardware cursor, and this is
+	 * where it is taken from.  A picture the window cannot take puts the
+	 * cursor into the frames for good.
+	 */
+	if (mc_fb_has_cursor(output->server->fb) &&
+	    output->wlr_output->software_cursor_locks == 0 &&
+	    mc_fb_cursor_sync(output->server->fb, output->wlr_output) < 0) {
+		wlr_output_lock_software_cursors(output->wlr_output, true);
+		(void)mc_fb_cursor_sync(output->server->fb, output->wlr_output);
+	}
+
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	wlr_scene_output_send_frame_done(scene_output, &now);
@@ -766,11 +781,18 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	wlr_output_init_render(wlr_output, server->allocator, server->renderer);
 
 	/*
-	 * MEECHO: the cursor is drawn into the frame.  The headless output
-	 * takes a "hardware" cursor and does nothing with it (its set_cursor
-	 * answers true), so without this the cursor moved and was never seen.
+	 * MEECHO: the cursor.  The headless output takes a "hardware" cursor
+	 * and does nothing with it (its set_cursor answers true); wlroots then
+	 * leaves it out of the frames.  With a cursor window in the display
+	 * controller that is what is wanted - output_frame() hands the cursor
+	 * to the driver (fbout.c).  Without one, the cursor is drawn into the
+	 * frames, or it moves and is never seen.
 	 */
-	wlr_output_lock_software_cursors(wlr_output, true);
+	if (!mc_fb_has_cursor(server->fb) ||
+	    getenv("MEECHOWM_SOFT_CURSOR") != NULL) {
+		wlr_log(WLR_INFO, "the cursor is drawn into the frames");
+		wlr_output_lock_software_cursors(wlr_output, true);
+	}
 
 	/* The output may be disabled, switch it on. */
 	struct wlr_output_state state;

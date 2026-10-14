@@ -180,9 +180,61 @@ imp_evdev() {
 	cp "$SRC/freebsd-evdev/input-event-codes.h" "$dest/"
 }
 
+# The desktop's other programs (stage 11.8, PLAN.md): the wallpaper, the
+# screenshot, the file manager, and the typeface.
+#
+# libpng 1.6.59 (the libpng licence, permissive): the library, NEON code
+# for arm, and the configuration header upstream ships ready-made - no
+# awk-generated one, no tests, no tools.
+imp_libpng() {
+	from_git external/mit/libpng/dist libpng LICENSE README AUTHORS \
+	    png.h pngconf.h pngdebug.h pnginfo.h pngpriv.h pngstruct.h \
+	    png.c pngerror.c pngget.c pngmem.c pngpread.c pngread.c pngrio.c \
+	    pngrtran.c pngrutil.c pngset.c pngtrans.c pngwio.c pngwrite.c \
+	    pngwtran.c pngwutil.c arm/arm_init.c arm/filter_neon_intrinsics.c \
+	    arm/palette_neon_intrinsics.c scripts/pnglibconf.h.prebuilt
+}
+
+# wbg 1.3.0 (MIT; nanosvg, bundled, zlib licence): PNG and SVG only - the
+# JPEG, WebP and JPEG XL readers stay out with their libraries.
+imp_wbg() {
+	from_git external/mit/wbg/dist wbg LICENSE README.md CHANGELOG.md \
+	    external/wlr-layer-shell-unstable-v1.xml \
+	    3rd-party/nanosvg/LICENSE.txt 3rd-party/nanosvg/src nanosvg \
+	    log.c log.h main.c nanosvg.c nanosvgrast.c png.c png-wbg.h shm.c \
+	    shm.h stride.h svg.c svg.h wbg-features.h
+}
+
+# grim 1.5.0 (MIT): the program and its own copy of wlr-screencopy; the
+# rest of its protocols are wayland-protocols'.  Its manual is scdoc's.
+imp_grim() {
+	from_git external/mit/grim/dist grim LICENSE README.md \
+	    box.c buffer.c main.c output-layout.c render.c write_jpg.c \
+	    write_png.c write_ppm.c include protocol/wlr-screencopy-unstable-v1.xml
+}
+
+# nnn 5.3 (BSD-2): the one program, its header and manual - without the
+# icon tables, the plugins (bash) and upstream's patches.
+imp_nnn() {
+	from_git external/bsd/nnn/dist nnn LICENSE README.md CHANGELOG nnn.1 \
+	    src/nnn.c src/nnn.h src/dbg.h src/qsort.h
+}
+
+# The Go fonts (BSD-3), from golang.org/x/image's font/gofont/ttfs, the
+# README with the licence.  GOIMAGE: a clone with that directory checked
+# out (git clone --filter=blob:none --sparse, sparse-checkout set
+# font/gofont/ttfs).
+imp_gofont() {
+	from_git external/bsd/gofont/dist ${GOIMAGE:-goimage} \
+	    font/gofont/ttfs &&
+	mv "$TREE"/external/bsd/gofont/dist/font/gofont/ttfs/* \
+	    "$TREE"/external/bsd/gofont/dist/ &&
+	rm -r "$TREE"/external/bsd/gofont/dist/font
+}
+
 ALL="libffi wayland wayland_protocols pixman libdrm libxkbcommon
 	xkeyboard_config wlroots freetype fontconfig tllist fcft foot fuzzel
-	libyaml yambar evdev"
+	libyaml yambar evdev libpng wbg grim nnn gofont"
 [ $# -gt 0 ] || set -- $ALL
 for p in "$@"; do
 	p=${p//-/_}

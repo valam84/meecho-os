@@ -19,8 +19,9 @@
  *   press of a key that is already down is dropped here;
  *
  *   a mouse report is X, Y, the wheel and the buttons together, and the
- *   input server hands them over one event each: the motion of one read
- *   is summed into one motion event, and a frame event closes the read.
+ *   input server hands them over one event each, with no end of a report
+ *   marked: mousesplit.c cuts a read back into reports, and each becomes
+ *   one motion event, its wheel and buttons, and a frame event.
  */
 #include <sys/types.h>
 
@@ -42,6 +43,7 @@
 #include <wlr/util/log.h>
 
 #include "meechowm.h"
+#include "mousesplit.h"
 
 static struct wlr_keyboard keyboard;
 static struct wlr_pointer pointer;
@@ -98,8 +100,40 @@ keyboard_readable(int fd, uint32_t mask, void *data)
 	return 0;
 }
 
+/* The mouse's events, from mousesplit.c; arg is the time of the read. */
 static void
-button(unsigned hid, int pressed, uint32_t t)
+mouse_motion(int dx, int dy, void *arg)
+{
+	struct wlr_pointer_motion_event m;
+
+	memset(&m, 0, sizeof(m));
+	m.pointer = &pointer;
+	m.time_msec = *(uint32_t *)arg;
+	m.delta_x = m.unaccel_dx = dx;
+	m.delta_y = m.unaccel_dy = dy;
+	wl_signal_emit_mutable(&pointer.events.motion, &m);
+}
+
+static void
+mouse_wheel(int value, void *arg)
+{
+	struct wlr_pointer_axis_event a;
+
+	/* HID: away from the user is +1; Wayland: scrolling up is negative,
+	 * 15 per notch, 120 per discrete step. */
+	memset(&a, 0, sizeof(a));
+	a.pointer = &pointer;
+	a.time_msec = *(uint32_t *)arg;
+	a.source = WL_POINTER_AXIS_SOURCE_WHEEL;
+	a.orientation = WL_POINTER_AXIS_VERTICAL_SCROLL;
+	a.relative_direction = WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL;
+	a.delta = -15.0 * value;
+	a.delta_discrete = -120 * value;
+	wl_signal_emit_mutable(&pointer.events.axis, &a);
+}
+
+static void
+mouse_button(unsigned hid, int pressed, void *arg)
 {
 	static const uint32_t map[] = { 0, BTN_LEFT, BTN_RIGHT, BTN_MIDDLE };
 	struct wlr_pointer_button_event b;
@@ -108,63 +142,37 @@ button(unsigned hid, int pressed, uint32_t t)
 		return;
 	memset(&b, 0, sizeof(b));
 	b.pointer = &pointer;
-	b.time_msec = t;
+	b.time_msec = *(uint32_t *)arg;
 	b.button = map[hid];
 	b.state = pressed ? WL_POINTER_BUTTON_STATE_PRESSED :
 	    WL_POINTER_BUTTON_STATE_RELEASED;
 	wlr_pointer_notify_button(&pointer, &b);
 }
 
+static void
+mouse_frame(void *arg)
+{
+	wl_signal_emit_mutable(&pointer.events.frame, &pointer);
+}
+
+static const struct mc_mouse_ops mouse_ops = {
+	.motion = mouse_motion,
+	.wheel = mouse_wheel,
+	.button = mouse_button,
+	.frame = mouse_frame,
+};
+
 static int
 mouse_readable(int fd, uint32_t mask, void *data)
 {
 	struct input_event ev[32];
-	struct wlr_pointer_motion_event m;
-	struct wlr_pointer_axis_event a;
 	ssize_t r;
-	size_t i;
-	int dx = 0, dy = 0, sent = 0;
 	uint32_t t = now_ms();
 
 	if ((r = read(fd, ev, sizeof(ev))) <= 0)
 		return 0;
 	wlr_log(WLR_DEBUG, "mouse: %zu event(s)", (size_t)r / sizeof(ev[0]));
-	for (i = 0; i < (size_t)r / sizeof(ev[0]); i++) {
-		if (ev[i].page == INPUT_PAGE_GD && ev[i].code == INPUT_GD_X)
-			dx += ev[i].value;
-		else if (ev[i].page == INPUT_PAGE_GD && ev[i].code == INPUT_GD_Y)
-			dy += ev[i].value;
-		else if (ev[i].page == INPUT_PAGE_GD &&
-		    ev[i].code == INPUT_GD_WHEEL) {
-			/* HID: away from the user is +1; Wayland: scrolling up
-			 * is negative, 15 per notch, 120 per discrete step. */
-			memset(&a, 0, sizeof(a));
-			a.pointer = &pointer;
-			a.time_msec = t;
-			a.source = WL_POINTER_AXIS_SOURCE_WHEEL;
-			a.orientation = WL_POINTER_AXIS_VERTICAL_SCROLL;
-			a.relative_direction =
-			    WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL;
-			a.delta = -15.0 * ev[i].value;
-			a.delta_discrete = -120 * ev[i].value;
-			wl_signal_emit_mutable(&pointer.events.axis, &a);
-			sent = 1;
-		} else if (ev[i].page == INPUT_PAGE_BUTTON) {
-			button(ev[i].code, ev[i].value, t);
-			sent = 1;
-		}
-	}
-	if (dx != 0 || dy != 0) {
-		memset(&m, 0, sizeof(m));
-		m.pointer = &pointer;
-		m.time_msec = t;
-		m.delta_x = m.unaccel_dx = dx;
-		m.delta_y = m.unaccel_dy = dy;
-		wl_signal_emit_mutable(&pointer.events.motion, &m);
-		sent = 1;
-	}
-	if (sent)
-		wl_signal_emit_mutable(&pointer.events.frame, &pointer);
+	mc_mouse_split(ev, (size_t)r / sizeof(ev[0]), &mouse_ops, &t);
 	return 0;
 }
 

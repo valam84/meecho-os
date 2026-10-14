@@ -35,6 +35,7 @@ struct __mthread_tcb {
   					 * thread has ended */
   mthread_mutex_t m_exitm;		/* Mutex to accompany exit condition */
   ucontext_t m_context;			/* Thread machine context */
+  void *m_tls;				/* Its thread pointer, or NULL (tls.c) */
   struct __mthread_tcb *m_next;		/* Next thread in linked list */
 };
 typedef struct __mthread_tcb mthread_tcb_t;

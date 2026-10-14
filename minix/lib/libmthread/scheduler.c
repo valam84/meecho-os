@@ -69,6 +69,9 @@ void mthread_schedule(void)
   /* Are we running the 'main' thread after swap? */
   running_main_thread = (current_thread == MAIN_THREAD);
 
+  /* Its thread-local storage, before anything of it runs (tls.c). */
+  mthread_tls_switch(new_tcb);
+
   if (swapcontext(old_ctx, new_ctx) == -1)
 	mthread_panic("Could not swap context");
   

@@ -53,6 +53,12 @@ void mthread_schedule(void);
 void mthread_suspend(mthread_state_t state);
 void mthread_unsuspend(mthread_thread_t thread);
 
+/* tls.c */
+void mthread_tls_init_main(mthread_tcb_t *tcb);
+void mthread_tls_new(mthread_tcb_t *tcb);
+void mthread_tls_free(mthread_tcb_t *tcb);
+void mthread_tls_switch(mthread_tcb_t *to);
+
 /* queue.c */
 #ifdef MDEBUG
 void mthread_dump_queue(mthread_queue_t *queue);

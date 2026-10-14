@@ -248,6 +248,7 @@ static void __attribute__((__constructor__, __used__)) mthread_init(void)
 
   if (mthread_getcontext(&(mainthread.m_context)) == -1)
 	mthread_panic("Couldn't save state for main thread");
+  mthread_tls_init_main(&mainthread);
   current_thread = MAIN_THREAD;
 
   mthread_init_valid_mutexes();
@@ -382,6 +383,7 @@ void *arg;
   	mthread_panic("Could not initialize thread");
 
   tcb->m_context.uc_link = NULL;
+  mthread_tls_new(tcb);
 
   /* Construct this thread's context to run procedure proc. */
   if (mthread_getcontext(&(tcb->m_context)) == -1)
@@ -487,6 +489,7 @@ mthread_thread_t thread;
   }
   rt->m_context.uc_stack.ss_size = 0;
   rt->m_context.uc_link = NULL;
+  mthread_tls_free(rt);
 }
 
 

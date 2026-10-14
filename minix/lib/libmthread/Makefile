@@ -14,6 +14,7 @@ SRCS=	\
 	queue.c \
 	rwlock.c \
 	scheduler.c \
+	tls.c \
 
 WARNS?=	4
 

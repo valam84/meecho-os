@@ -51,6 +51,9 @@ extern uint32_t model_regs[];
 /* Сбросить всё: память, регистры, часы, записи. */
 void model_reset(void);
 
+/* Ключ DS, как его опубликовал бы fb (буферы развёртки, meecho_drm.h). */
+void model_ds_set(const char *key, u32_t val);
+
 /* Исполнить задание, запущенное в слоте: сколько выполнено, -1 - причина в why. */
 extern char why[256];
 int model_run(int slot);

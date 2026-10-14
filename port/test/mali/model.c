@@ -56,6 +56,7 @@
 #include <sys/mman.h>
 
 #include <minix/cachectl.h>
+#include <minix/ds.h>
 
 #include "model.h"
 
@@ -1300,9 +1301,78 @@ mali_gpu_recover(void)
 
 /* ---- сброс модели ---------------------------------------------------------- */
 
+/* ---- DS и чужая память: ввоз буферов развёртки fb (meecho_drm.h) ------- */
+
+/*
+ * Ключи, которые fb публикует в DS; у модели их ставит стенд.  Метки fb в
+ * модели нет: служба остаётся без своего вида буфера (его нельзя
+ * отобразить клиенту), а ускорителю он отдаётся всё равно.
+ */
+static struct { char key[DS_MAX_KEYLEN]; u32_t val; } dskeys[16];
+static unsigned ndskeys;
+
+void
+model_ds_set(const char *key, u32_t val)
+{
+	unsigned i;
+
+	for (i = 0; i < ndskeys && strcmp(dskeys[i].key, key) != 0; i++)
+		;
+	if (i == ndskeys) {
+		if (ndskeys == sizeof(dskeys) / sizeof(dskeys[0])) {
+			model_error("DS: too many keys");
+			return;
+		}
+		snprintf(dskeys[ndskeys++].key, DS_MAX_KEYLEN, "%s", key);
+	}
+	dskeys[i].val = val;
+}
+
+int
+ds_retrieve_u32(const char *key, u32_t *val)
+{
+	unsigned i;
+
+	for (i = 0; i < ndskeys; i++)
+		if (strcmp(dskeys[i].key, key) == 0) {
+			*val = dskeys[i].val;
+			return OK;
+		}
+	return ESRCH;
+}
+
+int
+ds_retrieve_label_endpt(const char *name, endpoint_t *ep)
+{
+	(void)name;
+	(void)ep;
+	return ESRCH;
+}
+
+/*
+ * SYS_UMAP_REMOTE (mali_umap.c на машине): как sys_umap(), но в памяти
+ * клиента - у модели память всех одна, арена; только непрерывный диапазон.
+ */
+int
+mali_umap_remote(endpoint_t ep, vir_bytes addr, vir_bytes len,
+	phys_bytes *phys)
+{
+	size_t off = (unsigned char *)addr - cpu_view, k;
+
+	(void)ep;
+	if (alloc_of((void *)addr) == NULL)
+		return EFAULT;
+	for (k = PAGE; k < len + off % PAGE; k += PAGE)
+		if (v2p[(off + k) / PAGE] != v2p[off / PAGE] + (int)(k / PAGE))
+			return EFAULT;
+	*phys = (phys_bytes)model_pa((void *)addr);
+	return OK;
+}
+
 void
 model_reset(void)
 {
+	ndskeys = 0;
 	if (cpu_view == NULL) {
 		if (posix_memalign((void **)&cpu_view, PAGE,
 		    (size_t)ARENA_PAGES * PAGE) != 0 ||

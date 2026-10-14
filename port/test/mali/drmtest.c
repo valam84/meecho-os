@@ -44,6 +44,7 @@
 #include "model.h"
 #include "drm.h"
 #include "panfrost_drm.h"
+#include "meecho_drm.h"
 #include <sys/ioc_mmap.h>
 
 extern struct chardriver mali_chardriver;
@@ -1178,6 +1179,58 @@ test_cpu_during_job(void)
 	CHECK(model_errors == 0, "model: %s", model_error_text);
 }
 
+/*
+ * Буферы развёртки fb (meecho_drm.h): без ключей fb в DS - ENODEV;
+ * память, которой fb не объявлял своим буфером, - EPERM, иначе клиент дал
+ * бы ускорителю что угодно из своего адресного пространства (и мог бы
+ * освободить это под заданием); буфер целиком - ручка и место у
+ * ускорителя; часть буфера - EPERM (VM отдаёт области целиком).
+ */
+static void
+test_scanout(void)
+{
+	struct drm_meecho_scanout_import si;
+	struct drm_gem_close gc;
+	phys_bytes pa;
+	void *buf;
+	int a;
+
+	printf("буферы развёртки fb\n");
+	start();
+	a = open_ctx(USER_A);
+	buf = alloc_contig(0x10000, 0, &pa);	/* "отображение fb" клиента */
+	memset(&si, 0, sizeof(si));
+	si.addr = (uint64_t)(uintptr_t)buf;
+	si.size = 0x10000;
+	CHECK(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == ENODEV,
+	    "no fb in DS");
+	model_ds_set("fb.scanout.n", 1);
+	model_ds_set("fb.scanout.size", 0x10000);
+	model_ds_set("fb.scanout.0", (u32_t)(pa + 0x10000));
+	CHECK(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == EPERM,
+	    "memory fb did not publish");
+	model_ds_set("fb.scanout.0", (u32_t)pa);
+	si.size = 0x8000;
+	CHECK(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == EPERM,
+	    "half a buffer");
+	si.size = 0x10000;
+	si.pad = 1;
+	CHECK(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == EINVAL,
+	    "pad not checked");
+	si.pad = 0;
+	CHECK(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == OK &&
+	    si.handle != 0 && si.offset >= VA0, "the buffer: handle %u at "
+	    "0x%llx", si.handle, (unsigned long long)si.offset);
+	memset(&gc, 0, sizeof(gc));
+	gc.handle = si.handle;
+	CHECK(io(a, DRM_IOCTL_GEM_CLOSE, &gc, USER_A) == OK, "gem close");
+	CHECK(mali_chardriver.cdr_close(a) == OK, "close");
+	/* Память fb - не службы: закрытие не отдаёт её. */
+	CHECK(model_page_live(pa) != 0, "the device's page went with it");
+	free_contig(buf, 0x10000);
+	CHECK(model_errors == 0, "model: %s", model_error_text);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1192,6 +1245,7 @@ main(int argc, char *argv[])
 	test_heap();
 	test_cpu_during_job();
 	test_hang();
+	test_scanout();
 
 	printf("mali drm: %u проверок, отказов %u\n", checks, failures);
 	return failures != 0;

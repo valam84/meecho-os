@@ -33,6 +33,7 @@ do_gettime(void)
 		clock = realtime;
 		break;
 	case CLOCK_MONOTONIC:
+	case CLOCK_MONOTONIC_RAW:	/* never slewed here: the same clock */
 		clock = ticks;
 		break;
 	case CLOCK_PROCESS_CPUTIME_ID:
@@ -66,6 +67,7 @@ do_getres(void)
   switch (m_in.m_lc_pm_time.clk_id) {
 	case CLOCK_REALTIME:
 	case CLOCK_MONOTONIC:
+	case CLOCK_MONOTONIC_RAW:
 	case CLOCK_PROCESS_CPUTIME_ID:
 	case CLOCK_THREAD_CPUTIME_ID:
 		/* tv_sec is always 0 since system_hz is an int */

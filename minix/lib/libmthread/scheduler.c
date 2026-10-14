@@ -240,5 +240,8 @@ void mthread_yield_all(void)
 __weak_alias(pthread_getcpuclockid, mthread_getcpuclockid)
 __weak_alias(pthread_yield, mthread_yield)
 __weak_alias(sched_yield, mthread_yield)
+/* <sched.h> makes sched_yield __libc_thr_yield, which on NetBSD the
+ * thread library provides; here it is this library. */
+__weak_alias(__libc_thr_yield, mthread_yield)
 __weak_alias(pthread_yield_all, mthread_yield_all)
 

@@ -31,6 +31,7 @@ struct __mthread_tcb {
   int m_timed;				/* Waits on m_cond with a deadline:
 					 * runnable, taking turns (condition.c) */
   int m_woken;				/* ... and has been signalled */
+  char m_name[MTHREAD_MAX_NAMELEN_NP];	/* Its name, or "" */
   void *(*m_proc)(void *);		/* Procedure to run */
   void *m_arg;				/* Argument passed to procedure */
   void *m_result;			/* Result after procedure returns */

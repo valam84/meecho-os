@@ -287,6 +287,15 @@ struct	itimerspec {
 #endif /* !defined(__minix) */
 #define	CLOCK_MONOTONIC	3
 /*
+ * Linux's monotonic clock that NTP never slews (Mesa's Panfrost times its
+ * counters by it).  MINIX's monotonic clock is never slewed either, so on
+ * MINIX the two are one clock; the number is Linux's, so code that tells
+ * them apart in a switch still compiles.
+ */
+#if defined(__minix)
+#define	CLOCK_MONOTONIC_RAW	4
+#endif
+/*
  * NetBSD's numbers (it has them since 2016).  On MINIX a thread is the
  * user-level kind and has no time of its own: both are the process's.
  */

@@ -336,6 +336,56 @@ void (*proc)(void);
 
 
 /*===========================================================================*
+ *				mthread_setname_np			     *
+ *===========================================================================*/
+int mthread_setname_np(thread, name, arg)
+mthread_thread_t thread;
+const char *name;	/* A printf format, as NetBSD has it ... */
+void *arg;		/* ... with this one argument */
+{
+/* Name a thread, for whoever looks at threads (Mesa names its queues). */
+  char buf[MTHREAD_MAX_NAMELEN_NP];
+  mthread_tcb_t *tcb;
+  int n;
+
+  if (!isokthreadid(thread))
+	return(ESRCH);
+  tcb = mthread_find_tcb(thread);
+  if (thread != MAIN_THREAD && tcb->m_state == MS_DEAD)
+	return(ESRCH);
+  /* The name is a format by the interface (NetBSD's), as it is there. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+  n = snprintf(buf, sizeof(buf), name, arg);
+#pragma GCC diagnostic pop
+  if (n < 0 || (size_t) n >= sizeof(buf))
+	return(EINVAL);
+  memcpy(tcb->m_name, buf, (size_t) n + 1);
+  return(0);
+}
+
+
+/*===========================================================================*
+ *				mthread_getname_np			     *
+ *===========================================================================*/
+int mthread_getname_np(thread, name, len)
+mthread_thread_t thread;
+char *name;
+size_t len;
+{
+  mthread_tcb_t *tcb;
+
+  if (!isokthreadid(thread))
+	return(ESRCH);
+  tcb = mthread_find_tcb(thread);
+  if (thread != MAIN_THREAD && tcb->m_state == MS_DEAD)
+	return(ESRCH);
+  strlcpy(name, tcb->m_name, len);
+  return(0);
+}
+
+
+/*===========================================================================*
  *				mthread_self				     *
  *===========================================================================*/
 mthread_thread_t mthread_self(void)
@@ -473,6 +523,7 @@ mthread_thread_t thread;
   rt->m_cond = NULL;
   rt->m_timed = 0;
   rt->m_woken = 0;
+  rt->m_name[0] = '\0';
   if (rt->m_attr.ma_stackaddr == NULL) { /* We allocated stack space */
 	if (rt->m_context.uc_stack.ss_sp) {
 		stacksize = rt->m_context.uc_stack.ss_size;
@@ -552,4 +603,6 @@ __weak_alias(pthread_exit, mthread_exit)
 __weak_alias(pthread_join, mthread_join)
 __weak_alias(pthread_once, mthread_once)
 __weak_alias(pthread_self, mthread_self)
+__weak_alias(pthread_setname_np, mthread_setname_np)
+__weak_alias(pthread_getname_np, mthread_getname_np)
 

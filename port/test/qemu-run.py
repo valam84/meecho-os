@@ -9,7 +9,8 @@ Each command runs in turn at the shell; its output is printed between
 under ~/obj-evbarm64 (default work-run), so that this can run beside
 another session's QEMU; -k keeps that directory's disk image (default: made
 fresh from the ramdisk and DESTDIR).  The exit status is 0 when every
-command exited 0.  Log: ~/qemu-run.log.
+command exited 0.  Log: ~/qemu-run.log, or $QEMU_RUN_LOG (sessions running
+side by side would write over each other's).
 """
 
 import argparse
@@ -41,7 +42,8 @@ def main():
                QEMU_SMP=str(a.s))
     if not a.k:
         env["DISK_FRESH"] = "1"
-    log = open(os.path.join(HOME, "qemu-run.log"), "w")
+    log = open(os.environ.get("QEMU_RUN_LOG",
+                              os.path.join(HOME, "qemu-run.log")), "w")
     p = subprocess.Popen(["bash", RAMIMAGE, "-d"], stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          bufsize=0, env=env, start_new_session=True)

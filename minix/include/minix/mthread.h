@@ -83,6 +83,7 @@ typedef struct {
 #define MTHREAD_ONCE_INIT 0
 #define MTHREAD_STACK_MIN MINSIGSTKSZ
 #define MTHREAD_KEYS_MAX 128
+#define MTHREAD_MAX_NAMELEN_NP 32	/* NetBSD's, with the terminator */
 
 /* NetBSD's numbers, so that its headers and ours agree. */
 #define MTHREAD_MUTEX_NORMAL 0		/* Locking it again: EDEADLK */
@@ -101,6 +102,9 @@ void mthread_exit(void *value);
 int mthread_join(mthread_thread_t thread, void **value);
 int mthread_once(mthread_once_t *once, void (*proc)(void));
 mthread_thread_t mthread_self(void);
+int mthread_getname_np(mthread_thread_t thread, char *name, size_t len);
+int mthread_setname_np(mthread_thread_t thread, const char *name,
+	void *arg);
 
 /* attribute.c */
 int mthread_attr_destroy(mthread_attr_t *tattr);
@@ -210,6 +214,7 @@ typedef void *pthread_rwlockattr_t;
 #define PTHREAD_MUTEX_RECURSIVE MTHREAD_MUTEX_RECURSIVE
 #define PTHREAD_MUTEX_DEFAULT MTHREAD_MUTEX_DEFAULT
 #define PTHREAD_BARRIER_SERIAL_THREAD MTHREAD_BARRIER_SERIAL_THREAD
+#define PTHREAD_MAX_NAMELEN_NP MTHREAD_MAX_NAMELEN_NP
 
 __BEGIN_DECLS
 /* allocate.c */
@@ -221,6 +226,9 @@ void pthread_exit(void *value);
 int pthread_join(pthread_t thread, void **value);
 int pthread_once(pthread_once_t *once, void (*proc)(void));
 pthread_t pthread_self(void);
+/* NetBSD's forms: the name is a printf format with one argument. */
+int pthread_getname_np(pthread_t thread, char *name, size_t len);
+int pthread_setname_np(pthread_t thread, const char *name, void *arg);
 
 /* attribute.c */
 int pthread_attr_destroy(pthread_attr_t *tattr);

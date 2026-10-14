@@ -30,7 +30,7 @@ WORK = os.path.join(HOME, "obj-evbarm64/work-pthread")
 DEST = os.environ.get("DESTDIR", os.path.join(HOME, "dest-evbarm64"))
 XCC = os.path.join(HOME, "xtools-aarch64/bin/aarch64-elf64-minix-gcc")
 GUESTDIR = "/usr/tests/pthread"
-PARTS = ("mutex", "timed", "cond", "barrier", "cpu", "c11")
+PARTS = ("mutex", "timed", "cond", "barrier", "cpu", "names", "sched", "c11")
 DOWN = r"panic|assert|MEECHO will now|kernel stack overflow"
 
 

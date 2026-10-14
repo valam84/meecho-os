@@ -12,11 +12,11 @@ SRCS+= 	accept.c access.c adjtime.c bind.c brk.c sbrk.c m_closefrom.c getsid.c \
 	getvfsstat.c \
 	ioctl.c issetugid.c kill.c link.c listen.c loadname.c lseek.c \
 	memfd_create.c minix_rs.c mkdir.c mkfifo.c mknod.c mmap.c mmap_cdev.c mount.c \
-	msync.c nanosleep.c \
+	mprotect.c msync.c nanosleep.c \
 	getpgid.c open.c pathconf.c pipe.c poll.c posix_fadvise.c \
 	posix_spawn.c pread.c ptrace.c pwrite.c \
 	read.c readlink.c reboot.c recvfrom.c recvmmsg.c recvmsg.c rename.c \
-	rmdir.c select.c sem.c sendmmsg.c sendmsg.c sendto.c setgroups.c setsid.c \
+	rmdir.c sched_posix.c select.c sem.c sendmmsg.c sendmsg.c sendto.c setgroups.c setsid.c \
 	setgid.c settimeofday.c setuid.c shmat.c shmctl.c shmget.c stime.c \
 	vectorio.c shutdown.c sigaction.c sigpending.c sigreturn.c sigsuspend.c\
 	sigprocmask.c socket.c socketpair.c stat.c statvfs.c svrctl.c \

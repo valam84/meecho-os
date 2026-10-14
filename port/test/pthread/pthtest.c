@@ -18,6 +18,11 @@
  *			the main thread alone, a recursive mutex across it
  *	pthtest barrier	five threads, three rounds, one serial thread each
  *	pthtest cpu	pthread_getcpuclockid() and the CPU-time clocks
+ *	pthtest names	pthread_setname_np() (NetBSD's form; Mesa names its
+ *			queue threads), CLOCK_MONOTONIC_RAW (Panfrost's
+ *			counters run by it)
+ *	pthtest sched	the POSIX scheduling calls libc now has (Panfrost
+ *			asks for SCHED_FIFO): SCHED_OTHER only, ENOSYS to set
  *	pthtest c11	<threads.h> of libgfxcompat: a recursive mtx_t
  *
  * Every check prints a line; the last line counts them.
@@ -458,6 +463,79 @@ cpu(void)
 	check(r == -1 && errno == EINVAL, "a clock there is not", r, -1);
 }
 
+/* ---- names, and the raw monotonic clock ---- */
+
+static void *
+named(void *arg)
+{
+	(void)arg;
+	sched_yield();
+	return NULL;
+}
+
+static void
+names(void)
+{
+	char buf[PTHREAD_MAX_NAMELEN_NP];
+	struct timespec m, r, res;
+	char longname[64];
+	pthread_t t;
+	long d;
+	int rr;
+
+	rr = pthread_setname_np(pthread_self(), "main-%s", (void *)"x");
+	pthread_getname_np(pthread_self(), buf, sizeof(buf));
+	check(rr == 0 && strcmp(buf, "main-x") == 0, "the main thread named",
+	    rr, 0);
+	pthread_create(&t, NULL, named, NULL);
+	rr = pthread_setname_np(t, "worker", NULL);
+	buf[0] = '\0';
+	pthread_getname_np(t, buf, sizeof(buf));
+	check(rr == 0 && strcmp(buf, "worker") == 0, "another thread named",
+	    rr, 0);
+	memset(longname, 'n', sizeof(longname) - 1);
+	longname[sizeof(longname) - 1] = '\0';
+	rr = pthread_setname_np(t, longname, NULL);
+	check(rr == EINVAL, "a name too long", rr, EINVAL);
+	pthread_join(t, NULL);
+
+	rr = clock_gettime(CLOCK_MONOTONIC_RAW, &r);
+	clock_gettime(CLOCK_MONOTONIC, &m);
+	d = (m.tv_sec - r.tv_sec) * 1000 + (m.tv_nsec - r.tv_nsec) / 1000000;
+	check(rr == 0 && d >= 0 && d < 1000, "CLOCK_MONOTONIC_RAW is the "
+	    "monotonic clock (ms apart)", d, 0);
+	rr = clock_getres(CLOCK_MONOTONIC_RAW, &res);
+	check(rr == 0 && res.tv_nsec > 0, "... and has a resolution", rr, 0);
+}
+
+/* ---- POSIX scheduling calls: there, and saying there are no policies ---- */
+
+static void
+sched(void)
+{
+	struct sched_param sp = { .sched_priority = 1 };
+	int r;
+
+	r = sched_getscheduler(0);
+	check(r == SCHED_OTHER, "sched_getscheduler: SCHED_OTHER", r,
+	    SCHED_OTHER);
+	r = sched_get_priority_max(SCHED_OTHER);
+	check(r == 0, "its priority range is 0", r, 0);
+	errno = 0;
+	r = sched_get_priority_max(SCHED_FIFO);
+	check(r == -1 && errno == EINVAL, "no SCHED_FIFO", errno, EINVAL);
+	errno = 0;
+	r = sched_setscheduler(0, SCHED_FIFO, &sp);
+	check(r == -1 && errno == ENOSYS, "setting a policy: ENOSYS", errno,
+	    ENOSYS);
+	r = sched_getparam(0, &sp);
+	check(r == 0 && sp.sched_priority == 0, "sched_getparam", r, 0);
+	/* <sched.h> makes this __libc_thr_yield: libmthread's. */
+	r = sched_yield();
+	check(r == 0 || r == -1, "sched_yield through <sched.h> links and "
+	    "returns", r, 0);
+}
+
 /* ---- c11 ---- */
 
 static void
@@ -499,6 +577,10 @@ main(int argc, char **argv)
 		barrier();
 	if (all || strcmp(what, "cpu") == 0)
 		cpu();
+	if (all || strcmp(what, "names") == 0)
+		names();
+	if (all || strcmp(what, "sched") == 0)
+		sched();
 	if (all || strcmp(what, "c11") == 0)
 		c11();
 	printf("PTHTEST %d checks, %d failed\n", checks, failures);

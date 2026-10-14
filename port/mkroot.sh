@@ -96,6 +96,17 @@ then
 	    echo "WARNING: no display"
 fi
 
+# Ускоритель (Mali-G52, служба mali, /dev/dri/renderD128). На нём рисует
+# стол: meechowm берёт GLES2 через Mesa и рисует прямо в буферы развёртки
+# fb (их адреса fb публикует в DS, поэтому mali - после fb); без службы
+# стол рисует процессор (pixman), и ничего больше от неё не зависит.
+# Аргумент загрузки gpu=0 её не поднимает.
+if [ "`sysenv gpu 2>/dev/null`" != 0 ] && [ -x /service/mali ]
+then
+	minix-service up /service/mali -dev /dev/dri/renderD128 ||
+	    echo "WARNING: no GPU: the desktop draws with the processor"
+fi
+
 # Клавиатура. USB-клавиатура у платы печатает в ту же консольную линию, что
 # и последовательный порт, - getty, login и шелл их не различают, - а эхо
 # набранного видно и на линии, и на экране. Цепочка: xhci (контроллер, на

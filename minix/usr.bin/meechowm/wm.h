@@ -27,6 +27,8 @@ struct wlr_surface;
 
 struct tinywl_server {
 	struct mc_fb *fb;		/* the screen; NULL: headless */
+	struct wl_event_source *monitor_timer;	/* a monitor plugged in */
+	uint32_t monitor_gen;		/* the driver's count, last seen */
 	struct wl_display *wl_display;
 	struct wlr_backend *backend;
 	struct wlr_renderer *renderer;

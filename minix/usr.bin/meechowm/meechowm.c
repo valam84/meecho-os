@@ -73,6 +73,7 @@
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include "fb_ioc.h"
 #include "layout.h"
 #include "meechowm.h"
 #include "wm.h"
@@ -280,6 +281,47 @@ bool wm_set_mode(struct tinywl_server *server, unsigned width,
 		server->cursor->y);
 	wm_pointer_refresh(server);
 	return true;
+}
+
+/*
+ * MEECHO: a monitor plugged in while the compositor runs.  The driver sees
+ * its hot plug line, reads it, and - the screen being ours - leaves the
+ * mode to us: FBIOC_MODES counts the monitors come ("generation") and names
+ * the mode it would take ("preferred").  Asked once a second, one request;
+ * when the count moves, that mode is taken the way meechowm -m mode takes
+ * one, so that the frames and the screen change size together.
+ */
+static int monitor_check(void *data) {
+	struct tinywl_server *server = data;
+	struct fb_modes ms;
+
+	if (mc_fb_modes(server->fb, &ms) == 0 &&
+	    ms.generation != server->monitor_gen) {
+		server->monitor_gen = ms.generation;
+		if (ms.preferred < ms.n && ms.preferred != ms.current) {
+			const struct fb_modeinfo *m = &ms.mode[ms.preferred];
+
+			wlr_log(WLR_INFO, "a monitor came: %ux%u at %u Hz",
+				m->width, m->height, m->hz);
+			if (!wm_set_mode(server, m->width, m->height, m->hz))
+				wlr_log_errno(WLR_ERROR, "the monitor's mode");
+		}
+	}
+	wl_event_source_timer_update(server->monitor_timer, 1000);
+	return 0;
+}
+
+static void monitor_watch(struct tinywl_server *server) {
+	struct fb_modes ms;
+
+	if (server->fb == NULL || mc_fb_modes(server->fb, &ms) != 0)
+		return;
+	server->monitor_gen = ms.generation;
+	server->monitor_timer = wl_event_loop_add_timer(
+		wl_display_get_event_loop(server->wl_display), monitor_check,
+		server);
+	if (server->monitor_timer != NULL)
+		wl_event_source_timer_update(server->monitor_timer, 1000);
 }
 
 static void keyboard_handle_modifiers(
@@ -1232,6 +1274,8 @@ int main(int argc, char *argv[]) {
 	if (!ipc_start(&server)) {
 		wlr_log(WLR_ERROR, "no command socket: keys only");
 	}
+	/* MEECHO: and a monitor plugged in later, once a second. */
+	monitor_watch(&server);
 
 	/* Start the backend. This will enumerate outputs and inputs, become the DRM
 	 * master, etc */
@@ -1260,6 +1304,8 @@ int main(int argc, char *argv[]) {
 	/* Once wl_display_run returns, we destroy all clients then shut down the
 	 * server. */
 	ipc_stop();
+	if (server.monitor_timer != NULL)
+		wl_event_source_remove(server.monitor_timer);
 	wl_display_destroy_clients(server.wl_display);
 
 	wl_list_remove(&server.new_xdg_toplevel.link);

@@ -32,18 +32,21 @@ The desktop (PLAN.md, 11.7: "the minimal set and the house style"):
   compositor  meechowm        launcher  fuzzel (meechowm-palette)
   terminal    foot            wallpaper wbg (PNG, SVG through nanosvg)
   panel       yambar          screenshot grim (meechowm-shot, Print)
-  files       nnn (in foot)   typeface  Go Mono and Go (external/bsd/gofont)
-  editor      vi              monitor   mtop
+  files       nnn (in foot)   an area   slurp, then grim (meechowm-shot -r,
+  editor      vi                        Shift+Print)
+  monitor     mtop            typeface  Go Mono and Go (external/bsd/gofont)
 
 Packages: libffi 3.8.0, wayland 1.26.0, wayland-protocols 1.49, pixman
 0.46.4 and libdrm 2.4.134 (NetBSD-current's xsrc dists), libxkbcommon
 1.13.2, xkeyboard-config 2.38 (NetBSD's), wlroots 0.20.2, FreeType 2.15.0,
 fontconfig 2.18.3, tllist 1.1.0, fcft 3.3.3, foot 1.28.0, fuzzel 1.15.0,
 libyaml 0.2.5, yambar; for the rest of the desktop libpng 1.6.59, wbg
-1.3.0, grim 1.5.0, nnn 5.3 (external/bsd) and the Go fonts
-(external/bsd/gofont); expat is the tree's (external/mit/expat).  Licences
-MIT or BSD-like, FreeType under its FTL, libpng under its own; nothing GPL
-is imported (import-stack.sh says what is left out).
+1.3.0, grim 1.5.0, cairo 1.18.6, slurp 1.5.0, nnn 5.3 (external/bsd) and
+the Go fonts (external/bsd/gofont); expat is the tree's
+(external/mit/expat).  Licences MIT or BSD-like, FreeType under its FTL,
+libpng under its own, cairo under the MPL 1.1 (cairo is MPL-1.1 or
+LGPL-2.1; the tree takes the first); nothing GPL is imported
+(import-stack.sh says what is left out).
 
 Building, in this order (the first line once per tools build):
 
@@ -56,6 +59,7 @@ Building, in this order (the first line once per tools build):
       external/mit/tllist external/mit/fcft external/mit/foot \
       external/mit/libyaml external/mit/fuzzel external/mit/yambar \
       external/mit/libpng external/mit/wbg external/mit/grim \
+      external/mit/cairo external/mit/slurp \
       external/bsd/nnn external/bsd/gofont minix/share/style \
       minix/usr.bin/meechowm minix/tests/gfx
 
@@ -82,6 +86,21 @@ Makefile.inc (DETECT_OS_*, the C++ toolchain) and lib/libgallium/Makefile.
 Building: "port/build-dirs.sh external/mit/mesa" after libdrm; programs link
 with the second-pass g++: -lEGL -lGLESv2 -lgbm -lgallium -ldrm -lz
 -lepoll-shim -lgfxcompat -lmthread (../test/gles/glcube.c).
+
+cairo (1.18.6, stage 11.7): external/mit/cairo, static libcairo and its
+headers in /usr/include/cairo - the image surface on pixman, PNG and SVG,
+FreeType and fontconfig; no X11, GL, PostScript, PDF or script surface.
+A hundred and twenty files are a list one keeps by hand, so the Makefile
+is written, and meson's build checks it:
+
+  cairo-oracle.sh    configure cairo's meson for aarch64-elf64-minix as the
+                     Makefile builds it, compile the library, and compare:
+                     config.h and cairo-features.h (the tree's are what
+                     that wrote), the sources against SRCS, the files the
+                     objects read against dist/ - "same" four times, or
+                     what differs, for whoever imports the next release
+Programs link -lcairo -lpng -lz -lfontconfig -lexpat -lfreetype -lpixman-1
+-lgfxcompat -lmthread -lm (external/mit/slurp).
 
   import-stack.sh    every dist from its source (~/gfx-src: shallow clones
                      of the upstream tags; ~/gfxport/nb-xsrc: NetBSD's xsrc)
@@ -117,8 +136,11 @@ with the second-pass g++: -lEGL -lGLESv2 -lgbm -lgallium -ldrm -lz
   test/qemu-desk.py  the desktop as a user starts it (meecho-desktop), in
                      MEECHO's style: the Go fonts, the wallpaper, the
                      panel and foot on the palette's colours, nnn, the
-                     palette, grim against /dev/fb0, Print, the end of
-                     it all, the console back on ink; the frame as a PNG
+                     palette, grim against /dev/fb0, Print, slurp's
+                     overlay in the palette's colours (pixel by pixel),
+                     Shift+Print with a drag of the mouse (an area as a
+                     PNG of its size), the end of it all, the console back
+                     on ink; the frame as a PNG; -w: a WORK_DIR of its own
   test/board-desk.sh the same desktop on the board, over ssh, left on the
                      monitor ("board-desk.sh stop" ends it)
   test/board-shot.sh the board's screen as a PNG, over ssh from Git Bash:

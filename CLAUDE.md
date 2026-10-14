@@ -1408,6 +1408,14 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   foot терялся, и все curses-программы в foot были без цвета (теперь
   `pairs#0x7fff`). Стенд — `port/gfx/test/qemu-desk.py`. Разбор —
   `PORTING-LOG.md`, «Стол целиком».
+  **cairo 1.18.6 есть (2026-10-14, QEMU)** — `external/mit/cairo`, по
+  MPL: image/pixman, PNG, SVG, FreeType, fontconfig; Makefile руками,
+  `port/gfx/cairo-oracle.sh` сверяет его с meson-сборкой (после импорта
+  новой версии — «same» четыре раза). На нём slurp: **Shift+Print —
+  область** (`meechowm-shot -r`: slurp → `grim -g`). Программе без файла
+  настроек стиль даёт аргументы (`slurp.sh.in` →
+  `/usr/share/meecho/slurp.sh`). Стенд — `qemu-desk.py` 18 из 18 (`-w` —
+  свой WORK_DIR); разбор — «cairo и slurp: снимок области экрана».
 - **11.7, рентген (2026-10-14, QEMU): система на виду.** Ядро держит
   матрицу «кто → кому» **всегда** (`IPCFLOW`, `kernel/ipcflow.c`,
   `<minix/ipcflow.h>`): клетка на пару слотов, счёт — где сообщение ушло

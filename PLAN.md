@@ -1770,6 +1770,7 @@ SDMA или ADMA2 — решается по регистру возможнос�
   | запуск и команды | fuzzel (`meechowm-palette`, Super+d) | было |
   | обои | **wbg** 1.3.0 — SVG через nanosvg, PNG | новое, MIT |
   | снимок экрана | **grim** 1.5.0 (`meechowm-shot`, Print) + **libpng** 1.6.59 | новое, MIT / libpng |
+  | снимок области | **slurp** 1.5.0, затем grim (`meechowm-shot -r`, Shift+Print) + **cairo** 1.18.6 | новое, MIT / MPL 1.1 |
   | файлы | **nnn** 5.3, в foot | новое, BSD-2 |
   | редактор, монитор | vi, `mtop`, в foot | было |
   | шрифт | **Go Mono и Go** (Bigelow & Holmes) | новое, BSD-3 |
@@ -1791,11 +1792,26 @@ SDMA или ADMA2 — решается по регистру возможнос�
   тот же день: стол в 1080p на телевизоре (`board-desk.sh`), снимок grim —
   секунда; консоль платы — с новым драйвером `fb`.
 
+  **cairo и снимок области (2026-10-14, QEMU).** cairo 1.18.6 перенесён
+  (`external/mit/cairo`, по MPL 1.1): image на pixman, PNG и SVG, FreeType
+  и fontconfig; без X11, GL, PostScript, PDF и script. Makefile написан
+  руками, а `port/gfx/cairo-oracle.sh` сверяет его с meson-сборкой cairo
+  для `aarch64-elf64-minix` — `config.h`, `cairo-features.h`, исходники и
+  прочитанные файлы против импорта. На нём — slurp 1.5.0: Shift+Print
+  (`meechowm-shot -r`, пункт палитры) затемняет экран, протяжка мышью
+  выбирает прямоугольник, grim снимает его в `~/Pictures`. Цвета slurp — из
+  палитры: у него нет файла настроек, и стиль даёт ему аргументы
+  (`slurp.sh.in` → `/usr/share/meecho/slurp.sh`: пелена — `ink` с
+  прозрачностью, рамка и размер — синий MEECHO, Go Mono). `qemu-desk.py`
+  — 18 из 18: пелена сверена по пикселям (каждый — `ink` поверх прежнего,
+  область чистая, рамка `accent`, размер нарисован глифами), Shift+Print
+  с протяжкой даёт PNG 301×161, совпадающий с экраном. На плате — нет.
+  Разбор — `PORTING-LOG.md`, «cairo и slurp: снимок области экрана».
+
   **Отложено, с причиной.** Уведомления (fnott, mako) — нужен D-Bus;
-  блокировка экрана (swaylock), выбор области (slurp) — нужен cairo, а у
-  root нет пароля; просмотр картинок (imv — pango и cairo, swayimg — C++20
-  и Lua); буфер обмена wl-clipboard — GPL-3, в дерево не идёт. cairo
-  открывает сразу три программы — следующий кандидат на перенос.
+  блокировка экрана (swaylock) — cairo теперь есть, но у root нет пароля;
+  просмотр картинок (imv — ещё pango; swayimg — C++20 и Lua); буфер обмена
+  wl-clipboard — GPL-3, в дерево не идёт. swaybg не нужен: обои — wbg.
 
   **Рентген — система на виду (главная фишка).** По клавише окна уходят
   вглубь, вокруг встают службы, с которыми они говорят (VFS, MFS, lwip,

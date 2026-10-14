@@ -12,9 +12,10 @@ SUBDIR+=	mtop
 SUBDIR+=	toproto
 SUBDIR+=	trace
 
-# The compositor (stage 11.4), on the Wayland stack in external/mit.
+# The compositor (stage 11.4), on the Wayland stack in external/mit, and
+# its x-ray view of the system (11.7).
 .if ${MACHINE_ARCH} == "aarch64"
-SUBDIR+=	meechowm
+SUBDIR+=	meechowm meechowm-xray
 .endif
 
 .include <bsd.subdir.mk>

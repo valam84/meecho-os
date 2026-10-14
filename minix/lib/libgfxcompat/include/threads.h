@@ -34,7 +34,17 @@ enum { thrd_success = 0, thrd_busy, thrd_error, thrd_nomem, thrd_timedout };
 enum { mtx_plain = 0, mtx_recursive = 1, mtx_timed = 2 };
 
 static inline int mtx_init(mtx_t *m, int type)
-{ (void)type; return pthread_mutex_init(m, NULL) ? thrd_error : thrd_success; }
+{
+	pthread_mutexattr_t a;
+	int r;
+
+	pthread_mutexattr_init(&a);
+	if (type & mtx_recursive)
+		pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
+	r = pthread_mutex_init(m, &a);
+	pthread_mutexattr_destroy(&a);
+	return r ? thrd_error : thrd_success;
+}
 static inline int mtx_lock(mtx_t *m)
 { return pthread_mutex_lock(m) ? thrd_error : thrd_success; }
 static inline int mtx_trylock(mtx_t *m)

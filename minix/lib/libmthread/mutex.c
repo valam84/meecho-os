@@ -1,4 +1,5 @@
 #include <minix/mthread.h>
+#include <stdint.h>
 #include "global.h"
 #include "proto.h"
 
@@ -10,6 +11,7 @@ static void mthread_mutex_remove(mthread_mutex_t *m);
 # define mthread_mutex_add(m)		((*m)->mm_magic = MTHREAD_INIT_MAGIC)
 # define mthread_mutex_remove(m)	((*m)->mm_magic = MTHREAD_NOT_INUSE)
 #endif
+static int mthread_mutex_again(struct __mthread_mutex *m);
 
 /*===========================================================================*
  *				mthread_init_valid_mutexes		     *
@@ -67,8 +69,8 @@ mthread_mutex_t *mutex;
   /* Check if this mutex is not associated with a condition */
   for (t = (mthread_thread_t) 0; t < no_threads; t++) {
   	tcb = mthread_find_tcb(t);
-	if (tcb->m_state == MS_CONDITION) {
-		if (tcb->m_cond != NULL && tcb->m_cond->mc_mutex == *mutex) 
+	if (tcb->m_state == MS_CONDITION || tcb->m_timed) {
+		if (tcb->m_cond != NULL && tcb->m_cond->mc_mutex == *mutex)
 			return(EBUSY);
 	}
   }
@@ -89,14 +91,20 @@ int mthread_mutex_init(mutex, mattr)
 mthread_mutex_t *mutex;	/* Mutex that is to be initialized */
 mthread_mutexattr_t *mattr;	/* Mutex attribute */
 {
-/* Initialize the mutex to a known state. Attributes are not supported */
+/* Initialize the mutex to a known state. The one attribute is the type. */
 
   struct __mthread_mutex *m;
+  int type = MTHREAD_MUTEX_DEFAULT;
+
+  if (mattr != NULL)
+	type = (int) (intptr_t) *mattr;
 
   if (mutex == NULL)
   	return(EAGAIN);
-  else if (mattr != NULL)
-  	return(ENOSYS);
+  else if (type != MTHREAD_MUTEX_NORMAL &&
+	   type != MTHREAD_MUTEX_ERRORCHECK &&
+	   type != MTHREAD_MUTEX_RECURSIVE)
+  	return(EINVAL);
 #ifdef MTHREAD_STRICT
   else if (mthread_mutex_valid(mutex))
   	return(EBUSY);
@@ -106,11 +114,31 @@ mthread_mutexattr_t *mattr;	/* Mutex attribute */
 
   mthread_queue_init(&m->mm_queue);
   m->mm_owner = NO_THREAD;
+  m->mm_type = type;
+  m->mm_count = 0;
   *mutex = (mthread_mutex_t) m;
   mthread_mutex_add(mutex); /* Validate mutex; mutex now in use */
 
   return(0);
 }
+
+/*===========================================================================*
+ *				mthread_mutex_again			     *
+ *===========================================================================*/
+static int mthread_mutex_again(m)
+struct __mthread_mutex *m;	/* Mutex its owner locks once more */
+{
+/* A recursive mutex is held once more; any other kind would never be let go,
+ * and saying so beats hanging (POSIX leaves a normal one undefined). */
+
+  if (m->mm_type != MTHREAD_MUTEX_RECURSIVE)
+	return(EDEADLK);
+  if (m->mm_count == UINT_MAX)
+	return(EAGAIN);
+  m->mm_count++;
+  return(0);
+}
+
 
 /*===========================================================================*
  *				mthread_mutex_lock			     *
@@ -132,7 +160,7 @@ mthread_mutex_t *mutex;	/* Mutex that is to be locked */
   else if (m->mm_owner == NO_THREAD) { /* Not locked */
 	m->mm_owner = current_thread;
   } else if (m->mm_owner == current_thread) {
-  	return(EDEADLK);
+  	return(mthread_mutex_again(m));
   } else {
 	mthread_queue_add(&m->mm_queue, current_thread);
 	mthread_suspend(MS_MUTEX);
@@ -181,7 +209,7 @@ mthread_mutex_t *mutex;	/* Mutex that is to be locked */
   if (!mthread_mutex_valid(&m))
   	return(EINVAL);
   else if (m->mm_owner == current_thread)
-	return(EDEADLK);
+	return(mthread_mutex_again(m));
   else if (m->mm_owner == NO_THREAD) {
 	m->mm_owner = current_thread;
 	return(0);
@@ -208,8 +236,12 @@ mthread_mutex_t *mutex;	/* Mutex that is to be unlocked */
   m = (struct __mthread_mutex *) *mutex;
   if (!mthread_mutex_valid(&m))
 	return(EINVAL);
-  else if (m->mm_owner != current_thread) 
+  else if (m->mm_owner != current_thread)
   	return(EPERM);	/* Can't unlock a mutex locked by another thread. */
+  else if (m->mm_count > 0) {
+	m->mm_count--;	/* A recursive one, still held */
+	return(0);
+  }
 
   m->mm_owner = mthread_queue_remove(&m->mm_queue);
   if (m->mm_owner != NO_THREAD) mthread_unsuspend(m->mm_owner);
@@ -241,6 +273,46 @@ mthread_mutex_t *m;
 #endif
 
 /*===========================================================================*
+ *				mthread_mutexattr_*			     *
+ *===========================================================================*/
+int mthread_mutexattr_init(mattr)
+mthread_mutexattr_t *mattr;
+{
+  if (mattr == NULL)
+	return(EINVAL);
+  *mattr = (mthread_mutexattr_t) (intptr_t) MTHREAD_MUTEX_DEFAULT;
+  return(0);
+}
+
+int mthread_mutexattr_destroy(mattr)
+mthread_mutexattr_t *mattr;
+{
+  return(mattr == NULL ? EINVAL : 0);
+}
+
+int mthread_mutexattr_settype(mattr, type)
+mthread_mutexattr_t *mattr;
+int type;
+{
+  if (mattr == NULL || (type != MTHREAD_MUTEX_NORMAL &&
+      type != MTHREAD_MUTEX_ERRORCHECK && type != MTHREAD_MUTEX_RECURSIVE))
+	return(EINVAL);
+  *mattr = (mthread_mutexattr_t) (intptr_t) type;
+  return(0);
+}
+
+int mthread_mutexattr_gettype(mattr, type)
+const mthread_mutexattr_t *mattr;
+int *type;
+{
+  if (mattr == NULL || type == NULL)
+	return(EINVAL);
+  *type = (int) (intptr_t) *mattr;
+  return(0);
+}
+
+
+/*===========================================================================*
  *				mthread_mutex_verify			     *
  *===========================================================================*/
 #ifdef MDEBUG
@@ -263,3 +335,9 @@ int mthread_mutex_verify(void)
   return(r);
 }
 #endif
+
+/* pthread compatibility layer. */
+__weak_alias(pthread_mutexattr_destroy, mthread_mutexattr_destroy)
+__weak_alias(pthread_mutexattr_gettype, mthread_mutexattr_gettype)
+__weak_alias(pthread_mutexattr_init, mthread_mutexattr_init)
+__weak_alias(pthread_mutexattr_settype, mthread_mutexattr_settype)

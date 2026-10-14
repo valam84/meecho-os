@@ -28,6 +28,9 @@ struct __mthread_tcb {
   struct __mthread_attr m_attr;		/* Thread attributes */
   struct __mthread_cond *m_cond;	/* Condition variable that this thread
   					 * might be blocking on */
+  int m_timed;				/* Waits on m_cond with a deadline:
+					 * runnable, taking turns (condition.c) */
+  int m_woken;				/* ... and has been signalled */
   void *(*m_proc)(void *);		/* Procedure to run */
   void *m_arg;				/* Argument passed to procedure */
   void *m_result;			/* Result after procedure returns */

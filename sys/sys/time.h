@@ -286,6 +286,12 @@ struct	itimerspec {
 #define	CLOCK_PROF	2
 #endif /* !defined(__minix) */
 #define	CLOCK_MONOTONIC	3
+/*
+ * NetBSD's numbers (it has them since 2016).  On MINIX a thread is the
+ * user-level kind and has no time of its own: both are the process's.
+ */
+#define	CLOCK_THREAD_CPUTIME_ID		0x20000000
+#define	CLOCK_PROCESS_CPUTIME_ID	0x40000000
 
 #if defined(_NETBSD_SOURCE)
 #define	TIMER_RELTIME	0x0	/* relative timer */

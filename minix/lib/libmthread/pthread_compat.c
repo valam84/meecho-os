@@ -51,6 +51,19 @@ int pthread_mutex_lock(pthread_mutex_t *mutex)
 }
 
 /*===========================================================================*
+ *				pthread_mutex_timedlock			     *
+ *===========================================================================*/
+int pthread_mutex_timedlock(pthread_mutex_t *mutex,
+	const struct timespec *abstime)
+{
+	if (PTHREAD_MUTEX_INITIALIZER == *mutex) {
+		mthread_mutex_init(mutex, NULL);
+	}
+
+	return mthread_mutex_timedlock(mutex, abstime);
+}
+
+/*===========================================================================*
  *				pthread_mutex_trylock			     *
  *===========================================================================*/
 int pthread_mutex_trylock(pthread_mutex_t *mutex)
@@ -123,6 +136,19 @@ int pthread_cond_signal(pthread_cond_t *cond)
 	}
 
 	return mthread_cond_signal(cond);
+}
+
+/*===========================================================================*
+ *				pthread_cond_timedwait			     *
+ *===========================================================================*/
+int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
+	const struct timespec *abstime)
+{
+	if (PTHREAD_COND_INITIALIZER == *cond) {
+		mthread_cond_init(cond, NULL);
+	}
+
+	return mthread_cond_timedwait(cond, mutex, abstime);
 }
 
 /*===========================================================================*

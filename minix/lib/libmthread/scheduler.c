@@ -147,6 +147,31 @@ mthread_thread_t thread; /* Thread to make runnable */
 
 
 /*===========================================================================*
+ *				mthread_getcpuclockid			     *
+ *===========================================================================*/
+int mthread_getcpuclockid(thread, clock)
+mthread_thread_t thread;
+clockid_t *clock;
+{
+/* The CPU-time clock of a thread.  The threads are user-level: the kernel
+ * sees the process, and a thread's time cannot be told from its siblings'.
+ * So every thread's clock is its process's, said as truthfully as POSIX
+ * lets it be said.
+ */
+  if (!isokthreadid(thread))
+	return(ESRCH);
+  if (thread != MAIN_THREAD) {
+	mthread_tcb_t *tcb = mthread_find_tcb(thread);
+
+	if (tcb->m_state == MS_DEAD)
+		return(ESRCH);
+  }
+  *clock = CLOCK_PROCESS_CPUTIME_ID;
+  return(0);
+}
+
+
+/*===========================================================================*
  *				mthread_yield				     *
  *===========================================================================*/
 int mthread_yield(void)
@@ -212,6 +237,7 @@ void mthread_yield_all(void)
 }
 
 /* pthread compatibility layer. */
+__weak_alias(pthread_getcpuclockid, mthread_getcpuclockid)
 __weak_alias(pthread_yield, mthread_yield)
 __weak_alias(sched_yield, mthread_yield)
 __weak_alias(pthread_yield_all, mthread_yield_all)

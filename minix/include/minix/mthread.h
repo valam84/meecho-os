@@ -9,13 +9,20 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <time.h>
 #include <sys/signal.h>
 
 typedef int mthread_thread_t;
 typedef int mthread_once_t;
 typedef int mthread_key_t;
+/*
+ * An attribute object is one value and holds it in place, so neither needs
+ * allocating or freeing: a mutex attribute is its type (MTHREAD_MUTEX_*),
+ * a condition attribute the clock its timed waits are measured by.
+ */
 typedef void * mthread_condattr_t;
 typedef void * mthread_mutexattr_t;
+typedef void * mthread_barrierattr_t;
 
 struct __mthread_tcb;
 typedef struct {
@@ -31,6 +38,8 @@ struct __mthread_mutex {
   struct __mthread_mutex *mm_next;
 #endif
   unsigned int mm_magic;
+  int mm_type;			/* MTHREAD_MUTEX_* */
+  unsigned int mm_count;	/* Times a recursive one is held beyond once */
 };
 typedef struct __mthread_mutex *mthread_mutex_t;
 
@@ -41,8 +50,12 @@ struct __mthread_cond {
   struct __mthread_cond *mc_next;
 #endif
   unsigned int mc_magic;
+  clockid_t mc_clock;		/* What a timed wait's deadline is in */
 };
 typedef struct __mthread_cond *mthread_cond_t;
+
+struct __mthread_barrier;
+typedef struct __mthread_barrier *mthread_barrier_t;
 
 struct __mthread_attr {
   size_t ma_stacksize;
@@ -71,6 +84,13 @@ typedef struct {
 #define MTHREAD_STACK_MIN MINSIGSTKSZ
 #define MTHREAD_KEYS_MAX 128
 
+/* NetBSD's numbers, so that its headers and ours agree. */
+#define MTHREAD_MUTEX_NORMAL 0		/* Locking it again: EDEADLK */
+#define MTHREAD_MUTEX_ERRORCHECK 1	/* The same */
+#define MTHREAD_MUTEX_RECURSIVE 2	/* Locking it again: held once more */
+#define MTHREAD_MUTEX_DEFAULT MTHREAD_MUTEX_NORMAL
+#define MTHREAD_BARRIER_SERIAL_THREAD (-1)
+
 __BEGIN_DECLS
 /* allocate.c */
 int mthread_create(mthread_thread_t *thread, mthread_attr_t *tattr, void
@@ -96,12 +116,27 @@ int mthread_attr_setstack(mthread_attr_t *tattr, void *stackaddr, size_t
 int mthread_attr_setstacksize(mthread_attr_t *tattr, size_t stacksize);
 
 
+/* barrier.c */
+int mthread_barrier_destroy(mthread_barrier_t *barrier);
+int mthread_barrier_init(mthread_barrier_t *barrier,
+	const mthread_barrierattr_t *battr, unsigned int count);
+int mthread_barrier_wait(mthread_barrier_t *barrier);
+int mthread_barrierattr_destroy(mthread_barrierattr_t *battr);
+int mthread_barrierattr_init(mthread_barrierattr_t *battr);
+
 /* condition.c */
 int mthread_cond_broadcast(mthread_cond_t *cond);
 int mthread_cond_destroy(mthread_cond_t *cond);
 int mthread_cond_init(mthread_cond_t *cond, mthread_condattr_t *cattr);
 int mthread_cond_signal(mthread_cond_t *cond);
+int mthread_cond_timedwait(mthread_cond_t *cond, mthread_mutex_t *mutex,
+	const struct timespec *abstime);
 int mthread_cond_wait(mthread_cond_t *cond, mthread_mutex_t *mutex);
+int mthread_condattr_destroy(mthread_condattr_t *cattr);
+int mthread_condattr_getclock(const mthread_condattr_t *cattr,
+	clockid_t *clock);
+int mthread_condattr_init(mthread_condattr_t *cattr);
+int mthread_condattr_setclock(mthread_condattr_t *cattr, clockid_t clock);
 
 /* key.c */
 int mthread_key_create(mthread_key_t *key, void (*destructor)(void *));
@@ -121,8 +156,14 @@ int mthread_mutex_destroy(mthread_mutex_t *mutex);
 int mthread_mutex_init(mthread_mutex_t *mutex, mthread_mutexattr_t
 	*mattr);
 int mthread_mutex_lock(mthread_mutex_t *mutex);
+int mthread_mutex_timedlock(mthread_mutex_t *mutex,
+	const struct timespec *abstime);
 int mthread_mutex_trylock(mthread_mutex_t *mutex);
 int mthread_mutex_unlock(mthread_mutex_t *mutex);
+int mthread_mutexattr_destroy(mthread_mutexattr_t *mattr);
+int mthread_mutexattr_gettype(const mthread_mutexattr_t *mattr, int *type);
+int mthread_mutexattr_init(mthread_mutexattr_t *mattr);
+int mthread_mutexattr_settype(mthread_mutexattr_t *mattr, int type);
 
 /* event.c */
 int mthread_event_destroy(mthread_event_t *event);
@@ -139,6 +180,7 @@ int mthread_rwlock_wrlock(mthread_rwlock_t *rwlock);
 int mthread_rwlock_unlock(mthread_rwlock_t *rwlock);
 
 /* schedule.c */
+int mthread_getcpuclockid(mthread_thread_t thread, clockid_t *clock);
 int mthread_yield(void);
 void mthread_yield_all(void);
 __END_DECLS
@@ -154,6 +196,8 @@ typedef mthread_mutexattr_t pthread_mutexattr_t;
 typedef mthread_attr_t pthread_attr_t;
 typedef mthread_event_t pthread_event_t;
 typedef mthread_rwlock_t pthread_rwlock_t;
+typedef mthread_barrier_t pthread_barrier_t;
+typedef mthread_barrierattr_t pthread_barrierattr_t;
 
 /* LSC: No equivalent, so void* for now. */
 typedef void *pthread_rwlockattr_t;
@@ -161,6 +205,11 @@ typedef void *pthread_rwlockattr_t;
 #define PTHREAD_ONCE_INIT 0
 #define PTHREAD_MUTEX_INITIALIZER ((pthread_mutex_t) -1)
 #define PTHREAD_COND_INITIALIZER ((pthread_cond_t) -1)
+#define PTHREAD_MUTEX_NORMAL MTHREAD_MUTEX_NORMAL
+#define PTHREAD_MUTEX_ERRORCHECK MTHREAD_MUTEX_ERRORCHECK
+#define PTHREAD_MUTEX_RECURSIVE MTHREAD_MUTEX_RECURSIVE
+#define PTHREAD_MUTEX_DEFAULT MTHREAD_MUTEX_DEFAULT
+#define PTHREAD_BARRIER_SERIAL_THREAD MTHREAD_BARRIER_SERIAL_THREAD
 
 __BEGIN_DECLS
 /* allocate.c */
@@ -186,12 +235,27 @@ int pthread_attr_setstack(pthread_attr_t *tattr, void *stackaddr, size_t
 	stacksize);
 int pthread_attr_setstacksize(pthread_attr_t *tattr, size_t stacksize);
 
+/* barrier.c */
+int pthread_barrier_destroy(pthread_barrier_t *barrier);
+int pthread_barrier_init(pthread_barrier_t *barrier,
+	const pthread_barrierattr_t *battr, unsigned int count);
+int pthread_barrier_wait(pthread_barrier_t *barrier);
+int pthread_barrierattr_destroy(pthread_barrierattr_t *battr);
+int pthread_barrierattr_init(pthread_barrierattr_t *battr);
+
 /* condition.c */
 int pthread_cond_broadcast(pthread_cond_t *cond);
 int pthread_cond_destroy(pthread_cond_t *cond);
 int pthread_cond_init(pthread_cond_t *cond, pthread_condattr_t *cattr);
 int pthread_cond_signal(pthread_cond_t *cond);
+int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
+	const struct timespec *abstime);
 int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
+int pthread_condattr_destroy(pthread_condattr_t *cattr);
+int pthread_condattr_getclock(const pthread_condattr_t *cattr,
+	clockid_t *clock);
+int pthread_condattr_init(pthread_condattr_t *cattr);
+int pthread_condattr_setclock(pthread_condattr_t *cattr, clockid_t clock);
 
 /* key.c */
 int pthread_key_create(pthread_key_t *key, void (*destructor)(void *));
@@ -204,8 +268,14 @@ int pthread_mutex_destroy(pthread_mutex_t *mutex);
 int pthread_mutex_init(pthread_mutex_t *mutex, pthread_mutexattr_t
 	*mattr);
 int pthread_mutex_lock(pthread_mutex_t *mutex);
+int pthread_mutex_timedlock(pthread_mutex_t *mutex,
+	const struct timespec *abstime);
 int pthread_mutex_trylock(pthread_mutex_t *mutex);
 int pthread_mutex_unlock(pthread_mutex_t *mutex);
+int pthread_mutexattr_destroy(pthread_mutexattr_t *mattr);
+int pthread_mutexattr_gettype(const pthread_mutexattr_t *mattr, int *type);
+int pthread_mutexattr_init(pthread_mutexattr_t *mattr);
+int pthread_mutexattr_settype(pthread_mutexattr_t *mattr, int type);
 
 /* event.c */
 int pthread_event_destroy(pthread_event_t *event);
@@ -223,16 +293,10 @@ int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 
 /* schedule.c */
+int pthread_getcpuclockid(pthread_t thread, clockid_t *clock);
 int pthread_yield(void);
 int sched_yield(void);
 void pthread_yield_all(void);
-
-/* LSC: FIXME: Maybe we should really do something with those... */
-#define pthread_mutexattr_init(u) (0)
-#define pthread_mutexattr_destroy(u) (0)
-
-#define PTHREAD_MUTEX_RECURSIVE 0
-#define pthread_mutexattr_settype(x, y) (EINVAL)
 __END_DECLS
 
 #endif /* defined(_MTHREADIFY_PTHREADS) */

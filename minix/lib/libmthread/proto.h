@@ -13,6 +13,11 @@ int mthread_attr_verify(void);
 
 /* cond.c */
 void mthread_init_valid_conditions(void);
+#ifdef MTHREAD_STRICT
+int mthread_cond_valid(mthread_cond_t *c);
+#else
+# define mthread_cond_valid(c) ((*c)->mc_magic == MTHREAD_INIT_MAGIC)
+#endif
 #ifdef MDEBUG
 int mthread_cond_verify(void);
 #endif
@@ -58,6 +63,9 @@ void mthread_tls_init_main(mthread_tcb_t *tcb);
 void mthread_tls_new(mthread_tcb_t *tcb);
 void mthread_tls_free(mthread_tcb_t *tcb);
 void mthread_tls_switch(mthread_tcb_t *to);
+
+/* timed.c */
+int mthread_timed_turn(clockid_t clock, const struct timespec *abstime);
 
 /* queue.c */
 #ifdef MDEBUG

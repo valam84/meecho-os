@@ -21,7 +21,7 @@
 int
 do_gettime(void)
 {
-  clock_t ticks, realtime, clock;
+  clock_t ticks, realtime, clock, user_time, sys_time;
   time_t boottime;
   int s;
 
@@ -34,6 +34,17 @@ do_gettime(void)
 		break;
 	case CLOCK_MONOTONIC:
 		clock = ticks;
+		break;
+	case CLOCK_PROCESS_CPUTIME_ID:
+	case CLOCK_THREAD_CPUTIME_ID:
+		/* The caller's own time, as times(2) has it: its threads are
+		 * user-level, and the kernel knows the process only.
+		 */
+		if ((s = sys_times(who_e, &user_time, &sys_time, NULL,
+		    NULL)) != OK)
+			return s;
+		clock = user_time + sys_time;
+		boottime = 0;
 		break;
 	default:
 		return EINVAL; /* invalid/unsupported clock_id */
@@ -55,6 +66,8 @@ do_getres(void)
   switch (m_in.m_lc_pm_time.clk_id) {
 	case CLOCK_REALTIME:
 	case CLOCK_MONOTONIC:
+	case CLOCK_PROCESS_CPUTIME_ID:
+	case CLOCK_THREAD_CPUTIME_ID:
 		/* tv_sec is always 0 since system_hz is an int */
 		mp->mp_reply.m_pm_lc_time.sec = 0;
 		mp->mp_reply.m_pm_lc_time.nsec = 1000000000 / system_hz;

@@ -108,6 +108,21 @@
  * header itself: it brings MINIX's system macros with it.)
  */
 #define DRM_MAJOR 18
+
+/*
+ * MINIX: opening the node gives a context of one's own - a cloned minor of
+ * the service, as /dev/ptmx gives a terminal, numbered from 0 - so the
+ * descriptor's st_rdev names no node in /dev/dri, and everything below
+ * that goes from a descriptor to its node (its type, its name, its
+ * drmDevice) found none: wlroots could not reopen the device for its GBM
+ * allocator, Mesa's loader said "failed to retrieve device information".
+ * A minor below the render nodes' is a context, and the node it came
+ * through is the render node: there is one DRM device, renderD128.
+ */
+static int drmMinixNodeMinor(int maj, int min)
+{
+    return (maj == DRM_MAJOR && min < 128) ? 128 : min;
+}
 #endif
 
 #ifndef DRM_MAJOR
@@ -3368,6 +3383,9 @@ drm_public int drmGetNodeTypeFromFd(int fd)
 
     maj = major(sbuf.st_rdev);
     min = minor(sbuf.st_rdev);
+#ifdef __minix
+    min = drmMinixNodeMinor(maj, min);
+#endif
 
     if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode)) {
         errno = EINVAL;
@@ -3521,6 +3539,9 @@ static char *drmGetMinorNameForFD(int fd, int type)
 
     maj = major(sbuf.st_rdev);
     min = minor(sbuf.st_rdev);
+#ifdef __minix
+    min = drmMinixNodeMinor(maj, min);
+#endif
 
     if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
         return NULL;
@@ -4918,6 +4939,10 @@ drm_public int drmGetDeviceFromDevId(dev_t find_rdev, uint32_t flags, drmDeviceP
 
     maj = major(find_rdev);
     min = minor(find_rdev);
+#ifdef __minix
+    min = drmMinixNodeMinor(maj, min);
+    find_rdev = makedev(maj, min);	/* matched against the nodes below */
+#endif
 
     if (!drmNodeIsDRM(maj, min))
         return -EINVAL;
@@ -4974,6 +4999,9 @@ drm_public int drmGetNodeTypeFromDevId(dev_t devid)
 
     maj = major(devid);
     min = minor(devid);
+#ifdef __minix
+    min = drmMinixNodeMinor(maj, min);
+#endif
 
     if (!drmNodeIsDRM(maj, min))
         return -EINVAL;
@@ -5157,6 +5185,9 @@ drm_public char *drmGetDeviceNameFromFd2(int fd)
 
     maj = major(sbuf.st_rdev);
     min = minor(sbuf.st_rdev);
+#ifdef __minix
+    min = drmMinixNodeMinor(maj, min);
+#endif
 
     if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
         return NULL;

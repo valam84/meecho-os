@@ -54,9 +54,20 @@ typedef char fb_logdump_fits[(sizeof(struct fb_logdump) <= 4095) ? 1 : -1];
  * - (shown + 1) % 3, cycling.  With two, it returns once "buf" is on the
  * screen, so the other may be drawn into.  Rows y0..y1-1 only are cleaned
  * if y1 > y0: damage.
+ *
+ * FB_FLIP_GPU in flags: a device drew the buffer, not a processor - the
+ * GPU, given the buffers by the mali service (stage 11.7, meecho_drm.h) -
+ * so nothing of it is in a processor's cache to clean, and nothing is
+ * cleaned.  The driver drops what its caches may hold of such a buffer
+ * before it reads it itself (read(2)) and when the screen is given back.
+ *
+ * The buffers' physical addresses are published in DS (fb.scanout.n,
+ * fb.scanout.size, fb.scanout.N, meecho_drm.h): the GPU service takes
+ * only those pages for a frame.
  */
 #define FB_MAX_BUFFERS	3
 #define FB_FORMAT_XRGB8888	0x34325258u	/* fourcc 'XR24' */
+#define FB_FLIP_GPU		0x1
 
 struct fb_map {
 	uint32_t	width, height;	/* pixels */
@@ -72,7 +83,7 @@ struct fb_map {
 struct fb_flip {
 	uint32_t	buf;
 	uint32_t	y0, y1;		/* rows drawn since its last showing */
-	uint32_t	_pad;
+	uint32_t	flags;		/* FB_FLIP_* */
 };
 
 #define FBIOC_MAP	_IOR('V', 0x41, struct fb_map)

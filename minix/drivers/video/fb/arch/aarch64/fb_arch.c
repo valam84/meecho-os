@@ -33,6 +33,7 @@
  */
 
 #include <minix/chardriver.h>
+#include <minix/ds.h>
 #include <minix/drivers.h>
 #include <minix/fb.h>
 #include <minix/fdt.h>
@@ -58,6 +59,7 @@
 #include "fbcon.h"
 #include "display.h"
 #include "fb_ioc.h"
+#include "meecho_drm.h"
 
 static void ring_log(struct log *driver, int level, const char *file,
 	const char *function, int line, const char *fmt, ...);
@@ -144,6 +146,12 @@ static phys_bytes buf_phys[FB_MAX_BUFFERS];
 static int nbuf;			/* made so far */
 static int shown;			/* the one the controller reads */
 static endpoint_t owner = NONE;		/* who has mapped them */
+/*
+ * Drawn by the GPU since a processor last had it (FB_FLIP_GPU): what the
+ * caches hold of it is older than memory, and is dropped before this
+ * driver reads it or the console draws into it (drop_buffer()).
+ */
+static int gpu_drawn[FB_MAX_BUFFERS];
 
 /*
  * The cursor's pictures (FBIOC_CURSOR_MAP, FBIOC_CURSOR): made on the first
@@ -888,6 +896,51 @@ flush_rows(int b, unsigned y0, unsigned y1)
 }
 
 /*
+ * A buffer the GPU drew, to the processor: clean and invalidate it whole,
+ * in pieces.  Invalidate for the stale lines a processor may hold - fetched
+ * before the GPU wrote, or by speculation - and clean first, which writes
+ * nothing back here (no processor wrote it since) but is the safe one of
+ * the two whatever the caches hold.
+ */
+static void
+drop_buffer(int b)
+{
+	size_t off, n;
+
+	if (!gpu_drawn[b])
+		return;
+	for (off = 0; off < buf_bytes; off += n) {
+		n = buf_bytes - off < FLUSH_PIECE ? buf_bytes - off :
+		    FLUSH_PIECE;
+		(void)sys_cachectl(CACHE_CLEAN_INVALIDATE,
+		    (void *)(buf_vir[b] + off), n);
+	}
+	gpu_drawn[b] = 0;
+}
+
+/*
+ * The scanout buffers to DS, for the GPU service (meecho_drm.h): their
+ * physical addresses - below 4 GiB, as the window needs - and size.  The
+ * count goes last: a reader that sees n sees the n addresses.
+ */
+static void
+publish_buffers(void)
+{
+	char key[DS_MAX_KEYLEN];
+	int i;
+
+	(void)ds_publish_u32(MEECHO_DS_SCANOUT_SIZE, (u32_t)buf_bytes,
+	    DSF_OVERWRITE);
+	for (i = 0; i < nbuf; i++) {
+		snprintf(key, sizeof(key), MEECHO_DS_SCANOUT, i);
+		(void)ds_publish_u32(key, (u32_t)buf_phys[i], DSF_OVERWRITE);
+		snprintf(key, sizeof(key), MEECHO_DS_SCANOUT_VIR, i);
+		(void)ds_publish_u32(key, (u32_t)buf_vir[i], DSF_OVERWRITE);
+	}
+	(void)ds_publish_u32(MEECHO_DS_SCANOUT_N, (u32_t)nbuf, DSF_OVERWRITE);
+}
+
+/*
  * Put buffer b on the screen at the next frame start.  With three buffers
  * the call does not wait for it (see vop2_scanout() and FBIOC_FLIP); with
  * fewer it returns when b is there.
@@ -952,6 +1005,7 @@ do_map(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 		}
 		m.addr[i] = (uint64_t)(uintptr_t)v;
 	}
+	publish_buffers();
 	owner = user_ep;
 	log_info(&fb_log, "%d scanout buffer(s) mapped into %d\n", nbuf,
 	    user_ep);
@@ -969,9 +1023,11 @@ do_flip(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 		return EPERM;
 	if ((r = sys_safecopyfrom(ep, gid, 0, (vir_bytes)&f, sizeof(f))) != OK)
 		return r;
-	if (f.buf >= (uint32_t)nbuf)
+	if (f.buf >= (uint32_t)nbuf || (f.flags & ~FB_FLIP_GPU))
 		return EINVAL;
-	if (f.y1 > f.y0)
+	if (f.flags & FB_FLIP_GPU)
+		gpu_drawn[f.buf] = 1;	/* nothing in the caches to clean */
+	else if (f.y1 > f.y0)
 		flush_rows((int)f.buf, f.y0, f.y1);
 	else
 		flush_rows((int)f.buf, 0, mode.vdisplay);
@@ -1360,11 +1416,16 @@ arch_fb_tick(int minor)
 void
 arch_fb_release(int minor)
 {
+	int b;
+
 	if (minor != 0 || status <= 0)
 		return;
 	if (owner != NONE)
 		log_info(&fb_log, "the screen is given back by %d\n", owner);
 	owner = NONE;
+	/* The console draws with the processor, the next owner may too. */
+	for (b = 0; b < nbuf; b++)
+		drop_buffer(b);
 	hide_cursor();
 	if (shown != 0)
 		(void)show(0);
@@ -1555,6 +1616,7 @@ arch_get_device(int minor, struct device *dev)
 	if (minor != 0 || status <= 0)
 		return ENXIO;
 	/* read(2) shows what is on the screen: fbpeek reads it this way. */
+	drop_buffer(shown);
 	dev->dv_base = buf_vir[shown];
 	dev->dv_size = fb_size;
 	return OK;

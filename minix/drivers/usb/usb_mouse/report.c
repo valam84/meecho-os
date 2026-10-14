@@ -30,6 +30,11 @@
  * "moved this far, and the buttons are now these" - a click that comes
  * with motion lands where the motion ended.  Releases before presses, so
  * that a reader never sees more buttons down at once than were.
+ *
+ * The order is a contract: the input server marks no end of a report, and
+ * meechowm (mousesplit.c) finds the ends by it - an event out of this
+ * order begins the next report.  port/gfx/test/mousetest.sh builds this
+ * file in front of that one.
  */
 #include "report.h"
 

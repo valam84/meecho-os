@@ -1,0 +1,6 @@
+# MEECHO с корнем на eMMC под проверку уведомлений (meechowm-notify):
+# только слушать - линия хаб -> плата мертва, всё делается по ssh
+# (port/gfx/test/board-notify.sh). Минута после приглашения - rc поднял
+# сеть и sshd; плата остаётся в MEECHO. Запускать с board-cycle.sh -e -l.
+600 WAIT login:
+60 WAIT will-not-appear-xyzzy

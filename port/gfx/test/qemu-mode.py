@@ -24,6 +24,14 @@ half a screen wide - and then:
      1024x768 current; 1920x1080, 800x600 and 1280x720, each the frame's
      geometry and the console's text drawn in it; a mode the screen does
      not have (status 1) and a word that is not a mode (status 2)
+  6. a monitor plugged in under the compositor (before 4; FBIOC_VPLUG,
+     port/test/fb/fbvplug.c): one with 1024x768 and 800x600 only - the
+     compositor takes 1024x768 by itself, the list is that monitor's, the
+     windows are in their places; taken out - the mode stays; the first
+     monitor back - 1280x720 again
+  7. the same at the console (after 5): the driver changes the mode by
+     itself, the console's text in the new frame; the same monitor out
+     and back in - the mode stays
 
     python3 port/gfx/test/qemu-mode.py [-x]
 
@@ -89,6 +97,16 @@ def main():
     stop_at_failure = a.x
 
     qemu_meechowm.stage()
+    if subprocess.call([qemu_meechowm.XCC, "-O2", "-static", "-Wall",
+                        "-Wextra", "--sysroot=" + qemu_meechowm.DEST,
+                        "-I" + os.path.join(HERE, "..", "..", "..", "minix",
+                                            "drivers", "video", "fb", "arch",
+                                            "aarch64"),
+                        "-o", os.path.join(qemu_meechowm.DEST,
+                                           GUESTDIR.lstrip("/"), "fbvplug"),
+                        os.path.join(HERE, "..", "..", "test", "fb",
+                                     "fbvplug.c")]) != 0:
+        sys.exit("build failed: fbvplug")
     os.makedirs(WORK, exist_ok=True)
     env = dict(os.environ, WORK_DIR=WORK, QEMU_TIMEOUT="2400",
                QEMU_SMP="1", DISK_FRESH="1")
@@ -246,6 +264,44 @@ def main():
         st = state()
         record("3. the screen as it was", settled(st, 1280, 720), "%s" % st)
 
+        def modes_now(cmd="meechowm -m modes"):
+            out = run(cmd).strip().split("\n")
+            return [l.strip() for l in out
+                    if re.match(r"\d+x\d+@\d+", l.strip())]
+
+        # Another monitor: the first one out (the line held low long
+        # enough to count), then this one in.
+        run("$G/fbvplug 0; sleep 1; $G/fbvplug 2")
+        st = wait_for(lambda s: settled(s, 1024, 768), 60)
+        cols = st["cols"]
+        record("6. a 1024x768 monitor under the compositor: taken by it",
+               settled(st, 1024, 768) and
+               [c["w"] for c in cols] == [half(1024)] * 2,
+               "%s" % st)
+        got = modes_now()
+        record("6. the list is that monitor's",
+               got == ["1024x768@60 current", "800x600@60"], "%s" % got)
+        geo = fbart("-w 1 -h 1")[0]
+        record("6. the frame", geo == (1024, 768, 4096), "%s" % (geo,))
+        for c, colour, name in ((0, BLUE, "blue"), (1, RED, "red")):
+            if len(cols) < 2:
+                break
+            x = cols[c]["x"] + cols[c]["w"] // 2
+            y = cols[c]["y"] + cols[c]["h"] // 2
+            bg = fbart("-x %d -y %d -w 4 -h 4 -s 1" % (x, y))[1]
+            record("6. %s in its column" % name, bg == colour,
+                   "0x%06x at %d,%d" % (bg, x, y))
+        run("$G/fbvplug 0")
+        time.sleep(4)
+        st = state()
+        record("6. taken out: the mode stays", settled(st, 1024, 768),
+               "%s" % st)
+        run("$G/fbvplug 1")
+        st = wait_for(lambda s: settled(s, 1280, 720), 60)
+        record("6. the first monitor back: 1280x720 again",
+               settled(st, 1280, 720) and
+               modes_now() == MODES, "%s" % st)
+
         run("meechowm -m mode 1024x768")
         wait_for(lambda s: settled(s, 1024, 768), 120)
         run("meechowm -m quit")
@@ -283,6 +339,37 @@ def main():
         geo = fbart("-w 1 -h 1")[0]
         record("5. the screen as it was", geo == (1280, 720, 5120),
                "%s" % (geo,))
+
+        def console_at(w, h, timeout=30):
+            deadline = time.time() + timeout
+            while True:
+                geo = fbart("-w 1 -h 1")[0]
+                if geo == (w, h, w * 4) or time.time() > deadline:
+                    break
+                time.sleep(1)
+            run("echo the console at %dx%d" % (w, h))
+            time.sleep(2)
+            return fbart("-x 0 -y 0 -w %d -h %d -s 4" % (w, h))
+
+        # Another monitor: the first one out (the line held low long
+        # enough to count), then this one in.
+        run("$G/fbvplug 0; sleep 1; $G/fbvplug 2")
+        geo, _, ink = console_at(1024, 768)
+        record("7. a 1024x768 monitor at the console: the driver takes it",
+               geo == (1024, 768, 4096) and ink > 200,
+               "%s, ink %d" % (geo, ink))
+        got = modes_now("fbmode")
+        record("7. fbmode lists that monitor's",
+               got == ["1024x768@60 current", "800x600@60"], "%s" % got)
+        run("$G/fbvplug 0; sleep 1; $G/fbvplug 1")
+        geo, _, ink = console_at(1280, 720)
+        record("7. the first monitor back: 1280x720, the console on it",
+               geo == (1280, 720, 5120) and ink > 200,
+               "%s, ink %d" % (geo, ink))
+        run("$G/fbvplug 0; sleep 2; $G/fbvplug 1; sleep 3")
+        geo = fbart("-w 1 -h 1")[0]
+        record("7. the same monitor out and in: the mode stays",
+               geo == (1280, 720, 5120), "%s" % (geo,))
         rc = 0 if failed == 0 else 1
         send("/sbin/poweroff")
         time.sleep(5)

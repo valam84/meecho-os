@@ -1525,7 +1525,7 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   в 200 МГц ускорителя (11.8). Стенд на плате —
   `port/gfx/test/board-glesbench.sh pixman|gles2`. Разбор —
   `PORTING-LOG.md`, «Стол на GLES».
-- **Перезапуск службы виден на столе (2026-10-14, QEMU; на плате — цена взгляда): `meechowm-notify`**
+- **Перезапуск службы виден на столе (2026-10-14, QEMU и плата): `meechowm-notify`**
   (`minix/usr.bin/meechowm-notify`, запускает `meecho-desktop`) —
   карточка layer-shell в правом верхнем углу, «lwip restarted», pid,
   endpoint, время; клавиатуру не берёт, поверхности нет, пока нечего

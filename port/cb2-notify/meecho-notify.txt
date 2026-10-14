@@ -1,0 +1,36 @@
+meechowm-notify on the CB2, 2026-10-14 (18:43-18:46 board time, GMT)
+
+Boot: kernel.bin and boot.mba as /boot/meecho had them (6c06c3e2...,
+d346d0b5...), root on eMMC, bootwd 3600.  meechowm in /usr/bin is the GLES
+build of the session "wlroots-gles2"; meechowm-notify a14f0dc74, put over
+ssh; meecho-desktop from c86416de0 (starts the notifier with the panel).
+No monitor: the screen is 1280x720.
+
+$ meechowm-notify -m 200                    (twice, under a running desktop)
+look 200 services 29 ms 15.400 messages 123.0
+look 200 services 29 ms 15.450 messages 123.0
+
+$ sh board-desk.sh                           (desktop up)
+$ meechowm-notify -t 900000 &                (a second one, for the picture)
+$ grep -E 'endpoint|restarts' /proc/service/random
+endpoint: 65554
+restarts: 0
+$ minix-service refresh random               (18:44:59)
+refresh 0
+endpoint: 65554
+restarts: 1                                  (the same endpoint: the count
+                                              is what tells)
+$ meechowm -m state | grep layer
+layer meechowm-notify 3 910 32 362 60 keyboard none -     (the desktop's)
+layer meechowm-notify 3 910 32 362 60 keyboard none -     (the second one)
+layer panel 1 0 0 1280 24 keyboard none -
+layer wallpaper 0 0 0 1280 720 keyboard none -
+
+board-shot.sh -> meecho-notify.png: "random restarted / pid 51 ·
+endpoint 65554 · 18:45:02", top right, under the panel (24 + 8).
+
+Afterwards ps, sleep and /dev/random answered; board-desk.sh stop.
+
+Not on the picture: "refresh mib", tried first (18:02, 18:07), gave
+"restarts: 1" and then sysctl callers hung blocked on mib (ISSUES, O54).
+lwip was not refreshed on the board: its sockets are this ssh session's.

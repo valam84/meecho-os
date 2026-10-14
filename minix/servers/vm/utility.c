@@ -394,7 +394,8 @@ int _brk(void *addr)
 
 	start = roundup(prevbrk, VM_PAGE_SIZE);
 	for(v = start; v < target; v += VM_PAGE_SIZE) {
-		phys_bytes mem, newpage = alloc_mem(1, PAF_RESERVE);
+		/* The reserve only if the work is not a user's (mem_charge()) */
+		phys_bytes mem, newpage = alloc_mem(1, mem_own_flags());
 		if(newpage == NO_MEM) break;
 		mem = CLICK2ABS(newpage);
 		if(pt_writemap(vmprocess, &vmprocess->vm_pt,
@@ -411,7 +412,7 @@ int _brk(void *addr)
 
 	/*
 	 * A heap that cannot grow all the way gives back what it took on
-	 * the way. These pages carry PAF_RESERVE - they are VM's - and a
+	 * the way. These pages may carry PAF_RESERVE - they are VM's - and a
 	 * failed malloc() used to keep every one of them: a request bigger
 	 * than RAM left VM holding all of it, the reserve included, and the
 	 * next process to fault, VFS, found nothing.

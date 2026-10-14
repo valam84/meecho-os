@@ -426,23 +426,6 @@ static vir_bytes phys_slot(vir_bytes len)
 	return len / VM_PAGE_SIZE;
 }
 
-/*
- * Whether a region of 'length' may be made for, or grown to that length in,
- * process vmp. Its physblocks array is VM's own memory, and VM's memory may
- * come out of the reserve - but the size of this array a user process
- * chooses, and a few lazy gigabytes cost megabytes without one page touched.
- * So for a user process it is had on the terms of its pages: outside the
- * reserve (alloc.c). Splitting a region needs no room: the two arrays
- * replace one of the same size, and a process at the line must still be
- * able to unmap.
- */
-static int region_room(struct vmproc *vmp, vir_bytes length)
-{
-	if(acl_is_system(vmp))
-		return 1;
-	return mem_user_room(phys_slot(length) * sizeof(struct phys_region *));
-}
-
 static struct vir_region *region_new(struct vmproc *vmp, vir_bytes startv, vir_bytes length,
 	int flags, mem_type_t *memtype)
 {
@@ -451,8 +434,10 @@ static struct vir_region *region_new(struct vmproc *vmp, vir_bytes startv, vir_b
 	static u32_t id;
 	vir_bytes slots = phys_slot(length);
 
+	/* Refusals on a user's account are its ENOMEM: no console line. */
 	if(!(SLABALLOC(newregion))) {
-		printf("vm: region_new: could not allocate\n");
+		if(!mem_charged_to_user())
+			printf("vm: region_new: could not allocate\n");
 		return NULL;
 	}
 
@@ -469,7 +454,8 @@ USE(newregion,
 	newregion->parent = vmp;);
 
 	if(!(newphysregions = calloc(slots, sizeof(struct phys_region *)))) {
-		printf("VM: region_new: allocating phys blocks failed\n");
+		if(!mem_charged_to_user())
+			printf("VM: region_new: allocating phys blocks failed\n");
 		SLABFREE(newregion);
 		return NULL;
 	}
@@ -497,12 +483,10 @@ struct vir_region *map_page_region(struct vmproc *vmp, vir_bytes minv,
 	if (startv == SLOT_FAIL)
 		return NULL;
 
-	if (!region_room(vmp, length))
-		return NULL;
-
 	/* Now we want a new region. */
 	if(!(newregion = region_new(vmp, startv, length, flags, memtype))) {
-		printf("VM: map_page_region: allocating region failed\n");
+		if(!mem_charged_to_user())
+			printf("VM: map_page_region: allocating region failed\n");
 		return NULL;
 	}
 
@@ -852,9 +836,6 @@ struct vir_region *map_copy_region(struct vmproc *vmp, struct vir_region *vr)
 #endif
 	vir_bytes p;
 
-	if(!region_room(vmp, vr->length))
-		return NULL;
-
 	if(!(newvr = region_new(vr->parent, vr->vaddr, vr->length, vr->flags, vr->def_memtype)))
 		return NULL;
 
@@ -1049,9 +1030,10 @@ int map_region_extend_upto_v(struct vmproc *vmp, vir_bytes v)
 	 * search below finds the highest region of all - the stack - and
 	 * would make it reach v; the physblocks array for that is VM's own
 	 * memory, eight bytes a page, and a break of 1 TiB asked VM's heap
-	 * for 2 GiB. VM's heap takes from the reserve, as it must, so the
-	 * request of one user process emptied the reserve meant for the
-	 * system. Here the answer costs nothing.
+	 * for 2 GiB, which it took from the reserve: the request of one user
+	 * process emptied the reserve meant for the system. VM's heap now
+	 * grows on the user's terms (alloc.c, mem_charge()); here the answer
+	 * costs nothing at all.
 	 */
 	if(v > VM_DATATOP)
 		return ENOMEM;
@@ -1093,9 +1075,6 @@ int map_region_extend_upto_v(struct vmproc *vmp, vir_bytes v)
 		}
 		return OK;
 	}
-
-	if(!region_room(vmp, offset - vr->vaddr))
-		return ENOMEM;
 
 	if(!(newpr = realloc(vr->physblocks,
 		newslots * sizeof(struct phys_region *)))) {
@@ -1200,7 +1179,26 @@ int map_unmap_region(struct vmproc *vmp, struct vir_region *r,
 	return OK;
 }
 
+static int split_region_do(struct vmproc *vmp, struct vir_region *vr,
+	struct vir_region **vr1, struct vir_region **vr2, vir_bytes split_len);
+
+/*
+ * Splitting a region - unmapping its middle - is on the system's account
+ * even for a user process (alloc.c, mem_charge()): the two new arrays
+ * replace one of the same size, and a process at the reserve line must
+ * still be able to give memory back.
+ */
 static int split_region(struct vmproc *vmp, struct vir_region *vr,
+	struct vir_region **vr1, struct vir_region **vr2, vir_bytes split_len)
+{
+	int r, was = mem_charge_system();
+
+	r = split_region_do(vmp, vr, vr1, vr2, split_len);
+	mem_charge_restore(was);
+	return r;
+}
+
+static int split_region_do(struct vmproc *vmp, struct vir_region *vr,
 	struct vir_region **vr1, struct vir_region **vr2, vir_bytes split_len)
 {
 	struct vir_region *r1 = NULL, *r2 = NULL;
@@ -1231,8 +1229,7 @@ static int split_region(struct vmproc *vmp, struct vir_region *vr,
 
 	if(!(r2 = region_new(vmp, vr->vaddr+split_len, rem_len, vr->flags,
 		vr->def_memtype))) {
-		map_free(r1);
-		goto bail;
+		goto bail;	/* frees r1 - once */
 	}
 
 	for(voffset = 0; voffset < r1->length; voffset += VM_PAGE_SIZE) {

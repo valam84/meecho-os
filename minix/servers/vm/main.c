@@ -115,6 +115,10 @@ int main(void)
 	int transid = 0;	/* VFS transid if any */
 
 	SANITYCHECK(SCL_TOP);
+
+	/* Nobody's work yet: VM's own (alloc.c, mem_charge()). */
+	mem_charge(NULL);
+
 	if(missing_spares > 0) {
 		alloc_cycle();	/* mem alloc code wants to be called */
 	}
@@ -199,6 +203,11 @@ int main(void)
 					vm_calls[c].vmc_name, who_e);
 		} else {
 			SANITYCHECK(SCL_FUNCTIONS);
+			/*
+			 * The caller's work. What PM or VFS ask about a user
+			 * process the handler charges to that process.
+			 */
+			mem_charge(&vmproc[caller_slot]);
 			result = vm_calls[c].vmc_func(&msg);
 			SANITYCHECK(SCL_FUNCTIONS);
 		}

@@ -369,12 +369,59 @@ void mem_reserve_stats(phys_bytes *free, phys_bytes *reserve)
 }
 
 /*
- * Whether VM may spend 'bytes' of its own memory on a user process. What VM
- * keeps about a region - the physblocks array, eight bytes a page of it - is
- * VM's heap and so carries PAF_RESERVE, but how big it is the user decides:
- * a few lazy gigabytes of mmap() touch no page and still cost megabytes.
- * Such memory is had on the user's terms - outside the reserve, the page
- * cache given up first - as the user's pages are.
+ * Whom VM's own memory is for.
+ *
+ * VM's own pages - its heap, its slabs, the page tables it keeps for every
+ * process - used to carry PAF_RESERVE always: they are VM's. But most of
+ * them VM spends on somebody's behalf, and how much a user process makes
+ * it spend is the user's choice: lazy gigabytes of mmap() cost megabytes
+ * of physblocks arrays, a fork of a sparsely touched 4 GiB costs the child
+ * up to 8 MB of page tables, and neither touches one page of the user's.
+ * Taken from the reserve, that is the reserve spent by a user - which is
+ * what the reserve exists to prevent.
+ *
+ * So VM's work is charged to the process it is for: mem_charge() is called
+ * where that is known (the caller of a call, the process whose memory a
+ * fault or a copy touches, the process PM or VFS asks about), the main
+ * loop clears it, and mem_own_flags() gives VM's own allocations
+ * PAF_RESERVE only when the work is not a user process's. What such an
+ * allocation refuses, the user gets as ENOMEM or SIGSEGV - where its own
+ * pages are refused anyway.
+ */
+static int charged_to_user = 0;
+
+void mem_charge(struct vmproc *vmp)
+{
+	charged_to_user = vmp != NULL && !acl_is_system(vmp);
+}
+
+int mem_charged_to_user(void)
+{
+	return charged_to_user;
+}
+
+/* Work that must not fail once begun: back on the system's account. */
+int mem_charge_system(void)
+{
+	int was = charged_to_user;
+
+	charged_to_user = 0;
+	return was;
+}
+
+void mem_charge_restore(int was)
+{
+	charged_to_user = was;
+}
+
+u32_t mem_own_flags(void)
+{
+	return charged_to_user ? 0 : PAF_RESERVE;
+}
+
+/*
+ * Whether 'bytes' could still be had on a user's terms: outside the
+ * reserve, the page cache given up first, as alloc_pages() does.
  */
 int mem_user_room(phys_bytes bytes)
 {

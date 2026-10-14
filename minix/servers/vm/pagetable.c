@@ -412,11 +412,15 @@ void *vm_allocpages(phys_bytes *phys, int reason, int pages)
 #endif
 
 	/* Allocate page of memory for use by VM. As VM
-	 * is trusted, we don't have to pre-clear it.
+	 * is trusted, we don't have to pre-clear it. Out of the reserve
+	 * unless the work is a user process's (alloc.c, mem_charge()) - and
+	 * then a refusal is that process's ENOMEM, not VM's trouble, and
+	 * says nothing on the console.
 	 */
-	if((newpage = alloc_mem(pages, mem_flags | PAF_RESERVE)) == NO_MEM) {
+	if((newpage = alloc_mem(pages, mem_flags | mem_own_flags())) == NO_MEM) {
 		level--;
-		printf("VM: vm_allocpage: alloc_mem failed\n");
+		if(!mem_charged_to_user())
+			printf("VM: vm_allocpage: alloc_mem failed\n");
 		return NULL;
 	}
 
@@ -424,6 +428,7 @@ void *vm_allocpages(phys_bytes *phys, int reason, int pages)
 
 	if(!(ret = vm_mappages(*phys, pages))) {
 		level--;
+		free_mem(newpage, pages);
 		printf("VM: vm_allocpage: vm_mappages failed\n");
 		return NULL;
 	}

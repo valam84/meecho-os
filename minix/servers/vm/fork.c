@@ -32,6 +32,13 @@
 #include "sanitycheck.h"
 #include "region.h"
 
+/*
+ * What a fork may still need once sys_fork() is done: a copy of the
+ * message page for each side, a page table for the child's, the slab pages
+ * the copies are recorded in - with room to spare.
+ */
+#define FORK_ROOM_PAGES	8
+
 /*===========================================================================*
  *				do_fork					     *
  *===========================================================================*/
@@ -61,6 +68,14 @@ int do_fork(message *msg)
   vmc = &vmproc[childproc];	/* child */
   assert(vmc->vm_slot == childproc);
 
+  /*
+   * PM asks; the work is the parent's. The child's arrays and page tables
+   * are VM's memory, and for a user process they are had outside the
+   * reserve (alloc.c, mem_charge()): a fork of a sparsely touched 4 GiB
+   * costs the child up to 8 MB of page tables without one page of its own.
+   */
+  mem_charge(vmp);
+
   /* The child is basically a copy of the parent. */
   origpt = vmc->vm_pt;
   *vmc = *vmp;
@@ -80,8 +95,23 @@ int do_fork(message *msg)
   SANITYCHECK(SCL_DETAIL);
 
   if(map_proc_copy(vmc, vmp) != OK) {
-	printf("VM: fork: map_proc_copy failed\n");
+	if(!mem_charged_to_user())	/* else: the user's ENOMEM */
+		printf("VM: fork: map_proc_copy failed\n");
 	pt_free(&vmc->vm_pt);
+	vmc->vm_flags = 0;	/* the slot is still free */
+	return(ENOMEM);
+  }
+
+  /*
+   * Past sys_fork() there is no way back, and failing to make the two
+   * message pages writable below is a panic. For a user process those are
+   * its pages, refused at the reserve line - so the room for them is made
+   * sure of here, while the fork can still be refused.
+   */
+  if(mem_charged_to_user() && !mem_user_room(FORK_ROOM_PAGES * VM_PAGE_SIZE)) {
+	map_free_proc(vmc);
+	pt_free(&vmc->vm_pt);
+	vmc->vm_flags = 0;
 	return(ENOMEM);
   }
 

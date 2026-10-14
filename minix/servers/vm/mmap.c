@@ -155,6 +155,7 @@ int do_vfs_mmap(message *m)
 	if((r=vm_isokendpt(m->m_vm_vfs_mmap.who, &n)) != OK)
 		panic("bad ep %d from vfs", m->m_vm_vfs_mmap.who);
 	vmp = &vmproc[n];
+	mem_charge(vmp);	/* VFS asks; the mapping is the process's */
 
 	return mmap_file(vmp, m->m_vm_vfs_mmap.fd, m->m_vm_vfs_mmap.offset,
 		MAP_PRIVATE | MAP_FIXED,
@@ -175,6 +176,8 @@ static void mmap_file_cont(struct vmproc *vmp, message *replymsg, void *cbarg,
 
 	if(origmsg->m_mmap.prot & PROT_WRITE)
 		writable = 1;
+
+	mem_charge(vmp);	/* VFS's answer; the mmap is the process's */
 
 	if(replymsg->VMV_RESULT != OK) {
 #if 0   /* Noisy diagnostic for mmap() by ld.so */
@@ -247,6 +250,7 @@ int do_mmap(message *m)
 	}
 
 	vmp = &vmproc[n];
+	mem_charge(vmp);	/* MAP_THIRDPARTY: the one it is for */
 
 	/* "SUSv3 specifies that mmap() should fail if length is 0" */
 	if(len <= 0) {

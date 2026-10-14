@@ -87,6 +87,7 @@ static void handle_pagefault(endpoint_t ep, vir_bytes addr, u32_t err, int retry
 
 	vmp = &vmproc[p];
 	assert(vmp->vm_flags & VMF_INUSE);
+	mem_charge(vmp);	/* page tables, slabs: the faulter's */
 
 	/* See if address is valid at all. */
 	if(!(region = map_lookup(vmp, addr, NULL))) {
@@ -344,6 +345,9 @@ static int handle_memory_step(struct hm_state *hmstate, int retry)
 	assert(hmstate->valid == VALID);
 	assert(!(hmstate->mem % VM_PAGE_SIZE));
 	assert(!(hmstate->len % VM_PAGE_SIZE));
+
+	/* Whoever asks - the kernel, VFS - it is this process's memory. */
+	mem_charge(hmstate->vmp);
 
 	while(hmstate->len > 0) {
 		if(!(region = map_lookup(hmstate->vmp, hmstate->mem, NULL))) {

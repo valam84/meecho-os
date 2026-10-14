@@ -173,7 +173,8 @@ static struct slabdata *newslabdata(void)
 	assert(sizeof(*n) == VM_PAGE_SIZE);
 
 	if(!(n = vm_allocpage(&p, VMP_SLAB))) {
-		printf("newslabdata: vm_allocpage failed\n");
+		if(!mem_charged_to_user())	/* else: a user's ENOMEM */
+			printf("newslabdata: vm_allocpage failed\n");
 		return NULL;
 	}
 	memset(n->sdh.usebits, 0, sizeof(n->sdh.usebits));

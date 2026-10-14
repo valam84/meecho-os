@@ -7,6 +7,12 @@
  * "Makes no progress" is checked through a pipe: the children echo bytes,
  * and a byte written to a stopped child stays unanswered until SIGCONT.  The
  * state letter is the one ps(1) shows, from /proc/<pid>/psinfo.
+ *
+ * SIGTSTP, SIGTTIN and SIGTTOU are discarded for a member of an orphaned
+ * process group (POSIX), so the children they are sent to have a group of
+ * their own (own_group()): whatever the shell that runs the test does about
+ * groups, the test is the child's link to the session.  Process groups and
+ * the terminal are test96's.
  */
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -112,6 +118,16 @@ put_byte(int fd, char c)
 		e(900);
 }
 
+/* In a child: a process group of its own.  Its parent, the test, is in
+ * another group of the same session, so the group is not orphaned.
+ */
+static void
+own_group(void)
+{
+	if (setpgid(0, 0) != 0)
+		_exit(99);
+}
+
 static void
 open_pipes(void)
 {
@@ -167,6 +183,7 @@ fork_echo(void (*setup)(void))
 	if ((pid = fork()) == -1)
 		e(902);
 	if (pid == 0) {
+		own_group();
 		if (setup != NULL)
 			setup();
 		echo_child();
@@ -261,6 +278,7 @@ test95b(void)
 
 	open_pipes();
 	if ((pid = fork()) == 0) {
+		own_group();
 		close(p2c[1]);
 		usleep(200000);
 		kill(getpid(), SIGTSTP);
@@ -522,6 +540,7 @@ test95f(void)
 
 	open_pipes();
 	if ((pid = fork()) == 0) {
+		own_group();
 		close(p2c[1]);
 		close(c2p[0]);
 		sigemptyset(&set);
@@ -599,24 +618,52 @@ test95g(void)
 	end_echo(pid);
 }
 
-/* A stopped process whose parent exits gets SIGHUP and SIGCONT: it dies of
- * the hangup by default, and runs on if it ignores it.
+/* Read a pid from the child, which must come. */
+static pid_t
+get_pid(void)
+{
+	pid_t pid;
+
+	if (!readable(c2p[0], WAIT_MS) ||
+	    read(c2p[0], &pid, sizeof(pid)) != sizeof(pid))
+		return -1;
+	return pid;
+}
+
+static void
+put_pid(pid_t pid)
+{
+	if (write(c2p[1], &pid, sizeof(pid)) != sizeof(pid))
+		_exit(2);
+}
+
+/* POSIX: a process group that an exit leaves orphaned - no member has a
+ * parent in another group of the same session - gets SIGHUP and SIGCONT if a
+ * member is stopped: it dies of the hangup by default, and runs on if it
+ * ignores it.  A group that the exit leaves tied to the session gets
+ * nothing, even if the exit took the stopped process's parent.  And in an
+ * orphaned group SIGTSTP, SIGTTIN and SIGTTOU are discarded; SIGSTOP is not.
  */
 static void
 test95h(void)
 {
-	pid_t mid, pid;
-	int st, ign;
+	static const int sigs[] = { SIGTSTP, SIGTTIN, SIGTTOU };
+	pid_t mid, pid, ldr;
+	int i, st, ign;
 	char c;
 
 	subtest = 8;
 
+	/* The middle process ties the group of its child to the session; its
+	 * exit orphans the group, with the child stopped in it.
+	 */
 	for (ign = 0; ign < 2; ign++) {
 		open_pipes();
 		if ((mid = fork()) == 0) {
 			close(p2c[1]);
 			close(c2p[0]);
 			if ((pid = fork()) == 0) {
+				own_group();
 				if (ign)
 					signal(SIGHUP, SIG_IGN);
 				kill(getpid(), SIGSTOP);
@@ -627,13 +674,11 @@ test95h(void)
 			if (waitpid(pid, &st, WUNTRACED) != pid ||
 			    !WIFSTOPPED(st))
 				_exit(1);
-			if (write(c2p[1], &pid, sizeof(pid)) != sizeof(pid))
-				_exit(2);
+			put_pid(pid);
 			_exit(0);
 		}
 		parent_ends();
-		if (!readable(c2p[0], WAIT_MS) ||
-		    read(c2p[0], &pid, sizeof(pid)) != sizeof(pid)) {
+		if ((pid = get_pid()) == -1) {
 			e(1);
 			break;
 		}
@@ -649,6 +694,88 @@ test95h(void)
 		}
 		close_pipes();
 	}
+
+	/* A group of two processes, both tied to the session by the test.
+	 * One of them has a stopped child in the group, and exits: the child
+	 * has lost its parent, but the group is not orphaned - the other one
+	 * still ties it - so the child stays stopped.
+	 */
+	open_pipes();
+	if ((ldr = fork()) == 0) {
+		own_group();
+		close(p2c[1]);
+		close(c2p[0]);
+		put_byte(c2p[1], 'r');
+		(void)read(p2c[0], &c, 1);
+		_exit(0);
+	}
+	if (!get_byte(c2p[0], 'r')) e(6);
+	if ((mid = fork()) == 0) {
+		close(p2c[1]);
+		close(c2p[0]);
+		if (setpgid(0, ldr) != 0)
+			_exit(3);
+		if ((pid = fork()) == 0) {
+			kill(getpid(), SIGSTOP);
+			_exit(0);
+		}
+		if (waitpid(pid, &st, WUNTRACED) != pid || !WIFSTOPPED(st))
+			_exit(1);
+		put_pid(pid);
+		_exit(0);
+	}
+	parent_ends();
+	if ((pid = get_pid()) == -1) e(7);
+	if (waitpid(mid, &st, 0) != mid) e(8);
+	if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) e(9);
+	if (pid != -1) {
+		if (getpgid(pid) != ldr) e(10);
+		usleep(QUIET_MS * 1000);
+		if (kill(pid, 0) != 0) e(11);
+		if (pstate(pid) != 'T') e(12);
+		if (kill(pid, SIGKILL) != 0) e(13);
+		if (!await_gone(pid)) e(14);
+	}
+	close_pipes();
+	if (waitpid(ldr, &st, 0) != ldr) e(15);
+
+	/* An echo child whose group the exit of its parent has orphaned: the
+	 * terminal's stop signals do nothing to it, SIGSTOP stops it.
+	 */
+	open_pipes();
+	if ((mid = fork()) == 0) {
+		if ((pid = fork()) == 0) {
+			own_group();
+			echo_child();
+		}
+		close(p2c[0]);
+		close(p2c[1]);
+		if (!get_byte(c2p[0], 'r'))
+			_exit(1);
+		put_pid(pid);
+		_exit(0);
+	}
+	parent_ends();
+	/* The middle process takes the child's 'r' first: wait for it. */
+	if (waitpid(mid, &st, 0) != mid) e(17);
+	if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) e(18);
+	if ((pid = get_pid()) == -1) e(16);
+	if (pid != -1) {
+		for (i = 0; i < 3; i++) {
+			if (kill(pid, sigs[i]) != 0) e(19);
+			put_byte(p2c[1], 'a' + i);
+			if (!get_byte(c2p[0], 'a' + i)) e(20);
+			if (pstate(pid) == 'T') e(21);
+		}
+		if (kill(pid, SIGSTOP) != 0) e(22);
+		if (!await_state(pid, 'T')) e(23);
+		check_frozen(pid, 'd');
+		if (kill(pid, SIGCONT) != 0) e(24);
+		if (!get_byte(c2p[0], 'd')) e(25);
+		close_pipes();
+		if (!await_gone(pid)) e(26);
+	} else
+		close_pipes();
 }
 
 int

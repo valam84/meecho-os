@@ -41,6 +41,8 @@ DIRS = ["kernel", "lib/libminc", "lib/libsys", "lib/libtimers",
 K_STACK_SIZE = 8192             # K_STACK_SIZE, archconst.h
 STACK_TOP_RESERVED = 16         # AARCH64_STACK_TOP_RESERVED
 FRAME_SIZE = 34 * 8             # trap.h, the exception frame
+EL1_RECORD = 16                 # vectors.S, the frame record exception_entry_kernel
+                                # pushes under trap_handler (2026-10-14)
 OVERFLOW_STACK_SIZE = 8192      # K_OVERFLOW_STACK_SIZE
 BOOT_STACK_SIZE = 16384         # head.S, boot_stack
 
@@ -358,17 +360,19 @@ if r is not None:
                     both("idle wake-up", root("trap_handler"), avail, pre,
                          r[1] + [("<exception frame>", FRAME_SIZE)]), avail))
 
-# 3. A fault inside the kernel on a user copy: frame on top of wherever the
-#    copy was, then trap_handler. copy_msg_* are the kernel's only
-#    deliberately faulting accesses (usercopy.S).
-copies = {"copy_msg_from_user", "copy_msg_to_user"}
+# 3. A fault inside the kernel on a user copy: frame and frame record on top
+#    of wherever the copy was, then trap_handler. copy_msg_* and
+#    kernel_probe_read (pan_verify) are the kernel's only deliberately
+#    faulting accesses (usercopy.S).
+copies = {"copy_msg_from_user", "copy_msg_to_user", "kernel_probe_read"}
 r, _ = working.depth_to(root("trap_handler"), copies)
 if r is not None:
-    pre = r[0] + FRAME_SIZE
+    pre = r[0] + FRAME_SIZE + EL1_RECORD
     summary.append(("fault in a user copy",
                     both("fault in a user copy", root("trap_handler"), avail,
                          pre, r[1] + [(r[2], 0),
-                                      ("<exception frame>", FRAME_SIZE)]),
+                                      ("<exception frame>", FRAME_SIZE),
+                                      ("<frame record>", EL1_RECORD)]),
                     avail))
 
 # 4. Secondary boot: smp_ap_boot runs on the core's own kernel stack.

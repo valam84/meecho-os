@@ -141,6 +141,23 @@
 #define STOPRACE_UNDONE(p, what, nr)	((void)0)
 #endif
 
+/*
+ * PANICPROBE makes the kernel panic on purpose, to see what a panic says
+ * about the kernel's own stack: with panicprobe=1 on the command line,
+ * panic() three calls deep; with panicprobe=2, a load from an unmapped
+ * kernel address three calls deep, which is a kernel exception and then
+ * the panic. Fired from the first interrupt taken from a process twenty
+ * seconds after boot, so that the system is up. aarch64 only.
+ *
+ * Never in an ordinary build: DBG="-O2 -DPANICPROBE=1" in an object
+ * directory of its own (port/kbuild-variant.sh), as for KTRACE. The stand
+ * is port/test/panic/qemu-kstack.py; see port/PORTING-LOG.md, "Стек ядра
+ * в панике".
+ */
+#ifndef PANICPROBE
+#define PANICPROBE			0
+#endif
+
 #if !USE_SYSDEBUG
 #undef DEBUG_SERIAL
 #undef DEBUG_ENABLE_IPC_WARNINGS

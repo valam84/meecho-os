@@ -11,6 +11,7 @@
 #include "kernel/proto.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <machine/vm.h>
 
 #include "archconst.h"
@@ -107,10 +108,159 @@ proc_stacktrace(struct proc *whichproc)
 	printf("\n");
 }
 
+/* The stacks the kernel runs on, besides the per-CPU pairs. */
+extern char boot_stack[], boot_stack_top[];	/* head.S */
+extern char k_overflow_stacks[];		/* vectors.S */
+
+/*===========================================================================*
+ *				kernel_stack_bounds			     *
+ *===========================================================================*/
+/*
+ * The stack an address lies on, as [lo, hi): this CPU's half of its pair,
+ * its emergency stack, or the boot stack in head.S. Zero for anything else.
+ *
+ * A walk of the kernel's own chain still reads raw memory - the chain is the
+ * kernel's, and data_copy() is for a process's - so this is what keeps it
+ * from wandering: every record has to lie inside the stack the walk started
+ * on, and the guard page under each CPU's stack, which is not mapped, is
+ * below lo.
+ */
+static int
+kernel_stack_bounds(vir_bytes a, vir_bytes *lo, vir_bytes *hi)
+{
+	vir_bytes base;
+
+	if (a >= (vir_bytes)k_stacks_start && a < (vir_bytes)k_stacks_end) {
+		base = a & ~(vir_bytes)(2 * K_STACK_SIZE - 1);
+		*lo = base + K_STACK_SIZE;
+		*hi = base + 2 * K_STACK_SIZE;
+	} else if (a >= (vir_bytes)k_overflow_stacks && a <
+	    (vir_bytes)k_overflow_stacks + K_OVERFLOW_STACK_SIZE *
+	    CONFIG_MAX_CPUS) {
+		*lo = a & ~(vir_bytes)(K_OVERFLOW_STACK_SIZE - 1);
+		*hi = *lo + K_OVERFLOW_STACK_SIZE;
+	} else if (a >= (vir_bytes)boot_stack && a < (vir_bytes)boot_stack_top) {
+		*lo = (vir_bytes)boot_stack;
+		*hi = (vir_bytes)boot_stack_top;
+	} else
+		return 0;
+
+	return a >= *lo;
+}
+
+/*===========================================================================*
+ *				util_stacktrace				     *
+ *===========================================================================*/
+/*
+ * The kernel's own stack, as return addresses, innermost first: what panic()
+ * prints after "kernel on CPU n:". The kernel's version of the libsys one,
+ * which it replaces at link time, because that one follows the chain
+ * wherever it points.
+ *
+ * It had nothing to follow until 2026-10-14: the kernel was built with
+ * -fomit-frame-pointer like the rest of the system, x29 held whatever the
+ * last function left in it, and a panic printed an empty line. Now the
+ * kernel keeps frame records (arch/aarch64/Makefile.inc), the entry from
+ * EL0 zeroes x29 so the chain ends at trap_handler(), and an exception taken
+ * in the kernel adds a record holding the faulting pc (vectors.S), so the
+ * trace runs on through it into the code that faulted. Functions from the
+ * libraries linked in (libminc, libsys, libexec, libtimers) keep no record:
+ * their callers' return addresses are missing from the trace, and nothing
+ * else is wrong with it.
+ *
+ * Addresses only. port/kstack.sh turns a console line back into names.
+ */
+#define KSTACKTRACE_MAX_FRAMES	32
+
+void
+util_stacktrace(void)
+{
+	vir_bytes fp = (vir_bytes)__builtin_frame_address(0);
+	vir_bytes lo, hi, next;
+	int i;
+
+	if (!kernel_stack_bounds(fp, &lo, &hi)) {
+		printf("(fp 0x%lx is on no kernel stack)\n", (unsigned long)fp);
+		return;
+	}
+
+	for (i = 0; i < KSTACKTRACE_MAX_FRAMES; i++) {
+		if (fp < lo || fp + 2 * sizeof(reg_t) > hi ||
+		    (fp % sizeof(reg_t)) != 0)
+			break;
+
+		next = ((vir_bytes *)fp)[0];
+		printf("0x%lx ", (unsigned long)((reg_t *)fp)[1]);
+
+		/* As for a process: a chain goes up, or it is not one. */
+		if (next <= fp)
+			break;
+		fp = next;
+	}
+
+	printf("\n");
+}
+
+#if PANICPROBE
+/*===========================================================================*
+ *				panic_probe				     *
+ *===========================================================================*/
+/*
+ * A panic on purpose (debug.h, PANICPROBE), three calls deep so that the
+ * trace has something to show: probe_a, probe_b and probe_c must all be in
+ * it. Each does something after its call, so that none of them is a tail
+ * call and the frames really are there.
+ */
+static int probe_mode = -1;
+static volatile int probe_sink;
+
+static void __attribute__((noinline))
+probe_c(int mode)
+{
+	/* Mode 2: the upper half here maps nothing - a kernel exception. */
+	if (mode == 2)
+		probe_sink = *(volatile int *)0xffff800000000000UL;
+	panic("panic probe, mode %d", mode);
+}
+
+static void __attribute__((noinline))
+probe_b(int mode)
+{
+	probe_c(mode);
+	probe_sink++;
+}
+
+static void __attribute__((noinline))
+probe_a(int mode)
+{
+	probe_b(mode);
+	probe_sink++;
+}
+
+void
+panic_probe(void)
+{
+	char *v;
+
+	if (probe_mode < 0)
+		probe_mode = (v = env_get("panicprobe")) != NULL ? atoi(v) : 0;
+	if (probe_mode == 0 || get_monotonic() < 20 * system_hz)
+		return;
+
+	printf("panic probe: mode %d on cpu %u\n", probe_mode, cpuid);
+	probe_a(probe_mode);
+}
+#endif /* PANICPROBE */
+
 #else /* !USE_SYSDEBUG */
 
 void
 proc_stacktrace(struct proc *whichproc)
+{
+}
+
+void
+util_stacktrace(void)
 {
 }
 

@@ -310,7 +310,21 @@ exception_entry_kernel:
 	mrs	x2, esr_el1
 	mrs	x3, far_el1
 
+	/*
+	 * A frame record for the interrupted code, so that a stack trace
+	 * taken in the handler - the panic that most kernel faults end in -
+	 * carries on through the exception: the faulting pc, then the chain
+	 * of whatever was interrupted, whose x29 is still in x29. Without it
+	 * the trace would stop at this function or skip the faulting one.
+	 * The same thing Linux builds in pt_regs.
+	 */
+	ldr	x4, [sp, #FRAME_PC]
+	stp	x29, x4, [sp, #-16]!
+	mov	x29, sp
+
 	bl	trap_handler
+
+	add	sp, sp, #16
 	/* falls through */
 
 /*

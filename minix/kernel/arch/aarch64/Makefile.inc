@@ -27,6 +27,14 @@ CFLAGS+=	-mgeneral-regs-only
 # what lets the image execute at its physical address before the MMU is on.
 CFLAGS+=	-mcmodel=small
 
+# Frame records, so that a panic can print the kernel's stack: sys.mk builds
+# everything with -fomit-frame-pointer, and util_stacktrace() had nothing to
+# walk (exception.c). Not in leaf functions: a leaf calls nothing, so it is
+# never in the middle of a chain, and a fault in one is reported with pc and
+# lr. Added after DBG, so it wins over sys.mk. The price was measured under
+# -icount; see port/PORTING-LOG.md, "Стек ядра в панике".
+CFLAGS+=	-fno-omit-frame-pointer -momit-leaf-frame-pointer
+
 .PATH:	${HERE}
 
 # There is no board support package on this architecture, and that is a

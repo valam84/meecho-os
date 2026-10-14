@@ -101,9 +101,14 @@ inkernel_disaster(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 	printf("\nkernel exception: vector %d ESR 0x%lx EC 0x%lx FAR 0x%lx\n",
 	    (int)kind, (unsigned long)esr, (unsigned long)ESR_EC(esr),
 	    (unsigned long)far);
-	printf("pc 0x%lx sp 0x%lx psr 0x%lx\n",
-	    (unsigned long)frame->pc, (unsigned long)frame->sp,
-	    (unsigned long)frame->psr);
+	/*
+	 * lr as well: a fault in a leaf function, which keeps no frame
+	 * record, has its caller's call site there and nowhere else - the
+	 * stack trace below starts from the caller's record.
+	 */
+	printf("pc 0x%lx lr 0x%lx sp 0x%lx psr 0x%lx\n",
+	    (unsigned long)frame->pc, (unsigned long)frame->lr,
+	    (unsigned long)frame->sp, (unsigned long)frame->psr);
 
 	if (saved != NULL)
 		proc_stacktrace(saved);
@@ -482,6 +487,11 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 	 */
 	if (kind == EXC_EL0_64_IRQ)
 		pan_verify(pr);
+
+#if PANICPROBE
+	if (kind == EXC_EL0_64_IRQ)
+		panic_probe();
+#endif
 
 	switch (kind) {
 	case EXC_EL1H_IRQ:

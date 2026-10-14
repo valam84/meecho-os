@@ -77,6 +77,9 @@ void pan_user_access_begin(void);
 void pan_user_access_end(void);
 void pan_verify(struct proc *pr);
 
+/* exception.c: a panic on purpose, in a PANICPROBE kernel (debug.h). */
+void panic_probe(void);
+
 /*
  * The memory map the kernel was handed at boot, and the one it hands on to
  * VM. Generic main() returns the bootstrap memory to it once the bootstrap

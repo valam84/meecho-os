@@ -1222,6 +1222,14 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.new_xdg_toplevel.link);
 	wl_list_remove(&server.new_xdg_popup.link);
 	wl_list_remove(&server.new_decoration.link);
+	/*
+	 * MEECHO: and the layer shell's (layers.c).  wlroots asserts that a
+	 * global's signals have no listeners left when the display destroys
+	 * it; this one left was an abort() on every exit.  layers_init()
+	 * added none if there was no layer shell.
+	 */
+	if (server.layer_shell != NULL)
+		wl_list_remove(&server.new_layer_surface.link);
 
 	wl_list_remove(&server.cursor_motion.link);
 	wl_list_remove(&server.cursor_motion_absolute.link);

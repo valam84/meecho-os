@@ -59,8 +59,9 @@
  * MEECHOWM_SOFT_CURSOR (set: the cursor drawn into the frames even where
  * the display has a window for it - to compare), MEECHOWM_RENDERER (gles2
  * or pixman; unset, GLES2 if the GPU takes it), MEECHOWM_DRI (the render
- * node, /dev/dri/renderD128), XKB_CONFIG_ROOT.  When it ends, the console
- * has the screen back.
+ * node, /dev/dri/renderD128), MEECHOWM_SCANOUT (copy: GPU frames copied
+ * to the screen, not drawn into it), XKB_CONFIG_ROOT.  When it ends, the
+ * console has the screen back.
  */
 #include <assert.h>
 #include <errno.h>
@@ -1385,6 +1386,25 @@ int main(int argc, char *argv[]) {
 		mc_fb_size(server.fb, &width, &height);
 	else
 		wlr_log(WLR_INFO, "no screen: headless, %dx%d", width, height);
+	/*
+	 * MEECHO: with the GPU drawing, into the scanout buffers themselves
+	 * if the GPU service takes them - nothing copied, nothing cleaned out
+	 * of the caches (fbout.c); MEECHOWM_SCANOUT=copy, to compare, keeps
+	 * the copy.  Before the output exists: it takes the allocator then.
+	 */
+	const char *scanout = getenv("MEECHOWM_SCANOUT");
+	mc_stats.path = server.fb != NULL ? "copy" : "none";
+	if (server.fb != NULL && strcmp(mc_stats.renderer, "gles2") == 0 &&
+	    !(scanout != NULL &&
+	    strcmp(scanout, "copy") == 0)) {
+		struct wlr_allocator *a = mc_fb_scanout_allocator(server.fb,
+		    server.allocator);
+
+		if (a != NULL) {
+			server.allocator = a;
+			mc_stats.path = "direct";
+		}
+	}
 	strip_screen(&server, width, height);
 	wlr_headless_add_output(server.backend, (unsigned)width,
 		(unsigned)height);

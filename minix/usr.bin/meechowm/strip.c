@@ -819,9 +819,11 @@ cmd_frames(const char *arg, struct mw_reply *r)
 {
 	if (strcmp(arg, "reset") == 0) {
 		const char *who = mc_stats.renderer;
+		const char *path = mc_stats.path;
 
 		memset(&mc_stats, 0, sizeof(mc_stats));
 		mc_stats.renderer = who;
+		mc_stats.path = path;
 		wm_reply(r, "ok\n");
 		return;
 	}
@@ -830,9 +832,10 @@ cmd_frames(const char *arg, struct mw_reply *r)
 		wm_reply(r, "error: frames %s: reset or nothing\n", arg);
 		return;
 	}
-	wm_reply(r, "renderer %s built %lu shown %lu render_ms %.1f "
+	wm_reply(r, "renderer %s path %s built %lu shown %lu render_ms %.1f "
 	    "sync_ms %.1f copy_ms %.1f flip_ms %.1f copied_mib %.1f\n",
 	    mc_stats.renderer != NULL ? mc_stats.renderer : "none",
+	    mc_stats.path != NULL ? mc_stats.path : "none",
 	    mc_stats.built, mc_stats.shown, mc_stats.render_ns / 1e6,
 	    mc_stats.sync_ns / 1e6, mc_stats.copy_ns / 1e6,
 	    mc_stats.flip_ns / 1e6, mc_stats.copied / 1048576.0);

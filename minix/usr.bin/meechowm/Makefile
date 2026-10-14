@@ -47,6 +47,9 @@ CPPFLAGS+=	-I${DESTDIR}/usr/include/wlroots-0.20 \
 # FBIOC_MAP and FBIOC_FLIP: the frame buffer driver's own requests, in its
 # arch header, which is not installed.
 CPPFLAGS+=	-I${NETBSDSRCDIR}/minix/drivers/video/fb/arch/aarch64
+# DRM_IOCTL_MEECHO_SCANOUT_IMPORT: the GPU service's own request, in its
+# header (fbout.c, the scanout buffers to the GPU).
+CPPFLAGS.fbout.c+=	-iquote ${NETBSDSRCDIR}/minix/drivers/video/mali
 
 # wlr_log() names the source file: by its name here, not the build host's
 # path to it.

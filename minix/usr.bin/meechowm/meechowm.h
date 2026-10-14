@@ -43,6 +43,7 @@ uint64_t mc_now_ns(void);
 /* What the frames cost, for "meechowm -m frames". */
 struct mc_frame_stats {
 	const char *renderer;	/* "gles2" or "pixman" */
+	const char *path;	/* to the screen: "copy" or "direct" */
 	unsigned long built;	/* frames wlroots drew */
 	unsigned long shown;	/* ... and flipped onto the screen */
 	uint64_t render_ns;	/* drawing: wlr_scene_output_build_state() */
@@ -69,6 +70,10 @@ void mc_fb_present(struct mc_fb *fb, struct wlr_buffer *buffer,
  * hardware cursor to it (-1: it does not fit, draw it into the frames). */
 bool mc_fb_has_cursor(const struct mc_fb *fb);
 int mc_fb_cursor_sync(struct mc_fb *fb, struct wlr_output *output);
+/* With GLES2: the GPU draws into the scanout buffers themselves - NULL if
+ * it cannot, and the frames are copied (inner stays the caller's). */
+struct wlr_allocator *mc_fb_scanout_allocator(struct mc_fb *fb,
+	struct wlr_allocator *inner);
 void mc_fb_close(struct mc_fb *fb);
 
 /* input.c */

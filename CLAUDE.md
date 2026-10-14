@@ -1114,9 +1114,9 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   неотличимое время. Строку pixman об отключении видно в `/tmp/mwm.log`
   только после выхода композитора (stdout в файл буферизован). Время
   процесса у композитора и foot было выборкой по тику и не росло — с
-  2026-10-13 оно по тактам (пункт про учёт времени выше); **ядро на плате
-  ещё старое**, до следующего образа карты там мерить `kern.cp_time` или
-  `cycles`. Разбор — `PORTING-LOG.md`, «Стек Wayland из дерева на плате».
+  2026-10-13 оно по тактам (пункт про учёт времени выше); на карте
+  Armbian ядро новое с 2026-10-14, в образе SD-карты — ещё старое, там
+  мерить `kern.cp_time` или `cycles`. Разбор — `PORTING-LOG.md`, «Стек Wayland из дерева на плате».
 - **Чего стек ждёт от системы и как это сделано** (подробно —
   «Этап 11.4»): курсор headless-вывода надо делать программным
   (`wlr_output_lock_software_cursors`); `thrd_t` в libgfxcompat — номер
@@ -1221,8 +1221,8 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   (`panfrost_fence_create()`). Эталон panfrost —
   `port/cb2-gpu/ref-prime.txt` (6.1 вывозит кучу; забор упавшего задания
   — `-EINVAL`). Стенды: `port/test/cdevfd/qemu-cdevfd.py`,
-  `port/test/mali/primetest.c`; на плате — `pftest prime` против
-  `jobprobe.py prime`, **нужен `boot.mba` с новым VFS**. Заголовки
+  `port/test/mali/primetest.c`; на плате (2026-10-14) — `pftest
+  prime` против `jobprobe.py prime`, 66 из 66 строк. Заголовки
   `<linux/dma-buf.h>`, `<linux/sync_file.h>` — свои, в
   `/usr/include/gfxcompat/linux`. Разбор — `PORTING-LOG.md`, «Этап 11.6,
   вторая часть».
@@ -1275,9 +1275,27 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   замером — `sched_*` (только `SCHED_OTHER`), `__libc_thr_yield`,
   `CLOCK_MONOTONIC_RAW`, `pthread_setname_np`, `mprotect` (`ENOTSUP`),
   `<pthread.h>` прослойки тащил ~130 макросов MINIX (`EXTERN` — токен
-  GLSL). **На плате не запускалось:** нужны новые `kernel.bin` (TLS) и
-  `boot.mba` (VFS с `cdevfd`). Разбор — `PORTING-LOG.md`, «Этап 11.6,
-  третья часть: Mesa в дереве».
+  GLSL). Разбор — `PORTING-LOG.md`, «Этап 11.6, третья часть: Mesa в
+  дереве».
+- **11.6 пройдена на плате (2026-10-14): куб на Mali.** `glcube` —
+  `Mali-G52 r1 MC1 (Panfrost)`, OpenGL ES 3.1, на мониторе 15 из 15,
+  18,5 кадра/с (копия в `/dev/fb0`); `pftest prime` — 66 из 66 строк
+  panfrost. Комплект загрузки — от HEAD (`kernel.bin` `5eed7ed3`,
+  `boot.mba` `5e90b922`), **сверен образ за образом** с тем, что стоял
+  (`mbals.py`/`mfs3ls.py` в `~/mali-prime` — разбор архива и ramdisk);
+  прежняя пара — `/root/meecho-boot-1014-prev` в Armbian. **Чужой
+  незакоммиченный VM в общем `obj`** — собрать VM из `git archive HEAD`
+  отдельно; тут его код совпал со стоявшим, и в архив лёг стоявший
+  побайтно. **Журнал Mesa: `MESA_LOG_LEVEL=debug`** вместе с
+  `EGL_LOG_LEVEL` (у `util/log.c` свой порог). **Мьютекс из нулей —
+  мьютекс по умолчанию** (`pthread_compat.c`; Panfrost не зовёт
+  `pthread_mutex_init()` для `bo_map_lock`), `mthread_*()` служб — как
+  были. `eglChooseConfig` без `EGL_SURFACE_TYPE` ищет окно — у
+  surfaceless только pbuffer. **Журнал, который должен пережить сброс,
+  — потоком по ssh на рабочую машину**: файл в `/tmp` на eMMC пришёл
+  пустым. Открыто: один сброс платы через 20–40 с после падения `glcube`
+  (до правки libmthread), не воспроизвёлся. Разбор — `PORTING-LOG.md`,
+  «Этап 11.6 на плате».
 - **11.7 начата (2026-10-13, QEMU): лента в `meechowm`** — окна столбцами
   на горизонтальной ленте, рабочие места по вертикали, клавиши с Super
   (список — в начале `meechowm.c`). Арифметика — `layout.c` (хостовый

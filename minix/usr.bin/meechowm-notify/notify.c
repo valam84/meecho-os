@@ -565,7 +565,13 @@ main(int argc, char **argv)
 		interval = 100;
 	signal(SIGTERM, on_signal);
 	signal(SIGINT, on_signal);
-	signal(SIGHUP, on_signal);
+	/*
+	 * A hangup ignored by whoever started it (nohup, trap '' HUP: started
+	 * over ssh, so as to outlive the session) stays ignored; caught, the
+	 * end of that session ended the notifier with it, without a word.
+	 */
+	if (signal(SIGHUP, on_signal) == SIG_IGN)
+		signal(SIGHUP, SIG_IGN);
 
 	if (ref) {
 		if (argc != 2 || out == NULL)

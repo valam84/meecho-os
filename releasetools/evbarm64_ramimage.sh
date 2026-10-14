@@ -163,6 +163,10 @@ fi
 # IPCFLOW, built in an object directory of its own (port/kbuild-variant.sh)
 # so that the kernel the shared one holds stays the one everybody boots.
 KERNEL=${KERNEL_ELF:-${OBJ}/minix/kernel/kernel}
+# BOOT_IMAGES: the same for boot images - "name=file ...", e.g.
+# "pm=/home/minix/obj-x/minix/servers/pm/pm" - a server built in an object
+# directory of its own, booted without replacing the shared one.
+: ${BOOT_IMAGES=}
 KERNEL_BIN=${WORK_DIR}/kernel.bin
 ARCHIVE=${WORK_DIR}/boot.mba
 
@@ -236,6 +240,13 @@ do
 		exit 1
 	}
 	file=${OBJ}/${rel}
+	for o in ${BOOT_IMAGES}
+	do
+		if [ "${o%%=*}" = "${name}" ]
+		then
+			file=${o#*=}
+		fi
+	done
 	if [ ! -f "${file}" ]
 	then
 		echo "$0: missing boot image ${file}" >&2

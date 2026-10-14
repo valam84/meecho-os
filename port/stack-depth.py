@@ -431,8 +431,8 @@ if unresolved_hit:
     print("\nunresolved indirect calls on these paths:")
     for u in sorted(unresolved_hit):
         print(f"  {u}: {', '.join(indirect[u])}")
-print(f"\nrecursion cut: {len(cycles)} cycles (all through panic, assert or "
-      f"{len(CYCLIC)}")
+print(f"\nrecursion cut: {len(CYCLIC)} functions on cycles (all through "
+      f"panic, assert or printf; -v lists them)")
 if "-v" in sys.argv:
     for c in sorted(CYCLIC):
         print("  " + c)

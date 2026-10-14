@@ -159,7 +159,10 @@ then
 	fi
 fi
 
-KERNEL=${OBJ}/minix/kernel/kernel
+# KERNEL_ELF: a kernel built elsewhere - a variant with KTRACE or without
+# IPCFLOW, built in an object directory of its own (port/kbuild-variant.sh)
+# so that the kernel the shared one holds stays the one everybody boots.
+KERNEL=${KERNEL_ELF:-${OBJ}/minix/kernel/kernel}
 KERNEL_BIN=${WORK_DIR}/kernel.bin
 ARCHIVE=${WORK_DIR}/boot.mba
 

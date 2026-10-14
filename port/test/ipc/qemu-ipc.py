@@ -320,7 +320,11 @@ def main():
 		if k not in JOBS:
 			sys.exit("нет такой нагрузки: %s" % k)
 
-	if subprocess.call(["pgrep", "-f", "qemu-system-aarch6[4]"],
+	# Свой WORK_DIR - свой образ диска, и чужой QEMU его не держит. Цену
+	# прибора под -i это не портит: под icount время гостя - его
+	# инструкции, а не часы хоста.
+	if "WORK_DIR" not in os.environ and subprocess.call(
+	    ["pgrep", "-f", "qemu-system-aarch6[4]"],
 	    stdout=subprocess.DEVNULL) == 0:
 		sys.exit("другой QEMU ещё жив; он держит образ диска")
 

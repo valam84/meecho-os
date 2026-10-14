@@ -41,6 +41,26 @@ New directories under /usr/include, /usr/share and /etc go into
 etc/mtree/NetBSD.dist.base, and DESTDIR gets them from
 "nbmake-evbarm64-el do-distrib-dirs".
 
+Mesa (26.2.4, stage 11.6): external/mit/mesa, static libgallium, libEGL,
+libGLESv2, libgbm and the EGL/GLES/KHR headers.  Too big for lists by hand
+(1150 compiles in 90 meson targets, 130 generated files), so the reachover
+is made from meson's own build of Mesa for MEECHO:
+
+  mesa-import.sh     fetch the release, build Mesa's tools for the host
+                     (mesa_clc, vtn_bindgen2, panfrost_compile: Panfrost's
+                     internal shaders are OpenCL C), configure meson for
+                     aarch64-elf64-minix (the "oracle") and compile every
+                     object, then mesa-reachover.py into the tree
+  mesa-reachover.py  dist/ = the files the build read (ninja's records),
+                     unchanged; gen/ = the generated ones (nir_opt_algebraic.c,
+                     52 MB of tables, as .gz); lib/*/srcs.mk = sources and
+                     the flags meson gives each target
+The decisions are in the hand-written Makefiles: external/mit/mesa/
+Makefile.inc (DETECT_OS_*, the C++ toolchain) and lib/libgallium/Makefile.
+Building: "port/build-dirs.sh external/mit/mesa" after libdrm; programs link
+with the second-pass g++: -lEGL -lGLESv2 -lgbm -lgallium -ldrm -lz
+-lepoll-shim -lgfxcompat -lmthread (../test/gles/glcube.c).
+
   import-stack.sh    every dist from its source (~/gfx-src: shallow clones
                      of the upstream tags; ~/gfxport/nb-xsrc: NetBSD's xsrc)
 

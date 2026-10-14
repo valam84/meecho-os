@@ -17,6 +17,9 @@ SUBDIR+=	.WAIT libffi wayland-protocols pixman libdrm libxkbcommon \
 SUBDIR+=	.WAIT wayland fontconfig
 SUBDIR+=	.WAIT wlroots fcft
 SUBDIR+=	.WAIT foot fuzzel yambar
+# Mesa (stage 11.6): needs libdrm and the toolchain's C++ second pass,
+# ~/xtools-aarch64-cxx (port/build-xtools.sh cxx; external/mit/mesa).
+SUBDIR+=	mesa
 .endif
 
 .if ${MKX11} != "no"

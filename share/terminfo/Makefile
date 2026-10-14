@@ -18,7 +18,12 @@ FILESDIR=${BINDIR}/misc
 # foot's import - one copy, which an update of foot updates.  libterminfo
 # reads no other database than this one ($TERMINFO and ~/.terminfo
 # aside).  foot-direct loses its colors#16777216: numbers here are 16
-# bits, and tic drops the larger one.
+# bits, and tic drops the larger one - silently.
+#
+# So did every foot its pairs#0x10000 (stage 11.7, MEECHO's style): with
+# no pairs, curses' has_colors() is false, and nnn, vi and mtop drew in
+# foot without a colour.  32767 is the most a number here holds; curses
+# uses no more than its own MAX_PAIRS of them anyway.
 FOOTINFO=	${NETBSDSRCDIR}/external/mit/foot/dist/foot.info
 TISRC=		terminfo.all
 CLEANFILES+=	terminfo.all
@@ -28,7 +33,8 @@ FILESNAME_terminfo.all=	terminfo
 terminfo.all: terminfo ${FOOTINFO}
 	${_MKTARGET_CREATE}
 	{ cat "${.CURDIR}/terminfo"; \
-	  ${TOOL_SED} 's/@default_terminfo@/foot/g' "${FOOTINFO}"; } \
+	  ${TOOL_SED} -e 's/@default_terminfo@/foot/g' \
+	    -e 's/pairs#0x10000,/pairs#0x7fff,/' "${FOOTINFO}"; } \
 	    > ${.TARGET}.tmp && mv ${.TARGET}.tmp ${.TARGET}
 .else
 TISRC=		${.CURDIR}/terminfo

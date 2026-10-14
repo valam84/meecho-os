@@ -358,6 +358,13 @@ arch_init(void)
 	cntkctl |= AARCH64_CNTKCTL_EL0VCTEN;
 	__asm__ volatile("msr cntkctl_el1, %0" :: "r"(cntkctl));
 
+	/*
+	 * Privileged Access Never, on a core that has it: from here on an
+	 * ordinary EL1 access to a user address faults. Per core, because
+	 * PSTATE and SCTLR_EL1 are. See pan.c.
+	 */
+	pan_init();
+
 #ifdef CONFIG_SMP
 	/*
 	 * The lock watchdog, per core: the event stream that lets a wait for

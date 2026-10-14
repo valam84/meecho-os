@@ -83,9 +83,9 @@ static void kernel_call_finish(struct proc * caller, message *msg, int result)
 	hook_ipc_msgkresult(msg, caller);
 #endif
 		  if (copy_msg_to_user(msg, (message *)caller->p_delivermsg_vir)) {
-			  printf("WARNING wrong user pointer 0x%08x from "
+			  printf("WARNING wrong user pointer 0x%08lx from "
 					  "process %s / %d\n",
-					  caller->p_delivermsg_vir,
+					  (unsigned long)caller->p_delivermsg_vir,
 					  caller->p_name,
 					  caller->p_endpoint);
 			  cause_sig(proc_nr(caller), SIGSEGV);
@@ -156,8 +156,8 @@ void kernel_call(message *m_user, struct proc * caller)
 	  result = kernel_call_dispatch(caller, &msg);
   }
   else {
-	  printf("WARNING wrong user pointer 0x%08x from process %s / %d\n",
-			  m_user, caller->p_name, caller->p_endpoint);
+	  printf("WARNING wrong user pointer 0x%08lx from process %s / %d\n",
+			  (unsigned long)m_user, caller->p_name, caller->p_endpoint);
 	  cause_sig(proc_nr(caller), SIGSEGV);
 	  return;
   }

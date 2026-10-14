@@ -23,6 +23,23 @@
  * was written, debugged and thrown away at stage 2.6; see PORTING-LOG.md.
  * Here the register holding the result is set by the instruction the fault
  * return lands on, and there is nothing for the compiler to reason about.
+ *
+ * The process's side is accessed with LDTR and STTR: loads and stores the
+ * core checks against the EL0 permissions of the page, as if the process had
+ * made them. Two things follow.
+ *
+ *  - A pointer into the kernel's half is refused. Nothing checked the
+ *    message pointer's range before, and LDP/STP at EL1 reach the kernel's
+ *    own pages; the kernel's pages are not EL0's, so now such a pointer is
+ *    a permission fault and the process gets SIGSEGV like any bad pointer
+ *    (port/test/pan/kptr.c checks it).
+ *  - PAN does not apply to them, so these copies work with PAN on - which
+ *    is what lets PAN stop every other EL1 access to a user address
+ *    (pan.c).
+ *
+ * LDTR and STTR have no pair form, so the process's side takes sixteen
+ * instructions where it took eight; the kernel's side stays in pairs. They
+ * are ARMv8.0, so this is the code on a core without PAN too.
  */
 
 #include <minix/ipcconst.h>
@@ -42,9 +59,9 @@
 #endif
 
 /*
- * Eight pairs, issued as two groups of four loads and four stores. Sixteen
- * bytes an instruction, and the loads of a group can be in flight together
- * rather than each waiting for the store before it.
+ * Two halves of 64 bytes, each eight loads and then eight stores, so that
+ * the loads of a half can be in flight together rather than each waiting
+ * for the store before it.
  *
  * Unaligned addresses are fine: a message is aligned to M_MESSAGE_ALIGN on
  * both sides by construction, but even a misaligned user pointer works,
@@ -52,23 +69,37 @@
  * fault on device memory, which a process has no business passing here and
  * which the abort handler treats like any other bad pointer.
  */
-	.macro	copy_message
-	ldp	x2, x3, [x0, #0]
-	ldp	x4, x5, [x0, #16]
-	ldp	x6, x7, [x0, #32]
-	ldp	x8, x9, [x0, #48]
-	stp	x2, x3, [x1, #0]
-	stp	x4, x5, [x1, #16]
-	stp	x6, x7, [x1, #32]
-	stp	x8, x9, [x1, #48]
-	ldp	x2, x3, [x0, #64]
-	ldp	x4, x5, [x0, #80]
-	ldp	x6, x7, [x0, #96]
-	ldp	x8, x9, [x0, #112]
-	stp	x2, x3, [x1, #64]
-	stp	x4, x5, [x1, #80]
-	stp	x6, x7, [x1, #96]
-	stp	x8, x9, [x1, #112]
+
+/* 64 bytes at offset \o: the process's side by LDTR, the kernel's by STP. */
+	.macro	half_from_user o
+	ldtr	x2, [x0, #(\o + 0)]
+	ldtr	x3, [x0, #(\o + 8)]
+	ldtr	x4, [x0, #(\o + 16)]
+	ldtr	x5, [x0, #(\o + 24)]
+	ldtr	x6, [x0, #(\o + 32)]
+	ldtr	x7, [x0, #(\o + 40)]
+	ldtr	x8, [x0, #(\o + 48)]
+	ldtr	x9, [x0, #(\o + 56)]
+	stp	x2, x3, [x1, #(\o + 0)]
+	stp	x4, x5, [x1, #(\o + 16)]
+	stp	x6, x7, [x1, #(\o + 32)]
+	stp	x8, x9, [x1, #(\o + 48)]
+	.endm
+
+/* The mirror image: the kernel's side by LDP, the process's by STTR. */
+	.macro	half_to_user o
+	ldp	x2, x3, [x0, #(\o + 0)]
+	ldp	x4, x5, [x0, #(\o + 16)]
+	ldp	x6, x7, [x0, #(\o + 32)]
+	ldp	x8, x9, [x0, #(\o + 48)]
+	sttr	x2, [x1, #(\o + 0)]
+	sttr	x3, [x1, #(\o + 8)]
+	sttr	x4, [x1, #(\o + 16)]
+	sttr	x5, [x1, #(\o + 24)]
+	sttr	x6, [x1, #(\o + 32)]
+	sttr	x7, [x1, #(\o + 40)]
+	sttr	x8, [x1, #(\o + 48)]
+	sttr	x9, [x1, #(\o + 56)]
 	.endm
 
 	.text
@@ -87,7 +118,8 @@
  */
 	.globl	copy_msg_from_user
 copy_msg_from_user:
-	copy_message
+	half_from_user 0
+	half_from_user 64
 	.globl	__copy_msg_from_user_end
 __copy_msg_from_user_end:
 	mov	x0, #0
@@ -103,7 +135,8 @@ __copy_msg_from_user_end:
  */
 	.globl	copy_msg_to_user
 copy_msg_to_user:
-	copy_message
+	half_to_user 0
+	half_to_user 64
 	.globl	__copy_msg_to_user_end
 __copy_msg_to_user_end:
 	mov	x0, #0
@@ -123,3 +156,27 @@ __user_copy_msg_pointer_failure:
 
 	.size	__user_copy_msg_pointer_failure, \
 		. - __user_copy_msg_pointer_failure
+
+/*
+ * u64_t kernel_probe_read(const void *addr)
+ *	returns 0 if an ordinary EL1 load of the byte at addr succeeded,
+ *	and the ESR_EL1 of the fault if it did not
+ *
+ * The opposite of the copies above: the access a kernel bug would make, made
+ * on purpose to see whether the core lets it through. pan_verify() points it
+ * at a process's stack and expects a permission fault. The abort handler
+ * sends a fault here to __kernel_probe_read_fault with the syndrome in x0.
+ */
+	.globl	kernel_probe_read
+kernel_probe_read:
+	ldrb	w1, [x0]
+	.globl	__kernel_probe_read_end
+__kernel_probe_read_end:
+	mov	x0, #0
+	ret
+
+	.globl	__kernel_probe_read_fault
+__kernel_probe_read_fault:
+	ret
+
+	.size	kernel_probe_read, . - kernel_probe_read

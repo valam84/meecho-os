@@ -283,6 +283,14 @@ abort_exception(struct proc *pr, struct stackframe_s *frame, int is_nested,
 		return;
 	}
 
+	/* The deliberate bad access pan_verify() makes: report, not fix. */
+	if (is_nested && frame->pc >= (reg_t)kernel_probe_read &&
+	    frame->pc < (reg_t)__kernel_probe_read_end) {
+		frame->retreg = (reg_t)esr;
+		frame->pc = (reg_t)__kernel_probe_read_fault;
+		return;
+	}
+
 	/* Translation, access flag and permission faults are page faults. */
 	if (AARCH64_VM_PFE_IS_TRANS(fsc) || AARCH64_VM_PFE_IS_ACCESS(fsc) ||
 	    AARCH64_VM_PFE_IS_PERM(fsc)) {
@@ -466,6 +474,14 @@ trap_handler(struct stackframe_s *frame, u64_t kind, u64_t esr, u64_t far)
 		STOPRACE_UNDONE(pr, "entry with EC", (int)ec);
 		return;
 	}
+
+	/*
+	 * Until this core has seen PAN fault once: a process's tables are in
+	 * TTBR0 and it has entered the kernel before, so this is the state
+	 * PAN has to hold in. One load and a branch after that. See pan.c.
+	 */
+	if (kind == EXC_EL0_64_IRQ)
+		pan_verify(pr);
 
 	switch (kind) {
 	case EXC_EL1H_IRQ:

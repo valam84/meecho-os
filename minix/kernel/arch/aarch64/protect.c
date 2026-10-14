@@ -173,6 +173,14 @@ arch_boot_proc(struct boot_image *ip, struct proc *rp)
 		execi.allocmem_ondemand = libexec_pg_alloc;
 		execi.clearproc = NULL;
 
+		/*
+		 * From here to the stack below the kernel writes VM's pages at
+		 * VM's own addresses - the bootstrap table maps them for EL0,
+		 * and PAN forbids exactly that. The one place the kernel means
+		 * to; see pan.c.
+		 */
+		pan_user_access_begin();
+
 		if (libexec_load_elf(&execi) != OK)
 			panic("VM loading failed");
 
@@ -202,6 +210,8 @@ arch_boot_proc(struct boot_image *ip, struct proc *rp)
 		psp->ps_nargvstr = 0;
 		psp->ps_envstr = psp->ps_argvstr + 1;
 		psp->ps_nenvstr = 0;
+
+		pan_user_access_end();
 
 		arch_proc_init(rp, execi.pc, sp,
 		    execi.stack_high - sizeof(struct ps_strings),

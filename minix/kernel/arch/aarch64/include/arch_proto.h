@@ -64,6 +64,20 @@ void __copy_msg_to_user_end(void);
 void __user_copy_msg_pointer_failure(void);
 
 /*
+ * An ordinary EL1 load from an address, allowed to fault: 0 if it read,
+ * the fault's ESR_EL1 if not. usercopy.S; the abort handler knows its span.
+ */
+u64_t kernel_probe_read(const void *addr);
+void __kernel_probe_read_end(void);
+void __kernel_probe_read_fault(void);
+
+/* pan.c: Privileged Access Never, per core. */
+void pan_init(void);
+void pan_user_access_begin(void);
+void pan_user_access_end(void);
+void pan_verify(struct proc *pr);
+
+/*
  * The memory map the kernel was handed at boot, and the one it hands on to
  * VM. Generic main() returns the bootstrap memory to it once the bootstrap
  * phase is over, which is the one entry point into the architecture memory

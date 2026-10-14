@@ -58,14 +58,18 @@
 #include "fb_ioc.h"
 #include "layout.h"
 #include "meechowm.h"
+#include "style.h"
 #include "wm.h"
 
-static const float colour_background[4] = {
-	0x1d / 255.0f, 0x23 / 255.0f, 0x30 / 255.0f, 1
-};
-static const float colour_ring[4] = {
-	0x7f / 255.0f, 0xc8 / 255.0f, 0xff / 255.0f, 1
-};
+/*
+ * MEECHO's colours (minix/share/style/palette, made into style.h): the
+ * ground under everything - what shows where no wallpaper is - and the
+ * blue of the focus ring.
+ */
+#define RGBA(c)	{ ((c) >> 16 & 0xff) / 255.0f, ((c) >> 8 & 0xff) / 255.0f, \
+		  ((c) & 0xff) / 255.0f, 1 }
+static const float colour_background[4] = RGBA(STYLE_INK);
+static const float colour_ring[4] = RGBA(STYLE_ACCENT);
 #define RING	2		/* the focus ring's width: it lies in the gap */
 
 /* A layout's column widths and their x on the screen. */

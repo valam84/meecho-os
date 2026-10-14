@@ -7,8 +7,20 @@ SRCS=	meechowm.c strip.c layers.c layout.c ipc.c fbout.c input.c \
 	mousesplit.c hid2evdev.c
 MAN=
 # Super+d: the launcher and command palette, over fuzzel; the panel, over
-# yambar (both external/mit).
-SCRIPTS=	meechowm-palette.sh meechowm-bar.sh
+# yambar (both external/mit); Print: the screenshot, over grim; and the
+# desktop as a whole, from the console (stage 11.7).
+SCRIPTS=	meechowm-palette.sh meechowm-bar.sh meechowm-shot.sh \
+		meecho-desktop.sh
+
+# MEECHO's colours, from its palette (minix/share/style): the ground and
+# the focus ring (strip.c).
+STYLEDIR=	${NETBSDSRCDIR}/minix/share/style
+style.h: ${STYLEDIR}/palette ${STYLEDIR}/style.awk
+	${_MKTARGET_CREATE}
+	${TOOL_AWK} -v out=c -f ${STYLEDIR}/style.awk ${STYLEDIR}/palette \
+	    > ${.TARGET}.tmp && mv ${.TARGET}.tmp ${.TARGET}
+DPSRCS+=	style.h
+CLEANFILES+=	style.h style.h.tmp
 
 WLPROTOCOLSDIST=	${NETBSDSRCDIR}/external/mit/wayland-protocols/dist
 WLROOTSPROTO=		${NETBSDSRCDIR}/external/mit/wlroots/dist/protocol

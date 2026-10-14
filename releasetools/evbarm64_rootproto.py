@@ -48,11 +48,15 @@ import sys
 # etc/fonts - настройка fontconfig (external/mit/fontconfig/etc): fonts.conf,
 # шаблоны conf.avail и ссылки conf.d. В ramdisk её нет, а без неё fcft и
 # foot не находят шрифтов иначе как по FONTCONFIG_FILE.
+#
+# etc/xdg - настройка программ стола по XDG (foot, fuzzel), сделанная из
+# палитры MEECHO (minix/share/style); у пользователя своя в ~/.config.
 DEFAULT_SUBDIRS = [
     "bin",
     "service",
     "etc/system.conf.d",
     "etc/fonts",
+    "etc/xdg",
     "sbin",
     "usr/bin",
     "usr/sbin",

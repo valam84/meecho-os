@@ -11,16 +11,21 @@
 # are meechowm -m's (strip.c lists them), which reach the compositor that
 # started this through the socket in XDG_RUNTIME_DIR.
 #
+# Its look - font, size, MEECHO's colours - is fuzzel's configuration,
+# /etc/xdg/fuzzel/fuzzel.ini (minix/share/style), or the user's own.
+#
 # Environment: MEECHOWM_TERM (the terminal, foot), MEECHOWM_FONT (a
-# fontconfig pattern, monospace:size=12).
+# fontconfig pattern, for another font than the configuration's).
 
 T=${MEECHOWM_TERM:-foot}
 
 entries() {
 	printf '%s\t%s\n' \
 	    "Terminal"				"meechowm -m terminal" \
+	    "Files (nnn)"			"$T -e nnn -e" \
 	    "System monitor (mtop)"		"$T -e mtop" \
 	    "Editor (vi)"			"$T -e vi" \
+	    "Screenshot (to ~/Pictures)"	"meechowm-shot" \
 	    "Width: a third"			"meechowm -m width 1/3" \
 	    "Width: a half"			"meechowm -m width 1/2" \
 	    "Width: two thirds"			"meechowm -m width 2/3" \
@@ -33,7 +38,9 @@ entries() {
 	    "Move the column a workspace down"	"meechowm -m move down" \
 	    "Motion off"			"meechowm -m anim 0" \
 	    "Motion on"				"meechowm -m anim 200" \
-	    "Leave the desktop"			"meechowm -m quit"
+	    "Leave the desktop"			"meechowm -m quit" \
+	    "Restart the machine"		"/sbin/reboot" \
+	    "Turn the machine off"		"/sbin/poweroff"
 	# The screen's modes, as the driver lists them: "1920x1080@60
 	# current" - type "screen" and a size to narrow them down.
 	meechowm -m modes 2>/dev/null | while read -r m now; do
@@ -42,14 +49,7 @@ entries() {
 	done
 }
 
-# The desktop's colours: its background, its text, the focus ring's blue.
 cmd=$(entries | fuzzel --dmenu --with-nth=1 --accept-nth=2 \
-    --prompt='> ' --font="${MEECHOWM_FONT:-monospace:size=12}" \
-    --lines=12 --width=44 \
-    --background-color=1d2330f2 --text-color=dfe6f0ff \
-    --input-color=dfe6f0ff --prompt-color=7fc8ffff \
-    --match-color=7fc8ffff --selection-color=7fc8ffff \
-    --selection-text-color=1d2330ff --selection-match-color=1d2330ff \
-    --border-color=7fc8ffff --border-width=2 --border-radius=0) || exit 0
+    ${MEECHOWM_FONT:+--font="$MEECHOWM_FONT"}) || exit 0
 [ -n "$cmd" ] || exit 0
 exec /bin/sh -c "$cmd"

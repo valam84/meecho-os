@@ -1,0 +1,31 @@
+# fuzzel's configuration on MEECHO (/etc/xdg/fuzzel/fuzzel.ini) - the
+# launcher and command palette of the desktop, meechowm-palette - made
+# from MEECHO's colours: minix/share/style.  One of your own,
+# ~/.config/fuzzel/fuzzel.ini, is read instead of this one.
+
+[main]
+font=monospace:size=12
+prompt="> "
+lines=12
+width=44
+horizontal-pad=16
+vertical-pad=10
+inner-pad=6
+
+[colors]
+background=@surface@f2
+text=@text@ff
+message=@muted@ff
+prompt=@accent@ff
+placeholder=@muted@ff
+input=@bright@ff
+match=@accent@ff
+selection=@accent@ff
+selection-text=@ink@ff
+selection-match=@ink@ff
+counter=@muted@ff
+border=@accent@ff
+
+[border]
+width=2
+radius=0

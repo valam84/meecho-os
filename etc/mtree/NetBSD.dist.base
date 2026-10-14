@@ -55,6 +55,9 @@
 ./etc/saslc.d/saslc/mech
 ./etc/skel
 ./etc/system.conf.d
+./etc/xdg
+./etc/xdg/foot
+./etc/xdg/fuzzel
 ./home
 ./lib
 ./libexec
@@ -270,6 +273,7 @@
 ./usr/share/examples/rtadvd
 ./usr/share/examples/tmux
 ./usr/share/fonts
+./usr/share/fonts/go
 ./usr/share/games
 ./usr/share/games/fortune
 ./usr/share/i18n
@@ -701,6 +705,7 @@
 ./usr/share/locale/zh_TW/LC_MESSAGES
 ./usr/share/lua
 ./usr/share/lua/5.3
+./usr/share/meecho
 ./usr/share/misc
 ./usr/share/mk
 ./usr/share/nls

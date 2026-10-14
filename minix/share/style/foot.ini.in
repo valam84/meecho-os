@@ -1,0 +1,43 @@
+# foot's configuration on MEECHO (/etc/xdg/foot/foot.ini), made from
+# MEECHO's colours: minix/share/style.  One of your own,
+# ~/.config/foot/foot.ini, is read instead of this one, not on top of it.
+
+[main]
+# Go Mono (fontconfig's monospace on MEECHO, 56-meecho.conf).
+font=monospace:size=12
+pad=10x8
+# No render threads: libmthread's threads take turns on one core, so
+# foot's workers would add the turns and none of the speed.
+workers=0
+
+[cursor]
+style=block
+blink=no
+
+[colors-dark]
+background=@ink@
+foreground=@text@
+cursor=@ink@ @accent@
+regular0=@ansi0@
+regular1=@ansi1@
+regular2=@ansi2@
+regular3=@ansi3@
+regular4=@ansi4@
+regular5=@ansi5@
+regular6=@ansi6@
+regular7=@ansi7@
+bright0=@ansi8@
+bright1=@ansi9@
+bright2=@ansi10@
+bright3=@ansi11@
+bright4=@ansi12@
+bright5=@ansi13@
+bright6=@ansi14@
+bright7=@ansi15@
+selection-foreground=@bright@
+selection-background=@accent_deep@
+urls=@accent@
+jump-labels=@ink@ @yellow@
+scrollback-indicator=@ink@ @accent@
+search-box-no-match=@ink@ @red@
+search-box-match=@ink@ @accent@

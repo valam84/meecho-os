@@ -4,4 +4,9 @@
 SUBDIR+=	beaglebone
 .endif # ${MACHINE_ARCH} == "earm"
 
+# MEECHO's house style: the desktop's colours and what is made of them.
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+=	style
+.endif
+
 .include <bsd.subdir.mk>

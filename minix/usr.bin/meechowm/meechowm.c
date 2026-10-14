@@ -29,8 +29,11 @@
  *   Shift+e                     end the compositor (and so does Alt+Escape)
  *   the wheel                   focus the column left or right
  *
- * A click focuses the column under the pointer.  The same commands come
- * over a socket (ipc.c): "meechowm -m focus right", "meechowm -m state".
+ * and Print, alone, a screenshot (meechowm-shot: grim, which the
+ * compositor lets read the screen - ext-image-copy-capture and
+ * wlr-screencopy).  A click focuses the column under the pointer.  The
+ * same commands come over a socket (ipc.c): "meechowm -m focus right",
+ * "meechowm -m state".
  *
  *   meechowm [-s startup command]
  *   meechowm -m command [argument ...]
@@ -59,16 +62,20 @@
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_ext_image_capture_source_v1.h>
+#include <wlr/types/wlr_ext_image_copy_capture_v1.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
@@ -158,6 +165,11 @@ static const struct binding {
 	{ false, XKB_KEY_8,	"workspace 8" },
 	{ false, XKB_KEY_9,	"workspace 9" },
 	{ true,	 XKB_KEY_E,	"quit" },
+};
+
+/* The keys that are the compositor's without its modifier. */
+static const struct binding bare_bindings[] = {
+	{ false, XKB_KEY_Print,	"spawn meechowm-shot" },
 };
 
 static void process_cursor_motion(struct tinywl_server *server, uint32_t time);
@@ -390,6 +402,16 @@ static void keyboard_handle_key(
 			} else if (modifiers & server->mod) {
 				handled |= handle_keybinding(server, syms[i],
 					shift);
+			} else {
+				for (size_t b = 0; b < sizeof(bare_bindings) /
+				    sizeof(bare_bindings[0]); b++) {
+					if (bare_bindings[b].sym == syms[i] &&
+					    !shift) {
+						run_command(server,
+						    bare_bindings[b].command);
+						handled = true;
+					}
+				}
 			}
 		}
 	}
@@ -1191,6 +1213,18 @@ int main(int argc, char *argv[]) {
 	server.new_decoration.notify = server_new_decoration;
 	wl_signal_add(&server.decoration_mgr->events.new_toplevel_decoration,
 			&server.new_decoration);
+
+	/*
+	 * MEECHO: the screen's pixels to a client that asks for them - grim,
+	 * the screenshot (meechowm-shot).  ext-image-copy-capture with its
+	 * output sources is what grim asks for first, wlr-screencopy what
+	 * older clients know; xdg-output names the outputs and places them.
+	 */
+	wlr_ext_image_copy_capture_manager_v1_create(server.wl_display, 1);
+	wlr_ext_output_image_capture_source_manager_v1_create(server.wl_display,
+		1);
+	wlr_screencopy_manager_v1_create(server.wl_display);
+	wlr_xdg_output_manager_v1_create(server.wl_display, server.output_layout);
 
 	/*
 	 * Creates a cursor, which is a wlroots utility for tracking the cursor

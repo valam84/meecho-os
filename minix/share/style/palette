@@ -1,0 +1,64 @@
+#
+# MEECHO's colours - the one place they are written (stage 11.7).
+#
+# The desktop's programs take them from here when they are built: foot,
+# fuzzel and yambar their configuration files, the wallpaper its picture,
+# meechowm its background and focus ring, and the screen console its
+# sixteen colours (style.awk makes all of them, see the Makefile).  A
+# colour changed here changes everywhere; a colour written anywhere else
+# is a mistake.
+#
+# A line is NAME VALUE: VALUE is RRGGBB, or the NAME of a colour above it.
+# Templates say @NAME@; C code says STYLE_NAME.
+#
+# The ground, darkest first.  MEECHO's desktop is a night one: everything
+# stands on ink, and what rises above it is lighter.
+ink_deep	151a24	# the wallpaper's far corner
+ink		1d2330	# the background: desktop, panel, terminal, console
+surface		283142	# what rises above it: the launcher
+line		3b4559	# quiet edges and separators; ANSI black
+dim		5e6a80	# ANSI bright black: there, but not said
+
+# The text, quiet first.
+muted		8a95a9	# what is said quietly: the panel's date, hints
+pale		c4cddb	# ANSI white
+text		dfe6f0	# text
+bright		f6f8fb	# ANSI bright white: emphasis
+
+# MEECHO blue: what has the focus - the focus ring, the prompt, the
+# cursor, what matches - and the mark.  accent_deep is its shadow: under
+# selected text, the wallpaper's columns.
+accent		7fc8ff
+accent_deep	2e5a82
+
+# The signal colours, normal and bright; blue is the accent.
+red		ff8585
+green		94d69b
+yellow		ffcf75
+magenta		c9aaff
+cyan		74dccf
+red_b		ffaaaa
+green_b		b7e7bb
+yellow_b	ffdea0
+blue_b		a9dbff
+magenta_b	dcc9ff
+cyan_b		a0e9df
+
+# The sixteen colours of ANSI escapes, as terminals and the console number
+# them: black, red, green, yellow, blue, magenta, cyan, white, then bright.
+ansi0		line
+ansi1		red
+ansi2		green
+ansi3		yellow
+ansi4		accent
+ansi5		magenta
+ansi6		cyan
+ansi7		pale
+ansi8		dim
+ansi9		red_b
+ansi10		green_b
+ansi11		yellow_b
+ansi12		blue_b
+ansi13		magenta_b
+ansi14		cyan_b
+ansi15		bright

@@ -598,10 +598,10 @@ static struct inputdriver kbd_tab = {
  * character types, a compositor's keys first of all: MODS is any of C
  * (control), S (shift), A (alt) and G (the GUI key, Super), each followed
  * by '+', and KEY a character or one of Left Right Up Down Home End PageUp
- * PageDown Insert Delete Return Escape Tab Space Backspace F1..F12 - so
- * "%[G+Right]", "%[G+S+Left]", "%[G+r]".  injectwait=N waits N seconds
- * instead of one - long enough, say, to log out and have getty ask for a
- * login name that is then typed.
+ * PageDown Insert Delete Return Escape Tab Space Backspace Print F1..F12 -
+ * so "%[G+Right]", "%[G+S+Left]", "%[G+r]", "%[Print]".  injectwait=N
+ * waits N seconds instead of one - long enough, say, to log out and have
+ * getty ask for a login name that is then typed.
  */
 #define INJECT_MAX	256
 
@@ -625,7 +625,8 @@ static const struct {
 	{ "Tab", 0x2b }, { "Space", 0x2c }, { "Insert", 0x49 },
 	{ "Home", 0x4a }, { "PageUp", 0x4b }, { "Delete", 0x4c },
 	{ "End", 0x4d }, { "PageDown", 0x4e }, { "Right", 0x4f },
-	{ "Left", 0x50 }, { "Down", 0x51 }, { "Up", 0x52 }
+	{ "Left", 0x50 }, { "Down", 0x51 }, { "Up", 0x52 },
+	{ "Print", 0x46 }
 };
 
 /* A character to a key code and the modifiers it needs. */

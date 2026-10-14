@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MEECHO's wallpaper (/usr/share/meecho/wallpaper.svg), made from
+  MEECHO's colours: minix/share/style - wbg draws it, scaled to the
+  screen.  What it shows is the desktop's own idea: windows as columns on
+  a strip that runs past both edges of the screen, the one in focus
+  ringed in MEECHO blue, the workspaces above and below just showing -
+  and in the focused column the mark, in the pixels of the console's
+  font.  nanosvg (wbg's) draws no text, so the letters are squares on a
+  five by seven grid.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1920" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#@ink@"/>
+      <stop offset="1" stop-color="#@ink_deep@"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#ground)"/>
+  <!-- the workspace above -->
+  <g opacity="0.3">
+    <rect x="-160" y="-268" width="480" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="-136" y="-240" width="267" height="8"/>
+      <rect x="-136" y="-218" width="164" height="8"/>
+      <rect x="-136" y="-196" width="319" height="8"/>
+      <rect x="-136" y="-174" width="216" height="8"/>
+      <rect x="-136" y="-130" width="285" height="8"/>
+      <rect x="-136" y="-108" width="129" height="8"/>
+      <rect x="-136" y="-86" width="237" height="8"/>
+      <rect x="-136" y="-64" width="181" height="8"/>
+      <rect x="-136" y="-20" width="302" height="8"/>
+      <rect x="-136" y="2" width="207" height="8"/>
+      <rect x="-136" y="24" width="112" height="8"/>
+      <rect x="-136" y="46" width="259" height="8"/>
+      <rect x="-136" y="68" width="155" height="8"/>
+      <rect x="-136" y="90" width="267" height="8"/>
+      <rect x="-136" y="112" width="164" height="8"/>
+      <rect x="-136" y="134" width="319" height="8"/>
+      <rect x="-136" y="156" width="216" height="8"/>
+    </g>
+    <rect x="344" y="-268" width="360" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="368" y="-240" width="156" height="8"/>
+      <rect x="368" y="-196" width="205" height="8"/>
+      <rect x="368" y="-174" width="93" height="8"/>
+      <rect x="368" y="-152" width="171" height="8"/>
+      <rect x="368" y="-130" width="131" height="8"/>
+      <rect x="368" y="-86" width="218" height="8"/>
+      <rect x="368" y="-64" width="149" height="8"/>
+      <rect x="368" y="-42" width="81" height="8"/>
+      <rect x="368" y="-20" width="187" height="8"/>
+      <rect x="368" y="2" width="112" height="8"/>
+      <rect x="368" y="24" width="193" height="8"/>
+      <rect x="368" y="46" width="118" height="8"/>
+      <rect x="368" y="68" width="230" height="8"/>
+      <rect x="368" y="90" width="156" height="8"/>
+      <rect x="368" y="134" width="205" height="8"/>
+      <rect x="368" y="156" width="93" height="8"/>
+      <rect x="368" y="178" width="171" height="8"/>
+    </g>
+    <rect x="728" y="-268" width="720" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="752" y="-240" width="201" height="8"/>
+      <rect x="752" y="-218" width="369" height="8"/>
+      <rect x="752" y="-196" width="282" height="8"/>
+      <rect x="752" y="-152" width="470" height="8"/>
+      <rect x="752" y="-130" width="322" height="8"/>
+      <rect x="752" y="-108" width="174" height="8"/>
+      <rect x="752" y="-86" width="403" height="8"/>
+      <rect x="752" y="-64" width="241" height="8"/>
+      <rect x="752" y="-42" width="416" height="8"/>
+      <rect x="752" y="-20" width="255" height="8"/>
+      <rect x="752" y="2" width="497" height="8"/>
+      <rect x="752" y="24" width="336" height="8"/>
+      <rect x="752" y="68" width="443" height="8"/>
+      <rect x="752" y="90" width="201" height="8"/>
+      <rect x="752" y="112" width="369" height="8"/>
+      <rect x="752" y="134" width="282" height="8"/>
+      <rect x="752" y="178" width="470" height="8"/>
+    </g>
+    <rect x="1472" y="-268" width="360" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="1496" y="-218" width="218" height="8"/>
+      <rect x="1496" y="-196" width="149" height="8"/>
+      <rect x="1496" y="-174" width="81" height="8"/>
+      <rect x="1496" y="-152" width="187" height="8"/>
+      <rect x="1496" y="-130" width="112" height="8"/>
+      <rect x="1496" y="-108" width="193" height="8"/>
+      <rect x="1496" y="-86" width="118" height="8"/>
+      <rect x="1496" y="-64" width="230" height="8"/>
+      <rect x="1496" y="-42" width="156" height="8"/>
+      <rect x="1496" y="2" width="205" height="8"/>
+      <rect x="1496" y="24" width="93" height="8"/>
+      <rect x="1496" y="46" width="171" height="8"/>
+      <rect x="1496" y="68" width="131" height="8"/>
+      <rect x="1496" y="112" width="218" height="8"/>
+      <rect x="1496" y="134" width="149" height="8"/>
+      <rect x="1496" y="156" width="81" height="8"/>
+      <rect x="1496" y="178" width="187" height="8"/>
+    </g>
+    <rect x="1856" y="-268" width="480" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="1880" y="-240" width="112" height="8"/>
+      <rect x="1880" y="-218" width="259" height="8"/>
+      <rect x="1880" y="-196" width="155" height="8"/>
+      <rect x="1880" y="-174" width="267" height="8"/>
+      <rect x="1880" y="-152" width="164" height="8"/>
+      <rect x="1880" y="-130" width="319" height="8"/>
+      <rect x="1880" y="-108" width="216" height="8"/>
+      <rect x="1880" y="-64" width="285" height="8"/>
+      <rect x="1880" y="-42" width="129" height="8"/>
+      <rect x="1880" y="-20" width="237" height="8"/>
+      <rect x="1880" y="2" width="181" height="8"/>
+      <rect x="1880" y="46" width="302" height="8"/>
+      <rect x="1880" y="68" width="207" height="8"/>
+      <rect x="1880" y="90" width="112" height="8"/>
+      <rect x="1880" y="112" width="259" height="8"/>
+      <rect x="1880" y="134" width="155" height="8"/>
+      <rect x="1880" y="156" width="267" height="8"/>
+      <rect x="1880" y="178" width="164" height="8"/>
+    </g>
+  </g>
+  <!-- the workspace on the screen -->
+  <g opacity="1">
+    <rect x="-160" y="300" width="480" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="-136" y="328" width="267" height="8"/>
+      <rect x="-136" y="350" width="164" height="8"/>
+      <rect x="-136" y="372" width="319" height="8"/>
+      <rect x="-136" y="394" width="216" height="8"/>
+      <rect x="-136" y="438" width="285" height="8"/>
+      <rect x="-136" y="460" width="129" height="8"/>
+      <rect x="-136" y="482" width="237" height="8"/>
+      <rect x="-136" y="504" width="181" height="8"/>
+      <rect x="-136" y="548" width="302" height="8"/>
+      <rect x="-136" y="570" width="207" height="8"/>
+      <rect x="-136" y="592" width="112" height="8"/>
+      <rect x="-136" y="614" width="259" height="8"/>
+      <rect x="-136" y="636" width="155" height="8"/>
+      <rect x="-136" y="658" width="267" height="8"/>
+      <rect x="-136" y="680" width="164" height="8"/>
+      <rect x="-136" y="702" width="319" height="8"/>
+      <rect x="-136" y="724" width="216" height="8"/>
+    </g>
+    <rect x="344" y="300" width="360" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="368" y="328" width="156" height="8"/>
+      <rect x="368" y="372" width="205" height="8"/>
+      <rect x="368" y="394" width="93" height="8"/>
+      <rect x="368" y="416" width="171" height="8"/>
+      <rect x="368" y="438" width="131" height="8"/>
+      <rect x="368" y="482" width="218" height="8"/>
+      <rect x="368" y="504" width="149" height="8"/>
+      <rect x="368" y="526" width="81" height="8"/>
+      <rect x="368" y="548" width="187" height="8"/>
+      <rect x="368" y="570" width="112" height="8"/>
+      <rect x="368" y="592" width="193" height="8"/>
+      <rect x="368" y="614" width="118" height="8"/>
+      <rect x="368" y="636" width="230" height="8"/>
+      <rect x="368" y="658" width="156" height="8"/>
+      <rect x="368" y="702" width="205" height="8"/>
+      <rect x="368" y="724" width="93" height="8"/>
+      <rect x="368" y="746" width="171" height="8"/>
+    </g>
+    <rect x="728" y="300" width="720" height="480" fill="#@surface@" fill-opacity="0.85" stroke="#@accent@" stroke-width="3"/>
+    <rect x="1472" y="300" width="360" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="1496" y="350" width="218" height="8"/>
+      <rect x="1496" y="372" width="149" height="8"/>
+      <rect x="1496" y="394" width="81" height="8"/>
+      <rect x="1496" y="416" width="187" height="8"/>
+      <rect x="1496" y="438" width="112" height="8"/>
+      <rect x="1496" y="460" width="193" height="8"/>
+      <rect x="1496" y="482" width="118" height="8"/>
+      <rect x="1496" y="504" width="230" height="8"/>
+      <rect x="1496" y="526" width="156" height="8"/>
+      <rect x="1496" y="570" width="205" height="8"/>
+      <rect x="1496" y="592" width="93" height="8"/>
+      <rect x="1496" y="614" width="171" height="8"/>
+      <rect x="1496" y="636" width="131" height="8"/>
+      <rect x="1496" y="680" width="218" height="8"/>
+      <rect x="1496" y="702" width="149" height="8"/>
+      <rect x="1496" y="724" width="81" height="8"/>
+      <rect x="1496" y="746" width="187" height="8"/>
+    </g>
+    <rect x="1856" y="300" width="480" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="1880" y="328" width="112" height="8"/>
+      <rect x="1880" y="350" width="259" height="8"/>
+      <rect x="1880" y="372" width="155" height="8"/>
+      <rect x="1880" y="394" width="267" height="8"/>
+      <rect x="1880" y="416" width="164" height="8"/>
+      <rect x="1880" y="438" width="319" height="8"/>
+      <rect x="1880" y="460" width="216" height="8"/>
+      <rect x="1880" y="504" width="285" height="8"/>
+      <rect x="1880" y="526" width="129" height="8"/>
+      <rect x="1880" y="548" width="237" height="8"/>
+      <rect x="1880" y="570" width="181" height="8"/>
+      <rect x="1880" y="614" width="302" height="8"/>
+      <rect x="1880" y="636" width="207" height="8"/>
+      <rect x="1880" y="658" width="112" height="8"/>
+      <rect x="1880" y="680" width="259" height="8"/>
+      <rect x="1880" y="702" width="155" height="8"/>
+      <rect x="1880" y="724" width="267" height="8"/>
+      <rect x="1880" y="746" width="164" height="8"/>
+    </g>
+  </g>
+  <!-- the workspace below -->
+  <g opacity="0.3">
+    <rect x="-160" y="868" width="480" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="-136" y="896" width="267" height="8"/>
+      <rect x="-136" y="918" width="164" height="8"/>
+      <rect x="-136" y="940" width="319" height="8"/>
+      <rect x="-136" y="962" width="216" height="8"/>
+      <rect x="-136" y="1006" width="285" height="8"/>
+      <rect x="-136" y="1028" width="129" height="8"/>
+      <rect x="-136" y="1050" width="237" height="8"/>
+      <rect x="-136" y="1072" width="181" height="8"/>
+      <rect x="-136" y="1116" width="302" height="8"/>
+      <rect x="-136" y="1138" width="207" height="8"/>
+      <rect x="-136" y="1160" width="112" height="8"/>
+      <rect x="-136" y="1182" width="259" height="8"/>
+      <rect x="-136" y="1204" width="155" height="8"/>
+      <rect x="-136" y="1226" width="267" height="8"/>
+      <rect x="-136" y="1248" width="164" height="8"/>
+      <rect x="-136" y="1270" width="319" height="8"/>
+      <rect x="-136" y="1292" width="216" height="8"/>
+    </g>
+    <rect x="344" y="868" width="360" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="368" y="896" width="156" height="8"/>
+      <rect x="368" y="940" width="205" height="8"/>
+      <rect x="368" y="962" width="93" height="8"/>
+      <rect x="368" y="984" width="171" height="8"/>
+      <rect x="368" y="1006" width="131" height="8"/>
+      <rect x="368" y="1050" width="218" height="8"/>
+      <rect x="368" y="1072" width="149" height="8"/>
+      <rect x="368" y="1094" width="81" height="8"/>
+      <rect x="368" y="1116" width="187" height="8"/>
+      <rect x="368" y="1138" width="112" height="8"/>
+      <rect x="368" y="1160" width="193" height="8"/>
+      <rect x="368" y="1182" width="118" height="8"/>
+      <rect x="368" y="1204" width="230" height="8"/>
+      <rect x="368" y="1226" width="156" height="8"/>
+      <rect x="368" y="1270" width="205" height="8"/>
+      <rect x="368" y="1292" width="93" height="8"/>
+      <rect x="368" y="1314" width="171" height="8"/>
+    </g>
+    <rect x="728" y="868" width="720" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="752" y="896" width="201" height="8"/>
+      <rect x="752" y="918" width="369" height="8"/>
+      <rect x="752" y="940" width="282" height="8"/>
+      <rect x="752" y="984" width="470" height="8"/>
+      <rect x="752" y="1006" width="322" height="8"/>
+      <rect x="752" y="1028" width="174" height="8"/>
+      <rect x="752" y="1050" width="403" height="8"/>
+      <rect x="752" y="1072" width="241" height="8"/>
+      <rect x="752" y="1094" width="416" height="8"/>
+      <rect x="752" y="1116" width="255" height="8"/>
+      <rect x="752" y="1138" width="497" height="8"/>
+      <rect x="752" y="1160" width="336" height="8"/>
+      <rect x="752" y="1204" width="443" height="8"/>
+      <rect x="752" y="1226" width="201" height="8"/>
+      <rect x="752" y="1248" width="369" height="8"/>
+      <rect x="752" y="1270" width="282" height="8"/>
+      <rect x="752" y="1314" width="470" height="8"/>
+    </g>
+    <rect x="1472" y="868" width="360" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="1496" y="918" width="218" height="8"/>
+      <rect x="1496" y="940" width="149" height="8"/>
+      <rect x="1496" y="962" width="81" height="8"/>
+      <rect x="1496" y="984" width="187" height="8"/>
+      <rect x="1496" y="1006" width="112" height="8"/>
+      <rect x="1496" y="1028" width="193" height="8"/>
+      <rect x="1496" y="1050" width="118" height="8"/>
+      <rect x="1496" y="1072" width="230" height="8"/>
+      <rect x="1496" y="1094" width="156" height="8"/>
+      <rect x="1496" y="1138" width="205" height="8"/>
+      <rect x="1496" y="1160" width="93" height="8"/>
+      <rect x="1496" y="1182" width="171" height="8"/>
+      <rect x="1496" y="1204" width="131" height="8"/>
+      <rect x="1496" y="1248" width="218" height="8"/>
+      <rect x="1496" y="1270" width="149" height="8"/>
+      <rect x="1496" y="1292" width="81" height="8"/>
+      <rect x="1496" y="1314" width="187" height="8"/>
+    </g>
+    <rect x="1856" y="868" width="480" height="480" fill="#@surface@" fill-opacity="0.5" stroke="#@line@" stroke-width="2"/>
+    <g fill="#@line@">
+      <rect x="1880" y="896" width="112" height="8"/>
+      <rect x="1880" y="918" width="259" height="8"/>
+      <rect x="1880" y="940" width="155" height="8"/>
+      <rect x="1880" y="962" width="267" height="8"/>
+      <rect x="1880" y="984" width="164" height="8"/>
+      <rect x="1880" y="1006" width="319" height="8"/>
+      <rect x="1880" y="1028" width="216" height="8"/>
+      <rect x="1880" y="1072" width="285" height="8"/>
+      <rect x="1880" y="1094" width="129" height="8"/>
+      <rect x="1880" y="1116" width="237" height="8"/>
+      <rect x="1880" y="1138" width="181" height="8"/>
+      <rect x="1880" y="1182" width="302" height="8"/>
+      <rect x="1880" y="1204" width="207" height="8"/>
+      <rect x="1880" y="1226" width="112" height="8"/>
+      <rect x="1880" y="1248" width="259" height="8"/>
+      <rect x="1880" y="1270" width="155" height="8"/>
+      <rect x="1880" y="1292" width="267" height="8"/>
+      <rect x="1880" y="1314" width="164" height="8"/>
+    </g>
+  </g>
+  <!-- the mark: MEECHO, a path a letter -->
+  <g fill="#@accent@">
+    <path d="M843 491h14v14h-14zM899 491h14v14h-14zM843 505h28v14h-28zM885 505h28v14h-28zM843 519h14v14h-14zM871 519h14v14h-14zM899 519h14v14h-14zM843 533h14v14h-14zM871 533h14v14h-14zM899 533h14v14h-14zM843 547h14v14h-14zM899 547h14v14h-14zM843 561h14v14h-14zM899 561h14v14h-14zM843 575h14v14h-14zM899 575h14v14h-14z"/>
+    <path d="M927 491h70v14h-70zM927 505h14v14h-14zM927 519h14v14h-14zM927 533h56v14h-56zM927 547h14v14h-14zM927 561h14v14h-14zM927 575h70v14h-70z"/>
+    <path d="M1011 491h70v14h-70zM1011 505h14v14h-14zM1011 519h14v14h-14zM1011 533h56v14h-56zM1011 547h14v14h-14zM1011 561h14v14h-14zM1011 575h70v14h-70z"/>
+    <path d="M1109 491h42v14h-42zM1095 505h14v14h-14zM1151 505h14v14h-14zM1095 519h14v14h-14zM1095 533h14v14h-14zM1095 547h14v14h-14zM1095 561h14v14h-14zM1151 561h14v14h-14zM1109 575h42v14h-42z"/>
+    <path d="M1179 491h14v14h-14zM1235 491h14v14h-14zM1179 505h14v14h-14zM1235 505h14v14h-14zM1179 519h14v14h-14zM1235 519h14v14h-14zM1179 533h70v14h-70zM1179 547h14v14h-14zM1235 547h14v14h-14zM1179 561h14v14h-14zM1235 561h14v14h-14zM1179 575h14v14h-14zM1235 575h14v14h-14z"/>
+    <path d="M1277 491h42v14h-42zM1263 505h14v14h-14zM1319 505h14v14h-14zM1263 519h14v14h-14zM1319 519h14v14h-14zM1263 533h14v14h-14zM1319 533h14v14h-14zM1263 547h14v14h-14zM1319 547h14v14h-14zM1263 561h14v14h-14zM1319 561h14v14h-14zM1277 575h42v14h-42z"/>
+  </g>
+</svg>

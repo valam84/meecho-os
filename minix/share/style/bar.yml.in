@@ -1,0 +1,68 @@
+# The panel of the MEECHO desktop (/usr/share/meecho/bar.yml): yambar, as
+# meechowm-bar starts it unless there is ~/.config/yambar/config.yml.  Made
+# from MEECHO's colours: minix/share/style.
+#
+# Left: the mark, the workspaces (a dot each, the one on the screen
+# filled) and the focused window's title - meechowm-bar status, from
+# meechowm -m state.  Right: how busy the processors are and how much
+# memory is in use - meechowm-bar load, from kern.cp_time and
+# /proc/meminfo - then the date and the time.
+bar:
+  location: top
+  # 24 with the line under it, which yambar adds to the height.
+  height: 23
+  spacing: 6
+  margin: 12
+  font: monospace:size=11
+  foreground: @text@ff
+  background: @ink@ff
+  border:
+    bottom-width: 1
+    color: @line@ff
+  left:
+    - label:
+        content:
+          string:
+            text: "MEECHO"
+            foreground: @accent@ff
+            font: monospace:size=11:weight=bold
+            right-margin: 8
+    - script:
+        path: /usr/bin/meechowm-bar
+        args: [status]
+        poll-interval: 1000
+        content:
+          list:
+            spacing: 14
+            items:
+              - string: {text: "{workspace}", foreground: @accent@ff}
+              - string: {text: "{title}", max: 64}
+  right:
+    - script:
+        path: /usr/bin/meechowm-bar
+        args: [load]
+        poll-interval: 2000
+        content:
+          list:
+            spacing: 14
+            items:
+              - list:
+                  spacing: 4
+                  items:
+                    - string: {text: "cpu", foreground: @muted@ff}
+                    - string: {text: "{cpu}%"}
+              - list:
+                  spacing: 4
+                  items:
+                    - string: {text: "mem", foreground: @muted@ff}
+                    - string: {text: "{mem}M"}
+    - clock:
+        time-format: "%H:%M"
+        date-format: "%a %d %b"
+        content:
+          list:
+            spacing: 8
+            left-margin: 14
+            items:
+              - string: {text: "{date}", foreground: @muted@ff}
+              - string: {text: "{time}", foreground: @bright@ff}

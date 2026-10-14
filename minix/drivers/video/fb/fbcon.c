@@ -52,6 +52,7 @@
 
 #include "fb.h"
 #include "fbcon.h"
+#include "style.h"
 
 /* What NetBSD's <dev/wscons/wsconsio.h> says of a font, as far as needed. */
 #define WSDISPLAY_FONTENC_ISO	0
@@ -76,15 +77,15 @@ struct wsdisplay_font {
 #define CELL_FG(v)	(((v) >> 8) & 0xff)
 #define CELL_BG(v)	(((v) >> 16) & 0xff)
 
-/* The sixteen colours of a PC console, which is what ANSI escapes mean. */
-static const uint8_t palette[16][3] = {
-	{ 0x00, 0x00, 0x00 }, { 0xaa, 0x00, 0x00 }, { 0x00, 0xaa, 0x00 },
-	{ 0xaa, 0x55, 0x00 }, { 0x00, 0x00, 0xaa }, { 0xaa, 0x00, 0xaa },
-	{ 0x00, 0xaa, 0xaa }, { 0xaa, 0xaa, 0xaa },
-	{ 0x55, 0x55, 0x55 }, { 0xff, 0x55, 0x55 }, { 0x55, 0xff, 0x55 },
-	{ 0xff, 0xff, 0x55 }, { 0x55, 0x55, 0xff }, { 0xff, 0x55, 0xff },
-	{ 0x55, 0xff, 0xff }, { 0xff, 0xff, 0xff },
-};
+/*
+ * The sixteen colours ANSI escapes mean, as MEECHO has them - the ones
+ * foot has on the desktop (minix/share/style/palette, made into style.h) -
+ * but for black, which on a console is the ground everything stands on:
+ * there it is the desktop's ground, ink.  (Dark enough for fbpeek, which
+ * takes a pixel with no channel above 0x40 for background.)
+ */
+static const uint32_t palette[16] = STYLE_ANSI;
+#define COLOUR(i)	((i) == DEF_BG ? STYLE_INK : palette[i])
 #define DEF_FG		7
 #define DEF_BG		0
 
@@ -529,9 +530,9 @@ fbcon_attach(int minor, int kmess)
 	con.cols = v.xres / CW;
 	con.rows = v.yres / CH;
 	for (i = 0; i < 16; i++)
-		con.pixel[i] = (uint32_t)palette[i][0] << v.red.offset |
-		    (uint32_t)palette[i][1] << v.green.offset |
-		    (uint32_t)palette[i][2] << v.blue.offset;
+		con.pixel[i] = (COLOUR(i) >> 16 & 0xff) << v.red.offset |
+		    (COLOUR(i) >> 8 & 0xff) << v.green.offset |
+		    (COLOUR(i) & 0xff) << v.blue.offset;
 	if ((con.cells = calloc(con.cols * con.rows, sizeof(con.cells[0]))) ==
 	    NULL || (con.dirty = calloc(con.rows, 1)) == NULL)
 		return ENOMEM;

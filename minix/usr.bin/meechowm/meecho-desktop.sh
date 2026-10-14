@@ -1,9 +1,10 @@
 #!/bin/sh
 #
 # meecho-desktop - the MEECHO desktop, from the console (stage 11.7):
-# meechowm, and in it the wallpaper (wbg), the panel (meechowm-bar) and a
-# terminal (foot).  Super+d is the palette, Print a screenshot; Super+Shift+e
-# ends it, and the console has the screen back.
+# meechowm, and in it the wallpaper (wbg), the panel (meechowm-bar), the
+# cards for restarted services (meechowm-notify) and a terminal (foot).
+# Super+d is the palette, Print a screenshot; Super+Shift+e ends it, and
+# the console has the screen back.
 #
 # Everything on it wears MEECHO's style (minix/share/style): the colours of
 # /usr/share/meecho/palette, made into foot's and fuzzel's configuration
@@ -35,7 +36,7 @@ export XDG_RUNTIME_DIR
 export NNN_COLORS NNN_FCOLORS
 
 wall=${MEECHOWM_WALLPAPER:-/usr/share/meecho/wallpaper.svg}
-startup="meechowm-bar & ${MEECHOWM_TERM:-foot}"
+startup="meechowm-bar & meechowm-notify & ${MEECHOWM_TERM:-foot}"
 [ "$wall" = none ] || startup="wbg '$wall' & $startup"
 
 exec meechowm -s "$startup"

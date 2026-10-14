@@ -1,9 +1,11 @@
 # libwlroots-0.20: the compositor library, with the headless and Wayland
-# backends and the pixman renderer - what meson builds with
-# -Dbackends= -Drenderers= -Dallocators= -Dsession=disabled
-# -Dxwayland=disabled, as the prototype did (port/gfx).  No DRM, libinput or
-# X11 backend, no GLES2 or Vulkan renderer: meechowm brings its own screen
-# and input (minix/usr.bin/meechowm).
+# backends, the pixman and GLES2 renderers and the GBM allocator - what
+# meson builds with -Dbackends= -Drenderers=gles2 -Dallocators=gbm
+# -Dsession=disabled -Dxwayland=disabled.  No DRM, libinput or X11
+# backend, no Vulkan renderer: meechowm brings its own screen and input
+# (minix/usr.bin/meechowm).  GLES2 and GBM are Mesa's (external/mit/mesa,
+# Panfrost on the CB2's Mali): a program linking this library links Mesa
+# too, and draws with pixman where there is no GPU (QEMU).
 #
 # Left out with the protocol it implements: types/wlr_server_decoration.c
 # (KDE's server-decoration.xml is LGPL, and is not imported).
@@ -35,9 +37,15 @@ WLR_SRCS= \
 	render/pixman/pass.c \
 	render/pixman/pixel_format.c \
 	render/pixman/renderer.c \
+	render/egl.c \
+	render/gles2/pass.c \
+	render/gles2/pixel_format.c \
+	render/gles2/renderer.c \
+	render/gles2/texture.c \
 	render/allocator/allocator.c \
 	render/allocator/shm.c \
 	render/allocator/drm_dumb.c \
+	render/allocator/gbm.c \
 	render/color_fallback.c \
 	backend/backend.c \
 	backend/multi/backend.c \
@@ -253,6 +261,19 @@ CLEANFILES+=	${_x:T:R}-protocol.c ${_x:T:R}-protocol.h \
 		${_x:T:R}-client-protocol.h
 .endfor
 
+# The GLES2 renderer's shaders as C strings: what render/gles2/shaders/
+# meson.build makes with its embed.sh (od, on the host).
+WLR_SHADERS=	common.vert quad.frag tex_rgba.frag tex_rgbx.frag \
+		tex_external.frag
+.for _s in ${WLR_SHADERS}
+${_s:S/./_/}_src.h: ${WLRDIST}/render/gles2/shaders/${_s}
+	${_MKTARGET_CREATE}
+	${HOST_SH} ${WLRDIST}/render/gles2/shaders/embed.sh ${_s:S/./_/}_src \
+	    < ${.ALLSRC} > ${.TARGET}.tmp && mv ${.TARGET}.tmp ${.TARGET}
+DPSRCS+=	${_s:S/./_/}_src.h
+CLEANFILES+=	${_s:S/./_/}_src.h
+.endfor
+
 # What wlroots' meson.build gives every file.
 CPPFLAGS+=	-D_POSIX_C_SOURCE=200809L -D_NETBSD_SOURCE \
 		-DWLR_USE_UNSTABLE -DWLR_PRIVATE= \
@@ -289,6 +310,8 @@ INCS= \
 	wlr/render/dmabuf.h \
 	wlr/render/drm_format_set.h \
 	wlr/render/drm_syncobj.h \
+	wlr/render/egl.h \
+	wlr/render/gles2.h \
 	wlr/render/interface.h \
 	wlr/render/pass.h \
 	wlr/render/pixman.h \

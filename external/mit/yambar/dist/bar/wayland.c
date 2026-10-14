@@ -12,6 +12,15 @@
 #include <fcntl.h>
 #include <linux/input-event-codes.h>
 #include <sys/mman.h>
+#if defined(__minix)
+/* MEECHO: the abort_fd that loop() writes is libepoll-shim's eventfd - the
+ * reading end of a pipe, whose counter the library keeps - and write(2) on
+ * it has to be the library's: its headers redirect write() where they are
+ * included, as main.c and bar.c include this one.  Without it the write
+ * went to the pipe's reading end and failed (EBADF), and when the display
+ * went away, the modules, and the bar joining them, never heard of it. */
+#include <sys/eventfd.h>
+#endif
 
 #include <pixman.h>
 #include <wayland-client.h>

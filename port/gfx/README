@@ -119,6 +119,8 @@ with the second-pass g++: -lEGL -lGLESv2 -lgbm -lgallium -ldrm -lz
                      panel and foot on the palette's colours, nnn, the
                      palette, grim against /dev/fb0, Print, the end of
                      it all, the console back on ink; the frame as a PNG
+  test/board-desk.sh the same desktop on the board, over ssh, left on the
+                     monitor ("board-desk.sh stop" ends it)
   test/board-shot.sh the board's screen as a PNG, over ssh from Git Bash:
                      fbart says the geometry, dd reads /dev/fb0, fbpng.py
                      (in WSL) writes it

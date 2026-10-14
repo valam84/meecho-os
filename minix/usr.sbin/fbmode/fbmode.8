@@ -1,0 +1,36 @@
+.TH FBMODE 8
+.SH NAME
+fbmode \- show or change the mode of the screen
+.SH SYNOPSIS
+\fBfbmode\fR [\fB\-d\fR \fIdevice\fR] [\fIwidth\fBx\fIheight\fR[\fB@\fIhz\fR]]
+.SH DESCRIPTION
+Without an argument, \fBfbmode\fR lists the modes the screen can be given,
+one a line, as \fIwidth\fBx\fIheight\fB@\fIhz\fR; the one on the screen is
+marked \fBcurrent\fR.
+The list is the frame buffer driver's: the modes the monitor reports
+(EDID, its CEA-861 extension included) that the driver can make, or, on
+a virtual display, the driver's own few.
+.PP
+With an argument, \fBfbmode\fR changes the screen to that mode: the one of
+that size whose rate is nearest to \fIhz\fR, or to 60 if \fIhz\fR is not
+given.
+It prints the mode taken.
+The console on the screen takes the new size at once, keeping its lines
+up to the cursor.
+.PP
+While a program such as the compositor has the screen, the driver refuses
+the change; the compositor changes the mode itself
+(\fBmeechowm \-m mode\fR \fIwidth\fBx\fIheight\fR).
+.PP
+The mode at boot is chosen by the driver: the monitor's preferred, or the
+largest it lists that the driver makes; the boot parameter
+\fBfbmode=\fIwidth\fBx\fIheight\fR[\fB@\fIhz\fR] asks for another.
+.SH OPTIONS
+.TP 10
+\fB\-d\fR \fIdevice\fR
+The frame buffer; \fB/dev/fb0\fR by default.
+.SH "EXIT STATUS"
+0 on success; 1 if the driver refused or the device did not open; 2 for
+an argument that is not a mode.
+.SH "SEE ALSO"
+meechowm(1)

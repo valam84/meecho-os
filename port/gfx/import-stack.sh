@@ -232,9 +232,36 @@ imp_gofont() {
 	rm -r "$TREE"/external/bsd/gofont/dist/font
 }
 
+# cairo 1.18.6, under the MPL 1.1 - cairo is MPL-1.1 or LGPL-2.1, and
+# MEECHO takes it under the first, so COPYING-LGPL-2.1 stays out.  The
+# library's sources for what is built here (external/mit/cairo/Makefile):
+# the image surface on pixman, PNG, the SVG surface that comes with it,
+# FreeType and fontconfig, recording - exactly the files meson's build of
+# that reads.  Not X11, Quartz, Win32, PostScript, PDF or the script
+# surface, nor the tests, tools and script interpreter (util/).
+imp_cairo() {
+	local d=$TREE/external/mit/cairo/dist/src
+	from_git external/mit/cairo/dist cairo COPYING COPYING-MPL-1.1 \
+	    README.md AUTHORS src &&
+	rm -rf "$d"/win32 "$d"/meson.build "$d"/README "$d"/check-* \
+	    "$d"/test-* "$d"/*xlib* "$d"/*xcb* "$d"/*quartz* "$d"/*script* \
+	    "$d"/*tee* "$d"/cairo-ps* "$d"/cairo-pdf.h "$d"/cairo-pdf-surface* \
+	    "$d"/cairo-pdf-interchange.c "$d"/cairo-dwrite.h "$d"/cairo-win32.h \
+	    "$d"/cairo-image-mask-compositor.c "$d"/cairo-error-inline.h
+}
+
+# slurp 1.5.0 (MIT): the area picker of meechowm-shot -r - the program,
+# its headers and its own copy of wlr-layer-shell; the rest of its
+# protocols are wayland-protocols'.  Its manual is scdoc's.
+imp_slurp() {
+	from_git external/mit/slurp/dist slurp LICENSE README.md main.c \
+	    pool-buffer.c render.c include \
+	    protocol/wlr-layer-shell-unstable-v1.xml
+}
+
 ALL="libffi wayland wayland_protocols pixman libdrm libxkbcommon
 	xkeyboard_config wlroots freetype fontconfig tllist fcft foot fuzzel
-	libyaml yambar evdev libpng wbg grim nnn gofont"
+	libyaml yambar evdev libpng wbg grim nnn gofont cairo slurp"
 [ $# -gt 0 ] || set -- $ALL
 for p in "$@"; do
 	p=${p//-/_}

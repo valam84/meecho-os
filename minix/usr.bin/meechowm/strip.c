@@ -672,6 +672,7 @@ state(struct tinywl_server *s, struct mw_reply *r)
 		}
 	}
 	layers_state(s, r);
+	passport_state(s, r);
 }
 
 /* "left" and "up" are -1, "right" and "down" +1, anything else 0. */
@@ -891,6 +892,14 @@ wm_command(struct tinywl_server *s, const char *line, struct mw_reply *r)
 		wm_spawn(s->terminal);
 	else if (strcmp(verb, "launcher") == 0)
 		wm_spawn(s->launcher);
+	else if (strcmp(verb, "xray") == 0) {
+		/* The x-ray view: one key opens it, the same closes it. */
+		if (!layers_close(s, "meechowm-xray"))
+			wm_spawn("meechowm-xray");
+	} else if (strcmp(verb, "passport") == 0) {
+		passport_command(s, arg, r);
+		return;
+	}
 	else if (strcmp(verb, "anim") == 0) {
 		char *end;
 		long ms = strtol(arg, &end, 10);

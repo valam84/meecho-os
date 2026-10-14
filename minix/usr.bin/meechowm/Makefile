@@ -4,8 +4,10 @@
 
 PROG=	meechowm
 SRCS=	meechowm.c strip.c layers.c layout.c ipc.c fbout.c input.c \
-	mousesplit.c hid2evdev.c
+	mousesplit.c hid2evdev.c passport.c
 MAN=
+# The passport's font: Spleen 8x16, the screen console's (sys/dev/wsfont).
+CPPFLAGS.passport.c+=	-I${NETBSDSRCDIR}/sys
 # Super+d: the launcher and command palette, over fuzzel; the panel, over
 # yambar (both external/mit); Print: the screenshot, over grim; and the
 # desktop as a whole, from the console (stage 11.7).

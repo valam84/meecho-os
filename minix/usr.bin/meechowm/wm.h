@@ -7,6 +7,8 @@
  *   strip.c      the strip: workspaces, columns, focus, and the commands
  *                that act on them
  *   layers.c     layer surfaces: panels and launchers over and under it
+ *   passport.c   what the system knows of a window's process, in its
+ *                frame (the x-ray view's click, Super+i)
  *   ipc.c        the commands over a socket (meechowm -m)
  */
 #ifndef MEECHOWM_WM_H
@@ -157,6 +159,13 @@ bool layers_hold_keyboard(struct tinywl_server *server);
 void layers_click(struct tinywl_server *server, struct wlr_surface *surface);
 struct mw_reply;
 void layers_state(struct tinywl_server *server, struct mw_reply *reply);
+bool layers_close(struct tinywl_server *server, const char *name_space);
+
+/* passport.c */
+void passport_command(struct tinywl_server *server, const char *arg,
+	struct mw_reply *reply);
+void passport_off(void);
+void passport_state(struct tinywl_server *server, struct mw_reply *reply);
 
 /* strip.c */
 void strip_init(struct tinywl_server *server);

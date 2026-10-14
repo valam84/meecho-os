@@ -16,6 +16,7 @@
  * column.  Either way it goes back to the focused column after.
  */
 #include <stdlib.h>
+#include <string.h>
 
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_keyboard.h>
@@ -265,6 +266,26 @@ layers_state(struct tinywl_server *s, struct mw_reply *r)
 		    k < sizeof(kb) / sizeof(kb[0]) ? kb[k] : "?",
 		    s->layer_focus == l ? "focus" : "-");
 	}
+}
+
+/*
+ * Close the layer surfaces of one namespace (the x-ray view's, for the key
+ * that both opens and closes it): the client is told "closed" and goes.
+ * Whether there was one.
+ */
+bool
+layers_close(struct tinywl_server *s, const char *namespace)
+{
+	struct mw_layer *l, *tmp;
+	bool closed = false;
+
+	wl_list_for_each_safe(l, tmp, &s->layer_surfaces, link)
+		if (l->wlr->namespace != NULL &&
+		    strcmp(l->wlr->namespace, namespace) == 0) {
+			wlr_layer_surface_v1_destroy(l->wlr);	/* -> destroy */
+			closed = true;
+		}
+	return closed;
 }
 
 void

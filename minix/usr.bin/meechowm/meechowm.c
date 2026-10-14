@@ -25,6 +25,12 @@
  *   d                           the launcher: programs and the compositor's
  *                               commands (MEECHOWM_LAUNCHER,
  *                               meechowm-palette - fuzzel)
+ *   x                           the x-ray view: the system's processes and
+ *                               the messages between them
+ *                               (meechowm-xray); x again, or Esc, leaves
+ *   i                           the focused window's passport: its
+ *                               process, as the system knows it
+ *                               (passport.c); i again puts it away
  *   1 .. 9                      workspace 1 .. 9
  *   Shift+e                     end the compositor (and so does Alt+Escape)
  *   the wheel                   focus the column left or right
@@ -157,6 +163,8 @@ static const struct binding {
 	{ false, XKB_KEY_q,	"close" },
 	{ false, XKB_KEY_Return, "terminal" },
 	{ false, XKB_KEY_d,	"launcher" },
+	{ false, XKB_KEY_x,	"xray" },	/* the system on view */
+	{ false, XKB_KEY_i,	"passport" },	/* the focused window's */
 	{ false, XKB_KEY_1,	"workspace 1" },
 	{ false, XKB_KEY_2,	"workspace 2" },
 	{ false, XKB_KEY_3,	"workspace 3" },

@@ -45,7 +45,8 @@ they go, workspaces strictly between on and off the screen.
  10a. Super+d: the palette (meechowm-palette, fuzzel) over the strip, with
      the keyboard; "third" and Enter make the focused column a third (416)
  11. a command that is not one: an error, and exit status 1
- 12. Super+Shift+e: the compositor ends, the console has the screen
+ 12. Super+Shift+e: the compositor ends, and the panel (yambar) with it;
+     the console has the screen
 
 At the first failure the tail of the compositor's log is printed.  Log of
 the whole run: ~/qemu-strip.log.
@@ -522,12 +523,29 @@ def main():
                "error:" in out and out.rstrip().endswith("RC=1"),
                out.strip().splitlines()[-1] if out.strip() else "")
 
+        # The panel has lost its display then, and goes by itself: its bar
+        # thread tells the modules through an eventfd (libepoll-shim's),
+        # and a write that missed it left yambar running for good.  The
+        # same look before: it has to find the one yambar there is.
+        send("echo BE''FORE $(ps -ax -o command | grep -c '^[y]ambar')")
+        m = re.search(r"BEFORE (\d+)", expect(r"BEFORE \d+", 60))
+        before = int(m.group(1)) if m else -1
         keys("%[G+S+e]")
         send("sleep 4; if kill -0 $MWM 2>/dev/null; then echo AL''IVE; "
              "else echo GO''NE; fi")
         out = expect(r"ALIVE|GONE", 60)
         record("12. Super+Shift+e ends the compositor", "GONE" in out,
                "it is still running")
+        send("n=0; while [ $n -lt 10 ] && ps -ax -o command | "
+             "grep -q '^[y]ambar'; do sleep 2; n=$((n+1)); done; "
+             "ps -alx | grep '[y]ambar'; echo BA''R $n")
+        out = expect(r"BAR \d+", 120)
+        left = [l.strip() for l in out.splitlines()
+                if re.search(r"\syambar\s", l) and "grep" not in l]
+        record("12. the panel (yambar) goes with it",
+               before == 1 and not left,
+               "%d running before; still there: %s" %
+               (before, "; ".join(left) or "none"))
         c = colour_at(320, SCREEN_H // 2)
         record("12. the console has the screen back",
                c not in (BACKGROUND, RED, GREEN, BLUE), "0x%06x" % c)

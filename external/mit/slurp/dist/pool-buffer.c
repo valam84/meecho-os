@@ -11,6 +11,16 @@
 
 #include "pool-buffer.h"
 
+#if defined(__minix)
+/*
+ * MEECHO: no POSIX shared memory objects (shm_open(3)); the memory a
+ * Wayland buffer is shared through is a memfd_create(2) object, as for
+ * every other client here.
+ */
+static int anonymous_shm_open(void) {
+	return memfd_create("slurp", MFD_CLOEXEC);
+}
+#else
 static void randname(char *buf) {
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
@@ -39,6 +49,7 @@ static int anonymous_shm_open(void) {
 
 	return -1;
 }
+#endif /* __minix */
 
 static int create_shm_file(off_t size) {
 	int fd = anonymous_shm_open();

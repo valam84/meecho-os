@@ -89,6 +89,7 @@
 ./usr/include/c++
 ./usr/include/c++/experimental
 ./usr/include/c++/ext
+./usr/include/cairo
 ./usr/include/clang-3.6
 ./usr/include/crypto
 ./usr/include/ddekit

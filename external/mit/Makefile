@@ -17,9 +17,11 @@ SUBDIR+=	.WAIT libffi wayland-protocols pixman libdrm libxkbcommon \
 SUBDIR+=	.WAIT wayland fontconfig
 SUBDIR+=	.WAIT wlroots fcft
 SUBDIR+=	.WAIT foot fuzzel yambar
-# The desktop's other programs (stage 11.7): libpng for grim and wbg.
+# The desktop's other programs (stage 11.7): libpng for grim and wbg;
+# cairo (pixman, FreeType, fontconfig, libpng) for slurp, the area picker.
 SUBDIR+=	libpng
-SUBDIR+=	.WAIT wbg grim
+SUBDIR+=	.WAIT wbg grim cairo
+SUBDIR+=	.WAIT slurp
 # Mesa (stage 11.6): needs libdrm and the toolchain's C++ second pass,
 # ~/xtools-aarch64-cxx (port/build-xtools.sh cxx; external/mit/mesa).
 SUBDIR+=	mesa

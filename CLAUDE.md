@@ -295,6 +295,21 @@ Ubuntu `gcc-15-source`/`binutils-source` с патчами `port/toolchain/` с�
   (`SERVER-AUDIT.md`, «Открыто»). `new char[1<<40]` в C++ «работал»,
   потому что GCC выбросил пару `new[]`/`delete[]`. Разбор —
   `PORTING-LOG.md`, «`malloc(1 ТиБ)` ронял систему».
+- **Закрыто 2026-10-14 (QEMU, 1 и 4 ядра): `kill -STOP` останавливает,
+  а не убивает.** У PM не было состояния «стоит до SIGCONT» (апстрим:
+  всё не игнорируемое — завершение). Теперь `JOB_STOPPED` поверх той же
+  остановки, что для доставки сигнала (`stop_proc()`; ядро не тронуто),
+  SIGCONT продолжает и игнорируемый, сигналы ждут, SIGKILL — нет,
+  `waitpid(WUNTRACED/WCONTINUED)`, SIGCHLD/`SA_NOCLDSTOP`, `T` в
+  `ps`/`psinfo` (mib пересобирается с PM), SIGSTOP не перехватывается;
+  остановленный, чей родитель вышел, получает SIGHUP+SIGCONT.
+  **Ctrl-Z/`fg`/`bg` нет**: `ash` с `JOBS 0`, у `tty` нет `VSUSP`/
+  `TIOCSPGRP`, `setpgid` = `setsid`. Программы из консоли получают
+  SIGTSTP/TTIN/TTOU игнорируемыми (`login`, `init`) — им `kill -TSTP`
+  ничего не делает, `kill -STOP` работает. Тест — `test95`, стенд —
+  `port/test/jobctl/qemu-jobctl.py`; свой PM без подмены общего —
+  `BOOT_IMAGES=` у `ramimage.sh`. Разбор — `PORTING-LOG.md`,
+  «Стоп-сигналы останавливают».
 - **Линия консоли «хаб → плата» мертва (2026-10-12):** UART2 платы `rx:0`,
   вывод платы доходит. С `slow_console` U-Boot ждёт Enter и не
   дожидается — ядро не стартует, `bootwd` не спасает, вернуть плату может

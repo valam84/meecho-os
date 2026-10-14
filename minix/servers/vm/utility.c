@@ -386,16 +386,16 @@ int _brk(void *addr)
 {
 	/* brk is a special case function to allow vm itself to
 	   allocate memory in it's own (cacheable) HEAP */
-	vir_bytes target = roundup((vir_bytes)addr, VM_PAGE_SIZE), v;
+	vir_bytes target = roundup((vir_bytes)addr, VM_PAGE_SIZE), v, start;
 	extern char _end;
 	extern char *_brksize;
 	static vir_bytes prevbrk = (vir_bytes) &_end;
 	struct vmproc *vmprocess = &vmproc[VM_PROC_NR];
 
-	for(v = roundup(prevbrk, VM_PAGE_SIZE); v < target;
-		v += VM_PAGE_SIZE) {
+	start = roundup(prevbrk, VM_PAGE_SIZE);
+	for(v = start; v < target; v += VM_PAGE_SIZE) {
 		phys_bytes mem, newpage = alloc_mem(1, PAF_RESERVE);
-		if(newpage == NO_MEM) return -1;
+		if(newpage == NO_MEM) break;
 		mem = CLICK2ABS(newpage);
 		if(pt_writemap(vmprocess, &vmprocess->vm_pt,
 			v, mem, VM_PAGE_SIZE,
@@ -405,10 +405,28 @@ int _brk(void *addr)
 			| ARCH_VM_PTE_CACHED
 			, 0) != OK) {
 			free_mem(newpage, 1);
-			return -1;
+			break;
 		}
-		prevbrk = v + VM_PAGE_SIZE;
 	}
+
+	/*
+	 * A heap that cannot grow all the way gives back what it took on
+	 * the way. These pages carry PAF_RESERVE - they are VM's - and a
+	 * failed malloc() used to keep every one of them: a request bigger
+	 * than RAM left VM holding all of it, the reserve included, and the
+	 * next process to fault, VFS, found nothing.
+	 */
+	if(v < target) {
+		if(v > start && pt_writemap(vmprocess, &vmprocess->vm_pt,
+			start, MAP_NONE, v - start, 0,
+			WMF_OVERWRITE | WMF_FREE) != OK)
+			panic("_brk: cannot give back the heap it grew");
+		if(v > start && sys_vmctl(SELF, VMCTL_FLUSHTLB, 0) != OK)
+			panic("flushtlb failed");
+		return -1;
+	}
+	if(target > start)
+		prevbrk = target;
 
         _brksize = (char *) addr;
 

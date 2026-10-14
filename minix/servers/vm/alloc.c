@@ -368,6 +368,26 @@ void mem_reserve_stats(phys_bytes *free, phys_bytes *reserve)
 	*reserve = reserve_pages;
 }
 
+/*
+ * Whether VM may spend 'bytes' of its own memory on a user process. What VM
+ * keeps about a region - the physblocks array, eight bytes a page of it - is
+ * VM's heap and so carries PAF_RESERVE, but how big it is the user decides:
+ * a few lazy gigabytes of mmap() touch no page and still cost megabytes.
+ * Such memory is had on the user's terms - outside the reserve, the page
+ * cache given up first - as the user's pages are.
+ */
+int mem_user_room(phys_bytes bytes)
+{
+	phys_bytes pages = (bytes + VM_PAGE_SIZE - 1) / VM_PAGE_SIZE;
+
+	do {
+		if(free_pages_count >= reserve_pages + pages)
+			return 1;
+	} while(cache_freepages(pages) > 0);
+
+	return 0;
+}
+
 #if SANITYCHECKS
 void mem_sanitycheck(const char *file, int line)
 {

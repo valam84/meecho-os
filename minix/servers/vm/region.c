@@ -415,10 +415,32 @@ static vir_bytes region_find_slot(struct vmproc *vmp,
 	return region_find_slot_range(vmp, minv, maxv, length);
 }
 
-static unsigned int phys_slot(vir_bytes len)
+/*
+ * Slots are counted in vir_bytes, as the lengths they come from are: as an
+ * unsigned int, a break of 8 TiB came back negative in the int it was kept
+ * in, and VM stopped on an assert in map_region_extend_upto_v().
+ */
+static vir_bytes phys_slot(vir_bytes len)
 {
 	assert(!(len % VM_PAGE_SIZE));
 	return len / VM_PAGE_SIZE;
+}
+
+/*
+ * Whether a region of 'length' may be made for, or grown to that length in,
+ * process vmp. Its physblocks array is VM's own memory, and VM's memory may
+ * come out of the reserve - but the size of this array a user process
+ * chooses, and a few lazy gigabytes cost megabytes without one page touched.
+ * So for a user process it is had on the terms of its pages: outside the
+ * reserve (alloc.c). Splitting a region needs no room: the two arrays
+ * replace one of the same size, and a process at the line must still be
+ * able to unmap.
+ */
+static int region_room(struct vmproc *vmp, vir_bytes length)
+{
+	if(acl_is_system(vmp))
+		return 1;
+	return mem_user_room(phys_slot(length) * sizeof(struct phys_region *));
 }
 
 static struct vir_region *region_new(struct vmproc *vmp, vir_bytes startv, vir_bytes length,
@@ -427,7 +449,7 @@ static struct vir_region *region_new(struct vmproc *vmp, vir_bytes startv, vir_b
 	struct vir_region *newregion;
 	struct phys_region **newphysregions;
 	static u32_t id;
-	int slots = phys_slot(length);
+	vir_bytes slots = phys_slot(length);
 
 	if(!(SLABALLOC(newregion))) {
 		printf("vm: region_new: could not allocate\n");
@@ -473,6 +495,9 @@ struct vir_region *map_page_region(struct vmproc *vmp, vir_bytes minv,
 
 	startv = region_find_slot(vmp, minv, maxv, length);
 	if (startv == SLOT_FAIL)
+		return NULL;
+
+	if (!region_room(vmp, length))
 		return NULL;
 
 	/* Now we want a new region. */
@@ -827,6 +852,9 @@ struct vir_region *map_copy_region(struct vmproc *vmp, struct vir_region *vr)
 #endif
 	vir_bytes p;
 
+	if(!region_room(vmp, vr->length))
+		return NULL;
+
 	if(!(newvr = region_new(vr->parent, vr->vaddr, vr->length, vr->flags, vr->def_memtype)))
 		return NULL;
 
@@ -1011,9 +1039,22 @@ int map_proc_copy_range(struct vmproc *dst, struct vmproc *src,
 int map_region_extend_upto_v(struct vmproc *vmp, vir_bytes v)
 {
 	vir_bytes offset = v, limit, extralen;
+	vir_bytes newslots, prevslots, addedslots;
 	struct vir_region *vr, *nextvr;
 	struct phys_region **newpr;
-	int newslots, prevslots, addedslots, r;
+	int r;
+
+	/*
+	 * Nothing grows past the end of the address space. Beyond it the
+	 * search below finds the highest region of all - the stack - and
+	 * would make it reach v; the physblocks array for that is VM's own
+	 * memory, eight bytes a page, and a break of 1 TiB asked VM's heap
+	 * for 2 GiB. VM's heap takes from the reserve, as it must, so the
+	 * request of one user process emptied the reserve meant for the
+	 * system. Here the answer costs nothing.
+	 */
+	if(v > VM_DATATOP)
+		return ENOMEM;
 
 	offset = roundup(offset, VM_PAGE_SIZE);
 
@@ -1053,6 +1094,9 @@ int map_region_extend_upto_v(struct vmproc *vmp, vir_bytes v)
 		return OK;
 	}
 
+	if(!region_room(vmp, offset - vr->vaddr))
+		return ENOMEM;
+
 	if(!(newpr = realloc(vr->physblocks,
 		newslots * sizeof(struct phys_region *)))) {
 		printf("VM: map_region_extend_upto_v: realloc failed\n");
@@ -1078,7 +1122,7 @@ int map_unmap_region(struct vmproc *vmp, struct vir_region *r,
  * memory it used to reference if any.
  */
 	vir_bytes regionstart;
-	int freeslots = phys_slot(len);
+	vir_bytes freeslots = phys_slot(len);
 
 	SANITYCHECK(SCL_FUNCTIONS);
 
@@ -1100,7 +1144,7 @@ int map_unmap_region(struct vmproc *vmp, struct vir_region *r,
 	} else if(offset == 0) {
 		struct phys_region *pr;
 		vir_bytes voffset;
-		int remslots;
+		vir_bytes remslots;
 
 		if(!r->def_memtype->ev_lowshrink) {
 			printf("VM: low-shrinking not implemented for %s\n",
@@ -1161,7 +1205,7 @@ static int split_region(struct vmproc *vmp, struct vir_region *vr,
 {
 	struct vir_region *r1 = NULL, *r2 = NULL;
 	vir_bytes rem_len = vr->length - split_len;
-	int slots1, slots2;
+	vir_bytes slots1, slots2;
 	vir_bytes voffset;
 	int n1 = 0, n2 = 0;
 

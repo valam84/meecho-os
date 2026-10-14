@@ -37,6 +37,7 @@ int usedpages_add_f(phys_bytes phys, phys_bytes len, const char *file, int
 	line);
 void free_mem(phys_clicks base, phys_clicks clicks);
 void mem_add_total_pages(int pages);
+int mem_user_room(phys_bytes bytes);
 #define usedpages_add(a, l) usedpages_add_f(a, l, __FILE__, __LINE__)
 
 void mem_init(struct memory *chunks);

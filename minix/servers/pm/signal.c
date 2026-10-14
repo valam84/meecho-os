@@ -26,6 +26,7 @@
  * try_resume_proc() from undoing it.  While stopped, signals other than
  * SIGKILL and SIGCONT stay pending.  The parent hears of the stop and the
  * continue through wait4(WUNTRACED/WCONTINUED) or SIGCHLD (forkexit.c).
+ * Process groups, sessions and the terminal's side of it are in jobctl.c.
  */
 
 #include "pm.h"
@@ -674,6 +675,13 @@ job_stop(
 
   /* Stopped, init would collect no orphans and no zombies. */
   if (rmp->mp_pid == INIT_PID)
+	return;
+
+  /* POSIX: the terminal's stop signals are discarded for a member of an
+   * orphaned process group, where nobody in the session would continue it.
+   * SIGSTOP is not: whoever sends it can send SIGCONT.
+   */
+  if (signo != SIGSTOP && pgrp_orphaned(rmp->mp_procgrp))
 	return;
 
   if ((rmp->mp_flags & DELAY_CALL) || (!(rmp->mp_flags & PROC_STOPPED) &&

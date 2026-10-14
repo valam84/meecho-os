@@ -272,6 +272,8 @@ int mapdriver(const char *label, devmajor_t major, const int *domains,
 	int nr_domains);
 pid_t getepinfo(endpoint_t proc_ep, uid_t *uidp, gid_t *gidp);
 pid_t getnpid(endpoint_t proc_ep);
+int jobctl(int op, endpoint_t endpt, pid_t sid, pid_t pgrp, int signo,
+	pid_t *sidp, pid_t *pgrpp);
 uid_t getnuid(endpoint_t proc_ep);
 gid_t getngid(endpoint_t proc_ep);
 int getsockcred(endpoint_t proc_ep, struct sockcred * sockcred, gid_t * groups,

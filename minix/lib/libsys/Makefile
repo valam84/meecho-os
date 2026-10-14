@@ -26,6 +26,7 @@ SRCS+=  \
 	fdt_fetch.c \
 	fkey_ctl.c \
 	getepinfo.c \
+	jobctl.c \
 	getprocnr.c \
 	getticks.c \
 	getsysinfo.c \

@@ -171,6 +171,7 @@ void exec_restart(struct mproc *rmp, int result, vir_bytes pc, vir_bytes sp,
 	}
 
 	rmp->mp_flags &= ~PARTIAL_EXEC;
+	rmp->mp_flags |= EXEC_DONE;	/* the parent's setpgid() is over */
 
 	/* Fix 'mproc' fields, tell kernel that exec is done, reset caught
 	 * sigs.

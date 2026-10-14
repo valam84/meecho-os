@@ -7,38 +7,17 @@
 #include <unistd.h>
 
 /*
- * "Smart" stub for now. This requires job control to be properly implemented.
+ * MEECHO: upstream MINIX had no process groups apart from sessions, and this
+ * was setsid() under another name - setpgid(0, 0) and nothing else.  PM keeps
+ * process groups of their own now (PM_SETPGID), and the rules are POSIX's;
+ * see minix/servers/pm/getset.c.
  */
 int setpgid(pid_t pid, pid_t pgid)
 {
-	pid_t _pid, _pgid, cpid;
+	message m;
 
-	_pid = pid;
-	_pgid = pgid;
-
-	/* Who are we? */
-	cpid = getpid();
-
-	/* if zero, means current process. */
-	if (_pid == 0) {
-		_pid = cpid;
-	}
-
-	/* if zero, means given pid. */
-	if (_pgid == 0) {
-		_pgid = _pid;
-	}
-
-	/* right now we only support the equivalent of setsid(), which is
-	 * setpgid(0,0) */
-	if ((_pid != cpid) || (_pgid != cpid)) {
-	    errno = EINVAL;
-	    return -1;
-	}
-
-	if (setsid() == cpid) {
-		return 0;
-	} else {
-		return -1;
-	}
+	memset(&m, 0, sizeof(m));
+	m.m_lc_pm_setpgid.pid = pid;
+	m.m_lc_pm_setpgid.pgid = pgid;
+	return(_syscall(PM_PROC_NR, PM_SETPGID, &m));
 }

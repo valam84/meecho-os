@@ -34,6 +34,15 @@ void job_news(struct mproc *child);
 /* getset.c */
 int do_get(void);
 int do_set(void);
+int do_setpgid(void);
+
+/* jobctl.c */
+int do_jobctl(void);
+struct mproc *session_leader(pid_t sid);
+int pgrp_orphaned(pid_t pgrp);
+int pgrp_stopped(pid_t pgrp);
+int pgrp_in_session(pid_t pgrp, pid_t sid);
+void pgrp_signal(pid_t pgrp, int signo, int ksig);
 
 /* main.c */
 int main(void);

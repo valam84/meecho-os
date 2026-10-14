@@ -39,7 +39,7 @@ static void tracer_died(struct mproc *child);
 static void cleanup(register struct mproc *rmp);
 static int job_status(struct mproc *parent, struct mproc *child,
 	vir_bytes addr);
-static int pgrp_stopped(pid_t procgrp);
+static void orphan_check(pid_t pgrp);
 
 /*===========================================================================*
  *				do_fork					     *
@@ -107,6 +107,7 @@ do_fork(void)
 
   /* Inherit only these flags. In normal fork(), PRIV_PROC is not inherited. */
   rmc->mp_flags &= (IN_USE|DELAY_CALL|TAINTED);
+  rmc->mp_fgpgrp = 0;			/* the session's terminal is not its */
   rmc->mp_child_utime = 0;		/* reset administration */
   rmc->mp_child_stime = 0;		/* reset administration */
   rmc->mp_exitstatus = 0;
@@ -201,6 +202,7 @@ do_srv_fork(void)
   }
   /* inherit only these flags */
   rmc->mp_flags &= (IN_USE|PRIV_PROC|DELAY_CALL);
+  rmc->mp_fgpgrp = 0;
   rmc->mp_child_utime = 0;		/* reset administration */
   rmc->mp_child_stime = 0;		/* reset administration */
   rmc->mp_exitstatus = 0;
@@ -279,8 +281,9 @@ exit_proc(
  * become a zombie.
  */
   register int proc_nr, proc_nr_e;
-  int r;
-  pid_t procgrp;
+  int r, linked;
+  pid_t procgrp, session, fgpgrp;
+  struct mproc *pmp;
   clock_t user_time, sys_time;
   message m;
 
@@ -297,8 +300,20 @@ exit_proc(
   proc_nr = (int) (rmp - mproc);	/* get process slot number */
   proc_nr_e = rmp->mp_endpoint;
 
-  /* Remember a session leader's process group. */
-  procgrp = (rmp->mp_pid == mp->mp_procgrp) ? mp->mp_procgrp : 0;
+  /* What job control needs once the process is gone.  If it leads a session
+   * with a controlling terminal, the terminal's foreground group hears of it
+   * (POSIX: the controlling process exits).  And its own process group may
+   * become orphaned (POSIX: no member left with a parent in another group of
+   * the same session), if the process was what tied it to the session: its
+   * parent is in another group of the same session.
+   */
+  procgrp = rmp->mp_procgrp;
+  session = rmp->mp_session;
+  fgpgrp = (rmp->mp_pid == session) ? rmp->mp_fgpgrp : 0;
+  rmp->mp_fgpgrp = 0;
+  pmp = &mproc[rmp->mp_parent];
+  linked = (pmp->mp_flags & (IN_USE | EXITING)) == IN_USE &&
+	pmp->mp_procgrp != procgrp && pmp->mp_session == session;
 
   /* If the exited process has a timer pending, kill it. */
   if (rmp->mp_flags & ALARM_ON) set_alarm(rmp, (clock_t) 0);
@@ -387,6 +402,17 @@ exit_proc(
   if (!dump_core)
 	zombify(rmp);
 
+  /* The controlling process is gone: the foreground group of its terminal
+   * gets SIGHUP.  VFS takes the terminal away from the session once it hears
+   * of the exit.  SIGCONT after it if any of the group is stopped, so that
+   * the hangup is acted upon.
+   */
+  if (fgpgrp > 0) {
+	pgrp_signal(fgpgrp, SIGHUP, FALSE /*ksig*/);
+	if (pgrp_stopped(fgpgrp))
+		pgrp_signal(fgpgrp, SIGCONT, FALSE /*ksig*/);
+  }
+
   /* If the process has children, disinherit them.  INIT is the new parent. */
   for (rmp = &mproc[0]; rmp < &mproc[NR_PROCS]; rmp++) {
 	if (!(rmp->mp_flags & IN_USE)) continue;
@@ -409,29 +435,39 @@ exit_proc(
 		if (rmp->mp_flags & ZOMBIE)
 			check_parent(rmp, TRUE /*try_cleanup*/);
 
-		/* A stopped child loses the one process that was there to
-		 * continue it; INIT never will.  POSIX gives a process group
-		 * orphaned this way SIGHUP and SIGCONT, and here a group is
-		 * the whole session (setpgid() is setsid()), so the rule is
-		 * taken per child.  If the child survives SIGHUP, it runs.
+		/* A child in another group of the same session tied that
+		 * group to the session through this process.  If nothing else
+		 * does, the group is newly orphaned: nobody in the session
+		 * can continue it any more.
 		 */
-		else if (rmp->mp_flags & JOB_STOPPED) {
-			sig_proc(rmp, SIGHUP, TRUE /*trace*/, FALSE /*ksig*/);
-			if ((rmp->mp_flags & (IN_USE | EXITING)) == IN_USE)
-				sig_proc(rmp, SIGCONT, TRUE /*trace*/,
-					FALSE /*ksig*/);
-		}
+		else if (rmp->mp_procgrp != procgrp &&
+		    rmp->mp_session == session)
+			orphan_check(rmp->mp_procgrp);
 	}
   }
 
-  /* Send a hangup to the process' process group if it was a session leader,
-   * and a SIGCONT after it if any of the group is stopped, so that the
-   * hangup is acted upon.
-   */
-  if (procgrp != 0) {
-	check_sig(-procgrp, SIGHUP, FALSE /* ksig */);
-	if (pgrp_stopped(procgrp))
-		check_sig(-procgrp, SIGCONT, FALSE /* ksig */);
+  /* The same for the process's own group. */
+  if (linked)
+	orphan_check(procgrp);
+}
+
+/*===========================================================================*
+ *				orphan_check				     *
+ *===========================================================================*/
+static void
+orphan_check(pid_t pgrp)
+{
+/* POSIX: a process group that an exit has made orphaned, and that has a
+ * stopped member, gets SIGHUP and then SIGCONT - a stopped member would stay
+ * stopped forever, as nobody in the session is left to continue it.  The
+ * caller has seen the exit cut a tie of the group to its session; whether it
+ * was the last one, pgrp_orphaned() says.  A member that survives SIGHUP
+ * runs.  Once continued, the group has no stopped member, so a second call
+ * for the same group does nothing.
+ */
+  if (pgrp > 0 && pgrp_orphaned(pgrp) && pgrp_stopped(pgrp)) {
+	pgrp_signal(pgrp, SIGHUP, FALSE /*ksig*/);
+	pgrp_signal(pgrp, SIGCONT, FALSE /*ksig*/);
   }
 }
 
@@ -699,23 +735,6 @@ job_status(
 }
 
 /*===========================================================================*
- *				pgrp_stopped				     *
- *===========================================================================*/
-static int
-pgrp_stopped(pid_t procgrp)
-{
-/* Is any process of the process group stopped by a stop signal? */
-  struct mproc *rmp;
-
-  for (rmp = &mproc[0]; rmp < &mproc[NR_PROCS]; rmp++) {
-	if ((rmp->mp_flags & (IN_USE | JOB_STOPPED)) ==
-	    (IN_USE | JOB_STOPPED) && rmp->mp_procgrp == procgrp)
-		return TRUE;
-  }
-  return FALSE;
-}
-
-/*===========================================================================*
  *				zombify					     *
  *===========================================================================*/
 static void
@@ -925,8 +944,13 @@ cleanup(
 	register struct mproc *rmp	/* tells which process is exiting */
 )
 {
-  /* Release the process table entry and reinitialize some field. */
+  /* Release the process table entry and reinitialize some field.  The group
+   * and the session go too: get_free_pid() takes a pid that names either
+   * for a pid still in use.
+   */
   rmp->mp_pid = 0;
+  rmp->mp_procgrp = 0;
+  rmp->mp_session = 0;
   rmp->mp_flags = 0;
   rmp->mp_child_utime = 0;
   rmp->mp_child_stime = 0;

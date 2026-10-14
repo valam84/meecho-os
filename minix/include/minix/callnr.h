@@ -58,8 +58,30 @@
 #define PM_GETEPINFO		(PM_BASE + 45)
 #define PM_GETPROCNR		(PM_BASE + 46)
 #define PM_GETSYSINFO		(PM_BASE + 47)
+#define PM_SETPGID		(PM_BASE + 48)
+#define PM_JOBCTL		(PM_BASE + 49)
 
-#define NR_PM_CALLS		48	/* highest number from base plus one */
+#define NR_PM_CALLS		50	/* highest number from base plus one */
+
+/* PM_JOBCTL: what a terminal driver asks PM, which owns process groups and
+ * sessions, about the session a terminal belongs to.  PM keeps the terminal's
+ * foreground process group with the session.
+ */
+#define JOBCTL_CTTY	1	/* endpt makes the terminal its controlling
+				 * terminal; the reply names its session */
+#define JOBCTL_RELEASE	2	/* the terminal of session sid is let go */
+#define JOBCTL_ACCESS	3	/* may endpt read (signo SIGTTIN) or write
+				 * (signo SIGTTOU) the terminal of session sid? */
+#define JOBCTL_SETFG	4	/* tcsetpgrp(): endpt makes pgrp foreground */
+#define JOBCTL_GETFG	5	/* tcgetpgrp(), tcgetsid() for endpt */
+#define JOBCTL_KILL	6	/* signo from the terminal of session sid: to
+				 * its foreground group, SIGHUP to its leader */
+
+/* Answer of JOBCTL_ACCESS and JOBCTL_SETFG when the caller is in a background
+ * process group and its group has just been sent SIGTTIN or SIGTTOU: the
+ * request must wait until the group is in the foreground.
+ */
+#define JOBCTL_SIGNALLED 1
 
 /*===========================================================================*
  *				Calls to VFS				     *

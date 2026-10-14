@@ -64,17 +64,18 @@ do_get(void)
 		break;
 
 	case PM_GETPGRP:
-		r = rmp->mp_procgrp;
-		break;
-
 	case PM_GETSID:
 	{
+		/* getpgrp() sends a zeroed message, so a pid of 0 is the
+		 * caller; getpgid(pid) and getsid(pid) name a process.
+		 */
 		struct mproc *target;
 		pid_t p = m_in.m_lc_pm_getsid.pid;
 		target = p ? find_proc(p) : &mproc[who_p];
 		r = ESRCH;
 		if(target)
-			r = target->mp_procgrp;
+			r = (call_nr == PM_GETPGRP) ? target->mp_procgrp :
+			    target->mp_session;
 		break;
 	}
 	case PM_ISSETUGID:
@@ -203,8 +204,20 @@ do_set(void)
 
 		break;
 	case PM_SETSID:
+		/* POSIX: not for a process group leader, and not for a
+		 * process whose pid is another process's process group: the
+		 * new session's one group would not be its only one.  A
+		 * process its parent has waited for is no member any more,
+		 * even while its slot waits for VFS.
+		 */
 		if (rmp->mp_procgrp == rmp->mp_pid) return(EPERM);
-		rmp->mp_procgrp = rmp->mp_pid;
+		for (i = 0; i < NR_PROCS; i++) {
+			if ((mproc[i].mp_flags & (IN_USE | TOLD_PARENT)) ==
+			    IN_USE && mproc[i].mp_procgrp == rmp->mp_pid)
+				return(EPERM);
+		}
+		rmp->mp_session = rmp->mp_procgrp = rmp->mp_pid;
+		rmp->mp_fgpgrp = 0;
 
 		m.m_type = VFS_PM_SETSID;
 		m.VFS_PM_ENDPT = rmp->mp_endpoint;
@@ -220,4 +233,55 @@ do_set(void)
 
   /* Do not reply until VFS has processed the request */
   return(SUSPEND);
+}
+
+/*===========================================================================*
+ *				do_setpgid				     *
+ *===========================================================================*/
+int
+do_setpgid(void)
+{
+/* Perform setpgid(pid, pgid): put the caller, or a child of it that has not
+ * yet exec()ed, into a process group of its own session - an existing one, or
+ * a new one named after it.  Upstream MINIX had no such call: a process group
+ * was the session, and setpgid() in libc was setsid() under another name.
+ * Only PM knows of process groups, so VFS is not told.
+ */
+  struct mproc *rmp;
+  pid_t pid, pgid;
+
+  pid = m_in.m_lc_pm_setpgid.pid;
+  pgid = m_in.m_lc_pm_setpgid.pgid;
+
+  if (pid < 0 || pgid < 0)
+	return(EINVAL);
+
+  if (pid == 0 || pid == mp->mp_pid) {
+	rmp = mp;
+  } else {
+	rmp = find_proc(pid);
+	if (rmp == NULL || (rmp->mp_flags & EXITING) ||
+	    rmp->mp_parent != who_p)
+		return(ESRCH);
+	if (rmp->mp_session != mp->mp_session)
+		return(EPERM);
+	if (rmp->mp_flags & EXEC_DONE)
+		return(EACCES);
+  }
+
+  /* A session leader stays the leader of its session's first group. */
+  if (rmp->mp_session == rmp->mp_pid)
+	return(EPERM);
+
+  if (pgid == 0)
+	pgid = rmp->mp_pid;
+
+  /* A new group is named after its first member; joining an existing one
+   * is only possible within the session.
+   */
+  if (pgid != rmp->mp_pid && !pgrp_in_session(pgid, mp->mp_session))
+	return(EPERM);
+
+  rmp->mp_procgrp = pgid;
+  return(OK);
 }

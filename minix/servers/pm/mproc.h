@@ -30,6 +30,7 @@ EXTERN struct mproc {
   endpoint_t mp_endpoint;	/* kernel endpoint id */
   pid_t mp_procgrp;		/* pid of process group (used for signals) */
   pid_t mp_wpid;		/* pid this process is waiting for */
+  pid_t mp_session;		/* session id: pid of the session leader */
   vir_bytes mp_waddr;		/* struct rusage address while waiting */
   int mp_parent;		/* index of parent process */
   int mp_tracer;		/* index of tracer process, or NO_TRACER */
@@ -66,6 +67,13 @@ EXTERN struct mproc {
 
   unsigned mp_flags;		/* flag bits */
   unsigned mp_trace_flags;	/* trace options */
+
+  /* Of a session leader whose session has a controlling terminal: the
+   * terminal's foreground process group, 0 for none.  The terminal driver
+   * asks PM for it (PM_JOBCTL) rather than keeping it, because every
+   * question about it is a question about process groups.
+   */
+  pid_t mp_fgpgrp;
   message mp_reply;		/* reply message to be sent to one */
 
   /* Process execution frame. Both fields are used by procfs. */
@@ -108,5 +116,6 @@ EXTERN struct mproc {
 #define JOB_CONTNEWS	0x400000 /* the continue is not yet reported */
 #define WAIT_UNTRACED	0x800000 /* WAITING, with WUNTRACED */
 #define WAIT_CONTINUED	0x1000000 /* WAITING, with WCONTINUED */
+#define EXEC_DONE	0x2000000 /* has exec()ed since fork: no setpgid() */
 
 #define MP_MAGIC	0xC0FFEE0

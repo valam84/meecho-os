@@ -693,7 +693,7 @@ fill_proc2_user(struct kinfo_proc2 * p, int mslot)
 	time_t boottime;
 	dev_t tty;
 	struct timeval tv;
-	int i, r, kslot, zombie;
+	int i, r, kslot, lslot, zombie;
 
 	memset(p, 0, sizeof(*p));
 
@@ -710,7 +710,7 @@ fill_proc2_user(struct kinfo_proc2 * p, int mslot)
 	p->p_eflag = 0;
 	if (tty != NO_DEV)
 		p->p_eflag |= EPROC_CTTY;
-	if (mp->mp_pid == mp->mp_procgrp) /* TODO: job control support */
+	if (mp->mp_pid == mp->mp_session)
 		p->p_eflag |= EPROC_SLEADER;
 
 	p->p_exitsig = SIGCHLD; /* TODO */
@@ -725,9 +725,14 @@ fill_proc2_user(struct kinfo_proc2 * p, int mslot)
 	p->p_pid = mp->mp_pid;
 	if (mp->mp_parent >= 0 && mp->mp_parent < NR_PROCS)
 		p->p_ppid = mproc_tab[mp->mp_parent].mp_pid;
-	p->p_sid = mp->mp_procgrp; /* TODO: job control supported */
+	p->p_sid = mp->mp_session;
 	p->p__pgid = mp->mp_procgrp;
-	p->p_tpgid = (tty != NO_DEV) ? mp->mp_procgrp : 0;
+	/* The terminal's foreground group is kept by PM with the session, in
+	 * the slot of its leader.
+	 */
+	p->p_tpgid = 0;
+	if (tty != NO_DEV && (lslot = get_mslot(mp->mp_session)) >= 0)
+		p->p_tpgid = mproc_tab[lslot].mp_fgpgrp;
 	p->p_uid = mp->mp_effuid;
 	p->p_ruid = mp->mp_realuid;
 	p->p_gid = mp->mp_effgid;
@@ -863,7 +868,10 @@ mib_kern_proc2(struct mib_call * call, struct mib_node * node __unused,
 			if ((pid_t)arg != mp->mp_pid)
 				continue;
 			break;
-		case KERN_PROC_SESSION: /* TODO: job control support */
+		case KERN_PROC_SESSION:
+			if ((pid_t)arg != mp->mp_session)
+				continue;
+			break;
 		case KERN_PROC_PGRP:
 			if ((pid_t)arg != mp->mp_procgrp)
 				continue;

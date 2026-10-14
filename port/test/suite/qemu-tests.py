@@ -261,7 +261,7 @@ def main():
 	if args.tests:
 		tests = args.tests.split(",")
 	else:
-		tests = [str(n) for n in range(1, 95)] + \
+		tests = [str(n) for n in range(1, 96)] + \
 		        ["sh1", "sh2", "interp", "mfs", "isofs", "vnd", "rmib"]
 
 	log = open(args.log, "w", errors="replace")

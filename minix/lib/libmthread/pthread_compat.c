@@ -16,6 +16,20 @@
  * critical section as they both hold a (different) mutex.
  */
 
+/*
+ * MEECHO: a mutex or a condition variable of all zero bytes is a default
+ * one, as the static initializer is.  libmthread's are pointers and its
+ * initializer is -1, so a zeroed one reached mthread_mutex_lock() as a NULL
+ * to follow; but glibc's initializer is all zeros (FreeBSD's is NULL), and
+ * code written for them zeroes a structure with calloc() and locks the
+ * mutex in it with no pthread_mutex_init() - Mesa's Panfrost does so with
+ * its bo_map_lock, a SIGSEGV at address 0x14 on the board's first frame.
+ * Only here, in the POSIX names: mthread_*() callers (the services) are
+ * told NULL is not a mutex, as before.
+ */
+#define MUTEX_UNSET(m)	(*(m) == NULL || *(m) == PTHREAD_MUTEX_INITIALIZER)
+#define COND_UNSET(c)	(*(c) == NULL || *(c) == PTHREAD_COND_INITIALIZER)
+
 
 /*===========================================================================*
  *				pthread_mutex_init			     *
@@ -30,7 +44,7 @@ int pthread_mutex_init(pthread_mutex_t *mutex, pthread_mutexattr_t *mattr)
  *===========================================================================*/
 int pthread_mutex_destroy(pthread_mutex_t *mutex)
 {
-	if (PTHREAD_MUTEX_INITIALIZER == *mutex) {
+	if (MUTEX_UNSET(mutex)) {
 		*mutex = NULL;
 		return 0;
 	}
@@ -43,7 +57,7 @@ int pthread_mutex_destroy(pthread_mutex_t *mutex)
  *===========================================================================*/
 int pthread_mutex_lock(pthread_mutex_t *mutex)
 {
-	if (PTHREAD_MUTEX_INITIALIZER == *mutex) {
+	if (MUTEX_UNSET(mutex)) {
 		mthread_mutex_init(mutex, NULL);	
 	}
 
@@ -56,7 +70,7 @@ int pthread_mutex_lock(pthread_mutex_t *mutex)
 int pthread_mutex_timedlock(pthread_mutex_t *mutex,
 	const struct timespec *abstime)
 {
-	if (PTHREAD_MUTEX_INITIALIZER == *mutex) {
+	if (MUTEX_UNSET(mutex)) {
 		mthread_mutex_init(mutex, NULL);
 	}
 
@@ -68,7 +82,7 @@ int pthread_mutex_timedlock(pthread_mutex_t *mutex,
  *===========================================================================*/
 int pthread_mutex_trylock(pthread_mutex_t *mutex)
 {
-	if (PTHREAD_MUTEX_INITIALIZER == *mutex) {
+	if (MUTEX_UNSET(mutex)) {
 		mthread_mutex_init(mutex, NULL);
 	}
 
@@ -86,7 +100,7 @@ int pthread_mutex_trylock(pthread_mutex_t *mutex)
  *===========================================================================*/
 int pthread_mutex_unlock(pthread_mutex_t *mutex)
 {
-	if (PTHREAD_MUTEX_INITIALIZER == *mutex) {
+	if (MUTEX_UNSET(mutex)) {
 		mthread_mutex_init(mutex, NULL);	
 	}
 
@@ -106,7 +120,7 @@ int pthread_cond_init(pthread_cond_t *cond, pthread_condattr_t *cattr)
  *===========================================================================*/
 int pthread_cond_broadcast(pthread_cond_t *cond)
 {
-	if (PTHREAD_COND_INITIALIZER == *cond) {
+	if (COND_UNSET(cond)) {
 		mthread_cond_init(cond, NULL);
 	}
 
@@ -118,7 +132,7 @@ int pthread_cond_broadcast(pthread_cond_t *cond)
  *===========================================================================*/
 int pthread_cond_destroy(pthread_cond_t *cond)
 {
-	if (PTHREAD_COND_INITIALIZER == *cond) {
+	if (COND_UNSET(cond)) {
 		*cond = NULL;
 		return 0;
 	}
@@ -131,7 +145,7 @@ int pthread_cond_destroy(pthread_cond_t *cond)
  *===========================================================================*/
 int pthread_cond_signal(pthread_cond_t *cond)
 {
-	if (PTHREAD_COND_INITIALIZER == *cond) {
+	if (COND_UNSET(cond)) {
 		mthread_cond_init(cond, NULL);
 	}
 
@@ -144,7 +158,7 @@ int pthread_cond_signal(pthread_cond_t *cond)
 int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
 	const struct timespec *abstime)
 {
-	if (PTHREAD_COND_INITIALIZER == *cond) {
+	if (COND_UNSET(cond)) {
 		mthread_cond_init(cond, NULL);
 	}
 
@@ -156,7 +170,7 @@ int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
  *===========================================================================*/
 int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 {
-	if (PTHREAD_COND_INITIALIZER == *cond) {
+	if (COND_UNSET(cond)) {
 		mthread_cond_init(cond, NULL);
 	}
 

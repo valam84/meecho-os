@@ -87,12 +87,29 @@ try_other(void *arg)
 	return NULL;
 }
 
+struct zeroed {
+	pthread_mutex_t m;
+	pthread_cond_t c;
+};
+
+static void *
+try_zeroed(void *arg)
+{
+	struct zeroed *z = arg;
+
+	other_got = pthread_mutex_trylock(&z->m);
+	if (other_got == 0)
+		pthread_mutex_unlock(&z->m);
+	return NULL;
+}
+
 static void
 mutex(void)
 {
 	pthread_mutexattr_t a;
 	pthread_mutex_t m;
 	pthread_t t;
+	struct zeroed *z, *z2;
 	int type = -1, r;
 
 	check(pthread_mutexattr_init(&a) == 0, "mutexattr_init", 0, 0);
@@ -150,6 +167,31 @@ mutex(void)
 	check(r == EDEADLK, "an error-checking one tried again", r, EDEADLK);
 	pthread_mutex_unlock(&m);
 	pthread_mutex_destroy(&m);
+
+	/*
+	 * Zero bytes, as calloc() leaves a structure: a default mutex and a
+	 * default condition, as glibc's initializers are.  Mesa's Panfrost
+	 * locks such a mutex with no pthread_mutex_init() (on the board: a
+	 * SIGSEGV at address 0x14 in the first frame).
+	 */
+	z = calloc(1, sizeof(*z));
+	r = pthread_mutex_lock(&z->m);
+	pthread_create(&t, NULL, try_zeroed, z);
+	pthread_join(t, NULL);
+	check(r == 0 && other_got == EBUSY, "a mutex of zero bytes locked, "
+	    "another thread cannot have it", r, 0);
+	r = pthread_mutex_unlock(&z->m);
+	r |= pthread_cond_signal(&z->c);
+	r |= pthread_cond_broadcast(&z->c);
+	check(r == 0, "let go; a condition of zero bytes signalled", r, 0);
+	z2 = calloc(1, sizeof(*z2));
+	r = pthread_mutex_destroy(&z->m);
+	r |= pthread_cond_destroy(&z->c);
+	r |= pthread_mutex_destroy(&z2->m);
+	r |= pthread_cond_destroy(&z2->c);
+	check(r == 0, "both destroyed, used or not", r, 0);
+	free(z);
+	free(z2);
 }
 
 /* ---- timedlock ---- */

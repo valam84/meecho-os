@@ -51,10 +51,11 @@ they go, workspaces strictly between on and off the screen.
 At the first failure the tail of the compositor's log is printed.  Log of
 the whole run: ~/qemu-strip.log.
 
-    python3 port/gfx/test/qemu-strip.py [-k] [-s cores] [-n] [-x]
+    python3 port/gfx/test/qemu-strip.py [-k] [-s cores] [-n] [-x] [-w dir]
 
 -n: no terminal (step 10), which costs two minutes under TCG; -x: stop at
-the first failure.
+the first failure; -w: another WORK_DIR (and the log beside it) - two runs
+in one WORK_DIR build their disks over each other.
 """
 
 import argparse
@@ -136,13 +137,19 @@ def parse_state(text):
 
 
 def main():
+    global WORK
     ap = argparse.ArgumentParser()
     ap.add_argument("-k", action="store_true", help="keep the disk image")
     ap.add_argument("-s", type=int, default=1, help="cores")
     ap.add_argument("-n", action="store_true", help="no terminal step")
     ap.add_argument("-x", action="store_true",
                     help="stop at the first failure")
+    ap.add_argument("-w", help="WORK_DIR (default %s)" % WORK)
     a = ap.parse_args()
+    logpath = os.path.join(HOME, "qemu-strip.log")
+    if a.w:
+        WORK = os.path.abspath(a.w)
+        logpath = WORK + ".log"
 
     if not a.k:
         qemu_meechowm.stage()
@@ -151,7 +158,7 @@ def main():
                QEMU_SMP=str(a.s))
     if not a.k:
         env["DISK_FRESH"] = "1"
-    log = open(os.path.join(HOME, "qemu-strip.log"), "w")
+    log = open(logpath, "w")
     p = subprocess.Popen(["bash", RAMIMAGE, "-d"], stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          bufsize=0, env=env, start_new_session=True)

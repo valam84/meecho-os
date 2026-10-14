@@ -703,6 +703,63 @@ fbcon_stats(char *buf, size_t len)
 	    (unsigned long long)(con.us_flush / 1000));
 }
 
+/*
+ * The mode changed (FBIOC_SETMODE): a grid for the new size.  What fits is
+ * kept - the rows up to the cursor, as many as the new grid has, and their
+ * left columns - so the prompt is still there; and if the console has the
+ * screen, all of it is drawn at once, in the new geometry.  Without memory
+ * for the new grid the console lets go of the screen for good: the old
+ * grid in the new geometry would put rows where they no longer belong.
+ */
+void
+fbcon_resize(void)
+{
+	struct fb_var_screeninfo v;
+	unsigned cols, rows, keep, first, r, c;
+	uint32_t *cells;
+	uint8_t *dirty;
+
+	if (!con.attached || arch_get_varscreeninfo(con.minor, &v) != OK)
+		return;
+	cols = v.xres / CW;
+	rows = v.yres / CH;
+	cells = calloc((size_t)cols * rows, sizeof(cells[0]));
+	dirty = calloc(rows, 1);
+	if (cells == NULL || dirty == NULL || cols == 0 || rows == 0) {
+		free(cells);
+		free(dirty);
+		con.attached = 0;
+		printf("fb: no memory for a %ux%u console; no console on the "
+		    "screen\n", cols, rows);
+		return;
+	}
+	for (r = 0; r < (size_t)cols * rows; r++)
+		cells[r] = CELL(' ', DEF_FG, DEF_BG);
+	keep = con.cy + 1 < rows ? con.cy + 1 : rows;
+	first = con.cy + 1 - keep;
+	for (r = 0; r < keep; r++)
+		for (c = 0; c < cols && c < con.cols; c++)
+			cells[r * cols + c] = con.cells[(first + r) * con.cols + c];
+
+	free(con.cells);
+	free(con.dirty);
+	con.cells = cells;
+	con.dirty = dirty;
+	con.cy -= first;
+	if (con.cx >= cols)
+		con.cx = cols - 1;
+	con.cols = cols;
+	con.rows = rows;
+	con.stride = v.xres_virtual * 4;
+	con.width = v.xres;
+	con.height = v.yres;
+	con.scrolled = 0;
+	con.drawn_cx = con.cx;
+	con.drawn_cy = con.cy;
+	if (!con.paused)
+		take_screen();
+}
+
 /* A program opened or closed the frame buffer. */
 void
 fbcon_pause(int paused)

@@ -27,7 +27,9 @@
  * window can reach the frame buffer; else the largest of its list that can
  * be, the CEA-861 extension's modes included.  fbmode=WIDTHxHEIGHT[@HZ]
  * (service argument or boot parameter) picks one of that list instead, and
- * fblog's report shows the list.
+ * fblog's report shows the list.  FBIOC_SETMODE changes the mode while the
+ * driver runs - a compositor asks, the console follows - in the same order
+ * as bring-up, under scanout buffers made for the largest mode of the list.
  */
 
 #include <minix/chardriver.h>
@@ -111,8 +113,9 @@ static int hdmi_mode;			/* 0: DVI */
 static int status;			/* 0 not yet, 1 up, -1 failed */
 static vir_bytes fb_vir;
 static phys_bytes fb_phys;
-static size_t fb_size;
+static size_t fb_size;			/* the frame of the mode: stride x lines */
 static unsigned fb_stride;
+static size_t buf_bytes;		/* each buffer: the largest frame */
 static int have_edid;
 static struct edid_info edid;
 
@@ -121,7 +124,9 @@ static struct edid_info edid;
  * Buffer 0 is fb_vir, the console's; the others are made on the first
  * FBIOC_MAP and kept for the life of the driver - a process maps them
  * through VM's shared memory, which looks for the driver's region on every
- * page it touches, so a buffer must not go while anybody may map it.
+ * page it touches, so a buffer must not go while anybody may map it.  That
+ * is why each is as large as the largest mode of the list (buf_bytes): a
+ * mode change keeps them all, and the mappings with them.
  */
 static vir_bytes buf_vir[FB_MAX_BUFFERS];
 static phys_bytes buf_phys[FB_MAX_BUFFERS];
@@ -507,6 +512,108 @@ mode_hz(const struct videomode *m)
 }
 
 /*
+ * The modes of the virtual display (virtual=1, QEMU): no monitor to ask, so
+ * a fixed few, for the mode to be changed there too - the strip's stand
+ * changes it while the compositor runs.  The timings are the usual ones;
+ * nothing scans them.
+ */
+static const struct videomode virtual_modes[] = {
+	{ .dot_clock = 74250, .hdisplay = 1280, .hsync_start = 1390,
+	    .hsync_end = 1430, .htotal = 1650, .vdisplay = 720,
+	    .vsync_start = 725, .vsync_end = 730, .vtotal = 750,
+	    .flags = VID_PHSYNC | VID_PVSYNC, .name = "1280x720x60" },
+	{ .dot_clock = 148500, .hdisplay = 1920, .hsync_start = 2008,
+	    .hsync_end = 2052, .htotal = 2200, .vdisplay = 1080,
+	    .vsync_start = 1084, .vsync_end = 1089, .vtotal = 1125,
+	    .flags = VID_PHSYNC | VID_PVSYNC, .name = "1920x1080x60" },
+	{ .dot_clock = 65000, .hdisplay = 1024, .hsync_start = 1048,
+	    .hsync_end = 1184, .htotal = 1344, .vdisplay = 768,
+	    .vsync_start = 771, .vsync_end = 777, .vtotal = 806,
+	    .flags = VID_NHSYNC | VID_NVSYNC, .name = "1024x768x60" },
+	{ .dot_clock = 40000, .hdisplay = 800, .hsync_start = 840,
+	    .hsync_end = 968, .htotal = 1056, .vdisplay = 600,
+	    .vsync_start = 601, .vsync_end = 605, .vtotal = 628,
+	    .flags = VID_PHSYNC | VID_PVSYNC, .name = "800x600x60" },
+};
+
+/*
+ * The modes there are to choose from: the virtual display's, the monitor's
+ * (base block and CEA-861 extension), or - no monitor, or one whose EDID
+ * did not read - the reference mode alone.
+ */
+static const struct videomode *
+mode_list(int *n)
+{
+	if (virtual_mode) {
+		*n = (int)NELEM(virtual_modes);
+		return virtual_modes;
+	}
+	if (have_edid) {
+		*n = edid.edid_nmodes;
+		return edid.edid_modes;
+	}
+	*n = 1;
+	return &mode_720p;
+}
+
+/* The same mode: size, totals and rate (the clock made may be a hair off). */
+static int
+same_mode(const struct videomode *a, const struct videomode *b)
+{
+	return a->hdisplay == b->hdisplay && a->vdisplay == b->vdisplay &&
+	    a->htotal == b->htotal && a->vtotal == b->vtotal &&
+	    mode_hz(a) == mode_hz(b);
+}
+
+/* A mode of the list of that size, the rate nearest to hz; NULL if none. */
+static const struct videomode *
+find_mode(unsigned w, unsigned h, unsigned hz)
+{
+	const struct videomode *list, *best = NULL;
+	unsigned d, dbest = 0;
+	int i, n;
+
+	list = mode_list(&n);
+	for (i = 0; i < n; i++) {
+		if (!mode_usable(&list[i]) || list[i].hdisplay != (int)w ||
+		    list[i].vdisplay != (int)h)
+			continue;
+		d = mode_hz(&list[i]);
+		d = d > hz ? d - hz : hz - d;
+		if (best == NULL || d < dbest) {
+			best = &list[i];
+			dbest = d;
+		}
+	}
+	return best;
+}
+
+/*
+ * The bytes of one scanout buffer: the largest frame of the list, so that
+ * a mode change never needs other buffers - a compositor has them mapped,
+ * and a buffer must not go while it may.  1080p is 8 MB; three of them.
+ */
+static size_t
+buffer_bytes(void)
+{
+	const struct videomode *list;
+	size_t b, max = (size_t)mode.hdisplay * mode.vdisplay *
+	    BYTES_PER_PIXEL;
+	int i, n;
+
+	list = mode_list(&n);
+	for (i = 0; i < n; i++) {
+		if (!mode_usable(&list[i]))
+			continue;
+		b = (size_t)list[i].hdisplay * list[i].vdisplay *
+		    BYTES_PER_PIXEL;
+		if (b > max)
+			max = b;
+	}
+	return max;
+}
+
+/*
  * fbmode=WIDTHxHEIGHT or WIDTHxHEIGHT@HZ - an argument of the service, or a
  * boot parameter of that name (env_get_param() looks at both): the mode to
  * show instead of the monitor's preferred one.  It is looked for in the
@@ -543,21 +650,20 @@ asked_mode(unsigned *w, unsigned *h, unsigned *hz)
 static void
 modes_line(char *buf, size_t len)
 {
+	const struct videomode *list;
 	size_t n;
-	int i;
+	int i, nm;
 
+	list = mode_list(&nm);
 	n = (size_t)snprintf(buf, len, "modes:");
-	for (i = 0; i < edid.edid_nmodes && n < len; i++) {
-		const struct videomode *m = &edid.edid_modes[i];
+	for (i = 0; i < nm && n < len; i++) {
+		const struct videomode *m = &list[i];
 
 		if (!mode_usable(m))
 			continue;
 		n += (size_t)snprintf(buf + n, len - n, " %dx%d@%u%s",
 		    m->hdisplay, m->vdisplay, mode_hz(m),
-		    m->hdisplay == mode.hdisplay &&
-		    m->vdisplay == mode.vdisplay &&
-		    m->htotal == mode.htotal && m->vtotal == mode.vtotal &&
-		    mode_hz(m) == mode_hz(&mode) ? "*" : "");
+		    same_mode(m, &mode) ? "*" : "");
 	}
 }
 
@@ -601,21 +707,10 @@ choose_mode(void)
 		    mode_usable(&edid.edid_modes[i]) ? "" : ", not made here");
 
 	if (asked) {
-		best = -1;
-		for (i = 0; i < edid.edid_nmodes; i++) {
-			if (!mode_usable(&edid.edid_modes[i]) ||
-			    edid.edid_modes[i].hdisplay != (int)w ||
-			    edid.edid_modes[i].vdisplay != (int)h)
-				continue;
-			d = mode_hz(&edid.edid_modes[i]);
-			d = d > hz ? d - hz : hz - d;
-			if (best < 0 || d < dbest) {
-				best = i;
-				dbest = d;
-			}
-		}
-		if (best >= 0) {
-			mode = edid.edid_modes[best];
+		const struct videomode *m = find_mode(w, h, hz);
+
+		if (m != NULL) {
+			mode = *m;
 			why = "asked for (fbmode)";
 			goto chosen;
 		}
@@ -668,24 +763,26 @@ alloc_frame_buffer(void)
 
 	fb_stride = mode.hdisplay * BYTES_PER_PIXEL;
 	fb_size = (size_t)fb_stride * mode.vdisplay;
+	buf_bytes = buffer_bytes();
 
 	/*
 	 * Physically contiguous - the window fetches it as one range - and
 	 * below 4 GiB, which the window's address register needs and every
 	 * byte of RAM on this SoC is.  The memory is ordinary cacheable RAM;
 	 * arch_fb_flush() cleans what was drawn, because the controller
-	 * reads behind the caches.
+	 * reads behind the caches.  As large as the largest mode of the list:
+	 * FBIOC_SETMODE changes the mode, never the buffers.
 	 */
-	if ((v = alloc_contig(fb_size, AC_ALIGN64K, &fb_phys)) == NULL) {
+	if ((v = alloc_contig(buf_bytes, AC_ALIGN64K, &fb_phys)) == NULL) {
 		log_warn(&fb_log, "cannot allocate %zu contiguous bytes for "
-		    "the frame buffer\n", fb_size);
+		    "the frame buffer\n", buf_bytes);
 		return ENOMEM;
 	}
 	fb_vir = (vir_bytes)v;
 	buf_vir[0] = fb_vir;		/* before the first flush: it uses these */
 	buf_phys[0] = fb_phys;
 	nbuf = 1;
-	memset(v, 0, fb_size);
+	memset(v, 0, buf_bytes);
 	{
 		/* What a whole-frame clean costs: the console pays it per scroll. */
 		u64_t t0, t1;
@@ -696,9 +793,9 @@ alloc_frame_buffer(void)
 		log_info(&fb_log, "cleaning the whole frame out of the cache: "
 		    "%u us\n", frclock_64_to_micros(delta_frclock_64(t0, t1)));
 	}
-	log_info(&fb_log, "frame buffer %ux%u, stride %u, %zu bytes at "
-	    "physical 0x%lx\n", mode.hdisplay, mode.vdisplay, fb_stride,
-	    fb_size, (unsigned long)fb_phys);
+	log_info(&fb_log, "frame buffer %ux%u, stride %u, %zu bytes (buffers "
+	    "of %zu) at physical 0x%lx\n", mode.hdisplay, mode.vdisplay,
+	    fb_stride, fb_size, buf_bytes, (unsigned long)fb_phys);
 	return OK;
 }
 
@@ -757,13 +854,13 @@ do_map(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 		return EBUSY;
 
 	while (nbuf < FB_MAX_BUFFERS) {
-		if ((v = alloc_contig(fb_size, AC_ALIGN64K,
+		if ((v = alloc_contig(buf_bytes, AC_ALIGN64K,
 		    &buf_phys[nbuf])) == NULL) {
 			log_warn(&fb_log, "no memory for scanout buffer %d\n",
 			    nbuf);
 			break;
 		}
-		memset(v, 0, fb_size);
+		memset(v, 0, buf_bytes);
 		buf_vir[nbuf] = (vir_bytes)v;
 		flush_rows(nbuf, 0, mode.vdisplay);
 		nbuf++;
@@ -774,12 +871,12 @@ do_map(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 	m.height = mode.vdisplay;
 	m.stride = fb_stride;
 	m.format = FB_FORMAT_XRGB8888;
-	m.size = (uint32_t)fb_size;
+	m.size = (uint32_t)buf_bytes;	/* all of it: a larger mode may come */
 	m.nbuf = nbuf;
 	m.shown = shown;
 	for (i = 0; i < nbuf; i++) {
 		v = vm_remap(user_ep, sef_self(), NULL, (void *)buf_vir[i],
-		    fb_size);
+		    buf_bytes);
 		if (v == MAP_FAILED) {
 			log_warn(&fb_log, "cannot map buffer %d into %d\n", i,
 			    user_ep);
@@ -811,6 +908,119 @@ do_flip(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 	else
 		flush_rows((int)f.buf, 0, mode.vdisplay);
 	return show((int)f.buf);
+}
+
+/*
+ * The hardware for mode m, in bring-up's order: the pixel clock, then the
+ * display controller - its port in standby while it is described, and
+ * scanning the buffer on the screen - then the encoder and its PHY last.
+ * The geometry (fb_stride, fb_size) is m's from here on.
+ */
+static int
+program_mode(struct videomode *m)
+{
+	unsigned got;
+	int r;
+
+	fb_stride = m->hdisplay * BYTES_PER_PIXEL;
+	fb_size = (size_t)fb_stride * m->vdisplay;
+	if (virtual_mode)
+		return OK;
+	if ((r = rk_vo_clocks(&disp, m->dot_clock, &got)) != OK)
+		return r;
+	m->dot_clock = got;
+	if ((r = vop2_set_mode(m, buf_phys[shown], fb_stride)) != OK)
+		return r;
+	return dwhdmi_set_mode(m, hdmi_mode);
+}
+
+/*
+ * Another mode of the list, while the driver runs: the buffer on the screen
+ * cleared to black in the new geometry, the hardware set for it, and the
+ * console given the new size.  The buffers stay (buffer_bytes()).  If the
+ * hardware does not take it, the old mode goes back on.
+ */
+static int
+change_mode(const struct videomode *want)
+{
+	struct videomode old = mode;
+	int r;
+
+	if (same_mode(want, &mode))
+		return OK;
+	if ((size_t)want->hdisplay * want->vdisplay * BYTES_PER_PIXEL >
+	    buf_bytes)
+		return EINVAL;			/* not a mode of the list */
+
+	mode = *want;
+	memset((void *)buf_vir[shown], 0,
+	    (size_t)mode.hdisplay * BYTES_PER_PIXEL * mode.vdisplay);
+	flush_rows(shown, 0, mode.vdisplay);
+	if ((r = program_mode(&mode)) != OK) {
+		log_warn(&fb_log, "mode %dx%d@%u did not take (%d); back to "
+		    "%dx%d@%u\n", want->hdisplay, want->vdisplay, mode_hz(want),
+		    r, old.hdisplay, old.vdisplay, mode_hz(&old));
+		mode = old;
+		if (program_mode(&mode) != OK)
+			log_warn(&fb_log, "and the old mode did not take either\n");
+		fbcon_resize();
+		return EIO;
+	}
+	log_info(&fb_log, "mode %dx%d@%u, %d kHz: changed from %dx%d@%u\n",
+	    mode.hdisplay, mode.vdisplay, mode_hz(&mode), mode.dot_clock,
+	    old.hdisplay, old.vdisplay, mode_hz(&old));
+	fbcon_resize();
+	return OK;
+}
+
+/* FBIOC_MODES: the list, and which of it is on the screen. */
+static int
+do_modes(endpoint_t ep, cp_grant_id_t gid)
+{
+	static struct fb_modes ms;
+	const struct videomode *list;
+	int i, n;
+
+	memset(&ms, 0, sizeof(ms));
+	ms.current = FB_MAX_MODES;		/* none of the list, until found */
+	list = mode_list(&n);
+	for (i = 0; i < n && ms.n < FB_MAX_MODES; i++) {
+		if (!mode_usable(&list[i]))
+			continue;
+		if (same_mode(&list[i], &mode))
+			ms.current = ms.n;
+		ms.mode[ms.n].width = (uint32_t)list[i].hdisplay;
+		ms.mode[ms.n].height = (uint32_t)list[i].vdisplay;
+		ms.mode[ms.n].hz = mode_hz(&list[i]);
+		ms.mode[ms.n].khz = (uint32_t)list[i].dot_clock;
+		ms.n++;
+	}
+	if (ms.current >= ms.n)
+		ms.current = ms.n;
+	return sys_safecopyto(ep, gid, 0, (vir_bytes)&ms, sizeof(ms));
+}
+
+/* FBIOC_SETMODE: the owner's, or anybody's while nobody owns the screen. */
+static int
+do_setmode(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
+{
+	struct fb_setmode s;
+	const struct videomode *m;
+	int r;
+
+	if (owner != NONE && user_ep != owner)
+		return EPERM;
+	if ((r = sys_safecopyfrom(ep, gid, 0, (vir_bytes)&s, sizeof(s))) != OK)
+		return r;
+	if ((m = find_mode(s.width, s.height, s.hz != 0 ? s.hz : 60)) == NULL)
+		return EINVAL;
+	if ((r = change_mode(m)) != OK)
+		return r;
+	s.width = (uint32_t)mode.hdisplay;
+	s.height = (uint32_t)mode.vdisplay;
+	s.hz = mode_hz(&mode);
+	s.stride = fb_stride;
+	return sys_safecopyto(ep, gid, 0, (vir_bytes)&s, sizeof(s));
 }
 
 void
@@ -854,6 +1064,8 @@ report_state(void)
 		log_info(&fb_log, "state: virtual, mode %dx%d, buffer %d of %d "
 		    "shown, owner %d\n", mode.hdisplay, mode.vdisplay, shown,
 		    nbuf, owner);
+		modes_line(stats, sizeof(stats));
+		log_info(&fb_log, "%s\n", stats);
 		fbcon_stats(stats, sizeof(stats));
 		log_info(&fb_log, "%s\n", stats);
 		return;
@@ -863,10 +1075,8 @@ report_state(void)
 	    dwhdmi_hpd() ? "plugged in" : "absent",
 	    dwhdmi_phy_locked() ? "locked" : "NOT locked",
 	    mode.hdisplay, mode.vdisplay, mode_hz(&mode), shown, nbuf, owner);
-	if (have_edid) {
-		modes_line(stats, sizeof(stats));
-		log_info(&fb_log, "%s\n", stats);
-	}
+	modes_line(stats, sizeof(stats));
+	log_info(&fb_log, "%s\n", stats);
 	(void)vop2_scanning(&line);
 	report_window();
 	fbcon_stats(stats, sizeof(stats));
@@ -887,9 +1097,14 @@ bring_up(void)
 		fb_log.log_level = (int)v;
 
 	if (env_parse("virtual", "d", 0, &v, 0, 1) == EP_SET && v == 1) {
-		/* No hardware: a 720p frame in memory, and nothing else. */
+		/* No hardware: a frame in memory, 720p or fbmode=, no more. */
+		unsigned w, h, hz;
+		const struct videomode *m;
+
 		virtual_mode = 1;
 		mode = mode_720p;
+		if (asked_mode(&w, &h, &hz) && (m = find_mode(w, h, hz)) != NULL)
+			mode = *m;
 		if ((r = alloc_frame_buffer()) != OK)
 			return r;
 		log_info(&fb_log, "virtual display, %dx%d, no controller\n",
@@ -1082,11 +1297,16 @@ arch_fb_ioctl(int minor, unsigned long request, endpoint_t ep,
 
 	if (minor != 0)
 		return ENXIO;
-	if (request == FBIOC_MAP || request == FBIOC_FLIP) {
+	if (request == FBIOC_MAP || request == FBIOC_FLIP ||
+	    request == FBIOC_MODES || request == FBIOC_SETMODE) {
 		if (status <= 0)
 			return ENXIO;
-		return request == FBIOC_MAP ? do_map(ep, gid, user_ep) :
-		    do_flip(ep, gid, user_ep);
+		switch (request) {
+		case FBIOC_MAP:		return do_map(ep, gid, user_ep);
+		case FBIOC_FLIP:	return do_flip(ep, gid, user_ep);
+		case FBIOC_MODES:	return do_modes(ep, gid);
+		default:		return do_setmode(ep, gid, user_ep);
+		}
 	}
 	if (request != FBIOC_LOG)
 		return ENOTTY;

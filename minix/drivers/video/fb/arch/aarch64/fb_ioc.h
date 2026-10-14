@@ -78,4 +78,46 @@ struct fb_flip {
 #define FBIOC_MAP	_IOR('V', 0x41, struct fb_map)
 #define FBIOC_FLIP	_IOW('V', 0x42, struct fb_flip)
 
+/*
+ * The mode, changed while a compositor runs.
+ *
+ * FBIOC_MODES lists the modes there are to choose from - the monitor's own
+ * (EDID, its CEA-861 extension included) that this driver makes, or the
+ * virtual display's - and which one is on the screen.
+ *
+ * FBIOC_SETMODE takes one of them: width and height, and the rate nearest
+ * to hz (0: nearest to 60).  The scanout buffers do not change - they are
+ * made for the largest mode of the list - so a compositor's mapping of them
+ * stays good; the geometry does, and comes back here.  The buffer on the
+ * screen is cleared to black before the controller and the encoder are set
+ * for the new mode, and the next FLIP shows the new picture.  Only the
+ * owner of the screen may ask, or anybody while nobody owns it (then the
+ * console takes the new size).  A mode not in the list is EINVAL; one the
+ * hardware did not take is EIO, with the old mode back on the screen.
+ */
+#define FB_MAX_MODES	32
+
+struct fb_modeinfo {
+	uint32_t	width, height;	/* pixels */
+	uint32_t	hz;		/* frames a second, rounded */
+	uint32_t	khz;		/* pixel clock */
+};
+
+struct fb_modes {
+	uint32_t	n;		/* modes below */
+	uint32_t	current;	/* the one on the screen; n if none is */
+	struct fb_modeinfo mode[FB_MAX_MODES];
+};
+
+struct fb_setmode {
+	uint32_t	width, height;	/* in: asked for; out: taken */
+	uint32_t	hz;		/* in: 0 for 60; out: taken */
+	uint32_t	stride;		/* out: bytes from one row to the next */
+};
+
+typedef char fb_modes_fits[(sizeof(struct fb_modes) <= 4095) ? 1 : -1];
+
+#define FBIOC_MODES	_IOR('V', 0x43, struct fb_modes)
+#define FBIOC_SETMODE	_IOWR('V', 0x44, struct fb_setmode)
+
 #endif /* _FB_IOC_H */

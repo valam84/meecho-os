@@ -27,15 +27,31 @@ environment of the stand's (fbart is the stand's, to read the screen).
  9a. in that frame, nnn's directories in MEECHO blue (foot's ANSI blue)
  10. "screenshot" typed into the palette: a PNG in ~/Pictures
  11. Print, alone: another one
+ 11a. slurp (cairo) as meechowm-shot -r starts it - -d and MEECHO's
+     arguments (/usr/share/meecho/slurp.sh) - with an area offered on its
+     input, the mouse moved into it: the screen around darkened by ink
+     (each pixel the palette's ink over what was there, at the template's
+     alpha), the area clear, its frame the accent, its size written
+     beside it in the accent (FreeType and fontconfig through cairo); a
+     click, and slurp prints the area as grim's -g reads it
+ 11b. Shift+Print (meechowm-shot -r): slurp over the screen, a drag with
+     the mouse (usb_mouse inject=) from 680,100 to 980,260, and a PNG in
+     ~/Pictures of 301x161 - the area, its pixels the screen's (both
+     areas lie on nnn's list: text, where darkened and clear differ)
  12. meechowm -m quit: the compositor ends, and every program of the
      desktop with it
  13. the console, back: on the palette's ground, not black
 
 The frame of step 9 is written as a PNG (~/meecho-desk.png, -o), and so
-is grim's.  At the first failure the tail of the compositor's log is
-printed.  Log of the whole run: ~/qemu-desk.log.
+are grim's, slurp's overlay of 11a (rows 140-349) and the area of 11b
+(-grim.png, -slurp.png, -area.png beside it).  At the
+first failure the tail of the compositor's log is printed.  Log of the
+whole run: ~/qemu-desk.log.
 
-    python3 port/gfx/test/qemu-desk.py [-o file.png] [-x]
+    python3 port/gfx/test/qemu-desk.py [-o file.png] [-x] [-w dir]
+
+-x: stop at the first failure; -w: another WORK_DIR (and the log beside
+it, DIR.log) - two runs in one WORK_DIR build their disks over each other.
 """
 
 import argparse
@@ -59,6 +75,8 @@ WORK = os.path.join(HOME, "obj-evbarm64/work-desk")
 GUESTDIR = "/usr/tests/gfx"
 W, H = 1280, 720
 PALETTE = os.path.join(HERE, "..", "..", "..", "minix/share/style/palette")
+SLURPSTYLE = os.path.join(HERE, "..", "..", "..",
+                          "minix/share/style/slurp.sh.in")
 
 _spec = importlib.util.spec_from_file_location(
     "qemu_meechowm", os.path.join(HERE, "qemu-meechowm.py"))
@@ -75,6 +93,26 @@ def palette():
             col[f[0]] = int(f[1], 16) if re.fullmatch(r"[0-9a-f]{6}", f[1]) \
                 else col[f[1]]
     return col
+
+
+def slurp_style(col):
+    """What slurp.sh.in makes of the palette: the darkening (RRGGBB, alpha)
+    and the frame's colour."""
+    text = open(SLURPSTYLE).read()
+    b = re.search(r"-b #@(\w+)@([0-9a-f]{2})\b", text)
+    c = re.search(r"-c #@(\w+)@ff\b", text)
+    if not b or not c:
+        raise RuntimeError("slurp.sh.in: no -b #@NAME@AA or -c #@NAME@ff")
+    return col[b.group(1)], int(b.group(2), 16), col[c.group(1)]
+
+
+def over(src, alpha, dst):
+    """src at alpha over dst, per channel, as pixman composites it."""
+    out = 0
+    for s in (0, 8, 16):
+        out |= (((src >> s & 0xff) * alpha + (dst >> s & 0xff) *
+                 (255 - alpha) + 127) // 255) << s
+    return out
 
 
 def near(a, b, tol):
@@ -153,18 +191,25 @@ def png_read(data):
 
 
 def main():
+    global WORK
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", default=os.path.join(HOME, "meecho-desk.png"))
     ap.add_argument("-x", action="store_true", help="stop at the first "
                     "failure")
+    ap.add_argument("-w", help="WORK_DIR (default %s)" % WORK)
     a = ap.parse_args()
     col = palette()
+    dim, dim_alpha, frame_colour = slurp_style(col)
+    logpath = os.path.join(HOME, "qemu-desk.log")
+    if a.w:
+        WORK = os.path.abspath(a.w)
+        logpath = WORK + ".log"
 
     qemu_meechowm.stage()
     os.makedirs(WORK, exist_ok=True)
     env = dict(os.environ, WORK_DIR=WORK, QEMU_TIMEOUT="3000",
                QEMU_SMP="1", DISK_FRESH="1")
-    log = open(os.path.join(HOME, "qemu-desk.log"), "w")
+    log = open(logpath, "w")
     p = subprocess.Popen(["bash", RAMIMAGE, "-d"], stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          bufsize=0, env=env, start_new_session=True)
@@ -253,6 +298,33 @@ def main():
     def kbd(label, text):
         run("minix-service up /service/usb_kbd -label %s -args "
             "'inject=%s'" % (label, text))
+
+    def mouse(label, reports):
+        """usb_mouse's boot reports (B:X:Y, one a tick), and the stand-in
+        gone again; $C in REPORTS is the guest's way to the top left
+        corner (a line typed is cut at 255 bytes)."""
+        run("minix-service up /service/usb_mouse -label %s -args "
+            "\"inject=%s\"; sleep 6; minix-service down %s" %
+            (label, reports, label))
+
+    def walk(x, y):
+        """Boot reports that take the cursor from 0,0 to x,y."""
+        out = []
+        for d, f in ((x, "0:%d:0"), (y, "0:0:%d")):
+            while d > 0:
+                out.append(f % min(d, 127))
+                d -= min(d, 127)
+        return ",".join(out)
+
+    def fb_rows(y0, n):
+        """Rows y0 .. y0+n-1 of the screen, XRGB8888 as /dev/fb0 has
+        them."""
+        return fetch("dd if=/dev/fb0 bs=%d skip=%d count=%d 2>/dev/null" %
+                     (W * 4, y0, n), "rows.gz")
+
+    def fb_px(buf, y0, x, y):
+        i = ((y - y0) * W + x) * 4
+        return buf[i + 2] << 16 | buf[i + 1] << 8 | buf[i]
 
     rc = 1
     try:
@@ -405,16 +477,126 @@ def main():
                n2.group(1) if n2 else "?")
         run("minix-service down kbdp")
 
+        # 11a. slurp as meechowm-shot -r starts it (-d and MEECHO's
+        # arguments), with an area offered on its input; the mouse into the
+        # area makes it slurp's choice, drawn clear and framed, its size
+        # written beside it (cairo, FreeType, fontconfig: Go Mono).  The
+        # screen under it, before and during.  The areas of 11a and 11b lie
+        # on nnn's list, text on ink: over the terminal's empty ink,
+        # darkened by ink is ink, and clear could not be told from it.
+        Y0, NY = 60, 210			# the rows read: 60 .. 269
+        BX, BY, BW, BH = 700, 100, 250, 120	# the area offered
+        CX, CY = 800, 160			# the cursor, in it
+        before = fb_rows(Y0, NY)
+        send("C=" + ",".join(["0:-127:-127"] * 11))
+        send(". /usr/share/meecho/slurp.sh; echo '%d,%d %dx%d' | "
+             "slurp -d $SLURP_STYLE > /tmp/sel.txt 2> /tmp/sel.err &" %
+             (BX, BY, BW, BH))
+        st = state_has(r"layer selection ", 300)
+        mouse("m11a", "$C," + walk(CX, CY))
+        time.sleep(6)
+        during = fb_rows(Y0, NY)
+        png_write(os.path.splitext(a.o)[0] + "-slurp.png", during, W, NY)
+
+        def by_size(x, y):	# "250x120", from the frame's corner
+            return (BX + BW <= x < BX + BW + 110 and
+                    BY + BH + 5 <= y < BY + BH + 28)
+        outside = darkened = 0
+        for y in range(Y0, Y0 + NY, 3):
+            for x in list(range(0, BX - 20, 3)) + \
+                    list(range(BX + BW + 20, W, 3)):
+                if by_size(x, y):
+                    continue
+                outside += 1
+                if near(fb_px(during, Y0, x, y),
+                        over(dim, dim_alpha, fb_px(before, Y0, x, y)), 3):
+                    darkened += 1
+        written = sum(1 for y in range(BY + BH + 5, BY + BH + 28)
+                      for x in range(BX + BW, BX + BW + 110)
+                      if near(fb_px(during, Y0, x, y), frame_colour, 40))
+        inside = clear = 0
+        for y in range(BY + 10, BY + BH - 10, 3):
+            for x in range(BX + 10, BX + BW - 10, 3):
+                if abs(x - CX - 10) <= 24 and abs(y - CY - 10) <= 24:
+                    continue		# the cursor
+                inside += 1
+                if fb_px(during, Y0, x, y) == fb_px(before, Y0, x, y):
+                    clear += 1
+        edge = sum(1 for y in range(BY + 10, BY + BH - 10)
+                   if fb_px(during, Y0, BX - 1, y) == frame_colour and
+                   fb_px(during, Y0, BX, y) == frame_colour)
+        record("11a. slurp: the screen under ink, the area clear, framed "
+               "in the accent, its size written",
+               st is not None and darkened >= outside * 95 // 100 and
+               clear >= inside * 95 // 100 and edge >= BH - 25 and
+               written >= 20,
+               "%d of %d darkened, %d of %d clear, frame %d of %d, "
+               "%d pixels of the size" %
+               (darkened, outside, clear, inside, edge, BH - 20, written))
+        mouse("m11c", "1:0:0,0:0:0")
+        deadline = time.time() + 120
+        while time.time() < deadline and "layer selection" in state():
+            time.sleep(3)
+        out = run("cat /tmp/sel.txt /tmp/sel.err")
+        record("11a. a click: slurp prints the area for grim -g",
+               re.search(r"^%d,%d %dx%d\s*$" % (BX, BY, BW, BH), out,
+                         re.M) is not None,
+               " / ".join(l.strip() for l in out.splitlines()
+                          if "cat /tmp" not in l and "RUN" not in l))
+
+        # 11b. Shift+Print: the cursor to AX,AY first, then slurp, then a
+        # drag of 300 right and 160 down - a nudge first, so that the
+        # overlay has the pointer before the button goes down.  slurp
+        # counts both ends in: 301x161.
+        AX, AY = 680, 100
+        out = run("ls ~/Pictures | grep -c '^screen-.*\\.png$'")
+        n3 = re.search(r"^(\d+)\s*$", out, re.M)
+        n3 = int(n3.group(1)) if n3 else 0
+        mouse("m11b", "$C," + walk(AX, AY))
+        kbd("kbdr", "%[S+Print]")
+        st = state_has(r"layer selection ", 300)
+        mouse("m11d", "0:1:0,0:-1:0,1:0:0,1:100:0,1:100:0,1:100:0,"
+              "1:0:80,1:0:80,0:0:0")
+        newest = None
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            out = run("ls ~/Pictures | grep -c '^screen-.*\\.png$'; "
+                      "ls -t ~/Pictures | head -1")
+            m = re.search(r"^(\d+)\s*\r?\n(screen-\S+\.png)", out, re.M)
+            if m and int(m.group(1)) > n3:
+                newest = m.group(2)
+                break
+            time.sleep(5)
+        run("minix-service down kbdr")
+        aw = ah = diff = 0
+        if newest:
+            area = fetch("cat ~/Pictures/%s" % newest, "area.gz")
+            with open(os.path.splitext(a.o)[0] + "-area.png", "wb") as f:
+                f.write(area)
+            aw, ah, arows = png_read(area)
+            for y in range(min(ah, Y0 + NY - AY)):
+                g = arows[y]
+                for x in range(min(aw, W - AX)):
+                    if (g[3 * x] << 16 | g[3 * x + 1] << 8 | g[3 * x + 2]) \
+                            != fb_px(before, Y0, AX + x, AY + y):
+                        diff += 1
+        record("11b. Shift+Print: an area dragged out, a PNG of 301x161, "
+               "the screen's",
+               st is not None and (aw, ah) == (301, 161) and
+               diff < aw * ah // 100,
+               "%s: %dx%d, %d pixels differ" % (newest, aw, ah, diff))
+
         # 12. The end.
         run("meechowm -m quit")
         send("n=0; while [ $n -lt 60 ] && ps -ax -o command | "
-             "grep -q -E '^(meechowm|wbg|yambar|foot|nnn)( |$)'; do "
-             "sleep 2; n=$((n+1)); done; echo LE''FT; "
-             "ps -ax -o command | grep -E '^(meechowm|wbg|yambar|foot|nnn)"
-             "( |$)'; echo EN''D")
+             "grep -q -E '^(meechowm|wbg|yambar|foot|nnn|slurp)( |$)'; do "
+             "sleep 2; n=$((n+1)); done; echo LE''FT; ps -ax -o command | "
+             "grep -E '^(meechowm|wbg|yambar|foot|nnn|slurp)( |$)'; "
+             "echo EN''D")
         out = expect(r"END", 300)
         left = [l for l in out.split("LEFT", 1)[-1].splitlines()
-                if re.match(r"(meechowm|wbg|yambar|foot|nnn)( |$)", l)]
+                if re.match(r"(meechowm|wbg|yambar|foot|nnn|slurp)( |$)",
+                            l)]
         record("12. meechowm -m quit: the desktop goes, all of it",
                not left, ", ".join(left))
 

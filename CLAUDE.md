@@ -332,7 +332,8 @@ Ubuntu `gcc-15-source`/`binutils-source` с патчами `port/toolchain/` с�
   (`build-jobs.sh`: свой obj и sysroot; `build-jobs.sh shared` — в общие).
   Разбор — `PORTING-LOG.md`, «Управление заданиями: группы, терминал,
   ash».
-- **Закрыто 2026-10-14 (QEMU): PAN и стек ядра в панике (О7, О4).** PAN
+- **Закрыто 2026-10-14 (QEMU; PAN и на плате): PAN и стек ядра в панике
+  (О7, О4).** PAN
   включён на ядрах, где он есть (A55 платы — да, `cortex-a72` QEMU — нет:
   проверять с `QEMU_CPU=cortex-a55`); `SCTLR_EL1.SPAN` сброшен, иначе PAN
   жил бы до первого системного вызова. **К памяти процесса ядро ходит

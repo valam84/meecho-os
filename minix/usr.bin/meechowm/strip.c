@@ -55,7 +55,9 @@
 #include <wlr/util/edges.h>
 #include <wlr/util/log.h>
 
+#include "fb_ioc.h"
 #include "layout.h"
+#include "meechowm.h"
 #include "wm.h"
 
 static const float colour_background[4] = {
@@ -771,6 +773,50 @@ cmd_workspace(struct tinywl_server *s, const char *arg, struct mw_reply *r)
 	    wl_list_length(&s->workspaces));
 }
 
+/* "modes": what the screen can be given, the one it has marked "current". */
+static void
+cmd_modes(struct tinywl_server *s, struct mw_reply *r)
+{
+	struct fb_modes ms;
+	uint32_t i;
+
+	if (s->fb == NULL || mc_fb_modes(s->fb, &ms) != 0) {
+		r->error = true;
+		wm_reply(r, "error: modes: %s\n", s->fb == NULL ? "no screen" :
+		    strerror(errno));
+		return;
+	}
+	for (i = 0; i < ms.n; i++)
+		wm_reply(r, "%ux%u@%u%s\n", ms.mode[i].width, ms.mode[i].height,
+		    ms.mode[i].hz, i == ms.current ? " current" : "");
+}
+
+/* "mode WIDTHxHEIGHT" or "mode WIDTHxHEIGHT@HZ": one of "modes". */
+static void
+cmd_mode(struct tinywl_server *s, const char *arg, struct mw_reply *r)
+{
+	unsigned long w, h = 0, hz = 0;
+	char *e;
+
+	w = strtoul(arg, &e, 10);
+	if (*e == 'x') {
+		h = strtoul(e + 1, &e, 10);
+		if (*e == '@')
+			hz = strtoul(e + 1, &e, 10);
+	}
+	if (*e != '\0' || w == 0 || h == 0 || w > 8192 || h > 8192 ||
+	    hz > 1000) {
+		r->error = true;
+		wm_reply(r, "error: mode %s: not WIDTHxHEIGHT[@HZ]\n", arg);
+		return;
+	}
+	if (!wm_set_mode(s, (unsigned)w, (unsigned)h, (unsigned)hz)) {
+		r->error = true;
+		wm_reply(r, "error: mode %s: %s\n", arg, errno == EINVAL ?
+		    "not a mode of the screen (see modes)" : strerror(errno));
+	}
+}
+
 /* A word of p, up to len characters, into w; false if it is longer. */
 static bool
 word(const char *p, size_t len, char *w, size_t size)
@@ -856,6 +902,13 @@ wm_command(struct tinywl_server *s, const char *line, struct mw_reply *r)
 	else if (strcmp(verb, "state") == 0) {
 		state(s, r);
 		return;
+	} else if (strcmp(verb, "modes") == 0) {
+		cmd_modes(s, r);
+		return;
+	} else if (strcmp(verb, "mode") == 0) {
+		cmd_mode(s, arg, r);
+		if (r->error)
+			return;
 	} else if (strcmp(verb, "quit") == 0)
 		wl_display_terminate(s->wl_display);
 	else

@@ -28,6 +28,11 @@ struct wl_event_loop;
 struct mc_fb;
 struct mc_fb *mc_fb_open(const char *path);
 void mc_fb_size(const struct mc_fb *fb, int *width, int *height);
+unsigned mc_fb_hz(const struct mc_fb *fb);	/* 0: not known */
+struct fb_modes;
+int mc_fb_modes(struct mc_fb *fb, struct fb_modes *modes);
+int mc_fb_set_mode(struct mc_fb *fb, unsigned width, unsigned height,
+	unsigned hz);
 /* damage: what changed in the frame, NULL for all of it */
 void mc_fb_present(struct mc_fb *fb, struct wlr_buffer *buffer,
 	const pixman_region32_t *damage);

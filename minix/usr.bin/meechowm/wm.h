@@ -145,6 +145,8 @@ struct mw_reply {
 /* meechowm.c */
 void focus_toplevel(struct tinywl_toplevel *toplevel);
 void wm_pointer_refresh(struct tinywl_server *server);
+bool wm_set_mode(struct tinywl_server *server, unsigned width,
+	unsigned height, unsigned hz);
 
 /* layers.c */
 void layers_init(struct tinywl_server *server);

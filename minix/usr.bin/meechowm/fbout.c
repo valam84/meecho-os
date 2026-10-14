@@ -38,6 +38,7 @@
 struct mc_fb {
 	int fd;
 	struct fb_map map;
+	uint32_t hz;			/* the mode's rate; 0 if not known */
 	uint32_t *buf[FB_MAX_BUFFERS];
 	pixman_region32_t lacks[FB_MAX_BUFFERS];
 	uint32_t shown;
@@ -77,6 +78,14 @@ mc_fb_open(const char *path)
 		pixman_region32_init_rect(&fb->lacks[i], 0, 0,
 		    fb->map.width, fb->map.height);
 	}
+	{
+		/* The rate, for the output's mode; a driver without the
+		 * list (before mode changes) leaves it unknown. */
+		struct fb_modes ms;
+
+		if (ioctl(fb->fd, FBIOC_MODES, &ms) == 0 && ms.current < ms.n)
+			fb->hz = ms.mode[ms.current].hz;
+	}
 	wlr_log(WLR_INFO, "screen %s: %ux%u, stride %u, %u scanout buffers",
 	    path, fb->map.width, fb->map.height, fb->map.stride,
 	    fb->map.nbuf);
@@ -88,6 +97,53 @@ mc_fb_size(const struct mc_fb *fb, int *width, int *height)
 {
 	*width = (int)fb->map.width;
 	*height = (int)fb->map.height;
+}
+
+unsigned
+mc_fb_hz(const struct mc_fb *fb)
+{
+	return fb->hz;
+}
+
+/* The modes the screen can be given (FBIOC_MODES); -1 and errno if not. */
+int
+mc_fb_modes(struct mc_fb *fb, struct fb_modes *ms)
+{
+	return ioctl(fb->fd, FBIOC_MODES, ms);
+}
+
+/*
+ * Another mode (FBIOC_SETMODE).  The driver changes it under the buffers
+ * mapped here - they are made for the largest mode of its list - and says
+ * the geometry; every buffer then lacks all of the new frame.  -1 and
+ * errno if the driver refused: EINVAL, not a mode of the list; EIO, the
+ * hardware did not take it and the old one is back.
+ */
+int
+mc_fb_set_mode(struct mc_fb *fb, unsigned width, unsigned height,
+	unsigned hz)
+{
+	struct fb_setmode s;
+	uint32_t i;
+
+	memset(&s, 0, sizeof(s));
+	s.width = width;
+	s.height = height;
+	s.hz = hz;
+	if (ioctl(fb->fd, FBIOC_SETMODE, &s) != 0)
+		return -1;
+	fb->map.width = s.width;
+	fb->map.height = s.height;
+	fb->map.stride = s.stride;
+	fb->hz = s.hz;
+	for (i = 0; i < fb->map.nbuf; i++) {
+		pixman_region32_fini(&fb->lacks[i]);
+		pixman_region32_init_rect(&fb->lacks[i], 0, 0, s.width,
+		    s.height);
+	}
+	wlr_log(WLR_INFO, "screen: %ux%u at %u Hz, stride %u", s.width,
+	    s.height, s.hz, s.stride);
+	return 0;
 }
 
 void

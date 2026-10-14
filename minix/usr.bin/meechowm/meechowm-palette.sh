@@ -34,6 +34,12 @@ entries() {
 	    "Motion off"			"meechowm -m anim 0" \
 	    "Motion on"				"meechowm -m anim 200" \
 	    "Leave the desktop"			"meechowm -m quit"
+	# The screen's modes, as the driver lists them: "1920x1080@60
+	# current" - type "screen" and a size to narrow them down.
+	meechowm -m modes 2>/dev/null | while read -r m now; do
+		printf 'Screen: %s Hz%s\t%s\n' "$(echo "$m" | sed 's/@/ at /')" \
+		    "${now:+ (now)}" "meechowm -m mode $m"
+	done
 }
 
 # The desktop's colours: its background, its text, the focus ring's blue.

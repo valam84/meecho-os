@@ -43,6 +43,7 @@
  * XKB_CONFIG_ROOT.  When it ends, the console has the screen back.
  */
 #include <assert.h>
+#include <errno.h>
 #include <getopt.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -237,6 +238,48 @@ void focus_toplevel(struct tinywl_toplevel *toplevel) {
  */
 void wm_pointer_refresh(struct tinywl_server *server) {
 	process_cursor_motion(server, now_ms());
+}
+
+/*
+ * MEECHO: another mode for the screen, everything running (meechowm -m mode
+ * WxH[@HZ]).  The driver changes it under the scanout buffers mapped here;
+ * the one output takes the new size as a custom mode - the headless backend
+ * takes any, and wl_output tells the clients - and the strip and the layer
+ * surfaces are laid out again, the cursor kept on the screen.  False and
+ * errno if the driver refused (EINVAL: not a mode of its list; EIO: the
+ * hardware did not take it, the old mode is back) or there is no screen.
+ */
+bool wm_set_mode(struct tinywl_server *server, unsigned width,
+		unsigned height, unsigned hz) {
+	struct wlr_output_state state;
+	int w, h;
+	bool ok;
+
+	if (server->fb == NULL || server->output == NULL) {
+		errno = ENODEV;
+		return false;
+	}
+	if (mc_fb_set_mode(server->fb, width, height, hz) != 0)
+		return false;
+	mc_fb_size(server->fb, &w, &h);
+	wlr_output_state_init(&state);
+	wlr_output_state_set_custom_mode(&state, w, h,
+		(int32_t)mc_fb_hz(server->fb) * 1000);
+	ok = wlr_output_commit_state(server->output, &state);
+	wlr_output_state_finish(&state);
+	if (!ok) {
+		/* The screen has the mode, the frames do not: the screen
+		 * stays black until the next mode the output does take. */
+		wlr_log(WLR_ERROR, "the output did not take %dx%d", w, h);
+		errno = EIO;
+		return false;
+	}
+	strip_screen(server, w, h);
+	layers_arrange(server);
+	wlr_cursor_warp_closest(server->cursor, NULL, server->cursor->x,
+		server->cursor->y);
+	wm_pointer_refresh(server);
+	return true;
 }
 
 static void keyboard_handle_modifiers(

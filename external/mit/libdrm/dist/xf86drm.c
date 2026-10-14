@@ -101,6 +101,15 @@
 #endif
 #endif /* __OpenBSD__ */
 
+#ifdef __minix
+/*
+ * MINIX: a DRM device is a service with a major of its own, DRM_MAJOR in
+ * <minix/dmap.h> - 18, the mali service's /dev/dri/renderD128.  (Not that
+ * header itself: it brings MINIX's system macros with it.)
+ */
+#define DRM_MAJOR 18
+#endif
+
 #ifndef DRM_MAJOR
 #define DRM_MAJOR 226 /* Linux */
 #endif
@@ -3703,6 +3712,14 @@ static int drmParseSubsystemType(int maj, int min)
     return ret;
 #elif defined(__OpenBSD__) || defined(__DragonFly__)
     return DRM_BUS_PCI;
+#elif defined(__minix)
+    /*
+     * MINIX: the DRM devices are services that found their hardware in the
+     * device tree - platform devices, whatever the minor.
+     */
+    (void)maj;
+    (void)min;
+    return DRM_BUS_PLATFORM;
 #else
 #warning "Missing implementation of drmParseSubsystemType"
     return -EINVAL;
@@ -4490,6 +4507,16 @@ static int drmParseOFBusInfo(int maj, int min, char *fullname)
     free(name);
 
     return 0;
+#elif defined(__minix)
+    /*
+     * MINIX: nothing to ask for the device-tree path - no sysfs, and the
+     * driver does not say it - so the name is left empty, which is what
+     * libdrm's callers compare and copy.
+     */
+    (void)maj;
+    (void)min;
+    fullname[0] = '\0';
+    return 0;
 #else
 #warning "Missing implementation of drmParseOFBusInfo"
     return -EINVAL;
@@ -4550,6 +4577,12 @@ free:
 
     free(*compatible);
     return err;
+#elif defined(__minix)
+    /* MINIX: likewise, an empty list of compatible strings. */
+    (void)maj;
+    (void)min;
+    *compatible = calloc(1, sizeof(char *));
+    return *compatible ? 0 : -ENOMEM;
 #else
 #warning "Missing implementation of drmParseOFDeviceInfo"
     return -EINVAL;

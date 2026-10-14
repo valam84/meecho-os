@@ -16,6 +16,10 @@
  *	pftest heap	куча растёт по отказам: запись в первый кусок, в тот же,
  *			одно задание через 16 новых кусков, последний кусок,
  *			за концом кучи (отказ), цепочка после
+ *	pftest prime	буферы и заборы дескрипторами: вывоз и ввоз буфера
+ *			(PRIME) между контекстами и процессами, sync file -
+ *			poll, слияние, задание после чужого задания, ioctl
+ *			dma-buf (ref-prime.txt)
  *	pftest chain [n]  одна цепочка из 64, n раз
  *	pftest cost [n]	цена обслуживания кэша: та же цепочка n раз с большим
  *			буфером в списке задания - не отображённым и
@@ -30,17 +34,21 @@
  *
  * Собирается кросс-компилятором против DESTDIR:
  *	aarch64-elf64-minix-gcc -O -static -I$DEST/usr/include/libdrm \
- *	    --sysroot=$DEST -o pftest pftest.c
+ *	    -idirafter $DEST/usr/include/gfxcompat --sysroot=$DEST \
+ *	    -o pftest pftest.c
  */
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/ioc_mmap.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/wait.h>
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +58,8 @@
 
 #include "drm.h"
 #include "panfrost_drm.h"
+#include <linux/dma-buf.h>		/* -idirafter .../gfxcompat */
+#include <linux/sync_file.h>
 
 #define NODE		"/dev/dri/renderD128"
 #define JOB_SIZE	64
@@ -86,6 +96,10 @@ ename(int e)
 	case EPERM:	return "EPERM";
 	case EACCES:	return "EACCES";
 	case EOPNOTSUPP: return "ENOTSUP";	/* Python's name for it */
+	case EBADF:	return "EBADF";
+	case ENFILE:	return "ENFILE";
+	case EMFILE:	return "EMFILE";
+	case EAGAIN:	return "EAGAIN";
 	}
 	snprintf(buf, sizeof(buf), "E%d", e);
 	return buf;
@@ -887,6 +901,711 @@ chain(unsigned times)
 	return bad != 0;
 }
 
+/* ---- prime -------------------------------------------------------------- */
+
+/*
+ * Буферы и заборы дескрипторами (веха 11.6, вторая часть): то же, что
+ * jobprobe.py prime под panfrost, строка в строку (ref-prime.txt против
+ * meecho-prime.txt).  A и B - два открытия узла в одном процессе, C -
+ * ребёнок, получающий буфер через сокет (SCM_RIGHTS).  Номера
+ * дескрипторов не печатаются.
+ */
+
+#define LONG_N		65000u
+#define LONG_WORD	(0x3ff000u + 4 * ((LONG_N - 1) % 1024))
+#define PRIME_FAULT_VA	0x10000040ull
+#define SYNC_FILE_FLAG	1u
+
+static const char *
+handle_or(int e, uint32_t h)
+{
+	static char buf[4][32];
+	static unsigned k;
+	char *b = buf[k++ % 4];
+
+	if (e != 0)
+		return ename(e);
+	snprintf(b, sizeof(buf[0]), "handle %u", h);
+	return b;
+}
+
+static int
+prime_export(int fd, uint32_t h, uint32_t flags, int *out)
+{
+	struct drm_prime_handle a;
+	int e;
+
+	memset(&a, 0, sizeof(a));
+	a.handle = h;
+	a.flags = flags;
+	a.fd = -1;
+	e = xioctl(fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &a);
+	*out = e == 0 ? a.fd : -1;
+	return e;
+}
+
+static int
+prime_import(int fd, int dfd, uint32_t *h)
+{
+	struct drm_prime_handle a;
+	int e;
+
+	memset(&a, 0, sizeof(a));
+	a.fd = dfd;
+	e = xioctl(fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &a);
+	*h = a.handle;
+	return e;
+}
+
+static int
+so_export(int fd, uint32_t so, uint32_t flags, int *out)
+{
+	struct drm_syncobj_handle a;
+	int e;
+
+	memset(&a, 0, sizeof(a));
+	a.handle = so;
+	a.flags = flags;
+	a.fd = -1;
+	e = xioctl(fd, DRM_IOCTL_SYNCOBJ_HANDLE_TO_FD, &a);
+	*out = e == 0 ? a.fd : -1;
+	return e;
+}
+
+static int
+so_import(int fd, int sfd, uint32_t flags, uint32_t *so)
+{
+	struct drm_syncobj_handle a;
+	int e;
+
+	memset(&a, 0, sizeof(a));
+	a.handle = *so;
+	a.flags = flags;
+	a.fd = sfd;
+	e = xioctl(fd, DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE, &a);
+	*so = a.handle;
+	return e;
+}
+
+static const char *
+readiness(int sfd, int ms)
+{
+	struct pollfd p;
+
+	p.fd = sfd;
+	p.events = POLLIN;
+	p.revents = 0;
+	return poll(&p, 1, ms) == 1 && (p.revents & POLLIN) ? "ready" :
+	    "not ready";
+}
+
+static const char *
+file_info(int sfd)
+{
+	static char buf[4][48];
+	static unsigned k;
+	struct sync_file_info i;
+	char *b = buf[k++ % 4];
+	int e;
+
+	memset(&i, 0, sizeof(i));
+	if ((e = xioctl(sfd, SYNC_IOC_FILE_INFO, &i)) != 0)
+		return ename(e);
+	snprintf(b, sizeof(buf[0]), "status %d, %u fence(s)", i.status,
+	    i.num_fences);
+	return b;
+}
+
+static int
+merge(int f1, int f2, int *out)
+{
+	struct sync_merge_data m;
+	int e;
+
+	memset(&m, 0, sizeof(m));
+	strlcpy(m.name, "merged", sizeof(m.name));
+	m.fd2 = f2;
+	m.fence = -1;
+	e = xioctl(f1, SYNC_IOC_MERGE, &m);
+	*out = e == 0 ? m.fence : -1;
+	return e;
+}
+
+static int
+cloexec(int f)
+{
+	return (fcntl(f, F_GETFD) & FD_CLOEXEC) != 0;
+}
+
+static void
+long_chain(struct bo *b)
+{
+	unsigned i;
+
+	for (i = 0; i < LONG_N; i++)
+		write_value_job(b->m, JOB_SIZE * i, (i % 65535) + 1, i + 1 <
+		    LONG_N ? b->va + JOB_SIZE * (i + 1) : 0, b->va + 0x3ff000 +
+		    4 * (i % 1024), i);
+}
+
+static const char *
+offset_of(int fd, uint32_t h, uint64_t *va)
+{
+	static char buf[4][24];
+	static unsigned k;
+	struct drm_panfrost_get_bo_offset o;
+	char *b = buf[k++ % 4];
+	int e;
+
+	memset(&o, 0, sizeof(o));
+	o.handle = h;
+	if ((e = xioctl(fd, DRM_IOCTL_PANFROST_GET_BO_OFFSET, &o)) != 0)
+		return ename(e);
+	if (va != NULL)
+		*va = o.offset;
+	snprintf(b, sizeof(buf[0]), "0x%llx", (unsigned long long)o.offset);
+	return b;
+}
+
+static const char *
+pattern_in(const unsigned char *m)
+{
+	unsigned i;
+
+	for (i = 0; i < 256; i++)
+		if (m[0x2000 + i] != i)
+			return "differs";
+	return "equal";
+}
+
+static unsigned
+wrong_at(const unsigned char *m, unsigned n, unsigned tag)
+{
+	unsigned i, w = 0;
+
+	for (i = 0; i < n; i++)
+		w += ((const uint32_t *)(m + 0x1000))[i] != ((uint32_t)tag << 24 |
+		    i);
+	return w;
+}
+
+/* Цепочка из 64 в code, пишущая tag<<24|i по адресу va + 0x1000 + 4i. */
+static void
+chain_to_va(struct bo *code, uint64_t va, unsigned tag)
+{
+	unsigned i;
+
+	for (i = 0; i < 64; i++)
+		write_value_job(code->m, JOB_SIZE * i, i + 1, i + 1 < 64 ?
+		    code->va + JOB_SIZE * (i + 1) : 0, va + 0x1000 + 4 * i,
+		    (uint32_t)tag << 24 | i);
+}
+
+static int
+map_import(int fd, uint32_t h, struct bo *b)
+{
+	memset(b, 0, sizeof(*b));
+	b->handle = h;
+	b->size = 0x4000;
+	(void)offset_of(fd, h, &b->va);
+	return map_bo(fd, b);
+}
+
+/* Ребёнок C: буфер через сокет, свой контекст, запись GPU. */
+static void
+prime_child(int sock)
+{
+	char line[512], c;
+	struct msghdr msg;
+	struct cmsghdr *cm;
+	union {
+		struct cmsghdr h;
+		char buf[CMSG_SPACE(sizeof(int))];
+	} cbuf;
+	struct iovec iov;
+	struct bo code, imp;
+	uint32_t h = 0, hs[2], so;
+	off_t size;
+	int d = -1, fc, e, e2;
+
+	memset(&msg, 0, sizeof(msg));
+	iov.iov_base = &c;
+	iov.iov_len = 1;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = cbuf.buf;
+	msg.msg_controllen = sizeof(cbuf.buf);
+	if (recvmsg(sock, &msg, 0) == 1 && (cm = CMSG_FIRSTHDR(&msg)) != NULL)
+		memcpy(&d, CMSG_DATA(cm), sizeof(d));
+	fc = open_node();
+	e = prime_import(fc, d, &h);
+	size = lseek(d, 0, SEEK_END);
+	{
+		struct drm_panfrost_create_bo cb;
+
+		memset(&cb, 0, sizeof(cb));
+		cb.size = 0x4000;
+		(void)xioctl(fc, DRM_IOCTL_PANFROST_CREATE_BO, &cb);
+		memset(&code, 0, sizeof(code));
+		code.handle = cb.handle;
+		code.va = cb.offset;
+		code.size = 0x4000;
+		(void)map_bo(fc, &code);
+	}
+	(void)map_import(fc, h, &imp);
+	chain_to_va(&code, imp.va, 0xc1);
+	so = sync_create(fc, 0);
+	hs[0] = code.handle;
+	hs[1] = h;
+	e2 = submit(fc, code.va, hs, 2, so, 0);
+	snprintf(line, sizeof(line), "child: import %s, size 0x%llx, address "
+	    "0x%llx, the pattern %s; its GPU writes 64 words: submit %s, wait "
+	    "%s", handle_or(e, h), (unsigned long long)size,
+	    (unsigned long long)imp.va, pattern_in(imp.m), ename(e2),
+	    sync_wait(fc, &so, 1, 0, now_ns() + 2000000000LL, NULL));
+	(void)write(sock, line, strlen(line));
+	close(fc);
+}
+
+static int
+prime(void)
+{
+	struct bo a, l, hp, bb, cb, bl, imp, m5b;
+	struct drm_get_cap cap;
+	struct drm_gem_close gc;
+	unsigned char *md;
+	uint32_t h, hi, h5, hli, so, sob, soa, sin, sout, snap, sig, x, y, z;
+	uint32_t hs[2], sin2;
+	uint64_t vai, vali;
+	int fa, fb, p[2], d1, d2, d3, d4, dl, sf, s2, fsig, frun, fm, fo, ff;
+	int e, e2, e3, sv[2], i;
+	pid_t pid;
+
+	fa = open_node();
+	fb = open_node();
+	if (pipe(p) != 0)
+		return 1;
+	printf("render node %s, mode prime\n", NODE);
+	memset(&cap, 0, sizeof(cap));
+	cap.capability = DRM_CAP_PRIME;
+	if ((e = xioctl(fa, DRM_IOCTL_GET_CAP, &cap)) != 0)
+		printf("cap prime: %s\n", ename(e));
+	else
+		printf("cap prime: %llu\n", (unsigned long long)cap.value);
+
+	if (create(fa, 0x4000, 0, &a) != 0 || create(fa, 0x400000, 0, &l) ||
+	    create(fa, 0x200000, PANFROST_BO_NOEXEC | PANFROST_BO_HEAP, &hp) ||
+	    create(fb, 0x100000, PANFROST_BO_NOEXEC, &bb) ||
+	    create(fb, 0x4000, 0, &cb) || create(fb, 0x400000, 0, &bl))
+		return 1;
+	if (map_bo(fa, &a) || map_bo(fa, &l) || map_bo(fb, &cb) ||
+	    map_bo(fb, &bl))
+		return 1;
+	for (i = 0; i < 256; i++)
+		a.m[0x2000 + i] = (unsigned char)i;
+
+	/* Вывоз: дескриптор, его флаги, размер через lseek. */
+	e = prime_export(fa, a.handle, O_CLOEXEC | O_RDWR, &d1);
+	{
+		off_t end = lseek(d1, 0, SEEK_END), set = lseek(d1, 0, SEEK_SET);
+
+		printf("export %u: %s; close-on-exec %d, lseek to the end 0x%llx, "
+		    "back to %lld\n", a.handle, ename(e), cloexec(d1),
+		    (unsigned long long)end, (long long)set);
+	}
+	e = prime_export(fa, a.handle, 0, &d2);
+	printf("export %u again, no flags: %s; close-on-exec %d\n", a.handle,
+	    ename(e), cloexec(d2));
+	printf("export 99: %s\n", ename(prime_export(fa, 99, O_CLOEXEC |
+	    O_RDWR, &d3)));
+	printf("export %u, flags 0x1234: %s\n", a.handle, ename(prime_export(fa,
+	    a.handle, 0x1234, &d3)));
+	e = prime_export(fa, hp.handle, O_CLOEXEC | O_RDWR, &d3);
+	printf("export the heap %u: %s\n", hp.handle, ename(e));
+	if (d3 >= 0)
+		close(d3);
+
+	/* Ввоз: в тот же контекст, в другой, вторая выдача, не dma-buf. */
+	e = prime_import(fa, d1, &h);
+	printf("import into the exporter: %s\n", handle_or(e, h));
+	e = prime_import(fb, d1, &hi);
+	printf("import into B: %s, address %s (A's 0x%llx)\n", handle_or(e,
+	    hi), offset_of(fb, hi, &vai), (unsigned long long)a.va);
+	e = prime_import(fb, d2, &h);
+	printf("import the second export into B: %s\n", handle_or(e, h));
+	printf("import -1: %s\n", ename(prime_import(fb, -1, &h)));
+	printf("import a pipe: %s\n", ename(prime_import(fb, p[0], &h)));
+	printf("import the render node: %s\n", ename(prime_import(fb, fa, &h)));
+
+	/* Память одна: отображение импорта и mmap(2) самого дескриптора. */
+	(void)map_import(fb, hi, &imp);
+	printf("B's mapping of the import: the pattern %s\n", pattern_in(imp.m));
+	md = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE, MAP_SHARED, d1, 0);
+	if (md == MAP_FAILED) {
+		printf("mmap of the descriptor: %s\n", ename(errno));
+	} else {
+		const char *eq = pattern_in(md);
+
+		md[0x2100] = 0xa5;
+		md[0x2101] = 0x5a;
+		md[0x2102] = 0xc3;
+		md[0x2103] = 0x3c;
+		printf("mmap of the descriptor: the pattern %s, a write through "
+		    "it %s to A\n", eq, memcmp(a.m + 0x2100, "\xa5\x5a\xc3\x3c",
+		    4) == 0 ? "visible" : "NOT visible");
+		munmap(md, 0x4000);
+	}
+
+	/* GPU: B пишет в импорт, A - в свой буфер. */
+	memset(a.m + 0x1000, 0, 0x100);
+	chain_to_va(&cb, vai, 0xb1);
+	sob = sync_create(fb, 0);
+	hs[0] = cb.handle;
+	hs[1] = hi;
+	e = submit(fb, cb.va, hs, 2, sob, 0);
+	printf("B's GPU writes 64 words into the import: submit %s, wait %s; A "
+	    "sees %u wrong\n", ename(e), sync_wait(fb, &sob, 1, 0, now_ns() +
+	    2000000000LL, NULL), wrong_at(a.m, 64, 0xb1));
+	chain_into(&a, 64, 0xa1);
+	soa = sync_create(fa, 0);
+	e = submit(fa, a.va, &a.handle, 1, soa, 0);
+	printf("A's GPU writes 64 words into it: submit %s, wait %s; B sees %u "
+	    "wrong\n", ename(e), sync_wait(fa, &soa, 1, 0, now_ns() +
+	    2000000000LL, NULL), wrong_at(imp.m, 64, 0xa1));
+
+	/* Неявная синхронизация: долгое задание B называет общий буфер. */
+	long_chain(&bl);
+	hs[0] = bl.handle;
+	hs[1] = hi;
+	e = submit(fb, bl.va, hs, 2, 0, 0);
+	{
+		const char *w1 = wait_bo(fa, a.handle, 0);
+		const char *w2 = wait_bo(fa, a.handle, now_ns() + 5000000000LL);
+
+		printf("B's long chain names the shared buffer: submit %s; A's "
+		    "wait_bo, deadline past: %s; then: %s\n", ename(e), w1, w2);
+	}
+
+	/* Жизнь буфера: A закрывает номер и дескрипторы - буфер жив у B. */
+	memset(&gc, 0, sizeof(gc));
+	gc.handle = a.handle;
+	e = xioctl(fa, DRM_IOCTL_GEM_CLOSE, &gc);
+	close(d1);
+	close(d2);
+	munmap(a.m, 0x4000);
+	printf("A closes handle %u and both descriptors: %s; B's mapping: the "
+	    "pattern %s\n", a.handle, ename(e), pattern_in(imp.m));
+	e = prime_export(fb, hi, O_CLOEXEC | O_RDWR, &d4);
+	printf("B exports its import: %s\n", ename(e));
+	e = prime_import(fa, d4, &h5);
+	printf("A imports it back: %s, address %s\n", handle_or(e, h5),
+	    offset_of(fa, h5, NULL));
+	(void)map_import(fa, h5, &m5b);
+	printf("A's new mapping: the pattern %s\n", pattern_in(m5b.m));
+
+	/* Другой процесс: дескриптор через сокет (SCM_RIGHTS). */
+	memset(m5b.m + 0x1000, 0, 0x100);
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+		return 1;
+	if ((pid = fork()) == 0) {
+		close(sv[0]);
+		prime_child(sv[1]);
+		_exit(0);
+	}
+	close(sv[1]);
+	{
+		struct msghdr msg;
+		struct cmsghdr *cm;
+		union {
+			struct cmsghdr h;
+			char buf[CMSG_SPACE(sizeof(int))];
+		} cbuf;
+		struct iovec iov;
+		char c = 'x', line[512];
+		ssize_t n;
+
+		memset(&msg, 0, sizeof(msg));
+		iov.iov_base = &c;
+		iov.iov_len = 1;
+		msg.msg_iov = &iov;
+		msg.msg_iovlen = 1;
+		msg.msg_control = cbuf.buf;
+		msg.msg_controllen = CMSG_LEN(sizeof(int));
+		cm = CMSG_FIRSTHDR(&msg);
+		cm->cmsg_level = SOL_SOCKET;
+		cm->cmsg_type = SCM_RIGHTS;
+		cm->cmsg_len = CMSG_LEN(sizeof(int));
+		memcpy(CMSG_DATA(cm), &d4, sizeof(d4));
+		(void)sendmsg(sv[0], &msg, 0);
+		n = read(sv[0], line, sizeof(line) - 1);
+		line[n > 0 ? n : 0] = '\0';
+		(void)waitpid(pid, NULL, 0);
+		close(sv[0]);
+		printf("%s\n", line);
+	}
+	printf("A sees the child's words: %u wrong\n", wrong_at(m5b.m, 64,
+	    0xc1));
+
+	/* Sync file: без забора; долгое задание A; B после него. */
+	so = sync_create(fa, 0);
+	printf("sync file of a sync object without a fence: %s\n",
+	    ename(so_export(fa, so, SYNC_FILE_FLAG, &sf)));
+	(void)prime_export(fa, l.handle, O_CLOEXEC | O_RDWR, &dl);
+	(void)prime_import(fb, dl, &hli);
+	(void)offset_of(fb, hli, &vali);
+	long_chain(&l);
+	e = submit(fa, l.va, &l.handle, 1, so, 0);
+	e3 = so_export(fa, so, SYNC_FILE_FLAG, &sf);
+	{
+		const char *r0 = readiness(sf, 0), *i0 = file_info(sf);
+
+		printf("long chain in A: submit %s, sync file %s; at once: %s, "
+		    "%s\n", ename(e), ename(e3), r0, i0);
+	}
+	sin = sync_create(fb, 0);
+	printf("B imports the sync file into sync object %u: %s\n", sin,
+	    ename(so_import(fb, sf, SYNC_FILE_FLAG, &sin)));
+	write_value_job(cb.m, 0, 1, 0, vali + LONG_WORD, 0xb0b0b0b0u);
+	sout = sync_create(fb, 0);
+	hs[0] = cb.handle;
+	hs[1] = hli;
+	{
+		struct drm_panfrost_submit s;
+
+		memset(&s, 0, sizeof(s));
+		s.jc = cb.va;
+		s.bo_handles = (uint64_t)(uintptr_t)hs;
+		s.bo_handle_count = 2;
+		s.in_syncs = (uint64_t)(uintptr_t)&sin;
+		s.in_sync_count = 1;
+		s.out_sync = sout;
+		e = xioctl(fb, DRM_IOCTL_PANFROST_SUBMIT, &s);
+	}
+	printf("B's job after it: submit %s; its sync object at once: %s\n",
+	    ename(e), sync_wait(fb, &sout, 1, 0, now_ns(), NULL));
+	{
+		const char *r5 = readiness(sf, 5000), *i5 = file_info(sf);
+
+		printf("the sync file within 5 s: %s, %s\n", r5, i5);
+	}
+	{
+		const char *sw = sync_wait(fb, &sout, 1, 0, now_ns() +
+		    2000000000LL, NULL);
+
+		printf("B's job: %s; the word both write: 0x%08x (B's 0xb0b0b0b0, "
+		    "A's 0x%x)\n", sw, *(uint32_t *)(l.m + LONG_WORD), LONG_N - 1);
+	}
+
+	/* Забор Mesa: panfrost_fence_create(). */
+	snap = sync_create(fa, 0);
+	e = so_export(fa, so, SYNC_FILE_FLAG, &s2);
+	e2 = so_import(fa, s2, SYNC_FILE_FLAG, &snap);
+	close(s2);
+	printf("Mesa's fence: export %s, import %s, wait %s\n", ename(e),
+	    ename(e2), sync_wait(fa, &snap, 1, 0, now_ns() + 1000000000LL,
+	    NULL));
+
+	/* Слияние. */
+	sig = sync_create(fa, DRM_SYNCOBJ_CREATE_SIGNALED);
+	e = so_export(fa, sig, SYNC_FILE_FLAG, &fsig);
+	{
+		const char *r0 = readiness(fsig, 0), *i0 = file_info(fsig);
+
+		printf("sync file of a signaled sync object: %s, %s, %s\n",
+		    ename(e), r0, i0);
+	}
+	long_chain(&l);
+	(void)submit(fa, l.va, &l.handle, 1, so, 0);
+	(void)so_export(fa, so, SYNC_FILE_FLAG, &frun);
+	e = merge(fsig, frun, &fm);
+	{
+		const char *r0 = readiness(fm, 0), *i0 = file_info(fm);
+
+		printf("merged with a running one: %s; at once: %s, %s\n",
+		    ename(e), r0, i0);
+	}
+	{
+		const char *r5 = readiness(fm, 5000), *i5 = file_info(fm);
+
+		printf("  within 5 s: %s, %s\n", r5, i5);
+	}
+	printf("merge with a pipe: %s\n", ename(merge(fsig, p[0], &i)));
+	close(fm);
+	close(frun);
+
+	printf("import a pipe as a sync file: %s\n", ename(so_import(fa, p[0],
+	    SYNC_FILE_FLAG, &snap)));
+	printf("import a dma-buf as a sync file: %s\n", ename(so_import(fa, d4,
+	    SYNC_FILE_FLAG, &snap)));
+	printf("import -1 as a sync file: %s\n", ename(so_import(fa, -1,
+	    SYNC_FILE_FLAG, &snap)));
+	h = 99;
+	printf("import a sync file into sync object 99: %s\n",
+	    ename(so_import(fa, fsig, SYNC_FILE_FLAG, &h)));
+	printf("export sync object 99 as a sync file: %s\n", ename(so_export(fa,
+	    99, SYNC_FILE_FLAG, &i)));
+	printf("export with flags 2: %s\n", ename(so_export(fa, so, 2, &i)));
+
+	/* Объект синхронизации целиком: один в двух контекстах. */
+	x = sync_create(fa, 0);
+	e = so_export(fa, x, 0, &fo);
+	y = 0;
+	e2 = so_import(fb, fo, 0, &y);
+	printf("sync object %u as a descriptor: %s; into B: %s\n", x, ename(e),
+	    handle_or(e2, y));
+	{
+		const char *s1 = sync_array(fa, DRM_IOCTL_SYNCOBJ_SIGNAL, &x, 1);
+
+		printf("A signals it: %s; B's wait: %s\n", s1, sync_wait(fb, &y,
+		    1, 0, now_ns(), NULL));
+	}
+	{
+		const char *s1 = sync_array(fb, DRM_IOCTL_SYNCOBJ_RESET, &y, 1);
+
+		printf("B resets it: %s; A's wait: %s\n", s1, sync_wait(fa, &x, 1,
+		    0, now_ns(), NULL));
+	}
+	z = 0;
+	e = so_import(fa, fo, 0, &z);
+	printf("into A itself: %s\n", handle_or(e, z));
+	h = 0;
+	printf("a sync file as a sync object: %s\n", ename(so_import(fa, fsig,
+	    0, &h)));
+	h = 0;
+	printf("a dma-buf as a sync object: %s\n", ename(so_import(fa, d4, 0,
+	    &h)));
+	{
+		struct drm_syncobj_transfer t;
+
+		memset(&t, 0, sizeof(t));
+		t.src_handle = x;
+		t.dst_handle = snap;
+		printf("transfer: %s\n", ename(xioctl(fa,
+		    DRM_IOCTL_SYNCOBJ_TRANSFER, &t)));
+	}
+	close(fo);
+
+	/* Ioctl самого dma-buf. */
+	{
+		static const uint64_t fl[] = { DMA_BUF_SYNC_READ,
+		    DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ, DMA_BUF_SYNC_RW,
+		    DMA_BUF_SYNC_END | DMA_BUF_SYNC_RW, 0, 8 };
+		struct dma_buf_sync ds;
+		unsigned k;
+
+		for (k = 0; k < sizeof(fl) / sizeof(fl[0]); k++) {
+			ds.flags = fl[k];
+			printf("dma-buf sync 0x%llx: %s\n",
+			    (unsigned long long)fl[k], ename(xioctl(dl,
+			    DMA_BUF_IOCTL_SYNC, &ds)));
+		}
+	}
+	long_chain(&l);
+	(void)submit(fa, l.va, &l.handle, 1, 0, 0);
+	{
+		struct dma_buf_export_sync_file ex;
+
+		memset(&ex, 0, sizeof(ex));
+		ex.flags = DMA_BUF_SYNC_READ;
+		ex.fd = -1;
+		if ((e = xioctl(dl, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &ex)) == 0) {
+			const char *r0 = readiness(ex.fd, 0), *i0 =
+			    file_info(ex.fd), *r5 = readiness(ex.fd, 5000);
+
+			printf("dma-buf export sync file of the busy buffer: ok; "
+			    "at once: %s, %s; within 5 s: %s\n", r0, i0, r5);
+			close(ex.fd);
+		} else
+			printf("dma-buf export sync file of the busy buffer: "
+			    "%s\n", ename(e));
+	}
+	long_chain(&l);
+	(void)submit(fa, l.va, &l.handle, 1, 0, 0);
+	{
+		struct dma_buf_sync ds;
+		const char *w;
+
+		ds.flags = DMA_BUF_SYNC_READ;
+		e = xioctl(dl, DMA_BUF_IOCTL_SYNC, &ds);
+		w = wait_bo(fa, l.handle, 0);
+		printf("dma-buf sync start, the buffer busy: %s; then the "
+		    "buffer: %s\n", ename(e), w);
+	}
+	{
+		struct dma_buf_export_sync_file ex;
+
+		memset(&ex, 0, sizeof(ex));
+		ex.fd = -1;
+		printf("dma-buf export sync file, flags 0: %s\n", ename(xioctl(dl,
+		    DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &ex)));
+	}
+	long_chain(&l);
+	(void)submit(fa, l.va, &l.handle, 1, so, 0);
+	(void)so_export(fa, so, SYNC_FILE_FLAG, &frun);
+	{
+		struct dma_buf_import_sync_file im;
+		const char *w1, *w2;
+
+		memset(&im, 0, sizeof(im));
+		im.flags = DMA_BUF_SYNC_WRITE;
+		im.fd = frun;
+		e = xioctl(d4, DMA_BUF_IOCTL_IMPORT_SYNC_FILE, &im);
+		w1 = wait_bo(fa, h5, 0);
+		w2 = wait_bo(fa, h5, now_ns() + 5000000000LL);
+		printf("dma-buf import sync file into the shared buffer: %s; A's "
+		    "wait_bo on it, deadline past: %s; then: %s\n", ename(e), w1,
+		    w2);
+		im.fd = p[0];
+		printf("dma-buf import of a pipe: %s\n", ename(xioctl(d4,
+		    DMA_BUF_IOCTL_IMPORT_SYNC_FILE, &im)));
+	}
+	close(frun);
+
+	/* Упавшее задание: его sync file, и задание после него. */
+	write_value_job(m5b.m, 0, 1, 0, PRIME_FAULT_VA, FAULT_VALUE);
+	{
+		uint64_t va5 = 0;
+
+		(void)offset_of(fa, h5, &va5);
+		e = submit(fa, va5, &h5, 1, so, 0);
+	}
+	e2 = so_export(fa, so, SYNC_FILE_FLAG, &ff);
+	{
+		const char *r5 = readiness(ff, 5000), *i5 = file_info(ff);
+
+		printf("a job that faults: submit %s, sync file %s; within 5 s: "
+		    "%s, %s\n", ename(e), ename(e2), r5, i5);
+	}
+	sin2 = sync_create(fb, 0);
+	(void)so_import(fb, ff, SYNC_FILE_FLAG, &sin2);
+	write_value_job(cb.m, 0, 1, 0, vali + 0x3fe000, 0xb2b2b2b2u);
+	{
+		struct drm_panfrost_submit s;
+		const char *sw;
+
+		memset(&s, 0, sizeof(s));
+		s.jc = cb.va;
+		s.bo_handles = (uint64_t)(uintptr_t)hs;
+		s.bo_handle_count = 2;
+		s.in_syncs = (uint64_t)(uintptr_t)&sin2;
+		s.in_sync_count = 1;
+		s.out_sync = sout;
+		e = xioctl(fb, DRM_IOCTL_PANFROST_SUBMIT, &s);
+		sw = sync_wait(fb, &sout, 1, 0, now_ns() + 2000000000LL, NULL);
+		printf("B's job after the failed one: submit %s, wait %s, its "
+		    "word 0x%08x\n", ename(e), sw, *(uint32_t *)(l.m +
+		    0x3fe000));
+	}
+	close(ff);
+	close(dl);
+	close(d4);
+	close(fsig);
+	close(sf);
+	close(fa);
+	close(fb);
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -895,6 +1614,8 @@ main(int argc, char *argv[])
 		return api();
 	if (argc >= 2 && strcmp(argv[1], "two") == 0)
 		return two();
+	if (argc >= 2 && strcmp(argv[1], "prime") == 0)
+		return prime();
 	if (argc >= 2 && strcmp(argv[1], "heap") == 0)
 		return heap();
 	if (argc >= 2 && strcmp(argv[1], "chain") == 0)
@@ -902,6 +1623,6 @@ main(int argc, char *argv[])
 	if (argc >= 2 && strcmp(argv[1], "cost") == 0)
 		return cost(argc >= 3 ? (unsigned)atoi(argv[2]) : 50);
 	fprintf(stderr, "usage: pftest api | two | heap | chain [n] | "
-	    "cost [n]\n");
+	    "cost [n] | prime\n");
 	return 2;
 }

@@ -7,7 +7,9 @@
 
 #include <sys/types.h>
 #include <sys/mman.h>
+#if !defined(__minix)
 #include <linux/memfd.h>
+#endif /* MEECHO: memfd_create(2) and MFD_* are <sys/mman.h>'s, as on NetBSD */
 
 #include <tllist.h>
 

@@ -54,6 +54,10 @@
 #elif defined(__HAIKU__)
 #include "../misc/haiku/haiku_interop.h"
 #define HAIKU_NM
+#elif defined(__minix)
+/* MEECHO: major() and minor() are <sys/types.h>'s, as on NetBSD; no
+ * kqueue - the directory is read again on a key, as without inotify. */
+#include <sys/types.h>
 #else
 #include <sys/sysmacros.h>
 #endif
@@ -2515,7 +2519,11 @@ static bool initcurses(void *oldmask)
 #endif
 
 	settimeout(); /* One second */
+#ifdef __minix
+	ESCDELAY = 25;	/* MEECHO: NetBSD's curses has the variable, not set_escdelay() */
+#else
 	set_escdelay(25);
+#endif
 	return TRUE;
 }
 

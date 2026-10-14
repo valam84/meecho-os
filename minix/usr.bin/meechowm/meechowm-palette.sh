@@ -26,6 +26,7 @@ entries() {
 	    "System monitor (mtop)"		"$T -e mtop" \
 	    "Editor (vi)"			"$T -e vi" \
 	    "Screenshot (to ~/Pictures)"	"meechowm-shot" \
+	    "Screenshot of an area (drag it)"	"meechowm-shot -r" \
 	    "Width: a third"			"meechowm -m width 1/3" \
 	    "Width: a half"			"meechowm -m width 1/2" \
 	    "Width: two thirds"			"meechowm -m width 2/3" \

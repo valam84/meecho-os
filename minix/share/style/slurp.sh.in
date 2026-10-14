@@ -1,0 +1,14 @@
+# slurp's look on MEECHO (/usr/share/meecho/slurp.sh) - the area picker
+# of meechowm-shot -r, Shift+Print - made from MEECHO's colours:
+# minix/share/style.  slurp has no configuration file of its own, so this
+# is its arguments: meechowm-shot reads the file (". slurp.sh") and gives
+# slurp $SLURP_STYLE.  A colour is #RRGGBBAA.
+#
+#   -b	what is not chosen: the screen under ink, darkened, not hidden
+#   -c	the frame of the area, and its size written beside it: MEECHO blue
+#   -s	the area itself: clear, nothing over it
+#   -B	areas offered to choose from (boxes on slurp's input): accent_deep
+#   -w	the frame's width
+#   -F	the size's typeface: the desktop's monospace, Go Mono
+
+SLURP_STYLE="-b #@ink@99 -c #@accent@ff -s #@ink@00 -B #@accent_deep@80 -w 2 -F monospace"

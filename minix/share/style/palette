@@ -2,9 +2,10 @@
 # MEECHO's colours - the one place they are written (stage 11.7).
 #
 # The desktop's programs take them from here when they are built: foot,
-# fuzzel and yambar their configuration files, the wallpaper its picture,
-# meechowm its background and focus ring, and the screen console its
-# sixteen colours (style.awk makes all of them, see the Makefile).  A
+# fuzzel and yambar their configuration files, slurp its arguments, the
+# wallpaper its picture, meechowm its background and focus ring, and the
+# screen console its sixteen colours (style.awk makes all of them, see the
+# Makefile).  A
 # colour changed here changes everywhere; a colour written anywhere else
 # is a mistake.
 #

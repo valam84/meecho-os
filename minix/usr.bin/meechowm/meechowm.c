@@ -41,7 +41,9 @@
  *
  * and Print, alone, a screenshot (meechowm-shot: grim, which the
  * compositor lets read the screen - ext-image-copy-capture and
- * wlr-screencopy).  A click focuses the column under the pointer.  The
+ * wlr-screencopy); Shift+Print, an area of the screen, dragged out with
+ * the mouse (meechowm-shot -r: slurp, then grim).  A click focuses the
+ * column under the pointer.  The
  * same commands come over a socket (ipc.c): "meechowm -m focus right",
  * "meechowm -m state".
  *

@@ -12,16 +12,18 @@
 # Installed: /etc/xdg/foot/foot.ini and /etc/xdg/fuzzel/fuzzel.ini (the
 # system's configuration, which a user's in ~/.config replaces),
 # /usr/share/meecho/{bar.yml,wallpaper.svg,palette} (meechowm-bar and
-# meecho-desktop take them from there), the fontconfig file.  meechowm
-# and the frame buffer driver's console make style.h from the palette
-# with style.awk themselves (out=c).
+# meecho-desktop take them from there), /usr/share/meecho/slurp.sh
+# (slurp's arguments, which meechowm-shot -r gives it: slurp reads no
+# configuration), the fontconfig file.  meechowm and the frame buffer
+# driver's console make style.h from the palette with style.awk
+# themselves (out=c).
 
 .include <bsd.own.mk>
 
 PALETTE=	${.CURDIR}/palette
 STYLEAWK=	${.CURDIR}/style.awk
 
-STYLED=		foot.ini fuzzel.ini bar.yml wallpaper.svg
+STYLED=		foot.ini fuzzel.ini bar.yml wallpaper.svg slurp.sh
 
 .for _f in ${STYLED}
 ${_f}: ${_f}.in ${PALETTE} ${STYLEAWK}
@@ -38,6 +40,7 @@ FILESDIR_foot.ini=	/etc/xdg/foot
 FILESDIR_fuzzel.ini=	/etc/xdg/fuzzel
 FILESDIR_bar.yml=	/usr/share/meecho
 FILESDIR_wallpaper.svg=	/usr/share/meecho
+FILESDIR_slurp.sh=	/usr/share/meecho
 
 FILES+=			palette
 FILESDIR_palette=	/usr/share/meecho

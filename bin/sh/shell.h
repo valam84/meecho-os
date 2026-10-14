@@ -51,11 +51,11 @@
 
 #include <sys/param.h>
 
-#if defined(__minix)
-#define JOBS 0
-#else
+/* MEECHO: MINIX had no job control, and its ash was built without it.  PM has
+ * process groups of their own, stop signals and SIGCONT, and the terminal
+ * drivers a foreground process group and SUSP (2026-10-14).
+ */
 #define JOBS 1
-#endif /* defined(__minix) */
 #ifndef BSD
 #define BSD 1
 #endif

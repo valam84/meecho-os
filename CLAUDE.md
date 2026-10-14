@@ -1358,6 +1358,25 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   сверяет не только фокус, но и курсор — ровно (300,200): движение,
   съеденное у края, фокус не меняет. Разбор —
   `PORTING-LOG.md`, «Щелчок уходил в точку до движения».
+- **Курсор — окно контроллера (2026-10-14, QEMU и плата):** `fb` даёт
+  `FBIOC_CURSOR_MAP`/`FBIOC_CURSOR` (64×64 ARGB предумноженный), на VOP2
+  это Esmart0 в слое 1 (`OVL_LAYER_SEL 0x54706123`) и MIX0 по альфе;
+  `read(2)` у `/dev/fb0` подмешивает курсор — стенды и `board-shot.sh`
+  видят экран как есть, а у `virtual=1` курсор только там. meechowm
+  отдаёт драйверу аппаратный курсор headless-вывода из `output_frame()`;
+  `MEECHOWM_SOFT_CURSOR` — в кадр, для сравнения. `vop2_scanout()` ждёт
+  только свой адрес. **Кадров при движении втрое меньше, процессор почти
+  тот же** (8.0 против 8.2–9.0 % машины): дорог путь ввода, а не
+  рисование. Стенды `qemu-fbcursor.py`, `qemu-hwcursor.py`. На плате в
+  MEECHO нет `pkill`, и `meechowm -m` без `XDG_RUNTIME_DIR=/tmp/xdg-0`
+  молча не доходит до стола `meecho-desktop`.
+- **`wlr-foreign-toplevel` и обзор (2026-10-14, QEMU):** `toplevels.c`
+  (панель берёт заголовок модулем `foreign-toplevel` yambar;
+  `ftlprobe.c`, `qemu-toplevels.py`); `overview.c`, Mod+o — отъезд
+  камеры, своё дерево из масштабированных буферов окон (сцена wlroots
+  дерево не масштабирует), `mc_zoom()` в `layout.c`, `qemu-overview.py`.
+  Тач отложен. Разбор — `PORTING-LOG.md`, «Аппаратный курсор» и
+  «wlr-foreign-toplevel и обзор».
 - **Потоки `libmthread` пользовательские: поток в системном вызове — весь
   процесс.** Многопоточные клиенты Wayland ждут в `gfx_poll()`
   (`libgfxcompat`), он включается `thrd_create()`; `GFX_POLL_DEBUG` —

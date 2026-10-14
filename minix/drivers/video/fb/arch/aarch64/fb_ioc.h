@@ -103,9 +103,21 @@ struct fb_modeinfo {
 	uint32_t	khz;		/* pixel clock */
 };
 
+/*
+ * A monitor plugged in after bring-up is the driver's to notice (it
+ * watches the hot plug line) and to read; the mode is then the driver's
+ * to change only while nobody owns the screen.  The owner, a compositor,
+ * is told by "generation", which counts the monitors that have come since
+ * bring-up: when it moves, "preferred" is the mode the driver would have
+ * taken - the monitor's preferred, fbmode=, or the largest it makes - and
+ * the compositor asks for it with FBIOC_SETMODE, so that its frames and
+ * the screen change size together.
+ */
 struct fb_modes {
 	uint32_t	n;		/* modes below */
 	uint32_t	current;	/* the one on the screen; n if none is */
+	uint32_t	preferred;	/* the one the driver would choose; n */
+	uint32_t	generation;	/* monitors come since bring-up */
 	struct fb_modeinfo mode[FB_MAX_MODES];
 };
 
@@ -119,5 +131,18 @@ typedef char fb_modes_fits[(sizeof(struct fb_modes) <= 4095) ? 1 : -1];
 
 #define FBIOC_MODES	_IOR('V', 0x43, struct fb_modes)
 #define FBIOC_SETMODE	_IOWR('V', 0x44, struct fb_setmode)
+
+/*
+ * The virtual display only (virtual=1, QEMU), for the stands: a monitor
+ * taken out (0), or plugged in - the four-mode one the display starts with
+ * (1), or one that has 1024x768 and 800x600 only (2).  What the driver does
+ * about it from there is what it does about a real one on the HDMI port:
+ * the same tick, the same reading of the list, the same choice.  ENOTTY on
+ * real hardware.
+ */
+#define FB_VPLUG_NONE	0
+#define FB_VPLUG_WIDE	1
+#define FB_VPLUG_SMALL	2
+#define FBIOC_VPLUG	_IOW('V', 0x45, uint32_t)
 
 #endif /* _FB_IOC_H */

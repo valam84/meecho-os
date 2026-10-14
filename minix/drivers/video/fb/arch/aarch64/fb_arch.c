@@ -101,6 +101,8 @@ static const struct videomode mode_720p = {
  * which is a worse first picture than 1080p.
  */
 #define MAX_AUTO_KHZ	148500
+#define MAX_W		1920		/* and the largest frame */
+#define MAX_H		1080
 
 #define BYTES_PER_PIXEL	4
 
@@ -120,13 +122,22 @@ static int have_edid;
 static struct edid_info edid;
 
 /*
+ * The mode the driver would choose now (pick_mode()), kept from the last
+ * time the monitor was read - FBIOC_MODES says it to a compositor, which
+ * polls - and the monitors come since bring-up (fb_ioc.h).
+ */
+static struct videomode preferred;
+static uint32_t generation;
+
+/*
  * The scanout buffers a compositor draws into (FBIOC_MAP, FBIOC_FLIP).
  * Buffer 0 is fb_vir, the console's; the others are made on the first
  * FBIOC_MAP and kept for the life of the driver - a process maps them
  * through VM's shared memory, which looks for the driver's region on every
  * page it touches, so a buffer must not go while anybody may map it.  That
- * is why each is as large as the largest mode of the list (buf_bytes): a
- * mode change keeps them all, and the mappings with them.
+ * is why each is as large as the largest frame this driver makes at all
+ * (buf_bytes): a mode change keeps them all, and the mappings with them,
+ * whatever monitor comes after bring-up.
  */
 static vir_bytes buf_vir[FB_MAX_BUFFERS];
 static phys_bytes buf_phys[FB_MAX_BUFFERS];
@@ -139,8 +150,12 @@ static endpoint_t owner = NONE;		/* who has mapped them */
  * controller this driver knows.  Everything above the hardware works as on
  * the board (mapping, flipping, the console, reading the screen back), and
  * that is what it is for: the compositor's output path tested without one.
+ * Its "monitor" can be taken out and another plugged in (FBIOC_VPLUG), so
+ * that the hot plug path is tested too: virtual_plug is the line, and
+ * virtual_read the monitor whose list was read last.
  */
 static int virtual_mode;
+static uint32_t virtual_plug = FB_VPLUG_WIDE, virtual_read = FB_VPLUG_WIDE;
 
 /* The journal: everything logged, printed and kept (see fb_ioc.h). */
 #define RING_BYTES	16384
@@ -346,7 +361,7 @@ mode_usable(const struct videomode *m)
 {
 	return m->dot_clock > 0 && m->dot_clock <= MAX_AUTO_KHZ &&
 	    !(m->flags & (VID_INTERLACE | VID_DBLSCAN)) &&
-	    m->hdisplay <= 1920 && m->vdisplay <= 1080;
+	    m->hdisplay <= MAX_W && m->vdisplay <= MAX_H;
 }
 
 /*
@@ -536,6 +551,18 @@ static const struct videomode virtual_modes[] = {
 	    .flags = VID_PHSYNC | VID_PVSYNC, .name = "800x600x60" },
 };
 
+/* The other "monitor" of the virtual display (FB_VPLUG_SMALL): two modes. */
+static const struct videomode virtual_small[] = {
+	{ .dot_clock = 65000, .hdisplay = 1024, .hsync_start = 1048,
+	    .hsync_end = 1184, .htotal = 1344, .vdisplay = 768,
+	    .vsync_start = 771, .vsync_end = 777, .vtotal = 806,
+	    .flags = VID_NHSYNC | VID_NVSYNC, .name = "1024x768x60" },
+	{ .dot_clock = 40000, .hdisplay = 800, .hsync_start = 840,
+	    .hsync_end = 968, .htotal = 1056, .vdisplay = 600,
+	    .vsync_start = 601, .vsync_end = 605, .vtotal = 628,
+	    .flags = VID_PHSYNC | VID_PVSYNC, .name = "800x600x60" },
+};
+
 /*
  * The modes there are to choose from: the virtual display's, the monitor's
  * (base block and CEA-861 extension), or - no monitor, or one whose EDID
@@ -545,6 +572,10 @@ static const struct videomode *
 mode_list(int *n)
 {
 	if (virtual_mode) {
+		if (virtual_read == FB_VPLUG_SMALL) {
+			*n = (int)NELEM(virtual_small);
+			return virtual_small;
+		}
 		*n = (int)NELEM(virtual_modes);
 		return virtual_modes;
 	}
@@ -589,28 +620,19 @@ find_mode(unsigned w, unsigned h, unsigned hz)
 }
 
 /*
- * The bytes of one scanout buffer: the largest frame of the list, so that
- * a mode change never needs other buffers - a compositor has them mapped,
- * and a buffer must not go while it may.  1080p is 8 MB; three of them.
+ * The bytes of one scanout buffer: the largest frame this driver makes at
+ * all (mode_usable()), so that a mode change never needs other buffers - a
+ * compositor has them mapped, and a buffer must not go while it may - not
+ * even for a monitor plugged in after bring-up, larger than the list then.
+ * 1080p is 8 MB; three of them.
  */
 static size_t
 buffer_bytes(void)
 {
-	const struct videomode *list;
-	size_t b, max = (size_t)mode.hdisplay * mode.vdisplay *
-	    BYTES_PER_PIXEL;
-	int i, n;
+	size_t max = (size_t)MAX_W * MAX_H * BYTES_PER_PIXEL,
+	    now = (size_t)mode.hdisplay * mode.vdisplay * BYTES_PER_PIXEL;
 
-	list = mode_list(&n);
-	for (i = 0; i < n; i++) {
-		if (!mode_usable(&list[i]))
-			continue;
-		b = (size_t)list[i].hdisplay * list[i].vdisplay *
-		    BYTES_PER_PIXEL;
-		if (b > max)
-			max = b;
-	}
-	return max;
+	return now > max ? now : max;
 }
 
 /*
@@ -667,31 +689,41 @@ modes_line(char *buf, size_t len)
 	}
 }
 
-static void
-choose_mode(void)
+/*
+ * What the connector has: is a monitor there, and if so its EDID, base
+ * block and CEA-861 extension - the list mode_list() then gives.  1 for a
+ * monitor whose list was read, 0 for none, -1 for one whose EDID did not
+ * read (yet: some answer a moment after their hot plug line rises); "say"
+ * whether to log that.  The virtual display's "monitor" is the one
+ * FBIOC_VPLUG last plugged in.
+ */
+static int
+read_monitor(int say)
 {
 	uint8_t block[128];
-	unsigned w, h, hz, d, dbest = 0;
-	int i, best, asked;
-	const char *why;
+	int i;
 
-	mode = mode_720p;
-	hdmi_mode = 0;
-	asked = asked_mode(&w, &h, &hz);
-
-	if (!dwhdmi_hpd()) {
-		log_info(&fb_log, "no monitor on the connector (hot plug low); "
-		    "%s, as in the reference\n", mode.name);
-		if (asked && (w != 1280 || h != 720))
-			log_warn(&fb_log, "fbmode=%ux%u: without a monitor "
-			    "there is no list to choose from\n", w, h);
-		return;
+	have_edid = 0;
+	if (virtual_mode) {
+		if (virtual_plug == FB_VPLUG_NONE)
+			return 0;
+		virtual_read = virtual_plug;
+		log_info(&fb_log, "virtual monitor %u\n", virtual_read);
+		return 1;
 	}
+	if (!dwhdmi_hpd()) {
+		if (say)
+			log_info(&fb_log, "no monitor on the connector (hot "
+			    "plug low)\n");
+		return 0;
+	}
+	memset(&edid, 0, sizeof(edid));
 	if (dwhdmi_read_edid(0, block) != OK || edid_is_valid(block) != 0 ||
 	    edid_parse(block, &edid) != 0) {
-		log_warn(&fb_log, "a monitor is plugged in, but its EDID did "
-		    "not read; %s\n", mode.name);
-		return;
+		if (say)
+			log_warn(&fb_log, "a monitor is plugged in, but its "
+			    "EDID did not read\n");
+		return -1;
 	}
 	have_edid = 1;
 	log_info(&fb_log, "monitor: %s %s (%s), EDID %d.%d, %d mode(s)\n",
@@ -705,51 +737,73 @@ choose_mode(void)
 		    &edid.edid_modes[i] == edid.edid_preferred_mode ?
 		    ", preferred" : "",
 		    mode_usable(&edid.edid_modes[i]) ? "" : ", not made here");
+	return 1;
+}
 
-	if (asked) {
-		const struct videomode *m = find_mode(w, h, hz);
+/*
+ * The mode to show, out of what read_monitor() found: fbmode= if the list
+ * has it; the monitor's preferred, if this driver makes it; otherwise the
+ * largest it lists that this driver makes (of one size, the rate nearest
+ * to 60); the first of the virtual display's; or the reference mode.
+ */
+static const struct videomode *
+pick_mode(const char **why)
+{
+	const struct videomode *list, *m, *best = NULL;
+	unsigned w, h, hz, d, dbest = 0;
+	int i, n, a, abest = 0;
 
-		if (m != NULL) {
-			mode = *m;
-			why = "asked for (fbmode)";
-			goto chosen;
+	if (asked_mode(&w, &h, &hz)) {
+		if ((m = find_mode(w, h, hz)) != NULL) {
+			*why = "asked for (fbmode)";
+			return m;
 		}
-		log_warn(&fb_log, "fbmode=%ux%u: not among the monitor's "
-		    "modes that this driver makes; choosing as usual\n", w, h);
+		log_warn(&fb_log, "fbmode=%ux%u: not among the modes this "
+		    "driver makes for this screen; choosing as usual\n", w, h);
 	}
-
+	list = mode_list(&n);
+	if (virtual_mode) {
+		*why = "the virtual monitor's first";
+		return &list[0];
+	}
+	if (!have_edid) {
+		*why = "the reference mode (no list)";
+		return &mode_720p;
+	}
 	if (edid.edid_preferred_mode != NULL &&
 	    mode_usable(edid.edid_preferred_mode)) {
-		mode = *edid.edid_preferred_mode;
-		why = "its preferred mode";
-	} else {
-		/* The largest; of one size, the rate nearest to 60 Hz. */
-		best = -1;
-		for (i = 0; i < edid.edid_nmodes; i++) {
-			const struct videomode *m = &edid.edid_modes[i];
-			int a, abest;
-
-			if (!mode_usable(m))
-				continue;
-			d = mode_hz(m);
-			d = d > 60 ? d - 60 : 60 - d;
-			a = m->hdisplay * m->vdisplay;
-			abest = best < 0 ? 0 : edid.edid_modes[best].hdisplay *
-			    edid.edid_modes[best].vdisplay;
-			if (best < 0 || a > abest || (a == abest && d < dbest)) {
-				best = i;
-				dbest = d;
-			}
-		}
-		if (best < 0) {
-			log_info(&fb_log, "no mode of the monitor's is one "
-			    "this driver chooses; %s\n", mode.name);
-			return;
-		}
-		mode = edid.edid_modes[best];
-		why = "the largest it lists that this driver makes";
+		*why = "its preferred mode";
+		return edid.edid_preferred_mode;
 	}
-chosen:
+	for (i = 0; i < n; i++) {
+		if (!mode_usable(&list[i]))
+			continue;
+		d = mode_hz(&list[i]);
+		d = d > 60 ? d - 60 : 60 - d;
+		a = list[i].hdisplay * list[i].vdisplay;
+		if (best == NULL || a > abest || (a == abest && d < dbest)) {
+			best = &list[i];
+			abest = a;
+			dbest = d;
+		}
+	}
+	if (best == NULL) {
+		*why = "the reference mode (none of the monitor's is made here)";
+		return &mode_720p;
+	}
+	*why = "the largest it lists that this driver makes";
+	return best;
+}
+
+static void
+choose_mode(void)
+{
+	const char *why;
+
+	hdmi_mode = 0;
+	(void)read_monitor(1);
+	preferred = *pick_mode(&why);
+	mode = preferred;
 	if (mode.name == NULL)
 		mode.name = "(edid)";
 	log_info(&fb_log, "mode %dx%d, %d kHz: %s\n", mode.hdisplay,
@@ -983,12 +1037,16 @@ do_modes(endpoint_t ep, cp_grant_id_t gid)
 
 	memset(&ms, 0, sizeof(ms));
 	ms.current = FB_MAX_MODES;		/* none of the list, until found */
+	ms.preferred = FB_MAX_MODES;
+	ms.generation = generation;
 	list = mode_list(&n);
 	for (i = 0; i < n && ms.n < FB_MAX_MODES; i++) {
 		if (!mode_usable(&list[i]))
 			continue;
 		if (same_mode(&list[i], &mode))
 			ms.current = ms.n;
+		if (same_mode(&list[i], &preferred))
+			ms.preferred = ms.n;
 		ms.mode[ms.n].width = (uint32_t)list[i].hdisplay;
 		ms.mode[ms.n].height = (uint32_t)list[i].vdisplay;
 		ms.mode[ms.n].hz = mode_hz(&list[i]);
@@ -997,6 +1055,8 @@ do_modes(endpoint_t ep, cp_grant_id_t gid)
 	}
 	if (ms.current >= ms.n)
 		ms.current = ms.n;
+	if (ms.preferred >= ms.n)
+		ms.preferred = ms.n;
 	return sys_safecopyto(ep, gid, 0, (vir_bytes)&ms, sizeof(ms));
 }
 
@@ -1021,6 +1081,102 @@ do_setmode(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 	s.hz = mode_hz(&mode);
 	s.stride = fb_stride;
 	return sys_safecopyto(ep, gid, 0, (vir_bytes)&s, sizeof(s));
+}
+
+/*
+ * A monitor plugged in or taken out after bring-up.  The hot plug line is
+ * read on every tick, ten a second - one register - and a change counts
+ * once the line has held it for HPD_STEADY ticks: a plug bounces.  A
+ * monitor that has come is asked for its EDID on the following ticks, up
+ * to EDID_TRIES of them, since some answer only a moment after their line
+ * rises; one that never answers gets the reference mode's list.
+ */
+#define HPD_STEADY	3
+#define EDID_TRIES	10
+
+static int hpd_known;			/* the line as last acted on */
+static int hpd_ticks;			/* ticks it has read otherwise */
+static int edid_left;			/* tries left for a new monitor */
+
+static int
+hpd_line(void)
+{
+	return virtual_mode ? virtual_plug != FB_VPLUG_NONE : dwhdmi_hpd();
+}
+
+/*
+ * A monitor is there and its list read: its mode.  Of the same size as the
+ * one on the screen, the link is set up once more - a sink that came after
+ * the signal may want that, and the frames do not change, so it is safe
+ * under a compositor too.  Of another size, the change is the driver's
+ * while nobody owns the screen (the console follows); an owner is told by
+ * FBIOC_MODES - generation moved, preferred is this - and changes it
+ * itself, so that its frames and the screen change size together.
+ */
+static void
+monitor_came(void)
+{
+	const char *why;
+	int r;
+
+	generation++;
+	preferred = *pick_mode(&why);
+	if (same_mode(&preferred, &mode)) {
+		if (!virtual_mode && (r = program_mode(&mode)) != OK)
+			log_warn(&fb_log, "monitor %u: the link did not come "
+			    "up again (%d)\n", generation, r);
+		log_info(&fb_log, "monitor %u: %dx%d@%u as before (%s)\n",
+		    generation, mode.hdisplay, mode.vdisplay, mode_hz(&mode),
+		    why);
+		return;
+	}
+	if (owner != NONE) {
+		log_info(&fb_log, "monitor %u: %dx%d@%u (%s), for the owner "
+		    "of the screen to take\n", generation, preferred.hdisplay,
+		    preferred.vdisplay, mode_hz(&preferred), why);
+		return;
+	}
+	if ((r = change_mode(&preferred)) != OK)
+		log_warn(&fb_log, "monitor %u: %dx%d@%u did not take (%d)\n",
+		    generation, preferred.hdisplay, preferred.vdisplay,
+		    mode_hz(&preferred), r);
+	else
+		log_info(&fb_log, "monitor %u: %s\n", generation, why);
+}
+
+void
+arch_fb_tick(int minor)
+{
+	int hpd, r;
+
+	if (minor != 0 || status <= 0)
+		return;
+	if (edid_left > 0) {			/* a monitor came: its list */
+		r = read_monitor(edid_left == 1);
+		if (r == 0)			/* gone again */
+			edid_left = 0;
+		else if (r > 0 || --edid_left == 0) {
+			edid_left = 0;
+			monitor_came();
+		}
+		return;
+	}
+	hpd = hpd_line();
+	if (hpd == hpd_known) {
+		hpd_ticks = 0;
+		return;
+	}
+	if (++hpd_ticks < HPD_STEADY)
+		return;
+	hpd_known = hpd;
+	hpd_ticks = 0;
+	if (!hpd) {
+		log_info(&fb_log, "the monitor was taken out; the mode stays "
+		    "%dx%d@%u\n", mode.hdisplay, mode.vdisplay, mode_hz(&mode));
+		return;
+	}
+	log_info(&fb_log, "a monitor was plugged in\n");
+	edid_left = EDID_TRIES;
 }
 
 void
@@ -1098,13 +1254,13 @@ bring_up(void)
 
 	if (env_parse("virtual", "d", 0, &v, 0, 1) == EP_SET && v == 1) {
 		/* No hardware: a frame in memory, 720p or fbmode=, no more. */
-		unsigned w, h, hz;
-		const struct videomode *m;
+		const char *why;
 
 		virtual_mode = 1;
-		mode = mode_720p;
-		if (asked_mode(&w, &h, &hz) && (m = find_mode(w, h, hz)) != NULL)
-			mode = *m;
+		(void)read_monitor(1);
+		preferred = *pick_mode(&why);
+		mode = preferred;
+		hpd_known = hpd_line();
 		if ((r = alloc_frame_buffer()) != OK)
 			return r;
 		log_info(&fb_log, "virtual display, %dx%d, no controller\n",
@@ -1139,6 +1295,7 @@ bring_up(void)
 	dwhdmi_init(&disp.hdmi);
 	vop2_init(&disp.vop);
 	choose_mode();
+	hpd_known = hpd_line();		/* from here on, arch_fb_tick() */
 
 	/* 3. The pixel clock for the mode chosen. */
 	if (mode.dot_clock != mode_720p.dot_clock &&
@@ -1307,6 +1464,21 @@ arch_fb_ioctl(int minor, unsigned long request, endpoint_t ep,
 		case FBIOC_MODES:	return do_modes(ep, gid);
 		default:		return do_setmode(ep, gid, user_ep);
 		}
+	}
+	if (request == FBIOC_VPLUG) {
+		/* The virtual display's monitor; arch_fb_tick() takes it up. */
+		uint32_t plug;
+		int r;
+
+		if (status <= 0 || !virtual_mode)
+			return ENOTTY;
+		if ((r = sys_safecopyfrom(ep, gid, 0, (vir_bytes)&plug,
+		    sizeof(plug))) != OK)
+			return r;
+		if (plug > FB_VPLUG_SMALL)
+			return EINVAL;
+		virtual_plug = plug;
+		return OK;
 	}
 	if (request != FBIOC_LOG)
 		return ENOTTY;

@@ -26,6 +26,13 @@ int arch_fb_ioctl(int minor, unsigned long request, endpoint_t ep,
 /* The device's last close: whatever a program took over is given back. */
 void arch_fb_release(int minor);
 
+/*
+ * The driver's tick, ten times a second whether or not there is a console:
+ * for what the arch part watches (on AArch64, a monitor plugged in or taken
+ * out after bring-up).
+ */
+void arch_fb_tick(int minor);
+
 #define FB_MESSAGE "Hello, world! From framebuffer!\n"
 #define FB_DEV_NR 1
 

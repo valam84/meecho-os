@@ -330,6 +330,12 @@ arch_fb_release(int UNUSED(minor))
 {
 }
 
+void
+arch_fb_tick(int UNUSED(minor))
+{
+	/* Nothing watched here: the mode is the boot loader's. */
+}
+
 int
 arch_fb_init(int minor, struct edid_info *info)
 {

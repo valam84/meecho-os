@@ -129,19 +129,18 @@ fb_close(devminor_t minor)
 /*
  * The first alarm ends the test card and attaches the console; every one
  * is the console's tick (fbcon_tick: the kernel's new messages, and one
- * drawing of whatever came since the last) and sets the next, a tenth of a
- * second on.  A console that could not attach is not retried.
+ * drawing of whatever came since the last) and the arch part's (a monitor
+ * plugged in after bring-up), and sets the next, a tenth of a second on.
+ * A console that could not attach is not retried; the tick goes on.
  */
 static void
 fb_alarm(clock_t UNUSED(stamp))
 {
-	if (!console_on)
-		return;
-	if (fbcon_attach(0, (int)kmess_on) != OK) {
+	if (console_on && fbcon_attach(0, (int)kmess_on) != OK)
 		console_on = 0;
-		return;
-	}
-	fbcon_tick();
+	if (console_on)
+		fbcon_tick();
+	arch_fb_tick(0);
 	(void)sys_setalarm(sys_hz() / 10, 0);
 }
 
@@ -358,9 +357,8 @@ sef_cb_init(int type, sef_init_info_t *UNUSED(info))
 		(void)env_parse("fbcon", "d", 0, &console_on, 0, 1);
 		(void)env_parse("card", "d", 0, &card_seconds, 0, 3600);
 		(void)env_parse("kmess", "d", 0, &kmess_on, 0, 1);
-		if (console_on)
-			(void)sys_setalarm(card_seconds > 0 ?
-			    card_seconds * sys_hz() : 1, 0);
+		(void)sys_setalarm(card_seconds > 0 ?
+		    card_seconds * sys_hz() : 1, 0);
 	}
 
 	/* Announce we are up when necessary. */

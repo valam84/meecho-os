@@ -1,7 +1,7 @@
 # Makefile for the Mali GPU service (Bifrost, found in the device tree)
 PROG=	mali
 SRCS=	mali.c mali_find.c mali_rk.c mali_mmu.c mali_bo.c mali_sched.c \
-	mali_drm.c mali_job.c
+	mali_drm.c mali_job.c mali_umap.c
 
 FILES=${PROG}.conf
 FILESNAME=${PROG}

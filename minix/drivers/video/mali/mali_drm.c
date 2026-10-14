@@ -78,6 +78,7 @@
 
 #include <minix/drivers.h>
 #include <minix/chardriver.h>
+#include <minix/ds.h>
 #include <minix/syslib.h>
 #include <minix/sysutil.h>
 
@@ -97,6 +98,7 @@
 #include "malireg.h"
 #include "drm.h"
 #include "panfrost_drm.h"
+#include "meecho_drm.h"
 #include <linux/dma-buf.h>
 #include <linux/sync_file.h>
 
@@ -716,6 +718,76 @@ do_create_bo(struct call *c, void *arg)
 		return r;
 	}
 	a->offset = bo->va;
+	return OK;
+}
+
+/*
+ * DRM_IOCTL_MEECHO_SCANOUT_IMPORT (meecho_drm.h): a scanout buffer of the
+ * frame buffer driver, named by the caller's own mapping of it, as a
+ * buffer of the caller's context.  The pages must lie in one of the
+ * buffers the driver published in DS: the caller proves it may draw there
+ * by having them mapped (only the owner of the screen is given them), and
+ * the driver's word that they are its scanout buffers says they stay -
+ * nothing else a process has mapped is safe to give the GPU, since the
+ * process could free it under a job.
+ */
+static int
+do_scanout_import(struct call *c, void *arg)
+{
+	struct drm_meecho_scanout_import *a = arg;
+	struct mali_bo *bo;
+	phys_bytes phys;
+	endpoint_t fb;
+	u32_t n, size, base, vir;
+	char key[DS_MAX_KEYLEN];
+	int i, r;
+
+	if (a->pad != 0 || a->size == 0 || (a->size & (MALI_PAGE - 1)) ||
+	    (a->addr & (MALI_PAGE - 1)))
+		return EINVAL;
+	if (ds_retrieve_u32(MEECHO_DS_SCANOUT_N, &n) != OK ||
+	    ds_retrieve_u32(MEECHO_DS_SCANOUT_SIZE, &size) != OK)
+		return ENODEV;		/* no frame buffer driver, or before it */
+	/*
+	 * The caller's pages, one call: the kernel answers only for a
+	 * physically contiguous range.  Remote - in another process's address
+	 * space - since sys_umap answers for the caller's own or a grant.
+	 */
+	if ((r = mali_umap_remote(c->user, (vir_bytes)a->addr,
+	    (vir_bytes)a->size, &phys)) != OK || phys == 0)
+		return EFAULT;
+	/*
+	 * A whole buffer: the driver's region of it is what a client maps
+	 * (mali_bo_new_phys()), and VM lends regions whole.
+	 */
+	for (i = 0; i < (int)n; i++) {
+		snprintf(key, sizeof(key), MEECHO_DS_SCANOUT, i);
+		if (ds_retrieve_u32(key, &base) == OK && phys == base &&
+		    a->size == ((size + MALI_PAGE - 1) & ~(MALI_PAGE - 1)))
+			break;
+	}
+	if (i == (int)n) {
+		log_warn(&mali_log, "%s: 0x%lx, %llu bytes, is no scanout "
+		    "buffer\n", c->ctx->name, (unsigned long)phys,
+		    (unsigned long long)a->size);
+		return EPERM;
+	}
+	snprintf(key, sizeof(key), MEECHO_DS_SCANOUT_VIR, i);
+	if (ds_retrieve_u32(key, &vir) != OK ||
+	    ds_retrieve_label_endpt(MEECHO_DS_FB_LABEL, &fb) != OK)
+		fb = NONE;
+	if ((bo = mali_bo_new_phys(&c->ctx->vm, phys, fb, (vir_bytes)vir,
+	    (size_t)a->size, &r)) == NULL)
+		return r;
+	if ((r = handle_new(&c->ctx->bo, &c->ctx->nbo, bo,
+	    &a->handle)) != OK) {
+		mali_bo_unref(bo);
+		return r;
+	}
+	a->offset = bo->va;
+	log_info(&mali_log, "%s: scanout buffer %d (0x%lx, %llu bytes) at GPU "
+	    "0x%llx\n", c->ctx->name, i, (unsigned long)phys,
+	    (unsigned long long)a->size, (unsigned long long)bo->va);
 	return OK;
 }
 
@@ -1626,6 +1698,8 @@ static const struct calldef ctx_calls[] = {
 	    sizeof(struct drm_panfrost_get_bo_offset),	do_get_bo_offset },
 	{ DRM_COMMAND_BASE + DRM_PANFROST_MADVISE,
 	    sizeof(struct drm_panfrost_madvise),	do_madvise },
+	{ DRM_COMMAND_BASE + DRM_MEECHO_SCANOUT_IMPORT,
+	    sizeof(struct drm_meecho_scanout_import),	do_scanout_import },
 	{ 0, 0, NULL }
 };
 

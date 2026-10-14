@@ -244,7 +244,7 @@ mem_destroy(struct mali_mem *mem)
 		mali_mem_gone(mem);
 	if (mem->cpu != NULL && mem->cpu != MAP_FAILED)
 		munmap(mem->cpu, mem->size);
-	if (!(mem->flags & PANFROST_BO_HEAP))
+	if (!(mem->flags & PANFROST_BO_HEAP) && !mem->foreign)
 		total -= mem->size;
 	free(mem->pages);
 	free(mem);
@@ -428,6 +428,81 @@ mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
 }
 
 /*
+ * A buffer over memory that is not this service's: size bytes of a
+ * device's physically contiguous memory from phys (the frame buffer
+ * driver's scanout buffers - mali_drm.c checks which), placed in vm like
+ * any other.  It is not counted in the limits, which are about what the
+ * service gives out, and never freed here - its owner keeps it for as
+ * long as it runs.
+ *
+ * The owner's region of it, src_vir in src_ep, is what a client that maps
+ * the buffer (mmap(2) of its dma-buf: Mesa reading a frame back, a
+ * screenshot) is mapped from - not this service's view of it, since VM
+ * shares a region of the process that has it, not a share of a share.
+ * This service maps it too, for the processor's caches around jobs, as
+ * for any buffer a processor reads (cpu_access): the region is shared, so
+ * its pages are touched once to be in the table that sys_cachectl reads.
+ * Without that view the buffer is still the GPU's, only not a client's to
+ * map.
+ */
+struct mali_bo *
+mali_bo_new_phys(struct mali_vm *vm, phys_bytes phys, endpoint_t src_ep,
+	vir_bytes src_vir, size_t size, int *err)
+{
+	volatile const char *p;
+	struct mali_mem *mem;
+	struct mali_bo *bo;
+	size_t npages, k;
+	void *v;
+	int r;
+
+	if (size == 0 || (size & (MALI_PAGE - 1)) || (phys & (MALI_PAGE - 1)) ||
+	    size > MALI_VA_END - MALI_VA_START) {
+		*err = EINVAL;
+		return NULL;
+	}
+	if ((mem = calloc(1, sizeof(*mem))) == NULL) {
+		*err = ENOMEM;
+		return NULL;
+	}
+	mem->flags = PANFROST_BO_NOEXEC;
+	mem->size = size;
+	mem->minor = -1;
+	mem->foreign = 1;
+	mem->src_ep = src_ep;
+	mem->src_vir = src_vir;
+	npages = size / MALI_PAGE;
+	if ((mem->pages = calloc(npages, sizeof(*mem->pages))) == NULL) {
+		mem_destroy(mem);
+		*err = ENOMEM;
+		return NULL;
+	}
+	for (k = 0; k < npages; k++)
+		mem->pages[k] = phys + k * MALI_PAGE;
+	/* Both ends by endpoint: SELF is none to VM (mali_mem_map_into()). */
+	v = vm_remap(sef_self(), src_ep, NULL, (void *)src_vir, size);
+	if (v != MAP_FAILED) {
+		for (p = v, k = 0; k < npages; k++)
+			(void)p[k * MALI_PAGE];
+		mem->cpu = v;
+	} else
+		log_warn(&mali_log, "no view of a scanout buffer (%d, 0x%lx): "
+		    "the GPU's, not a client's to map\n", src_ep,
+		    (unsigned long)src_vir);
+	if ((bo = bo_alloc(vm, mem)) == NULL) {
+		mem_destroy(mem);
+		*err = ENOMEM;
+		return NULL;
+	}
+	if ((r = place(bo)) != OK) {
+		bo_destroy(bo);
+		*err = r;
+		return NULL;
+	}
+	return bo;
+}
+
+/*
  * The memory of another context's buffer placed in vm too (PRIME): the
  * same pages at an address of vm's own, chosen as for a buffer made here,
  * with the flags it was made with - as panfrost maps a GEM object into
@@ -445,7 +520,7 @@ mali_bo_import(struct mali_vm *vm, struct mali_mem *mem, int *err)
 		*err = EINVAL;
 		return NULL;
 	}
-	if (vm->mem + mem->size > limit_vm) {
+	if (!mem->foreign && vm->mem + mem->size > limit_vm) {
 		*err = ENOMEM;
 		return NULL;
 	}
@@ -453,8 +528,8 @@ mali_bo_import(struct mali_vm *vm, struct mali_mem *mem, int *err)
 		*err = ENOMEM;
 		return NULL;
 	}
-	bo->backed = mem->size;
-	vm->mem += mem->size;
+	bo->backed = mem->foreign ? 0 : mem->size;	/* see mali_bo_new_phys */
+	vm->mem += bo->backed;
 	if ((r = place(bo)) != OK) {
 		bo_destroy(bo);
 		*err = r;
@@ -577,19 +652,23 @@ int
 mali_mem_map_into(struct mali_mem *mem, endpoint_t who, void *addr,
 	int writable, void **where)
 {
-	void *v;
+	endpoint_t src_ep;
+	void *v, *src;
 
 	if (mem->cpu == NULL)
 		return EINVAL;		/* a heap's is nobody's to map */
 	/*
 	 * The source by its own endpoint, not SELF: VM checks both ends with
 	 * vm_isokendpt(), and SELF is no endpoint there - the call fails
-	 * without a word (the board said ENOMEM to the first mmap).
+	 * without a word (the board said ENOMEM to the first mmap).  A
+	 * device's memory comes from its owner's region (mali_bo_new_phys()).
 	 */
+	src_ep = mem->foreign ? mem->src_ep : sef_self();
+	src = mem->foreign ? (void *)mem->src_vir : mem->cpu;
 	if (writable)
-		v = vm_remap(who, sef_self(), addr, mem->cpu, mem->size);
+		v = vm_remap(who, src_ep, addr, src, mem->size);
 	else
-		v = vm_remap_ro(who, sef_self(), addr, mem->cpu, mem->size);
+		v = vm_remap_ro(who, src_ep, addr, src, mem->size);
 	if (v == MAP_FAILED)
 		return ENOMEM;
 	/*

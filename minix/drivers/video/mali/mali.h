@@ -200,6 +200,10 @@ struct mali_mem {
 	unsigned refs;			/* placements, descriptors */
 	unsigned busy;			/* jobs queued or running with it */
 	int cpu_access;			/* written or read by a processor */
+	int foreign;			/* a device's memory, not this service's:
+					   never freed or counted here */
+	endpoint_t src_ep;		/* foreign: whose region it is, and */
+	vir_bytes src_vir;		/* where - what a client is mapped from */
 
 	/* The device's (mali_drm.c): */
 	struct fence *fence;		/* the last job that uses it, or NULL */
@@ -227,6 +231,9 @@ struct mali_bo *mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags,
 	int *err);
 void mali_bo_ref(struct mali_bo *bo);
 void mali_bo_unref(struct mali_bo *bo);
+struct mali_bo *mali_bo_new_phys(struct mali_vm *vm, phys_bytes phys,
+	endpoint_t src_ep, vir_bytes src_vir,
+	size_t size, int *err);
 struct mali_bo *mali_bo_import(struct mali_vm *vm, struct mali_mem *mem,
 	int *err);
 void mali_mem_ref(struct mali_mem *mem);
@@ -300,5 +307,9 @@ void mali_drm_shutdown(void);
 
 /* mali.c */
 int mali_gpu_recover(void);
+
+/* mali_umap.c */
+int mali_umap_remote(endpoint_t ep, vir_bytes vir, vir_bytes bytes,
+	phys_bytes *phys);
 
 #endif /* _MALI_H */

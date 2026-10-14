@@ -1694,7 +1694,16 @@ SDMA или ADMA2 — решается по регистру возможнос�
   `condattr_setclock`, барьеры, часы процессорного времени в PM. Стенды
   `port/test/tls` (31 из 31) и `port/test/pthread` (57 из 57, с
   `test59`). Разбор — «Потоки для Mesa: TLS и `pthread` поверх
-  `libmthread`». Дальше — прогон PRIME на плате, Mesa.
+  `libmthread`». **Mesa 26.2.4 в дереве — 2026-10-14, QEMU:**
+  `external/mit/mesa`, статические `libgallium`/`libEGL`/`libGLESv2`/
+  `libgbm`, reachover снят с самой сборки meson для MEECHO
+  (`port/gfx/mesa-import.sh`, `mesa-reachover.py`: файлы, которые сборка
+  прочла, без правок, сгенерированное рядом); C++ — второй проход
+  тулчейна; libdrm знает MINIX; тест `glcube` (куб в духе kmscube на
+  `/dev/fb0`) компонуется, на QEMU доходит до узла GPU. Разбор — «Этап
+  11.6, третья часть: Mesa в дереве». Дальше — плата: новые `kernel.bin`
+  (TLS) и `boot.mba` (VFS с `cdevfd`), прогон PRIME и `glcube` на
+  мониторе.
 - **11.7 Стол MEECHO.** Свой композитор из `meechowm`, и его фишка — не
   эффекты, а микроядро (решено 2026-10-13). Размытие и скругления есть у
   всех и повторяются за неделю; показать устройство системы и пережить

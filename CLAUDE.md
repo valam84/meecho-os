@@ -1247,8 +1247,37 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   `port/test/pthread/` (и `test59`; **вне дерева собирать с
   `-fno-builtin`**, иначе `-O2` выбросит `memset` подтеста 11). Userland
   целиком не перелинкован — TLS ничего старого не чинит. Разбор —
-  `PORTING-LOG.md`, «Потоки для Mesa: TLS и `pthread` поверх
+    `PORTING-LOG.md`, «Потоки для Mesa: TLS и `pthread` поверх
   `libmthread`».
+- **11.6, Mesa в дереве (2026-10-14, QEMU).** Mesa 26.2.4 —
+  `external/mit/mesa`: статические `libgallium` (state tracker ES,
+  GLSL, NIR, Gallium, Panfrost v4…v14), `libEGL`, `libGLESv2`, `libgbm`.
+  **Reachover снят с самой сборки**: `port/gfx/mesa-import.sh` настраивает
+  meson на `aarch64-elf64-minix` (meson'у сказано `netbsd` — его таблица
+  систем с DRM не знает minix), компилирует всё, и
+  `port/gfx/mesa-reachover.py` по записям ninja берёт ровно прочитанные
+  файлы (`dist/`, без правок), сгенерированные (`gen/`;
+  `nir_opt_algebraic.c` — 52 МБ, лежит `.gz`) и пишет `lib/*/srcs.mk`.
+  Решения — в `Makefile.inc` (`-DDETECT_OS_POSIX/BSD/NETBSD=1`: Mesa не
+  знает MINIX, а заголовок ставит их только `#ifndef`) и
+  `lib/libgallium/Makefile`. **Исходник собирается через ссылку,
+  названную по пути, — и `#include "x.h"` тогда ищется рядом со ссылкой:
+  каждому файлу `-iquote` на настоящий каталог.** C++ — из второго
+  прохода тулчейна **`~/xtools-aarch64-cxx`** (`build-xtools.sh cxx`;
+  libstdc++ однопоточная, без `std::mutex`); внутренние шейдеры Panfrost —
+  OpenCL C, их делают хостовые `mesa_clc`/`panfrost_compile` (LLVM 21) при
+  импорте. **libdrm на MINIX раньше не видела ни одного устройства**
+  (`DRM_MAJOR` 18 против 226, шина без реализации) — три места под
+  `__minix`. GBM грузит бэкенд `dlopen()`, в статической программе его нет —
+  EGL берётся на платформе surfaceless. Тест — `port/test/gles/glcube.c`
+  (`build.sh`): куб в FBO, `glReadPixels`, `/dev/fb0`; на QEMU доходит до
+  открытия `/dev/dri/renderD128`. Чего не было в системе и что найдено
+  замером — `sched_*` (только `SCHED_OTHER`), `__libc_thr_yield`,
+  `CLOCK_MONOTONIC_RAW`, `pthread_setname_np`, `mprotect` (`ENOTSUP`),
+  `<pthread.h>` прослойки тащил ~130 макросов MINIX (`EXTERN` — токен
+  GLSL). **На плате не запускалось:** нужны новые `kernel.bin` (TLS) и
+  `boot.mba` (VFS с `cdevfd`). Разбор — `PORTING-LOG.md`, «Этап 11.6,
+  третья часть: Mesa в дереве».
 - **11.7 начата (2026-10-13, QEMU): лента в `meechowm`** — окна столбцами
   на горизонтальной ленте, рабочие места по вертикали, клавиши с Super
   (список — в начале `meechowm.c`). Арифметика — `layout.c` (хостовый

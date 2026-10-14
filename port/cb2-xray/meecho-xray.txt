@@ -1,0 +1,88 @@
+The x-ray on the board (BIGTREETECH CB2, 2026-10-14, 18:53-19:00 MSK)
+=====================================================================
+
+Kit: kernel.bin 6c06c3e2646e4fa2f28ceaa796bc88c5, boot.mba
+d346d0b5abadb0a2e8d139ebc6da219c - HEAD a95e355e1, 18:51 (kernel with IPCFLOW,
+the ramdisk's procfs with /proc/<pid>/ipc; PM and MIB from the shared obj,
+built 15:33 from HEAD, because their sources then carried another
+session's job control).  Root on the eMMC, 4 cores, bootwd 3600 s.
+meechowm f487a6d2c484c2479d9aed878eb95674 and meechowm-xray
+1591ae29bd838434c2e2b57553204a66 put in /usr/bin by ssh.  The previous
+pair is in Armbian's /root/meecho-boot-1014-xray-prev.
+
+The kernel's tasks: HARDWARE's row - interrupts, by driver
+---------------------------------------------------------
+$ cat /proc/-1/ipc            (47 s after boot)
+version 1
+freq 24000000
+tsc 1350805414
+self 4 -1
+kernel 0
+to 10 5 9 tty 326
+to 19 65550 26 sdmmc 33243     the eMMC (c0d0, the root)
+to 20 65551 28 sdmmc 21        the SD slot (c1d0)
+to 27 65558 66 xhci 213
+to 31 65562 76 dwmac 351
+gone 0
+
+$ cat /proc/1/ipc             init
+self 16 11
+kernel 35                      its page faults, sent to VM in its name
+to 5 0 5 pm 31
+to 6 1 7 vfs 57
+to 12 7 10 mib 9
+to 13 8 11 vm 48
+gone 0
+
+The desktop (board-desk.sh, 1920x1080 on the television) with two foot
+windows - one idle, one running "ls -R /usr/share/man" every second -
+and the x-ray up (meechowm -m xray):
+
+$ meechowm-xray -d -n 2 -i 2000 | grep -E '^(window|sum|node)'
+window 270 slot 256 title foot
+sum 270 4785 4785 2741
+window 417 slot 179 title foot
+sum 417 5428 5428 2333
+node pm 0 5 service 1 58.30 1003 105 63 48
+node vfs 1 7 service 1 711.60 852 105 67 48
+node rs 2 4 service 2 9.44 159 359 67 48
+node mib 7 10 service 2 139.39 1695 404 67 48
+node vm 8 11 service 3 83.37 841 840 63 48
+node pfs 9 12 service 2 37.78 161 449 63 48
+node sdmmc_0 65550 26 service 3 63.18 988 840 89 48
+node procfs 65552 30 service 2 482.00 153 539 78 48
+node fs_c0d0 65553 42 service 2 393.42 148 629 89 48
+node uds 65555 53 service 2 66.11 1697 494 63 48
+node input 65557 64 service 2 13.03 1695 584 67 48
+node foot 65710 417 window 0 0.00 961 273 426 467
+node meechowm 33009 260 desk 0 86.63 910 755 100 48
+node foot 33019 270 window 0 0.00 531 273 426 467
+node kernel -1 0 kernel 4 475.49 153 1015 1612 33
+
+On the screen (board-shot) the view at the same time showed 24k messages a
+second in all - vfs 6.9k/s, vm 12k/s, fs_c0d0 1.3k/s, sdmmc_0 1.6k/s, uds
+1.8k/s, the busy foot 185/s - the dump's own sample included.
+
+What the view costs, its own row and its CPU time, ten seconds apart:
+
+x-ray pid 466
+x-ray: 380 messages/s, user 116 sys 0 ticks in 10 s
+cp_time before: user = 1776, nice = 0, sys = 3497, intr = 1421, idle = 85678
+cp_time after:  user = 1985, nice = 0, sys = 3768, intr = 1502, idle = 89211
+
+- about 12 % of one Cortex-A55, nearly all of it drawing the whole
+1080p frame once a second; the machine as a whole 86 % idle.
+
+The passport of the busy foot (meechowm -m passport 417), the first read -
+counts, not rates yet:
+
+passport 417
+foot  pid 417  root
+memory 10.5 MiB
+to  vfs 5333  pm 2956  vm 2584  mib 7  sched 2
+
+and on the screen a second later, in the window's corner:
+
+foot  pid 417  root
+memory 10.6 MiB  sends 76 messages/s
+to  vfs 43/s  pm 33/s  vm 2594  mib 7  sched 3

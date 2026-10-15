@@ -382,8 +382,24 @@ mib_sysctl(message * __restrict m_in, int ipc_status,
  * Initialize the service.
  */
 static int
-mib_init(int type __unused, sef_init_info_t * info __unused)
+mib_init(int type, sef_init_info_t * info __unused)
 {
+	int r;
+
+	/*
+	 * A restart is a fresh start, so whatever the previous instance had
+	 * received and not yet answered is gone - but its callers still wait
+	 * in sendrec for a reply from MIB_PROC_NR, which RS has handed on to
+	 * us, and the kernel never wakes them: as far as it knows, endpoint 7
+	 * did not die.  Every new process asks us for its stack guard in
+	 * libc's startup, so after one such restart programs hang in D one
+	 * after another.  Fail them, as the drivers do after a restart; a
+	 * caller gets EDEADSRCDST and may ask again.
+	 */
+	if (type == SEF_INIT_RESTART &&
+	    (r = sys_statectl(SYS_STATE_CLEAR_IPC_REFS, 0, 0)) != OK)
+		printf("MIB: unable to release callers of the old instance: "
+		    "%d\n", r);
 
 	/*
 	 * Initialize pointers and sizes of subtrees in different modules.

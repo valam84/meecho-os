@@ -75,4 +75,7 @@ pkg_finish() {
 	find "$stage" -type f -perm -u+x -exec sh -c \
 	    'file -b "$1" | grep -q "^ELF" && "$STRIP" "$1"' _ {} \;
 	sh "$PORT/mkpkg.sh" -n "$name" "$@" "$stage" "$PKG_REPO/$name.tgz"
+	# Сводка репозитория для pkgin - заново целиком при каждом пакете:
+	# пакетов единицы, и сводка не может отстать от каталога.
+	python3 "$PORT/pkg-summary.py" "$PKG_REPO"
 }

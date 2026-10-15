@@ -11,6 +11,7 @@
 # ещё не слушает, и переживает выход из ssh (setsid + nohup).
 #
 # На плате после этого:
+#   pkgin update && pkgin install lua
 #   pkg_add lua              (PKG_PATH стоит в /usr/pkg/etc/pkg_install.conf,
 #                             его туда кладёт mkroot.sh)
 #   PKG_PATH=http://192.168.33.2:8080/All pkg_add lua   (руками)
@@ -35,7 +36,11 @@ ls "$REPO"/*.tgz >/dev/null 2>&1 || { echo "в $REPO нет пакетов" >&2;
 $SSH "$HUB" "mkdir -p $HUBDIR/All"
 # MSYS_NO_PATHCONV: иначе Git Bash перепишет "$HUB:/srv/..." в виндовый путь.
 MSYS_NO_PATHCONV=1 $SCP "$REPO"/*.tgz "$HUB:$HUBDIR/All/"
-MSYS_NO_PATHCONV=1 $SSH "$HUB" "cd $HUBDIR && chmod 644 All/*.tgz && \
+# Сводка для pkgin (pkg-summary.py) - после пакетов: сводка, пришедшая
+# раньше, назвала бы пакет, которого на хабе ещё нет.
+MSYS_NO_PATHCONV=1 $SCP "$REPO"/pkg_summary.gz "$REPO"/pkg_summary.bz2 \
+    "$HUB:$HUBDIR/All/"
+MSYS_NO_PATHCONV=1 $SSH "$HUB" "cd $HUBDIR && chmod 644 All/*.tgz All/pkg_summary.* && \
 	if ! ss -ltn 2>/dev/null | grep -q ':$HUBPORT '; then \
 		setsid nohup python3 -m http.server $HUBPORT --directory $HUBDIR \
 			>/var/log/pkg-http.log 2>&1 < /dev/null & \

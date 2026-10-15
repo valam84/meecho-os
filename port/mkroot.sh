@@ -339,11 +339,18 @@ then
 	echo "pkg_install.conf: none (PKG_REPO_URL is empty)"
 else
 printf 'PKG_PATH=%s\n' "${PKG_REPO_URL}" > "${WORK}/pkg_install.conf"
-awk -v conf="${WORK}/pkg_install.conf" '
+# Тот же адрес - pkgin (этап 12.1): его репозиторий - строка URL в
+# /usr/pkg/etc/pkgin/repositories.conf. Файл принадлежит площадке, не
+# пакету pkgin, поэтому pkg_delete pkgin его не уносит.
+printf '%s\n' "${PKG_REPO_URL}" > "${WORK}/repositories.conf"
+awk -v conf="${WORK}/pkg_install.conf" -v repos="${WORK}/repositories.conf" '
 	{ print }
 	/^\t\tpkg d--/ { inpkg = 1; next }
 	inpkg && /^\t\t\tetc d--/ {
 		print "\t\t\t\tpkg_install.conf ---644 0 0 " conf
+		print "\t\t\t\tpkgin d--755 0 0"
+		print "\t\t\t\t\trepositories.conf ---644 0 0 " repos
+		print "\t\t\t\t$"
 		inpkg = 0
 	}
 	/^\t\t?[^\t]/ { inpkg = 0 }' \
@@ -351,7 +358,7 @@ awk -v conf="${WORK}/pkg_install.conf" '
 if grep -q pkg_install.conf "${WORK}/proto.emmc.new"
 then
 	mv "${WORK}/proto.emmc.new" "${WORK}/proto.emmc"
-	echo "pkg_install.conf: PKG_PATH=${PKG_REPO_URL}"
+	echo "pkg_install.conf, pkgin/repositories.conf: ${PKG_REPO_URL}"
 else
 	echo "$0: в proto нет usr/pkg/etc - PKG_PATH не задан" >&2
 	rm -f "${WORK}/proto.emmc.new"

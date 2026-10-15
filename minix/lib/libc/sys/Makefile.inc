@@ -1,6 +1,6 @@
 .PATH:	${NETBSDSRCDIR}/minix/lib/libc/sys
 
-SRCS+= 	accept.c access.c adjtime.c bind.c brk.c sbrk.c m_closefrom.c getsid.c \
+MINIX_SYS_SRCS= accept.c access.c adjtime.c bind.c brk.c sbrk.c m_closefrom.c getsid.c \
 	chdir.c chmod.c fchmod.c chown.c fchown.c chroot.c close.c \
 	clock_getres.c clock_gettime.c clock_settime.c \
 	connect.c dup.c dup2.c execve.c fcntl.c flock.c fpathconf.c fork.c \
@@ -28,7 +28,22 @@ SRCS+= 	accept.c access.c adjtime.c bind.c brk.c sbrk.c m_closefrom.c getsid.c \
 	getrusage.c setrlimit.c setpgid.c __sysctl.c
 
 # Minix specific syscalls / utils.
-SRCS+= kernel_utils.c sprofile.c stack_utils.c _mcontext.c
+MINIX_SYS_SRCS+= kernel_utils.c sprofile.c stack_utils.c _mcontext.c
+
+SRCS+=	${MINIX_SYS_SRCS}
+
+# The system call stubs build a 128-byte message on the stack and clear it
+# first; GCC clears and copies it through q31, so every stub was an FP
+# instruction, and with the kernel's lazy FP every call from a program
+# that had lost the registers to someone else cost a trap - dd and cat on
+# a pipe took 40000 of them in a window (O58; PORTING-LOG, "O8").  None of
+# these files has arithmetic of its own.  The services are built the same
+# way (minix.service.mk).
+.if ${MACHINE_ARCH} == "aarch64"
+.for _f in ${MINIX_SYS_SRCS}
+COPTS.${_f}+=	-mgeneral-regs-only
+.endfor
+.endif
 
 # Emulation for missing lchown/lchmod/lchflags
 OBJS+= lchflags.o lchmod.o lchown.o

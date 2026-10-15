@@ -220,16 +220,40 @@ imp_nnn() {
 	    src/nnn.c src/nnn.h src/dbg.h src/qsort.h
 }
 
-# The Go fonts (BSD-3), from golang.org/x/image's font/gofont/ttfs, the
-# README with the licence.  GOIMAGE: a clone with that directory checked
-# out (git clone --filter=blob:none --sparse, sparse-checkout set
-# font/gofont/ttfs).
-imp_gofont() {
-	from_git external/bsd/gofont/dist ${GOIMAGE:-goimage} \
-	    font/gofont/ttfs &&
-	mv "$TREE"/external/bsd/gofont/dist/font/gofont/ttfs/* \
-	    "$TREE"/external/bsd/gofont/dist/ &&
-	rm -r "$TREE"/external/bsd/gofont/dist/font
+# from_zip PKG-DIR ZIP MEMBER...: those members of an upstream release
+# archive, flat in PKG-DIR, as they are.  For fonts, whose release is the
+# built TTFs rather than a tag (the tag holds the glyph sources).
+from_zip() {
+	local dest=$TREE/$1 zip=$2
+	shift 2
+	rm -rf "$dest" && mkdir -p "$dest" &&
+	python3 -I -c '
+import os, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+for m in sys.argv[3:]:
+    with open(os.path.join(sys.argv[2], os.path.basename(m)), "wb") as f:
+        f.write(z.read(m))
+' "$zip" "$dest" "$@"
+}
+
+# The desktop's typeface (SIL OFL 1.1), from the release archives as
+# GitHub gives them, in FONT_ZIPS: JetBrainsMono-2.304.zip of
+# github.com/JetBrains/JetBrainsMono saved as jbm.zip, Inter-4.1.zip of
+# github.com/rsms/inter as inter.zip.  Four static faces of each - not the
+# variable fonts, Inter Display or the other weights.  (The Go fonts they
+# replace are in the history: external/bsd/gofont, before 2026-10-15.)
+imp_jetbrains_mono() {
+	local t=fonts/ttf/JetBrainsMono
+	from_zip external/ofl/jetbrains-mono/dist \
+	    ${FONT_ZIPS:-$HOME/fontdl}/jbm.zip OFL.txt AUTHORS.txt \
+	    $t-Regular.ttf $t-Bold.ttf $t-Italic.ttf $t-BoldItalic.ttf
+}
+
+imp_inter() {
+	local t=extras/ttf/Inter
+	from_zip external/ofl/inter/dist \
+	    ${FONT_ZIPS:-$HOME/fontdl}/inter.zip LICENSE.txt \
+	    $t-Regular.ttf $t-Bold.ttf $t-Italic.ttf $t-BoldItalic.ttf
 }
 
 # cairo 1.18.6, under the MPL 1.1 - cairo is MPL-1.1 or LGPL-2.1, and
@@ -261,7 +285,7 @@ imp_slurp() {
 
 ALL="libffi wayland wayland_protocols pixman libdrm libxkbcommon
 	xkeyboard_config wlroots freetype fontconfig tllist fcft foot fuzzel
-	libyaml yambar evdev libpng wbg grim nnn gofont cairo slurp"
+	libyaml yambar evdev libpng wbg grim nnn jetbrains_mono inter cairo slurp"
 [ $# -gt 0 ] || set -- $ALL
 for p in "$@"; do
 	p=${p//-/_}

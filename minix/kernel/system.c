@@ -533,6 +533,11 @@ static void clear_ipc(
       while (*xpp) {		/* check entire queue */
           if (*xpp == rc) {			/* process is on the queue */
               *xpp = (*xpp)->p_q_link;		/* replace by next process */
+              /* Off the queue means unlinked: mini_send() asserts it on
+               * the next send, and a process that lives on - a caller
+               * told EDEADSRCDST by clear_ipc_refs() - sends again.
+               */
+              rc->p_q_link = NULL;
 #if DEBUG_ENABLE_IPC_WARNINGS
 	      printf("endpoint %d / %s removed from queue at %d\n",
 	          rc->p_endpoint, rc->p_name, rc->p_sendto_e);

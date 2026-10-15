@@ -55,8 +55,6 @@ static kern_phys_map gicd_phys_map, gicr_phys_map;
  * Everything else the kernel needs it asks the hardware for.
  */
 struct gic_scan {
-	unsigned addr_cells;
-	unsigned size_cells;
 	int version;
 	phys_bytes dist, dist_size;
 	phys_bytes second, second_size;
@@ -70,29 +68,11 @@ find_gic(void *cookie, int depth, const char *name,
 	const struct fdt_node *node)
 {
 	struct gic_scan *s = cookie;
-	const char *reg;
-	unsigned len, step;
+	u64_t dist, dist_size, second, second_size;
+	unsigned len;
 	const void *p;
 
-	if (depth == 0) {
-		/*
-		 * How wide an address and a length are in a child's reg
-		 * property. The specification's defaults are 2 and 1; every
-		 * AArch64 tree in practice says so explicitly, but a silent
-		 * tree means the defaults.
-		 */
-		s->addr_cells = 2;
-		s->size_cells = 1;
-		if ((p = fdt_getprop(node, "#address-cells", &len)) != NULL &&
-		    len == 4)
-			s->addr_cells = (unsigned)fdt_read_cells(p, 1);
-		if ((p = fdt_getprop(node, "#size-cells", &len)) != NULL &&
-		    len == 4)
-			s->size_cells = (unsigned)fdt_read_cells(p, 1);
-		return 0;
-	}
-
-	if (depth != 1)
+	if (depth == 0)
 		return 0;
 
 	if (compatible_with(node, "arm,gic-v3"))
@@ -102,20 +82,20 @@ find_gic(void *cookie, int depth, const char *name,
 	else
 		return 0;
 
-	if ((reg = fdt_getprop(node, "reg", &len)) == NULL)
+	/*
+	 * QEMU puts its GIC directly below the root. Real SoCs commonly put
+	 * it below /soc, whose address and size cell widths need not match the
+	 * root's. fdt_walk() records the parent widths in each node, so use
+	 * the common reg reader rather than assuming a root child here.
+	 */
+	if (fdt_node_reg(node, 0, &dist, &dist_size) != 0 ||
+	    fdt_node_reg(node, 1, &second, &second_size) != 0)
 		return 0;
 
-	step = 4 * (s->addr_cells + s->size_cells);
-
-	if (step == 0 || len < 2 * step)
-		return 0;
-
-	s->dist = (phys_bytes)fdt_read_cells(reg, s->addr_cells);
-	s->dist_size = (phys_bytes)fdt_read_cells(reg + 4 * s->addr_cells,
-	    s->size_cells);
-	s->second = (phys_bytes)fdt_read_cells(reg + step, s->addr_cells);
-	s->second_size = (phys_bytes)fdt_read_cells(reg + step +
-	    4 * s->addr_cells, s->size_cells);
+	s->dist = (phys_bytes)dist;
+	s->dist_size = (phys_bytes)dist_size;
+	s->second = (phys_bytes)second;
+	s->second_size = (phys_bytes)second_size;
 
 	/*
 	 * GICv3 may split its redistributors across several ranges, one per

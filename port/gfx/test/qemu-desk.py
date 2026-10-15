@@ -413,6 +413,15 @@ def main():
                st is not None and near(bg, col["surface"], 6),
                "background 0x%06x" % bg)
         run("minix-service down kbdd")
+        # meechowm-notify sees kbdd gone three looks later and puts up
+        # "kbdd stopped" for 8 s in the top right corner; landing between
+        # grim's shot and the frame read after it, it was step 9's whole
+        # difference (2026-10-15).  Let the card come and go first.
+        state_has(r"layer meechowm-notify ", 30)
+        deadline = time.time() + 60
+        while time.time() < deadline and \
+                re.search(r"layer meechowm-notify ", state()):
+            time.sleep(2)
 
         # 9. grim, and the frame it should have seen.
         out = run("meechowm-shot /tmp/shot.png; ls -l /tmp/shot.png", 300)

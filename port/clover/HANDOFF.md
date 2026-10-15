@@ -5,28 +5,28 @@
 система собираются из дерева (`port/build-all.sh`). Двоичных файлов
 переносить не нужно.
 
-## Где остановились (2026-10-15)
+## Где остановились (2026-10-16)
 
-- `fastboot boot` образа MEECHO на Mi Pad 4 — ABL принял, **ядро вывело
-  свои сообщения на экран планшета**: оно перемещает себя на адрес, куда
-  его положил ABL (`head.S`), и пишет в `simple-framebuffer` из дерева
-  (`fbcon.c`). Разбор — `port/PORTING-LOG.md`, «Mi Pad 4: ядро без
-  привязки к адресу и консоль на экране»; эталон — `port/clover/reference.md`.
-- **Дальше `kernel panic`, текст не прочитан.** Первая задача — прочитать
-  его (фото экрана): строка `kernel panic: …`, строка над ней (часто
-  `файл:строка: assert … failed`), `kernel on CPU 0: 0x…` (стек) и
-  `MEECHO/aarch64: … memory …`. Адреса → функции:
-  `aarch64-linux-gnu-addr2line -f -e ~/obj-kvar/reloc/minix/kernel/kernel 0x…`
-  (ELF именно той сборки, что загружалась).
-- Если экран гаснет раньше, чем успеваешь прочитать (после паники ядро
-  сбрасывает машину: `MEECHO will now reset.`), — первым делом сделать так,
-  чтобы при консоли только на экране ядро после паники останавливалось и
-  держало текст.
-- Подозреваемые — то, что ядро делает на этой машине впервые: карта памяти
-  от ABL (много диапазонов и дыр `no-map`; предел `MAX_RAM_RANGES` 48 в
-  `pg_utils.c`), GICv3 SDM660 (`redistributor-stride 0x20000`; вход на
-  EL1, EL2 у гипервизора Qualcomm), таймер, PSCI `smc`, дерево, которое
-  правит ABL.
+- `fastboot boot` образа MEECHO доходит на Mi Pad 4 до **`login:` на
+  экране планшета**. ABL принимает образ v0, reloc-ядро пишет в переданный
+  `simple-framebuffer`, загружает двенадцать процессов, монтирует imgrd и
+  `/proc`, запускает rc и getty.
+- Первая паника была `device tree describes no GIC this kernel can drive`:
+  сканер принимал GIC только непосредственно под корнем, а у Clover
+  `arm,gic-v3` лежит под `/soc`. Теперь GIC находится на любой глубине и
+  его `reg` разбирается с шириной ячеек родительской шины.
+- Временный маркер подтвердил первый аппаратный тик: `timer IRQ 18 on CPU
+  0`. После этого остановка за `Started VFS` оказалась консолью, а не
+  таймером: `stdout-path` указывает на `qcom,msm-uartdm`, которого TTY пока
+  не поддерживает, поэтому `console=tty00` давал `ENXIO` при открытии
+  `/dev/console` из init.
+- Для Clover `mkboot.sh` теперь передаёт `console=console`. AArch64 ttyc0
+  выводит пользовательскую консоль через `SYS_DIAGCTL` в уже работающий
+  kernel framebuffer; обратную доставку kernel messages он поглощает, чтобы
+  не создать эхо-цикл. Тот же путь проверен framebuffer-стендом QEMU.
+- Следующая работа — ввод на планшете: приглашение видно, но USB-клавиатура
+  и touchscreen ещё не проверены. UART остаётся на тестовых точках под
+  крышкой и для этого рубежа не нужен.
 
 ## Планшет
 
@@ -112,7 +112,7 @@ KERNEL_ELF=~/obj-kvar/reloc/minix/kernel/kernel \
 `kbuild-variant.sh` собирает ядро в свой obj-каталог; `mkboot.sh` делает
 `kernel.bin` и `boot.mba` (`ramimage.sh`), дерево `sdm660-xiaomi-clover`,
 `Image.gz`+дерево и `boot.img` v0. Командная строка ядра — `CMDLINE=`
-(по умолчанию `bootramdisk=1 console=tty00 no_smp=1 verbose=3 bootwd=600`).
+(по умолчанию `bootramdisk=1 console=console no_smp=1 verbose=3 bootwd=600`).
 macOS видна из машины как `/Users/<имя>`; машина из macOS — как
 `~/OrbStack/meecho/`.
 

@@ -20508,7 +20508,8 @@ binutils 2.46, GCC 15.2, libc, ядро и загрузочный образ. А
 
 Отдельный `reloc` ELF упакован с деревом clover из `72bc4bb`; проверка
 `qemu-fbcon.sh` со сдвигом `0x8000` дошла до VFS и сохранила читаемый
-кадр. На планшете эта сборка ещё не проверена.
+кадр. Это состояние до первого аппаратного прогона; результаты с планшета
+и две найденные после него причины записаны ниже.
 
 ### Mi Pad 4: GIC под `/soc` (2026-10-16, планшет)
 
@@ -20525,5 +20526,50 @@ SDM660 — под `/soc`. Сканер отбрасывал всякую глу�
 глубине и читает обе области общим `fdt_node_reg()`, вместо собственной
 копии разбора только корневой шины. Старый QEMU GICv3 прошёл framebuffer
 стенд; на Mi Pad 4 ядро прошло `intr_init()`, весь `main()` и запустило VFS.
-Следующий наблюдаемый рубеж — `Started VFS: 9 worker thread(s)`; строк
-`readclock` и rc после неё пока нет.
+Следующий наблюдаемый рубеж был `Started VFS: 9 worker thread(s)`.
+
+### Mi Pad 4: от VFS до `login:` на framebuffer (2026-10-16, QEMU и планшет)
+
+Остановка после VFS сначала выглядела как недоставленный системный тик.
+Временная однократная печать в обработчике таймера дала на планшете
+`timer IRQ 18 on CPU 0` (на QEMU — IRQ 30): GICv3 доставляет PPI, CNTP
+считает, comparator переставляется. Маркер после проверки удалён.
+
+Настоящая подсказка уже была строкой выше: `TTY: no serial console in the
+device tree`. В дереве всё есть — `/chosen/stdout-path` равен
+`serial0:115200n8`, alias указывает на `serial@c170000`, — но compatible
+этого узла `qcom,msm-uartdm-v1.4`. AArch64 TTY намеренно умел только PL011
+и 8250/DW, не активировал tty00, и `init` получал `ENXIO`, открывая
+`/dev/console`. Это тот же безмолвный отказ, который уже встречался при
+первом ramdisk boot, только тогда UART существовал и хватило
+`console=tty00`.
+
+UARTDM находится на тестовых точках под крышкой, поэтому драйвер контроллера
+не решает задачу видимой консоли. Для `console=console` первый ttyc теперь
+активен как framebuffer terminal: вывод проходит обычную termios-обработку,
+а затем `SYS_DIAGCTL`, то есть рисуется уже работающим kernel `fbcon`.
+Диагностические сообщения, которые kernel затем отдаёт TTY обратно, второй
+раз не печатаются: вызов от endpoint `KERNEL` только завершается. Без этого
+получился бы бесконечный цикл kmess → tty → diag → kmess. Ввод остаётся на
+существующем пути input → tty и не требует от экранной линии аппаратного
+reader'а.
+
+`port/clover/mkboot.sh` выбирает этот путь по умолчанию. Framebuffer-стенд
+QEMU с тем же `console=console` показал `Root device name is imgrd`, mount
+`/proc` и `login:`. Тот же образ через `fastboot boot` дошёл на Mi Pad 4 до:
+
+```
+readclock.arch(info)no real-time clock on this machine
+date: timed: No such file or directory
+Tue Jan  1 00:00:00 GMT 2013
+Root device name is imgrd
+none is mounted on /proc
+
+MEECHO/evbarm64 (Amnesiac) (console)
+
+login:
+```
+
+Предупреждения часов ожидаемы для образа без RTC и timed. Следующая граница
+— источник ввода на планшете (USB HID или touchscreen); сам boot ramdisk и
+getty уже работают.

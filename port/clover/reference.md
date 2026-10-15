@@ -3,15 +3,22 @@
 Снято 2026-10-15 с работающей LineageOS через `adb` без root (хаб, USB);
 сырые ответы — `adb-lineage/`, серийный номер заменён на `<serial>`.
 
-## Первый запуск (2026-10-15)
+## Первый запуск и первый login (2026-10-15—16)
 
 `port/clover/mkboot.sh` → `fastboot boot` (ничего не прошивается):
 `Sending OKAY`, `Booting OKAY`. **На экране планшета появились сообщения
 ядра MEECHO** — ABL принял образ v0 с `Image.gz`+дерево, ядро
 переместилось (`head.S`), нашло `simple-framebuffer` и пишет туда
-(`fbcon.c`). **Дальше — `kernel panic`**, текст ещё не снят. Следующий
-шаг — прочитать панику (фото экрана); если экран гаснет от сброса после
-паники — не сбрасывать, пока консоль только на экране.
+(`fbcon.c`). Первая паника была `device tree describes no GIC this kernel
+can drive`: узел GICv3 лежит под `/soc`, а сканер принимал только дочерние
+узлы корня. После исправления ядро запустило все boot images и VFS.
+
+Следующая остановка после `Started VFS` была не отказом таймера: временная
+печать из обработчика показала `timer IRQ 18 on CPU 0`. Init не мог открыть
+`/dev/console`, потому что `stdout-path` ведёт к `qcom,msm-uartdm`, а TTY
+знает пока только PL011 и 8250/DW. С `console=console` пользовательский
+вывод идёт через kernel framebuffer; на планшете подтверждены imgrd,
+`/proc`, rc, getty и **`login:`**. Ввод с USB/touch ещё не проверен.
 
 Дерево — **`sdm660-xiaomi-clover`** (LTE: `variant: SDM EMMC`), из
 github.com/sdm660-mainline/linux (`72bc4bb`); postmarketOS берёт его же для

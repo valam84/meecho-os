@@ -60,7 +60,10 @@
 #define ICC_SRE_EL2_SRE		(1 << 0)
 #define ICC_SRE_EL2_ENABLE	(1 << 3)
 
-	.section .text.boot, "ax"
+/* ELF relocation type of every entry in the kernel's .rela.dyn (kernel.lds). */
+#define R_AARCH64_RELATIVE	1027
+
+	.section .text.head0, "ax"
 	.globl	_start
 _start:
 	/*
@@ -87,13 +90,25 @@ _start:
 	.long	0			/* code1 */
 	/*
 	 * text_offset: where in RAM the loader should put the image, counted
-	 * from the 2 MiB-aligned base. It has to agree with _kern_phys_base
-	 * in kernel.lds, and 2 MiB is what QEMU chooses when this is zero -
-	 * so saying it here rather than leaving it zero makes the agreement
-	 * explicit instead of accidental.
+	 * from a 2 MiB-aligned base. Zero, as Linux has had it since 5.8.
+	 *
+	 * It used to be 0x200000, to agree with _kern_phys_base explicitly.
+	 * The kernel no longer cares where it is put (it moves itself, below),
+	 * and zero is the value loaders are known to accept: QEMU still puts
+	 * the image at 0x40200000, U-Boot with flags bit 3 leaves it where
+	 * it is, and a Qualcomm ABL - the Mi Pad 4's - boots mainline Linux
+	 * with exactly this header. Some ABLs compare the field against what
+	 * they expect and refuse the image otherwise.
 	 */
-	.quad	0x200000		/* text_offset */
-	.quad	__image_size		/* image_size, computed in kernel.lds */
+	.quad	0			/* text_offset */
+	/*
+	 * image_size is not here: kernel.lds writes it between the two halves
+	 * of the header with QUAD(). The image is linked -pie, and under -pie
+	 * bfd turns a .quad of any link-script symbol into a dynamic
+	 * relocation - a write into .text.boot, which -z text refuses. A value
+	 * the link script writes itself is never relocated.
+	 */
+	.section .text.head1, "ax"
 	/*
 	 * flags: 4 KiB pages, little-endian, and - bit 3 - the 2 MiB-aligned
 	 * base of this image may be anywhere in physical memory.
@@ -104,9 +119,9 @@ _start:
 	 * Linux kernel cannot address memory below its own load address
 	 * through the linear map. On the CB2 that means moving the image to
 	 * 0x00400000 - RAM there starts at 0x00200000, the first two megabytes
-	 * being TF-A's - while this kernel is linked for _kern_phys_base,
-	 * 0x40200000, and does not survive being moved: the link script fixed
-	 * _kern_vir_base from that number.
+	 * being TF-A's. The kernel would survive that now (it relocates itself,
+	 * below), but there is no reason to pay for a copy, and the bit is
+	 * simply true: any base will do.
 	 *
 	 * With the bit set, U-Boot computes the destination from where the
 	 * image already is and leaves it alone. QEMU never consulted the flags
@@ -121,6 +136,7 @@ _start:
 	.ascii	"ARM\x64"		/* magic */
 	.long	0			/* res5: no PE header */
 
+	.section .text.boot, "ax"
 _start_boot:
 	/*
 	 * The loader leaves the physical address of the device tree blob in
@@ -281,6 +297,54 @@ at_el1:
 	 */
 	msr	tpidr_el1, xzr
 
+	/*
+	 * Get the image onto a 64 KiB boundary.
+	 *
+	 * The move below (".rela.dyn") can put the image at any address that
+	 * is a multiple of 64 KiB away from where it is linked - that is the
+	 * largest alignment in it (k_stacks, the segments). A loader following
+	 * the arm64 boot protocol always lands on one. A Qualcomm ABL is not
+	 * known to: Linux carried TEXT_OFFSET 0x8000 for years on their
+	 * account. So an image found off that grid is first copied up to the
+	 * next boundary - never more than 64 KiB, and the header's image_size
+	 * claims that much extra (kernel.lds) so the loader leaves room - and
+	 * continues from the copy.
+	 *
+	 * Copied backwards, because the two overlap. The destination must
+	 * begin above this loop, or the loop would overwrite itself: the
+	 * distance is pushed up by another 64 KiB if it is closer than that.
+	 * Only the file's contents are copied - the BSS is cleared below, at
+	 * the new address. The MMU is off, so the stores reach memory, and
+	 * the instruction cache is invalidated before the jump.
+	 */
+	adr	x0, _start
+	ands	x1, x0, #0xffff
+	b.eq	7f
+	mov	x2, #0x10000
+	sub	x1, x2, x1		/* x1: distance up to the next boundary */
+	adr	x7, 7f
+	sub	x7, x7, x0		/* how far into the image the loop ends */
+	cmp	x1, x7
+	b.hs	6f
+	add	x1, x1, x2
+6:
+	adrp	x3, _edata
+	add	x3, x3, :lo12:_edata	/* end of what the file holds */
+	add	x4, x3, x1
+8:
+	ldp	x5, x6, [x3, #-16]!
+	stp	x5, x6, [x4, #-16]!
+	cmp	x3, x0
+	b.hi	8b
+	dsb	sy
+	ic	iallu
+	dsb	sy
+	isb
+	adr	x5, 7f
+	add	x5, x5, x1
+	br	x5			/* the same place, in the copy */
+7:
+
 	/* Stack grows down from the top of the boot stack. */
 	adrp	x0, boot_stack_top
 	add	x0, x0, :lo12:boot_stack_top
@@ -301,6 +365,61 @@ at_el1:
 	b	1b
 2:
 
+	/*
+	 * Move the image to where it was loaded.
+	 *
+	 * The kernel is linked for _kern_phys_base and loaded wherever the
+	 * loader chose - the same place on QEMU and the CB2, somewhere else
+	 * entirely on a Qualcomm ABL. Code does not care: it is PC-relative.
+	 * Data does, in exactly the slots .rela.dyn lists, each holding an
+	 * upper-half address computed for the link base. Each gets the
+	 * distance added (kernel.lds; Makefile.inc checks at build time that
+	 * the table holds nothing but R_AARCH64_RELATIVE).
+	 *
+	 * r_offset is the slot's link-time virtual address; with the MMU off
+	 * it is reached at its physical one, which is the low 48 bits plus the
+	 * distance. The value written is virtual, for the upper half.
+	 *
+	 * The MMU is off, so the store goes straight to memory. A line the
+	 * loader left in a cache for that address would win over it once the
+	 * caches come on, so each slot is invalidated after the store - the
+	 * same reason ap_boot_params is cleaned to the point of coherency.
+	 *
+	 * The distance has to keep every alignment the link gave the image:
+	 * k_stacks is aligned to twice its size for the guard page
+	 * (arch_init() asserts it), the segments to 64 KiB. So it must be a
+	 * multiple of 64 KiB, which Makefile.inc checks is the largest
+	 * alignment in the image, and which the copy above has made true.
+	 * The check stays as the copy's own: if it ever fails there is no
+	 * console to say so yet, and running would fail later and further
+	 * from the cause.
+	 */
+	adr	x0, _start
+	movz	x1, #(KERNEL_LINK_BASE & 0xffff)
+	movk	x1, #((KERNEL_LINK_BASE >> 16) & 0xffff), lsl #16
+	sub	x0, x0, x1		/* x0: load address - link address */
+	tst	x0, #0xffff
+	b.ne	park_secondary
+	adrp	x1, __rela_dyn_start
+	add	x1, x1, :lo12:__rela_dyn_start
+	adrp	x2, __rela_dyn_end
+	add	x2, x2, :lo12:__rela_dyn_end
+3:
+	cmp	x1, x2
+	b.hs	5f
+	ldp	x3, x4, [x1], #16	/* r_offset, r_info */
+	ldr	x5, [x1], #8		/* r_addend */
+	cmp	w4, #R_AARCH64_RELATIVE
+	b.ne	3b			/* R_AARCH64_NONE: nothing to do */
+	and	x3, x3, #0x0000ffffffffffff
+	add	x3, x3, x0
+	add	x5, x5, x0
+	str	x5, [x3]
+	dc	ivac, x3
+	b	3b
+5:
+	dsb	sy
+
 	/* Hand the device tree pointer to C as the first argument. */
 	mov	x0, x21
 	bl	pre_init
@@ -314,7 +433,7 @@ park_secondary:
 	wfe
 	b	park_secondary
 
-	.size	_start, . - _start
+	.size	_start_boot, . - _start_boot
 
 /*
  * Where a secondary core starts.

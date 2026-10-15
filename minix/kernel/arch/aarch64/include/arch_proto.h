@@ -113,9 +113,21 @@ extern phys_bytes boot_dtb;
  *
  * pg_is_ram() answers whether phys2vir() of an address is a pointer the
  * kernel may dereference: the linear map covers RAM and nothing else.
+ * pg_cut_ram() takes a "no-map" reservation back out of it - memory that
+ * exists but must not be mapped, because firmware fences it off and even a
+ * speculative read there can end in an external abort.
  */
 void pg_add_ram(phys_bytes base, phys_bytes size);
+void pg_cut_ram(phys_bytes base, phys_bytes size);
 int pg_is_ram(phys_bytes pa);
+
+/*
+ * fbcon.c - the kernel's console on a frame buffer the loader left running
+ * ("simple-framebuffer" in the device tree). Output goes there as well as to
+ * the UART; a machine without such a node has neither cost nor effect.
+ */
+void fbcon_init(phys_bytes dtb);
+void fbcon_putc(char c);
 phys_bytes pg_alloc_page(kinfo_t *cbi);
 phys_bytes pg_roundup(phys_bytes b);
 phys_bytes pg_rounddown(phys_bytes b);

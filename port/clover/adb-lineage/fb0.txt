@@ -1,0 +1,5 @@
+cat: /sys/class/graphics/fb0/name: Permission denied
+cat: /sys/class/graphics/fb0/virtual_size: Permission denied
+cat: /sys/class/graphics/fb0/bits_per_pixel: Permission denied
+cat: /sys/class/graphics/fb0/stride: Permission denied
+cat: /sys/class/graphics/fb0/modes: Permission denied

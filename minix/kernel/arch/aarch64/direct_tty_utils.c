@@ -8,6 +8,7 @@
 
 #include "direct_utils.h"
 #include "bsp_serial.h"
+#include "arch_proto.h"
 
 void
 direct_cls(void)
@@ -23,7 +24,9 @@ direct_cls(void)
 void
 ser_putc(char c)
 {
+	/* Both consoles; each does nothing on a machine that lacks it. */
 	bsp_ser_putc(c);
+	fbcon_putc(c);
 }
 
 void

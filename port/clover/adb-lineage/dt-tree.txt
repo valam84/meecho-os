@@ -1,0 +1,393 @@
+find: './regulator-gfx-stub/regulator-max-microvolt': Permission denied
+find: './regulator-gfx-stub/regulator-min-microvolt': Permission denied
+find: './regulator-gfx-stub/regulator-name': Permission denied
+find: './regulator-gfx-stub/compatible': Permission denied
+find: './regulator-gfx-stub/phandle': Permission denied
+find: './regulator-gfx-stub/name': Permission denied
+find: './energy-costs/compatible': Permission denied
+find: './energy-costs/name': Permission denied
+find: './#address-cells': Permission denied
+find: './vendor/#address-cells': Permission denied
+find: './vendor/#size-cells': Permission denied
+find: './vendor/compatible': Permission denied
+find: './vendor/ranges': Permission denied
+.
+./regulator-gfx-stub
+./energy-costs
+./energy-costs/core-cost0
+./energy-costs/core-cost1
+./vendor
+./vendor/qcom,battery-data
+./soc
+./soc/qcom,rpm-smd
+./soc/audio_ext_clk_native
+./soc/qcom,gdsc@17d04c
+./soc/hwlock
+./soc/qcom,vfe1@ca14000
+./soc/gpu-bw-tbl
+./soc/slim@151c0000
+./soc/clock-controller@c8c0000
+./soc/interrupt-controller@17a00000
+./soc/qcom,gdsc@c8c1024
+./soc/spi@c1b6000
+./soc/uart@c16f000
+./soc/qcom,kgsl-iommu
+./soc/qcom,msm-dai-tdm-sec-tx
+./soc/ldo@0506e000
+./soc/audio_ext_clk_lnbb
+./soc/qusb@c012000
+./soc/qcom,cam_smmu
+./soc/cam_rear_dvdd_fixed_regulator
+./soc/qcom,smp2p_interrupt_rdbg_5_out
+./soc/syscon@5065130
+./soc/qcom,gdsc@5066094
+./soc/i2c@c1b8000
+./soc/qcom,msm-dai-tdm-sec-rx
+./soc/qcom,icnss@18800000
+./soc/qcom,chd_gold
+./soc/ufsphy@1da7000
+./soc/timer@17920000
+./soc/sdw_clk_data_pinctrl
+./soc/i2c@c1b5000
+./soc/qcom,lpass@15700000
+./soc/sdhci@c0c4000
+./soc/syscon@c8ce024
+./soc/qcom,wcd-dsp-glink
+./soc/dsi_panel_pwr_supply_labibb_amoled
+./soc/qcom,spm@178120000
+./soc/syscon@1791101c
+./soc/qcom,mdss_dsi_pll@c996400
+./soc/pinctrl@03000000
+./soc/qcom,msm-voip-dsp
+./soc/serial@0c170000
+./soc/qcom,ipa@14780000
+./soc/smem
+./soc/qcom,gdsc@c8c1040
+./soc/qcom,cpu0-cpugrp
+./soc/qcom,gdsc@10f004
+./soc/qcom,msm-pcm-loopback
+./soc/cprh-ctrl@179c8000
+./soc/sdcc1ice@c0c8000
+./soc/qcom,avtimer@150f700c
+./soc/qcom,rpm-stats@200000
+./soc/hall_switch
+./soc/uart@c1af000
+./soc/qcom,cci@ca0c000
+./soc/spi@c175000
+./soc/jtagmm@7f40000
+./soc/qcom,memshare
+./soc/qcom,glink_pkt
+./soc/qcom,cpp@ca04000
+./soc/qcom,smp2p_sleepstate
+./soc/ufsice@1db0000
+./soc/qcom,mdss_dsi@0
+./soc/snfuse@0x784138
+./soc/qcom,msm-ultra-low-latency
+./soc/tsens@10ad000
+./soc/qcom,mss@4080000
+./soc/qcom,mdss_rotator
+./soc/qcom,msm-dai-q6
+./soc/qcom,csiphy@c824000
+./soc/qcom,rmtfs_sharedmem@0
+./soc/wsa_spkr_en2_pinctrl
+./soc/qcom,mdss_mdp@c900000
+./soc/cpu-pmu
+./soc/i2c@c177000
+./soc/clock-controller@5065000
+./soc/qcom,msm-quin-auxpcm
+./soc/qcom,cpu4-cpu-ddr-lat
+./soc/qcom,smp2p-adsp
+./soc/syscon@05065120
+./soc/qcom,msm-gladiator-v2@17900000
+./soc/qcom,kgsl-hyp
+./soc/usb_audio_qmi_dev
+./soc/qcom,msm-adsprpc-mem
+./soc/arm,smmu-mmss@cd00000
+./soc/ad-hoc-bus
+./soc/qcom,smp2p_interrupt_rdbg_2_out
+./soc/qseecom@86d00000
+./soc/wake-gic
+./soc/serial@0c1b0000
+./soc/qrng@793000
+./soc/qcom,msm-dai-tdm-quat-tx
+./soc/qcom,wdt@17817000
+./soc/thermal-zones
+./soc/qcom,gdsc@5066004
+./soc/qcom,jpeg@caa0000
+./soc/qcom,gdsc@c8c34a0
+./soc/rpm-glink
+./soc/qcom,cpu0-cpu-ddr-lat
+./soc/spi@c1b8000
+./soc/qcom,msm-cdsp-loader
+./soc/qcom,msm-imem@146bf000
+./soc/jtagfuse@786040
+./soc/qcom,venus@cce0000
+./soc/qcom,msm-compr-dsp
+./soc/dsi_panel_pwr_supply_no_labibb
+./soc/qcom,msm-pcm-routing
+./soc/jtagmm@7e40000
+./soc/qcom,sps
+./soc/spi@c1b5000
+./soc/qcom,cpu4-cpugrp
+./soc/qusb@c014000
+./soc/qcom,msm-dai-tdm-quat-rx
+./soc/qcom,gdsc@c8c3674
+./soc/qcom,cc-debug@62000
+./soc/clock-controller@100000
+./soc/qcom,mdss_wb_panel
+./soc/qcom,gdsc@c8c3664
+./soc/qcom,spm@179120000
+./soc/tz-log@146bf720
+./soc/i2c@c1b7000
+./soc/qcom,ipc-spinlock@1f40000
+./soc/qcom,msm-pcm
+./soc/qcom,msm-sec-auxpcm
+./soc/devfreq_spdm_gov
+./soc/qcom,gdsc@c8c36d4
+./soc/qcom,gdsc@175004
+./soc/qcom,turing@1a300000
+./soc/generic-bw-opp-table
+./soc/uart@c170000
+./soc/qcom,msm-dai-mi2s
+./soc/gpio_keys
+./soc/qcom,lpm-levels
+./soc/syscon@c8c0900
+./soc/qcom,msm_fastrpc
+./soc/qcom,camera-flash@0
+./soc/qcom,gpubw
+./soc/qcom,mpm2-sleep-counter@10a3000
+./soc/ssusb@a800000
+./soc/qcom,csid@ca30800
+./soc/msm_cdc_pinctrl@75
+./soc/qcom,mdss_dp_pll@c011000
+./soc/qcom,rpmcc
+./soc/qcom,msm-lsm-client
+./soc/jtagmm@7d40000
+./soc/spi@c177000
+./soc/qcom,msm-tert-auxpcm
+./soc/qcom,ion
+./soc/wake-gpio
+./soc/cprh-ctrl@179c4000
+./soc/iommu_test_device
+./soc/qcom,msm-adsp-loader
+./soc/qcom,msm-cpufreq
+./soc/arm,smmu-lpass_q6@5100000
+./soc/qcom,vfe
+./soc/qcom,msm-quat-auxpcm
+./soc/qcom,msm-audio-apr
+./soc/qcom,msm-dai-fe
+./soc/qcom,csiphy@c826000
+./soc/fpc1020
+./soc/qcom,gdsc@17d034
+./soc/qcom,msm-cam@ca00000
+./soc/arm,smmu-kgsl@5040000
+./soc/timer
+./soc/qcom,smp2p-cdsp
+./soc/dsi_panel_pwr_supply
+./soc/i2c@c176000
+./soc/arm64-cpu-erp
+./soc/qcom,msm-find: './vendor/name': Permission denied
+find: './model': Permission denied
+find: './soc/#address-cells': Permission denied
+find: './soc/#size-cells': Permission denied
+find: './soc/compatible': Permission denied
+find: './soc/ranges': Permission denied
+find: './soc/name': Permission denied
+find: './clocks/name': Permission denied
+find: './qcom,board-id': Permission denied
+find: './psci/method': Permission denied
+find: './psci/compatible': Permission denied
+find: './psci/name': Permission denied
+find: './#size-cells': Permission denied
+find: './interrupt-parent': Permission denied
+find: './compatible': Permission denied
+find: './qcom,pmic-id': Permission denied
+find: './aliases/i2c3': Permission denied
+find: './aliases/spi2': Permission denied
+find: './aliases/sdhc2': Permission denied
+find: './aliases/i2c1': Permission denied
+find: './aliases/i2c8': Permission denied
+find: './aliases/spi7': Permission denied
+find: './aliases/i2c6': Permission denied
+find: './aliases/spi5': Permission denied
+find: './aliases/i2c4': Permission denied
+find: './aliases/i2c2': Permission denied
+find: './aliases/spi1': Permission denied
+find: './aliases/sdhc1': Permission denied
+find: './aliases/i2c7': Permission denied
+find: './aliases/spi6': Permission denied
+find: './aliases/i2c5': Permission denied
+find: './aliases/serial0': Permission denied
+find: './aliases/name': Permission denied
+find: './firmware/name': Permission denied
+find: './qcom,msm-id': Permission denied
+find: './chosen/linux,initrd-end': Permission denied
+find: './chosen/bootargs': Permission denied
+find: './chosen/kaslr-seed': Permission denied
+find: './chosen/pureason': Permission denied
+find: './chosen/linux,initrd-start': Permission denied
+find: './chosen/name': Permission denied
+find: './chosen/stdout-path': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-ldo-current-level': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-ldo-supply': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-core-supply': Permission denied
+find: './bt_wcn3990/clock-names': Permission denied
+find: './bt_wcn3990/qca,bt-chip-pwd-supply': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-core-current-level': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-pa-voltage-level': Permission denied
+find: './bt_wcn3990/clocks': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-pa-supply': Permission denied
+find: './bt_wcn3990/qca,bt-chip-pwd-voltage-level': Permission denied
+find: './bt_wcn3990/compatible': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-ldo-voltage-level': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-core-voltage-level': Permission denied
+find: './bt_wcn3990/qca,bt-vdd-pa-current-level': Permission denied
+find: './bt_wcn3990/name': Permission denied
+find: './reserved-memory/#address-cells': Permission denied
+find: './reserved-memory/#size-cells': Permission denied
+find: './reserved-memory/ranges': Permission denied
+find: './reserved-memory/name': Permission denied
+find: './name': Permission denied
+find: './memory/device_type': Permission denied
+find: './memory/reg': Permission denied
+find: './memory/name': Permission denied
+dai-q6-dp
+./soc/syscon@1f40000
+./soc/qcom,cpu-cpu-ddr-bwmon@01008000
+./soc/wcd9xxx-irq
+./soc/devfreq_spdm_cpu
+./soc/qcom,rmnet-ipa
+./soc/qcom,kgsl-busmon
+./soc/uart@c1b0000
+./soc/qcedev@1de0000
+./soc/qcom,vidc@cc00000
+./soc/qcom,gdsc@17e04c
+./soc/qcom,cpu4-cpu-ddr-latfloor
+./soc/slim@15240000
+./soc/qcom,msm-pcm-dsp-noirq
+./soc/jtagmm@7c40000
+./soc/thermal-message
+./soc/spi@c1b7000
+./soc/wsa_spkr_en1_pinctrl
+./soc/qcom,msm-dai-tdm-quin-tx
+./soc/qcom,csid@ca30400
+./soc/msm-sdw-codec@152c1000
+./soc/qcom,ispif@ca31000
+./soc/qcom,jpeg@ca1c000
+./soc/qcom,gdsc@c8ce020
+./soc/jtagmm@7940000
+./soc/qcom,cpu0-cpu-ddr-latfloor
+./soc/qcom,msm-cpe-lsm
+./soc/syscon@5066008
+./soc/qcom,msm-cpe-lsm@3
+./soc/qcom,kgsl-3d0@5000000
+./soc/cpr4-ctrl@05061000
+./soc/qcom,smp2p_interrupt_rdbg_5_in
+./soc/usb_nop_phy
+./soc/qcom,msm-dai-tdm-quin-rx
+./soc/qcom,qbt1000
+./soc/i2c@c1b6000
+./soc/qcom,rpm-master-stats@778150
+./soc/qcom,msm-stub-codec
+./soc/qcom,smp2p_interrupt_rdbg_2_in
+./soc/qcom,clk-cpu-660@179c0000
+./soc/qcom,smp2p-modem
+./soc/qcom,system-stats
+./soc/ssphy@c010000
+./soc/memory@0x778000
+./soc/qcom,glink
+./soc/qcom,vfe0@ca10000
+./soc/qcom,csid@ca30c00
+./soc/qcom,ghd
+./soc/qcom,mdss_dsi_pll@c994400
+./soc/qcom,msm-rtb
+./soc/qcom,gdsc@c8c2304
+./soc/jtagmm@7b40000
+./soc/qcrypto@1de0000
+./soc/gfx@5065000
+./soc/qcom,msm-pcm-voice
+./soc/qcom,msm-dai-tdm-pri-tx
+./soc/qcom,sps-dma@0xc144000
+./soc/smcinvoke@87900000
+./soc/qcom,spmi@800f000
+./soc/cam_avdd_front_fixed_regulator
+./soc/spi@c176000
+./soc/qcom,msm-pcm-afe
+./soc/syscon@5066090
+./soc/jtagmm@7840000
+./soc/qcom,sps-dma@0xc184000
+./soc/sound-9335
+./soc/qcom,chd_silver
+./soc/hsusb@c200000
+./soc/qcom,msm-dai-tdm-tert-tx
+./soc/restart@10ac000
+./soc/qcom,msm-dai-tdm-pri-rx
+./soc/rpm-memory@0x778000
+./soc/qcom,csiphy@c825000
+./soc/qmi-tmd-devices
+./soc/qcom,csid@ca30000
+./soc/ufshc@1da4000
+./soc/i2c@c178000
+./soc/mailbox@17911000
+./soc/qcom,msm-compress-dsp
+./soc/i2c@c175000
+./soc/qcom,cpu-cpu-ddr-bw
+./soc/cam_avdd_fixed_regulator
+./soc/cam_vaf_fixed_regulator
+./soc/regulator@01fcf004
+./soc/qcom,msm-dai-tdm-tert-rx
+./soc/qcom,dp_ctrl@c990000
+./soc/qcom,msm-pcm-hostless
+./soc/audio_ext_clk
+./soc/sdhci@c084000
+./soc/qcom,msm-ext-disp
+./soc/qcom,msm-pcm-low-latency
+./soc/arm,smmu-turing_q6@5180000
+./soc/qcom,wcd-dsp-mgr
+./soc/cx_ipeak@1fe5040
+./soc/qcom,msm-pri-auxpcm
+./soc/qcom,msm-ssc-sensors
+./soc/arm,smmu-anoc2@16c0000
+./soc/jtagmm@7a40000
+./clocks
+./clocks/xo_board
+./clocks/sleep_clk
+./psci
+./aliases
+./firmware
+./firmware/android
+./chosen
+./bt_wcn3990
+./cpus
+./cpus/cpu@1
+./cpus/#address-cells
+./cpus/cpu@103
+./cpus/cpu@101
+./cpus/#size-cells
+./cpus/cpu-map
+./cpus/cpu@2
+./cpus/cpu@0
+./cpus/cpu@102
+./cpus/cpu@100
+./cpus/name
+./cpus/cpu@3
+./reserved-memory
+./reserved-memory/cdsp_fw_region@94a00000
+./reserved-memory/linux,cma
+./reserved-memory/dfps_data_mem@0x9f7ff000
+./reserved-memory/smem-mem@86000000
+./reserved-memory/removed_regions@85800000
+./reserved-memory/pstore_reserve_mem_region@0
+./reserved-memory/wlan_msa_mem@85700000
+./reserved-memory/video_region
+./reserved-memory/adsp_region
+./reserved-memory/removed_regions@86200000
+./reserved-memory/pil_mba_region@94800000
+./reserved-memory/venus_fw_region
+./reserved-memory/secure_region
+./reserved-memory/modem_fw_region@8ac00000
+./reserved-memory/qseecom_ta_region
+./reserved-memory/splash_region@9d400000
+./reserved-memory/adsp_fw_region@92a00000
+./reserved-memory/qseecom_region
+./memory

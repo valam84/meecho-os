@@ -190,7 +190,12 @@ static phys_bytes tables_lo, tables_hi;
  * and the boot modules cut out of it; the linear map has to cover them too,
  * so it is built from here.
  */
-#define MAX_RAM_RANGES	8
+/*
+ * Each "no-map" reservation can split a range in two (pg_cut_ram()), and a
+ * Qualcomm tree has a dozen of them: TrustZone, the modem, the DSPs, the
+ * splash screen.
+ */
+#define MAX_RAM_RANGES	48
 
 static struct {
 	phys_bytes base;
@@ -280,6 +285,56 @@ pg_add_ram(phys_bytes base, phys_bytes size)
 	ram[nram].base = pg_roundup(base);
 	ram[nram].size = pg_rounddown(base + size) - ram[nram].base;
 	nram++;
+}
+
+/*===========================================================================*
+ *				pg_cut_ram				     *
+ *===========================================================================*/
+/*
+ * Take [base, base + size) out of the RAM the linear map covers.
+ *
+ * For a "no-map" reservation. Leaving it out of the free list is not enough:
+ * the linear map is cacheable, the core may fetch speculatively through it,
+ * and on a Qualcomm SoC these ranges are fenced off by the XPU for TrustZone,
+ * the modem and the DSPs - an access from the wrong side, speculative or not,
+ * is an external abort. Linux leaves them unmapped for this reason. It also
+ * frees their linear-map addresses for a mapping of a different kind, which
+ * is what the frame buffer console needs (fbcon.c).
+ *
+ * The range is widened to whole pages: a partial page cannot be unmapped.
+ */
+void
+pg_cut_ram(phys_bytes base, phys_bytes size)
+{
+	phys_bytes lo = pg_rounddown(base), hi = pg_roundup(base + size);
+	unsigned i;
+
+	if (size == 0)
+		return;
+
+	for (i = 0; i < nram; i++) {
+		phys_bytes rlo = ram[i].base, rhi = rlo + ram[i].size;
+
+		if (hi <= rlo || lo >= rhi)
+			continue;
+
+		if (lo > rlo && hi < rhi) {
+			/* Strictly inside: the range splits in two. */
+			if (nram >= MAX_RAM_RANGES)
+				panic("more RAM ranges than this kernel can map");
+			ram[nram].base = hi;
+			ram[nram].size = rhi - hi;
+			nram++;
+			ram[i].size = lo - rlo;
+		} else if (lo > rlo) {
+			ram[i].size = lo - rlo;		/* the top goes */
+		} else if (hi < rhi) {
+			ram[i].base = hi;		/* the bottom goes */
+			ram[i].size = rhi - hi;
+		} else {
+			ram[i].size = 0;		/* all of it */
+		}
+	}
 }
 
 /*===========================================================================*

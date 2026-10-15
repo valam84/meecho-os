@@ -37,12 +37,20 @@ OUTPUT_ARCH(aarch64)
  * first absolute address taken from the link script faulted.
  *
  * So the number here is the one the loader actually uses, and head.S declares
- * the matching text_offset. On the BCM2711 RAM starts at 0 and U-Boot follows
- * the same rule with the same header, so this is a per-board value and will
- * move into the board support package; the virtual address the kernel runs at
- * does not move with it.
+ * the matching text_offset.
+ *
+ * It is the address the image is *linked* for, not one it must run at. A
+ * Qualcomm machine has no RAM at 0x40200000 at all - it starts at
+ * 0x80000000 - and its loader puts the image where it likes. So the kernel
+ * is linked position-independent (-pie, Makefile.inc), and head.S moves it
+ * to wherever it was loaded before any C runs: it adds the distance between
+ * the two addresses to every slot listed in .rela.dyn below. Early boot is
+ * PC-relative throughout, which is why that table has a handful of entries
+ * rather than thousands. The kernel still runs at physical address plus
+ * KERNEL_VA_OFFSET; it is the physical address that is free to move, and the
+ * virtual one follows it.
  */
-_kern_phys_base = 0x40200000;
+_kern_phys_base = KERNEL_LINK_BASE;	/* 0x40200000, from Makefile.inc */
 _kern_vir_base = _kern_phys_base + KERNEL_VA_OFFSET;
 _kern_offset = KERNEL_VA_OFFSET;
 
@@ -76,6 +84,17 @@ SECTIONS
 		 * start of the image, because a loader that does not read ELF
 		 * headers simply jumps to the load address.
 		 */
+		KEEP(*(.text.head0))
+		/*
+		 * image_size, the third field of the arm64 header (head.S). It
+		 * is written here because data the link script writes itself is
+		 * never relocated, and a .quad of a symbol under -pie always is.
+		 * 64 KiB more than the image: head.S may copy itself up by as
+		 * much to reach a 64 KiB boundary, and the loader has to leave
+		 * that room free.
+		 */
+		QUAD(__kernel_end - __kernel_start + 0x10000)
+		KEEP(*(.text.head1))
 		KEEP(*(.text.boot))
 		*(.text .text.*)
 	} :text
@@ -86,6 +105,24 @@ SECTIONS
 	__rodata_start = .;
 	.rodata : AT(ADDR(.rodata) - KERNEL_VA_OFFSET) {
 		*(.rodata .rodata.*)
+	} :rodata
+
+	/*
+	 * What -pie adds. Only .rela.dyn is ever read - by head.S, between the
+	 * two symbols, with the MMU off - and Makefile.inc checks after the link
+	 * that it holds nothing but R_AARCH64_RELATIVE. The rest is the linker's
+	 * bookkeeping for a dynamic object, named here so that each piece lands
+	 * in the segment with the right protection rather than wherever orphan
+	 * placement would put it.
+	 */
+	.dynsym : AT(ADDR(.dynsym) - KERNEL_VA_OFFSET) { *(.dynsym) } :rodata
+	.dynstr : AT(ADDR(.dynstr) - KERNEL_VA_OFFSET) { *(.dynstr) } :rodata
+	.hash : AT(ADDR(.hash) - KERNEL_VA_OFFSET) { *(.hash) } :rodata
+	.gnu.hash : AT(ADDR(.gnu.hash) - KERNEL_VA_OFFSET) { *(.gnu.hash) } :rodata
+	.rela.dyn : AT(ADDR(.rela.dyn) - KERNEL_VA_OFFSET) {
+		__rela_dyn_start = .;
+		*(.rela.dyn .rela.*)
+		__rela_dyn_end = .;
 	} :rodata
 	. = ALIGN(4096);
 	__rodata_end = .;
@@ -122,6 +159,11 @@ SECTIONS
 	.data : AT(ADDR(.data) - KERNEL_VA_OFFSET) {
 		*(.data .data.*)
 	} :data
+	.dynamic : AT(ADDR(.dynamic) - KERNEL_VA_OFFSET) { *(.dynamic) } :data
+	.got : AT(ADDR(.got) - KERNEL_VA_OFFSET) { *(.got .got.plt) } :data
+	.init_array : AT(ADDR(.init_array) - KERNEL_VA_OFFSET) {
+		*(.init_array .init_array.*)
+	} :data
 	. = ALIGN(4096);
 	_edata = .;
 
@@ -144,14 +186,6 @@ SECTIONS
 
 	/* What the architecture layer reports to VM as the kernel's extent. */
 	_kern_size = . - _kern_vir_base;
-
-	/*
-	 * The same number as an absolute symbol, for the arm64 image header in
-	 * head.S. The header needs it as a value, and an assembler cannot
-	 * subtract two symbols it will not resolve itself - so the link script,
-	 * which knows both, computes it here and the header just names it.
-	 */
-	__image_size = __kernel_end - __kernel_start;
 
 	/DISCARD/ : {
 		*(.comment)

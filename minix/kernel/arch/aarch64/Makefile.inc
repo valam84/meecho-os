@@ -27,6 +27,54 @@ CFLAGS+=	-mgeneral-regs-only
 # what lets the image execute at its physical address before the MMU is on.
 CFLAGS+=	-mcmodel=small
 
+# Link position-independent, so that one image runs wherever the loader put
+# it. QEMU and U-Boot on the CB2 put it at 0x40200000, where it is linked; a
+# Qualcomm ABL (the Mi Pad 4) has no RAM there and chooses for itself. head.S
+# applies .rela.dyn before any C runs - see kernel.lds.
+#
+# The code is not built -fpie: -mcmodel=small is PC-relative already, and the
+# whole kernel has single-digit absolute pointers, all in data. "-z text"
+# makes that a promise the linker keeps: a relocation in a read-only segment
+# fails the link instead of becoming a write to the kernel's own text with
+# the MMU off. --no-dynamic-linker drops the .interp a -pie link asks for.
+LDFLAGS+=	-Wl,-pie -Wl,--no-dynamic-linker -Wl,-z,text
+
+# The physical address the image is linked for, which head.S subtracts from
+# where it actually is. Handed over as a number for the same reason as
+# KERNEL_VA_OFFSET, and one more: under -pie bfd turns any reference to a
+# link-script symbol into a dynamic relocation, so head.S cannot simply load
+# _kern_phys_base - the value would itself need relocating first.
+KERNEL_LINK_BASE=	0x40200000
+CPPFLAGS+=	-DKERNEL_LINK_BASE=${KERNEL_LINK_BASE}
+LDFLAGS+=	-Wl,--defsym=KERNEL_LINK_BASE=${KERNEL_LINK_BASE}
+
+# head.S applies R_AARCH64_RELATIVE and steps over R_AARCH64_NONE, and nothing
+# else. Anything else - a symbolic relocation, a GOT slot to be bound - would
+# be skipped silently and leave a pointer to where the kernel was linked,
+# which on a machine with no RAM there is a fault far from its cause. So the
+# check runs after every link and fails the build instead.
+#
+# The second half checks the other assumption head.S makes: that a load
+# address 64 KiB away from the link address keeps every alignment in the
+# image. A section asking for more (say a 128 KiB-aligned table) would end
+# up misaligned on a machine whose loader picks another base.
+realall: kernel.relocs
+kernel.relocs: kernel
+	${_MKTARGET_CREATE}
+	${READELF} -r -W kernel | awk ' \
+	    $$3 ~ /^R_AARCH64_/ && $$3 != "R_AARCH64_RELATIVE" && \
+	    $$3 != "R_AARCH64_NONE" { bad++; print "kernel: " $$3 " at " $$1 \
+	    " - head.S applies only R_AARCH64_RELATIVE" > "/dev/stderr" } \
+	    $$3 == "R_AARCH64_RELATIVE" { n++ } \
+	    END { if (bad) exit 1; print n + 0 " R_AARCH64_RELATIVE" }' \
+	    > ${.TARGET}.tmp
+	${READELF} -S -W kernel | awk ' \
+	    $$1 ~ /^\[/ && $$NF + 0 > 65536 { bad++; print "kernel: section " \
+	    $$2 " wants alignment " $$NF ", head.S keeps only 64 KiB" \
+	    > "/dev/stderr" } END { exit bad ? 1 : 0 }'
+	mv ${.TARGET}.tmp ${.TARGET}
+CLEANFILES+=	kernel.relocs kernel.relocs.tmp
+
 # Frame records, so that a panic can print the kernel's stack: sys.mk builds
 # everything with -fomit-frame-pointer, and util_stacktrace() had nothing to
 # walk (exception.c). Not in leaf functions: a leaf calls nothing, so it is
@@ -36,6 +84,11 @@ CFLAGS+=	-mcmodel=small
 CFLAGS+=	-fno-omit-frame-pointer -momit-leaf-frame-pointer
 
 .PATH:	${HERE}
+
+# The frame buffer console's font, the copy the fb driver uses too. Only the
+# font's own directory: the whole of sys/ on the path would put NetBSD's
+# kernel headers in front of the ones this kernel is built against.
+CPPFLAGS.fbcon.c+=	-I${NETBSDSRCDIR}/sys/dev/wsfont
 
 # There is no board support package on this architecture, and that is a
 # result rather than an omission. A BSP is a build-time choice between board
@@ -67,7 +120,7 @@ SRCS+=	head.S arch_system.c memory.c cache.c direct_tty_utils.c \
 	arch_reset.c arch_clock.c psci.c fpu.c \
 	gic.c gicv2.c gicv3.c \
 	generic_timer.c psci_reset.c \
-	serial.c pl011.c dw8250.c \
+	serial.c pl011.c dw8250.c fbcon.c \
 	hwwd.c dw_wdt.c \
 	usercopy.S pan.c exception.c vectors.S trap.c hw_intr.c fpu_asm.S
 

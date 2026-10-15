@@ -458,11 +458,12 @@ load_boot_archive(kinfo_t *cbi, phys_bytes start, phys_bytes end)
  * where the mistake was made; it faults later, in the process, at an address
  * that says nothing about why.
  *
- * Only the free list is trimmed. The linear map still covers these ranges,
- * because it covers all of RAM by construction; a range marked "no-map"
- * strictly wants leaving unmapped as well, which would mean holes in the
- * linear map, and that is a larger change than this one - worth doing if a
- * speculative read into a firewalled range ever turns into an SError.
+ * A range marked "no-map" is also taken out of the linear map (pg_cut_ram()).
+ * On a Qualcomm SoC those are firewalled for TrustZone, the modem and the
+ * DSPs, and a speculative read through a cacheable mapping is enough for an
+ * external abort; one of them is also the frame buffer the loader left lit,
+ * which fbcon.c maps as a device instead. The rest - CMA pools, OP-TEE's
+ * shared memory on the CB2 - stay mapped and only leave the free list.
  */
 struct rsv_scan {
 	kinfo_t *cbi;
@@ -475,7 +476,8 @@ scan_reserved(void *cookie, int depth, const char *name,
 {
 	struct rsv_scan *s = cookie;
 	u64_t addr, size;
-	unsigned i;
+	unsigned i, len;
+	int nomap;
 
 	if (depth == 1) {
 		s->in_reserved = !strcmp(name, "reserved-memory");
@@ -490,10 +492,15 @@ scan_reserved(void *cookie, int depth, const char *name,
 	 * alignment for the system to place itself. Nothing here places
 	 * anything, so there is nothing to cut.
 	 */
-	for (i = 0; fdt_node_reg(node, i, &addr, &size) == 0; i++)
-		if (size != 0)
-			cut_memmap(s->cbi, (phys_bytes)addr,
-			    (phys_bytes)(addr + size));
+	nomap = fdt_getprop(node, "no-map", &len) != NULL;
+	for (i = 0; fdt_node_reg(node, i, &addr, &size) == 0; i++) {
+		if (size == 0)
+			continue;
+		cut_memmap(s->cbi, (phys_bytes)addr,
+		    (phys_bytes)(addr + size));
+		if (nomap)
+			pg_cut_ram((phys_bytes)addr, (phys_bytes)size);
+	}
 
 	return 0;
 }
@@ -659,6 +666,13 @@ pre_init(phys_bytes dtb)
 	 * walk leaves it silent, which serial.c argues is the honest answer.
 	 */
 	bsp_ser_init(dtb);
+
+	/*
+	 * And the frame buffer, if the loader left a display running and the
+	 * tree says where: on the Mi Pad 4 it is the only console there is
+	 * (fbcon.c).
+	 */
+	fbcon_init(dtb);
 
 	/*
 	 * kputc() decides whether to echo to the serial line by looking at

@@ -229,6 +229,20 @@ then
 fi
 ${OBJCOPY} -O binary "${KERNEL}" "${KERNEL_BIN}"
 
+# KERNEL_TEXT_OFFSET: rewrite text_offset in the image header, so that QEMU
+# loads the very same image somewhere other than where it is linked (QEMU
+# places it at the base of RAM plus that field). This is how the kernel's
+# self-relocation (head.S) is exercised without a Qualcomm loader; a value
+# that is not a multiple of 4 KiB should stop the kernel silently.
+if [ -n "${KERNEL_TEXT_OFFSET:-}" ]
+then
+	python3 -c 'import struct, sys
+with open(sys.argv[1], "r+b") as f:
+	f.seek(8); f.write(struct.pack("<Q", int(sys.argv[2], 0)))' \
+	    "${KERNEL_BIN}" "${KERNEL_TEXT_OFFSET}" || exit 1
+	echo "kernel.bin: text_offset ${KERNEL_TEXT_OFFSET}"
+fi
+
 echo "Collecting the boot images..."
 mods=""
 for name in $(boot_images)

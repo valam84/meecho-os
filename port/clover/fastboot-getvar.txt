@@ -1,0 +1,17 @@
+(bootloader) crc:1
+(bootloader) anti:1
+(bootloader) unlocked:yes
+(bootloader) off-mode-charge:1
+(bootloader) charger-screen-enabled:1
+(bootloader) battery-soc-ok:yes
+(bootloader) battery-voltage:3797
+(bootloader) version-baseband:
+(bootloader) version-bootloader:
+(bootloader) variant:SDM EMMC
+(bootloader) secure:yes
+(bootloader) serialno:<serial>
+(bootloader) product:clover
+(bootloader) max-download-size:536870912
+(bootloader) kernel:uefi
+all: 
+Finished. Total time: 0.002s

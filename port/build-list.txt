@@ -14,8 +14,10 @@ lib/i18n_module
 lib/libbz2
 lib/libc_vfp
 lib/libcrypt
+lib/libterminfo
 lib/libcurses
 lib/libedit
+external/bsd/flex/lib
 lib/libexecinfo
 lib/libform
 lib/libintl
@@ -28,7 +30,6 @@ lib/libpuffs
 lib/librefuse
 lib/librmt
 lib/libtelnet
-lib/libterminfo
 lib/libutil
 lib/libwrap
 lib/libz

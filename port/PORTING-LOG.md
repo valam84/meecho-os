@@ -20490,3 +20490,22 @@ Qualcomm ABL, `fastboot boot` из RAM. Эталон снят без root (`port
 `Image.gz`, как у postmarketOS). fastboot с хаба (xHCI Amlogic) работал
 только без USB 2.0 LPM (`usbcore` quirk `18d1:d00d:k`) — с LPM ABL падал в
 «press any key to shutdown».
+
+### Чистая сборка на Apple Silicon (2026-10-16)
+
+На arm64-хосте Ubuntu 26.04 в OrbStack с нуля собрались host tools,
+binutils 2.46, GCC 15.2, libc, ядро и загрузочный образ. Архитектурной
+привязки к прежнему x86-хосту в `build-xtools.sh` не оказалось.
+
+Первый проход остановился на создании ramdisk: `bin/sh` не был собран,
+потому что `build-list.txt` ставил `libcurses` и `libedit` раньше
+`libterminfo`, а `external/bsd/flex/lib` (дающий `libl`) в списке не было.
+Это не ошибка самого shell: после исправления порядка все четыре
+библиотеки и `bin/sh` собрались без предупреждений в журнале, а стадия
+`image` создала `kernel.bin` и `boot.mba`. Остальные 114 неуспешных
+каталогов полного прохода — прежний открытый userland, который
+`build-all.sh` намеренно перечисляет и пропускает.
+
+Отдельный `reloc` ELF упакован с деревом clover из `72bc4bb`; проверка
+`qemu-fbcon.sh` со сдвигом `0x8000` дошла до VFS и сохранила читаемый
+кадр. На планшете эта сборка ещё не проверена.

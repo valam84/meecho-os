@@ -34,7 +34,7 @@ The desktop (PLAN.md, 11.7: "the minimal set and the house style"):
   panel       yambar          screenshot grim (meechowm-shot, Print)
   files       nnn (in foot)   an area   slurp, then grim (meechowm-shot -r,
   editor      vi                        Shift+Print)
-  monitor     mtop            typeface  Go Mono and Go (external/bsd/gofont)
+  monitor     mtop            typeface  JetBrains Mono and Inter (external/ofl)
 
 Packages: libffi 3.8.0, wayland 1.26.0, wayland-protocols 1.49, pixman
 0.46.4 and libdrm 2.4.134 (NetBSD-current's xsrc dists), libxkbcommon
@@ -42,8 +42,9 @@ Packages: libffi 3.8.0, wayland 1.26.0, wayland-protocols 1.49, pixman
 fontconfig 2.18.3, tllist 1.1.0, fcft 3.3.3, foot 1.28.0, fuzzel 1.15.0,
 libyaml 0.2.5, yambar; for the rest of the desktop libpng 1.6.59, wbg
 1.3.0, grim 1.5.0, cairo 1.18.6, slurp 1.5.0, nnn 5.3 (external/bsd) and
-the Go fonts (external/bsd/gofont); expat is the tree's
-(external/mit/expat).  Licences MIT or BSD-like, FreeType under its FTL,
+the fonts JetBrains Mono 2.304 and Inter 4.1 (external/ofl); expat is the
+tree's (external/mit/expat).  Licences MIT or BSD-like, the fonts under
+the SIL OFL 1.1, FreeType under its FTL,
 libpng under its own, cairo under the MPL 1.1 (cairo is MPL-1.1 or
 LGPL-2.1; the tree takes the first); nothing GPL is imported
 (import-stack.sh says what is left out).
@@ -60,7 +61,7 @@ Building, in this order (the first line once per tools build):
       external/mit/libyaml external/mit/fuzzel external/mit/yambar \
       external/mit/libpng external/mit/wbg external/mit/grim \
       external/mit/cairo external/mit/slurp \
-      external/bsd/nnn external/bsd/gofont minix/share/style \
+      external/bsd/nnn external/ofl minix/share/style \
       minix/usr.bin/meechowm minix/tests/gfx
 
 New directories under /usr/include, /usr/share and /etc go into
@@ -134,7 +135,7 @@ Programs link -lcairo -lpng -lz -lfontconfig -lexpat -lfreetype -lpixman-1
                      changing it from the console, and monitors plugged
                      in (the virtual display's: ../test/fb/fbvplug.c)
   test/qemu-desk.py  the desktop as a user starts it (meecho-desktop), in
-                     MEECHO's style: the Go fonts, the wallpaper, the
+                     MEECHO's style: the fonts, the wallpaper, the
                      panel and foot on the palette's colours, nnn, the
                      palette, grim against /dev/fb0, Print, slurp's
                      overlay in the palette's colours (pixel by pixel),

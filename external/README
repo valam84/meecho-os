@@ -79,6 +79,9 @@ The licenses currently used are:
 	mit		MIT (X11) style license.
 			http://www.opensource.org/licenses/mit-license.php
 
+	ofl		SIL Open Font License 1.1 (MINIX: fonts).
+			https://openfontlicense.org/
+
 	public-domain	Non-license for code that has been explicitly put
 			into the Public Domain.
 

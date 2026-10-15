@@ -9,7 +9,7 @@
 # Everything on it wears MEECHO's style (minix/share/style): the colours of
 # /usr/share/meecho/palette, made into foot's and fuzzel's configuration
 # in /etc/xdg, the panel's in /usr/share/meecho/bar.yml, the wallpaper and
-# meechowm's focus ring; the typeface is Go Mono (fontconfig's monospace).
+# meechowm's focus ring; the typeface is JetBrains Mono (fontconfig's monospace).
 #
 # Set up here for what runs on the desktop: XDG_RUNTIME_DIR (the user's
 # own directory, made if need be - Wayland's socket and the compositor's

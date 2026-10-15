@@ -4,7 +4,7 @@
  * then the facts in a quieter colour: its pid and endpoint now, and when.
  * Opaque, so that what the compositor puts on the screen is exactly what
  * is drawn here (the stand compares the two).  The colours are MEECHO's
- * palette (style.h), the typeface its monospace (Go Mono), sized for the
+ * palette (style.h), the typeface its monospace (JetBrains Mono), sized for the
  * screen as the x-ray sizes its own.
  */
 #include <stdlib.h>

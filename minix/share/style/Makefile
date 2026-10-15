@@ -6,8 +6,8 @@
 #   palette		the colours - the one place they are written
 #   style.awk		the palette as filled templates and as a C header
 #   *.in		templates: @NAME@ is the palette's colour NAME
-#   56-meecho.conf	fontconfig: Go Mono is monospace, Go the rest
-#			(the fonts: external/bsd/gofont)
+#   56-meecho.conf	fontconfig: JetBrains Mono is monospace, Inter the rest
+#			(the fonts: external/ofl)
 #
 # Installed: /etc/xdg/foot/foot.ini and /etc/xdg/fuzzel/fuzzel.ini (the
 # system's configuration, which a user's in ~/.config replaces),

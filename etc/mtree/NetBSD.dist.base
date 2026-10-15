@@ -274,7 +274,8 @@
 ./usr/share/examples/rtadvd
 ./usr/share/examples/tmux
 ./usr/share/fonts
-./usr/share/fonts/go
+./usr/share/fonts/inter
+./usr/share/fonts/jetbrains-mono
 ./usr/share/games
 ./usr/share/games/fortune
 ./usr/share/i18n

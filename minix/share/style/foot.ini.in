@@ -3,7 +3,7 @@
 # ~/.config/foot/foot.ini, is read instead of this one, not on top of it.
 
 [main]
-# Go Mono (fontconfig's monospace on MEECHO, 56-meecho.conf).
+# JetBrains Mono (fontconfig's monospace on MEECHO, 56-meecho.conf).
 font=monospace:size=12
 pad=10x8
 # No render threads: libmthread's threads take turns on one core, so

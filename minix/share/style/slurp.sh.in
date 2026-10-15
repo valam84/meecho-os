@@ -9,6 +9,6 @@
 #   -s	the area itself: clear, nothing over it
 #   -B	areas offered to choose from (boxes on slurp's input): accent_deep
 #   -w	the frame's width
-#   -F	the size's typeface: the desktop's monospace, Go Mono
+#   -F	the size's typeface: the desktop's monospace, JetBrains Mono
 
 SLURP_STYLE="-b #@ink@99 -c #@accent@ff -s #@ink@00 -B #@accent_deep@80 -w 2 -F monospace"

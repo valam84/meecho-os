@@ -1476,8 +1476,9 @@ Terminus на порту 4) читает флешку на **16 МБ/с** (ве�
   при сборке `style.awk` делает `/etc/xdg/foot/foot.ini`,
   `/etc/xdg/fuzzel/fuzzel.ini`, `/usr/share/meecho/bar.yml`, обои (SVG) и
   `style.h` (кольцо фокуса `meechowm`, 16 цветов консоли экрана — фон
-  `ink`, не чёрный). Шрифт — Go Mono / Go (`external/bsd/gofont`,
-  fontconfig `56-meecho.conf`); стендам DejaVu с хоста больше не нужен.
+  `ink`, не чёрный). Шрифт — **JetBrains Mono / Inter** (OFL,
+  `external/ofl`, с 2026-10-15 вместо Go Mono / Go — рисунок Go не
+  понравился), fontconfig `56-meecho.conf`; стендам DejaVu с хоста не нужен.
   Новая программа стола берёт цвета отсюда, а не числами в коде.
   **Числа terminfo — 16 бит, `tic` большее молча выбрасывает**: `pairs`
   foot терялся, и все curses-программы в foot были без цвета (теперь

@@ -46,10 +46,11 @@ SUBDIR+= librtld_db
 #MINIX:
 SUBDIR+= blacklist dhcp nvi
 
-# The desktop (stage 11.7): its typeface, and the file manager, whose
-# threads are libgfxcompat's (external/mit has the rest of the desktop).
+# The desktop (stage 11.7): the file manager, whose threads are
+# libgfxcompat's (external/mit has the rest of the desktop, external/ofl
+# its typeface).
 .if ${MACHINE_ARCH} == "aarch64"
-SUBDIR+= gofont nnn
+SUBDIR+= nnn
 .endif
 
 .include <bsd.subdir.mk>

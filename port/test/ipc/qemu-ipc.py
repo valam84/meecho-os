@@ -77,6 +77,10 @@ JOBS = {
 	# Труба: два процесса и PFS между ними.
 	"pipe": ("dd if=/dev/zero bs=4096 count=$N 2>/dev/null | cat > /dev/null",
 	         0.5),
+	# Таблица процессов: ps(1) - это MIB, а MIB - это PM, VFS и ядро
+	# (О55: один `ps -ax` на QEMU шёл 19 с). Окно должно его вмещать.
+	"ps":   ("n=0; while [ $n -lt $N ]; do ps -ax > /dev/null; n=$((n+1)); "
+	         "done", 0.00005),
 }
 
 ENTRY_ORDER = ("ipc", "kcall", "irq", "irq_idle", "fault", "fpu", "other")

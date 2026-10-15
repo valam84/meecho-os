@@ -25,6 +25,13 @@ IMPORT(__errno)
  * with another worker's d15, and asserted in path.c:51 (2026-10-05).
  * port/test/libc/ctxfp.c checks it.
  *
+ * Except in libminc, which only the system services link: they are built
+ * -mgeneral-regs-only (share/mk/minix.service.mk), so nothing of theirs is
+ * ever in d8-d15, and storing those registers would be the one FP
+ * instruction left in a service - a trap on every libmthread switch in VFS
+ * and in the block drivers, for registers nobody uses (port/PORTING-LOG.md,
+ * "О8"). port/fp-free.sh checks that the services really have no FP code.
+ *
  * errno is reached through __errno() rather than by address so that the
  * same code serves the static and the position-independent library.
  */
@@ -71,6 +78,7 @@ ENTRY(_getcontext)
 	stp	x23, x24, [x0, #REG23]
 	stp	x25, x26, [x0, #REG25]
 	stp	x27, x28, [x0, #REG27]
+#ifndef _LIBMINC
 	str	d8,  [x0, #FREG8]	/* And the callee-saved SIMD halves */
 	str	d9,  [x0, #FREG9]
 	str	d10, [x0, #FREG10]
@@ -79,6 +87,7 @@ ENTRY(_getcontext)
 	str	d13, [x0, #FREG13]
 	str	d14, [x0, #FREG14]
 	str	d15, [x0, #FREG15]
+#endif
 
 	/* 0xc0ffee is neither a shifted 16-bit nor a bitmask immediate, so
 	 * it takes two instructions to build. */
@@ -146,6 +155,7 @@ ENTRY(setcontext)
 	ldp	x23, x24, [x0, #REG23]
 	ldp	x25, x26, [x0, #REG25]
 	ldp	x27, x28, [x0, #REG27]
+#ifndef _LIBMINC
 	ldr	d8,  [x0, #FREG8]
 	ldr	d9,  [x0, #FREG9]
 	ldr	d10, [x0, #FREG10]
@@ -154,6 +164,7 @@ ENTRY(setcontext)
 	ldr	d13, [x0, #FREG13]
 	ldr	d14, [x0, #FREG14]
 	ldr	d15, [x0, #FREG15]
+#endif
 	ldr	x29, [x0, #FPREG]	/* Restore fp */
 	ldr	x1, [x0, #SPREG]
 	mov	sp, x1			/* Restore sp */

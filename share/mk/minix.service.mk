@@ -43,6 +43,21 @@ LDFLAGS+= ${${ACTIVE_CC} == "gcc":? -lgcc_eh:}
 # Get (more) internal minix definitions and declarations.
 CPPFLAGS += -D_MINIX_SYSTEM=1
 
+# AArch64: system services do not touch FP/SIMD registers. The kernel switches
+# them lazily - the first FP instruction after a context switch traps and the
+# registers change hands - and a service has no arithmetic that needs them;
+# what made every service trap was GCC zeroing and copying the 128-byte
+# message through q31. With VFS, a driver and the shell each taking a trap on
+# every switch, the trap was a tenth of the kernel's instructions on an IPC
+# load (port/PORTING-LOG.md, "О8"). The service libraries in minix/lib are
+# built the same way (minix/lib/Makefile.inc), and libminc's getcontext()
+# relies on it to leave d8-d15 alone (ucontext.S); port/fp-free.sh checks
+# the installed services. A service that really computes in floating point
+# sets SERVICE_FP=yes before including this file.
+.if ${MACHINE_ARCH} == "aarch64" && ${SERVICE_FP:Uno} != "yes"
+CFLAGS+=	-mgeneral-regs-only
+.endif
+
 # For MKMAGIC builds, link services against libmagicrt and run the magic pass
 # on them, unless they have specifically requested to be built without bitcode.
 .if ${USE_BITCODE:Uno} == "yes" && ${USE_MAGIC:Uno} == "yes"

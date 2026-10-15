@@ -648,7 +648,7 @@ static uint64_t
 mali_param(unsigned param, int *ok)
 {
 	const struct mali_regs *gpu = &mali.info.gpu;
-	uint64_t l2;
+	uint64_t l2, n;
 
 	*ok = 1;
 	switch (param) {
@@ -673,8 +673,15 @@ mali_param(unsigned param, int *ok)
 	case 18: case 19: case 20: case 21:		/* TEXTURE_FEATURES0-3 */
 		return mali_rd(gpu, GPU_TEXTURE_FEATURES(param - 18));
 	case 38:					/* NR_CORE_GROUPS */
+		/*
+		 * Counted by hand: without SIMD (services are built
+		 * -mgeneral-regs-only) GCC turns __builtin_popcountll into
+		 * a call to libgcc, which services do not link.
+		 */
 		l2 = rd64(GPU_L2_PRESENT_LO);
-		return (uint64_t)__builtin_popcountll(l2);
+		for (n = 0; l2 != 0; l2 &= l2 - 1)
+			n++;
+		return n;
 	case 39: return mali_rd(gpu, GPU_THREAD_TLS_ALLOC);
 	case 40: return mali_rd(gpu, GPU_AFBC_FEATURES);
 	default:

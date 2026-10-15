@@ -20144,3 +20144,111 @@ gpll, — 600, 400, 300, 200 от 1200 МГц (под Linux 1188: 594, 396, 297,
 `/usr/bin/kmsg`. Консоли этого прогона нет: USB-TTL исчез с хаба
 (`/dev/ttyUSB0` нет, `hub-console.py` упал на `stty`), плата
 перезагрузилась в MEECHO вслепую, работа шла по ssh.
+## Этап 12.1: pkgin (2026-10-15, QEMU; на плате не проверено)
+
+О47 — «нет `pkgin`, нет самосборки». Это веха, а не правка, поэтому
+сначала план: он записан в `PLAN.md` отдельным этапом 12 («Пакеты:
+`pkgin` и самосборка»), с обмером того, что есть в корне и чего нет, и
+порядком шагов. Здесь — первый шаг, `pkgin`.
+
+### Что ему нужно и что из этого было
+
+pkgin 26.4.0 (github NetBSDfr/pkgin) — тонкий слой над тем, что в базе
+уже есть: libfetch качает `pkg_summary` и пакеты, libarchive
+распаковывает сводку, SQLite держит базу репозитория в
+`/var/db/pkgin`, а ставит и удаляет он сам `pkg_add`/`pkg_delete`
+(`--with-pkg-install=/usr/sbin`, как у NetBSD). Своего кода сверх этого —
+разбор сводки и счёт зависимостей.
+
+- **libarchive 2.8 хватает** — вопрос «импортировать ли свежий ради
+  pkgin» (О45) решился чтением исходника, а не импортом: под
+  `ARCHIVE_VERSION_NUMBER < 3000000` pkgin сам зовёт
+  `archive_read_support_compression_all` вместо `..._filter_all`, а
+  больше от libarchive ему нужен только формат `raw` (сводка — сжатый
+  поток, не архив), который в 2.8 есть. О45 остаётся открытым, но pkgin
+  его не ждёт.
+- **SQLite базы был 3.8.3.1 (2014)** и на aarch64 не собирался ни разу.
+  Заменён на 3.53.0 из NetBSD-current целиком (`port/import-netbsd.sh`,
+  `dist/` без правок). Правки MINIX в старой копии были двумя
+  возрастными заплатками в `dist/` — новому коду не нужны — и блоком в
+  `Makefile.inc`, который сохранён: без потоков (`pthread.h` в базе нет)
+  и **без WAL** — его файл `-shm` отображается `MAP_SHARED` на запись, а
+  VM даёт такое только объекту memfd. NetBSD-current теперь пишет голое
+  `-DSQLITE_THREADSAFE`, поэтому блок сначала его снимает. Собирается без
+  единого предупреждения: `libsqlite3.a`, `sqlite3(1)`, `sqlite3.pc`.
+
+### Рецепт
+
+`port/pkg/pkgin/build.sh` поверх `port/pkg/env.sh`, как Lua. Три вещи,
+каждая — по прогону:
+
+- **`config.sub` пакета не знает `aarch64-elf64-minix`** — `--host`
+  дан с ОС, которую он понимает; всё, что configure узнаёт о системе, он
+  всё равно берёт пробами компилятора с sysroot на `DESTDIR`.
+- **`sqlite3_open_v2` «не найден»** — на деле `log` не найден: статической
+  `libsqlite3.a` нужна `-lm`, а configure добавляет найденную библиотеку
+  перед `LIBS`. Порядок для статической компоновки задан в `LIBS`
+  целиком: libfetch → libssl/libcrypto, libarchive → zlib, bzip2, xz,
+  sqlite → libm.
+- **Режим сопровождающего включён по умолчанию** (`AM_MAINTAINER_MODE
+  ([enable])`) и добавляет `-Werror` — `--disable-maintainer-mode`. После
+  этого — ни одного предупреждения GCC 15.
+
+Пакет — 4 файла, 2.7 МБ: `bin/pkgin`, страница руководства и образцы
+`repositories.conf`/`preferred.conf` в `share/examples/pkgin`. Сам
+`etc/pkgin/repositories.conf` пакету **не принадлежит**: адрес
+репозитория у QEMU и у платы разный, это настройка площадки, как
+`pkg_install.conf`, — его кладёт `mkroot.sh` тем же адресом
+(`PKG_REPO_URL`), и `pkg_delete pkgin` его не уносит.
+
+### Сводка репозитория делает хост
+
+pkgin читает `pkg_summary.{zst,xz,bz2,gz}` — первое найденное. На NetBSD
+её делает `pkg_info -X *.tgz`, но pkg_info собран для машины, а пакеты
+делаются на хосте — тот же довод, что у `mkpkg.sh`. Формат прост (блок
+`ПОЛЕ=значение` на пакет, многострочное поле повторяет имя в каждой
+строке), и `port/pkg-summary.py` делает его из метаданных пакета:
+`PKGNAME`, `DEPENDS` из `@pkgdep`, `COMMENT`, `SIZE_PKG`, поля
+`+BUILD_INFO` (pkgin сверяет `MACHINE_ARCH`), `FILE_NAME`/`FILE_SIZE`,
+`DESCRIPTION`. Зовёт его `pkg_finish` после каждого пакета — сводка
+заново целиком и не может отстать от каталога; пишется через временный
+файл, а оставшиеся `.xz`/`.zst` прежней публикации удаляются — pkgin
+предпочёл бы их. `pkg-publish.sh` везёт сводку на хаб после пакетов.
+
+### Проверка
+
+`port/test/pkg/qemu-pkgin.sh`, корень на диске QEMU, одна загрузка.
+Репозиторий — настоящие пакеты (pkgin, lua) плюс пробный `luahello`
+(`#!/usr/pkg/bin/lua`, `@pkgdep lua>=5.4`), который живёт только в
+каталоге стенда: без зависимости счёт зависимостей pkgin не проверить.
+Все десять команд — с нулевым статусом:
+
+- `pkg_add` пакета pkgin по URL, адрес репозитория в
+  `repositories.conf`;
+- `pkgin update` — сводка скачана (`.zst` и `.xz` — 404, взята `.bz2`:
+  порядок pkgin), `avail`, `search lua`;
+- `pkgin install luahello` — «2 packages to install: lua-5.4.7
+  luahello-1.0», `luahello` печатает `hello from Lua 5.4`;
+- `show-deps`, `show-rev-deps`;
+- `pkgin remove lua` уносит и зависящий от него `luahello`;
+- `install` → `remove luahello` → `autoremove` убирает осиротевший lua;
+  повторная установка берёт пакеты из кэша (`0B to download`);
+- повторный `pkgin update` — «is up-to-date».
+
+Ни одной правки в pkgin, pkg_install, libfetch или libarchive это не
+потребовало: всё, что понадобилось, — свежий sqlite в базе и сводка с
+хоста. **На плате не проверено**: нужен `pkg-publish.sh` (теперь он везёт
+и сводку) и корень с `repositories.conf` (`mkroot.sh`), либо руками по
+ssh: `pkg_add http://192.168.33.2:8080/All/pkgin-26.4.0.tgz`, строка
+адреса в `/usr/pkg/etc/pkgin/repositories.conf`.
+
+Попутно: после краха WSL в 19:45 (переполнился C:) в общем obj каталог
+ramdisk остался пустым (`etc/` без `proto.gen`), службы пересобрала
+соседняя сессия; ramdisk и `memory` пересобраны здесь `ramimage.sh -b`.
+
+### Что дальше
+
+План — `PLAN.md`, этап 12: корень разработчика (заголовки, `.a`, `.pc`,
+`install`, `yacc`, `lex`; решить — набор или пакет) и нативный тулчейн
+канадским крестом проверяются вместе одним `hello.c` на машине; потом
+bootstrap pkgsrc (в нём есть `mk/platform/Minix.mk` от MINIX 3.3).

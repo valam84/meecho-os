@@ -604,9 +604,17 @@ SMP — неверно; с 2026-09-08 SMP на плате **проверен и 
   http.server` в `~/obj-evbarm64/pkg` и `PKG_PATH=http://10.0.2.2:8000/All`;
   на плату — `port/pkg-publish.sh` (хаб, `:8080/All`), `mkroot.sh` кладёт
   `PKG_PATH` в `/usr/pkg/etc/pkg_install.conf`. Проверено на QEMU, на
-  плате — нет (корень надо перелить). `pkgin` нет; самосборка (нативный
-  компилятор + pkgsrc) — отдельная веха. Разбор — `PORTING-LOG.md`,
+  плате — нет (корень надо перелить). Разбор — `PORTING-LOG.md`,
   «Пакеты, этап 1».
+- **`pkgin` есть (2026-10-15, QEMU; на плате нет) — этап 12.1**, весь
+  этап 12 (самосборка: корень разработчика, нативный тулчейн, pkgsrc) —
+  в `PLAN.md`. pkgin 26.4.0 — пакет (`port/pkg/pkgin/`), против базы:
+  libarchive 2.8 ему хватает, sqlite базы — **3.53.0** из NetBSD-current
+  (без потоков и WAL). Сводку `pkg_summary.{gz,bz2}` делает хост
+  (`port/pkg-summary.py`, из `pkg_finish`), `pkg-publish.sh` везёт её;
+  адрес — `/usr/pkg/etc/pkgin/repositories.conf` (кладёт `mkroot.sh`,
+  пакету не принадлежит). Стенд — `port/test/pkg/qemu-pkgin.sh`
+  (зависимости — пробным `luahello`). Разбор — «Этап 12.1: pkgin».
 - **OpenSSL 3.5.7 в дереве (2026-09-12)** — `crypto/external/apache2/openssl`
   из NetBSD-current, `HAVE_OPENSSL=35` в `bsd.own.mk`, 1.0.1p убран.
   Конфигурация MEECHO — **без потоков, без thread pool, без secure memory**

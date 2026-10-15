@@ -52,12 +52,15 @@ sed 's/\r$//' $PORT/build-dirs.sh > /tmp/bd.sh
 	for top in minix/servers minix/drivers/storage minix/drivers/net \
 	    minix/drivers/tty minix/drivers/clock minix/drivers/system \
 	    minix/commands minix/usr.sbin minix/usr.bin minix/bin \
-	    minix/sbin minix/net external/bsd/dhcpcd \
+	    minix/sbin minix/net minix/fs minix/drivers/usb \
+	    minix/drivers/video external/bsd/dhcpcd \
 	    crypto/external/bsd/openssh; do
 		for d in "$M"/$top/*/ "$M"/$top/; do
 			[ -f "$d/Makefile" ] || continue
 			case "$d" in
-			*/ramdisk/) continue ;;	# собирается ramimage.sh -b
+			# Образ ramdisk собирает ramimage.sh -b. Только он: под
+			# прежним */ramdisk/ выпадала и команда minix/commands/ramdisk.
+			*/drivers/storage/ramdisk/) continue ;;
 			esac
 			echo "${d#$M/}"
 		done
@@ -68,6 +71,16 @@ sed 's/\r$//' $PORT/build-dirs.sh > /tmp/bd.sh
 	echo crypto/external/bsd/openssh/lib
 	echo crypto/external/bsd/openssh/libexec
 	echo crypto/external/bsd/openssh/bin
+	# Стек графики (port/gfx/README) и всё прочее в external/mit с
+	# reachover-программой: каталог программы ищется по PROG в Makefile,
+	# а не списком - 2026-10-15 список отставал, и foot, yambar, fuzzel,
+	# grim, slurp, wbg, fc-*, xmlwf, lua остались со старой libc (О56).
+	# Библиотеки стека статические и libc в себе не носят, их пересобирать
+	# незачем; xorg и ctwm - X11, его у MEECHO нет.
+	find "$M"/external/mit "$M"/external/bsd/nnn -name Makefile \
+	    ! -path '*/dist/*' ! -path '*/xorg/*' ! -path '*/ctwm/*' |
+	    xargs grep -lE '^PROG(_CXX)?[[:space:]]*[?]?=' |
+	    xargs -n1 dirname | sed "s|^$M/||"
 } | sed 's|/$||' | sort -u > "$LIST"
 
 # Каталоги, которых в обзоре 8.3 не было: импортированы позже или лежат
@@ -111,14 +124,30 @@ SRCDIR="$M" bash /tmp/bd.sh $(cat "$LIST") > /tmp/relink.log 2>&1
 echo "ok:   $(grep -c '^ok' /tmp/relink.log)"
 echo "fail: $(grep -c '^FAIL' /tmp/relink.log)"
 grep '^FAIL' /tmp/relink.log | head -20
-# Что осталось со старой libc. Пусто - значит, готово.
-stale=$(cd "$DEST" && find bin sbin usr/bin usr/sbin libexec usr/libexec service \
-    -type f ! -newer usr/lib/libc.a 2>/dev/null | while read -r f; do
-	file "$f" | grep -q ELF && echo "$f"; done)
+# Что осталось со старой libc. Пусто - значит, готово. Не в счёт:
+# - динамически слинкованное: libc оно берёт из libc.so при запуске;
+# - usr/sbin/kernel - само ядро, оно носит libminc, а не libc;
+# - то, чего нет в METALOG: это поставили в DESTDIR руками стенды
+#   (port/test/*/build.sh, qemu-monpair.sh), а не сборка дерева, и
+#   перелинковать их нечем - только их собственным скриптом. Такие
+#   печатаются отдельной строкой, чтобы их не принимали за отказ сборки.
+stale= probes=
+while read -r f; do
+	file "$DEST/$f" | grep -q 'ELF.*statically linked' || continue
+	[ "$f" = usr/sbin/kernel ] && continue
+	if grep -q "^\./$f " "$DEST/METALOG" 2>/dev/null; then
+		stale="$stale $f"
+	else
+		probes="$probes $f"
+	fi
+done < <(cd "$DEST" && find bin sbin usr/bin usr/sbin libexec usr/libexec \
+    service -type f ! -newer usr/lib/libc.a 2>/dev/null)
 if [ -n "$stale" ]; then
-	echo "СО СТАРОЙ libc: $(echo "$stale" | wc -l)"
-	echo "$stale" | tr '\n' ' '; echo
+	echo "СО СТАРОЙ libc: $(echo $stale | wc -w)"
+	echo "$stale"
 else
 	echo "в DESTDIR нет программ старше libc.a"
 fi
+[ -z "$probes" ] ||
+	echo "зонды вне сборки (пересобрать их скриптом, если нужны):$probes"
 echo "=== relink done"

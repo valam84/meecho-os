@@ -54,9 +54,15 @@ static kern_phys_map gicd_phys_map, gicr_phys_map;
  *
  * Everything else the kernel needs it asks the hardware for.
  */
+/*
+ * At any depth, with the parent's cell widths (fdt_node_reg()). QEMU and the
+ * RK3566 put the GIC at the root; a Qualcomm SoC puts it in its /soc bus with
+ * one-cell addresses, and the first version of this walk, which looked at the
+ * root's children with the root's widths, simply did not see it there - the
+ * Mi Pad 4's first boot ended in "describes no GIC". The bus's ranges are
+ * not applied: every tree in hand maps /soc one to one.
+ */
 struct gic_scan {
-	unsigned addr_cells;
-	unsigned size_cells;
 	int version;
 	phys_bytes dist, dist_size;
 	phys_bytes second, second_size;
@@ -70,52 +76,32 @@ find_gic(void *cookie, int depth, const char *name,
 	const struct fdt_node *node)
 {
 	struct gic_scan *s = cookie;
-	const char *reg;
-	unsigned len, step;
+	u64_t addr, size;
+	unsigned len;
 	const void *p;
+	int version;
 
-	if (depth == 0) {
-		/*
-		 * How wide an address and a length are in a child's reg
-		 * property. The specification's defaults are 2 and 1; every
-		 * AArch64 tree in practice says so explicitly, but a silent
-		 * tree means the defaults.
-		 */
-		s->addr_cells = 2;
-		s->size_cells = 1;
-		if ((p = fdt_getprop(node, "#address-cells", &len)) != NULL &&
-		    len == 4)
-			s->addr_cells = (unsigned)fdt_read_cells(p, 1);
-		if ((p = fdt_getprop(node, "#size-cells", &len)) != NULL &&
-		    len == 4)
-			s->size_cells = (unsigned)fdt_read_cells(p, 1);
-		return 0;
-	}
+	(void)name;
 
-	if (depth != 1)
+	if (depth == 0)
 		return 0;
 
 	if (compatible_with(node, "arm,gic-v3"))
-		s->version = 3;
+		version = 3;
 	else if (compatible_with(node, "arm,cortex-a15-gic"))
-		s->version = 2;
+		version = 2;
 	else
 		return 0;
 
-	if ((reg = fdt_getprop(node, "reg", &len)) == NULL)
+	if (fdt_node_reg(node, 0, &addr, &size) != 0)
 		return 0;
-
-	step = 4 * (s->addr_cells + s->size_cells);
-
-	if (step == 0 || len < 2 * step)
+	s->dist = (phys_bytes)addr;
+	s->dist_size = (phys_bytes)size;
+	if (fdt_node_reg(node, 1, &addr, &size) != 0)
 		return 0;
-
-	s->dist = (phys_bytes)fdt_read_cells(reg, s->addr_cells);
-	s->dist_size = (phys_bytes)fdt_read_cells(reg + 4 * s->addr_cells,
-	    s->size_cells);
-	s->second = (phys_bytes)fdt_read_cells(reg + step, s->addr_cells);
-	s->second_size = (phys_bytes)fdt_read_cells(reg + step +
-	    4 * s->addr_cells, s->size_cells);
+	s->second = (phys_bytes)addr;
+	s->second_size = (phys_bytes)size;
+	s->version = version;
 
 	/*
 	 * GICv3 may split its redistributors across several ranges, one per

@@ -102,6 +102,8 @@ minix/drivers/usb/xhci
 libexec/ld.elf_so
 crypto/external/apache2/openssl/bin
 external/bsd/pkg_install/sbin
+external/public-domain/sqlite/bin
+minix/drivers/examples/hello
 EOF
 sort -u -o "$LIST" "$LIST"
 echo "каталогов: $(wc -l < "$LIST")"

@@ -71,12 +71,19 @@ cdb_open(void)
 static void
 cdb_close(void)
 {
+	/*
+	 * cdbw_output() takes the description as const char[16] and copies
+	 * all sixteen bytes; the literal is fourteen, and the last two came
+	 * from whatever followed it.  A sixteen-byte array pads with zeros.
+	 * (GCC 15: -Wstringop-overread.)
+	 */
+	static const char descr[16] = "NetBSD6 devdb";
 	int fd;
 
 	fd = open(db_name_tmp, O_CREAT|O_EXCL|O_WRONLY, FILE_PERMISSION);
 	if (fd == -1)
 		err(1, "opening %s failed", db_name_tmp);
-	if (cdbw_output(db, fd, "NetBSD6 devdb", NULL))
+	if (cdbw_output(db, fd, descr, NULL))
 		err(1, "failed to write temporary database %s", db_name_tmp);
 	cdbw_close(db);
 	db = NULL;

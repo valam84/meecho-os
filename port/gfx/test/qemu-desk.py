@@ -7,7 +7,8 @@ frame buffer driver at virtual=1, and starts the desktop the way a user
 does - meecho-desktop from the console, with no font, configuration or
 environment of the stand's (fbart is the stand's, to read the screen).
 
-  1. fontconfig: monospace is Go Mono, sans-serif Go (56-meecho.conf)
+  1. fontconfig: monospace is JetBrains Mono, sans-serif Inter
+     (56-meecho.conf)
  1b. terminfo: foot has 256 colours and its pairs (share/terminfo: a
      pairs#65536 the tic of the tree dropped took the colour away from
      every curses program in foot)
@@ -307,6 +308,17 @@ def main():
             "\"inject=%s\"; sleep 6; minix-service down %s" %
             (label, reports, label))
 
+    def card_gone():
+        """meechowm-notify puts up "LABEL stopped" for 8 s in the top
+        right corner three looks after a service goes - the stand's own
+        stand-ins too.  Let the card come and go before reading the
+        screen."""
+        state_has(r"layer meechowm-notify ", 30)
+        deadline = time.time() + 60
+        while time.time() < deadline and \
+                re.search(r"layer meechowm-notify ", state()):
+            time.sleep(2)
+
     def walk(x, y):
         """Boot reports that take the cursor from 0,0 to x,y."""
         out = []
@@ -338,9 +350,10 @@ def main():
 
         # 1. The typeface.
         out = run("fc-match monospace; fc-match sans-serif", 300)
-        record("1. fontconfig: monospace is Go Mono, sans-serif Go",
-               re.search(r"Go-Mono\.ttf: \"Go Mono\" \"Regular\"", out) and
-               re.search(r"Go-Regular\.ttf: \"Go\" \"Regular\"", out),
+        record("1. fontconfig: monospace is JetBrains Mono, sans-serif Inter",
+               re.search(r"JetBrainsMono-Regular\.ttf: \"JetBrains Mono\" "
+                         r"\"Regular\"", out) and
+               re.search(r"Inter-Regular\.ttf: \"Inter\" \"Regular\"", out),
                " / ".join(re.findall(r"\S+\.ttf: [^\r\n]*", out)))
         # foot's terminfo: without pairs curses has no colour at all.
         out = run("echo TI $(tput -T foot colors) $(tput -T foot pairs)")
@@ -417,11 +430,7 @@ def main():
         # "kbdd stopped" for 8 s in the top right corner; landing between
         # grim's shot and the frame read after it, it was step 9's whole
         # difference (2026-10-15).  Let the card come and go first.
-        state_has(r"layer meechowm-notify ", 30)
-        deadline = time.time() + 60
-        while time.time() < deadline and \
-                re.search(r"layer meechowm-notify ", state()):
-            time.sleep(2)
+        card_gone()
 
         # 9. grim, and the frame it should have seen.
         out = run("meechowm-shot /tmp/shot.png; ls -l /tmp/shot.png", 300)
@@ -485,11 +494,12 @@ def main():
                n1 and n2 and int(n2.group(1)) > int(n1.group(1)),
                n2.group(1) if n2 else "?")
         run("minix-service down kbdp")
+        card_gone()			# "kbdp stopped"
 
         # 11a. slurp as meechowm-shot -r starts it (-d and MEECHO's
         # arguments), with an area offered on its input; the mouse into the
         # area makes it slurp's choice, drawn clear and framed, its size
-        # written beside it (cairo, FreeType, fontconfig: Go Mono).  The
+        # written beside it (cairo, FreeType, fontconfig: JetBrains Mono).  The
         # screen under it, before and during.  The areas of 11a and 11b lie
         # on nnn's list, text on ink: over the terminal's empty ink,
         # darkened by ink is ink, and clear could not be told from it.
@@ -503,7 +513,9 @@ def main():
              (BX, BY, BW, BH))
         st = state_has(r"layer selection ", 300)
         mouse("m11a", "$C," + walk(CX, CY))
-        time.sleep(6)
+        # "m11a stopped" over the dimmed screen was 6 % of it undarkened
+        # (2026-10-15); slurp waits for its click meanwhile.
+        card_gone()
         during = fb_rows(Y0, NY)
         png_write(os.path.splitext(a.o)[0] + "-slurp.png", during, W, NY)
 

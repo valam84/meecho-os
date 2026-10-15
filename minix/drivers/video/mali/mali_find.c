@@ -166,6 +166,10 @@ read_gpu(const struct fdt_node *node, struct mali_info *info)
 
 	if ((p = fdt_getprop(node, "mali-supply", &len)) != NULL && len >= 4)
 		info->supply_phandle = (uint32_t)fdt_read_cells(p, 1);
+
+	if ((p = fdt_getprop(node, "operating-points-v2", &len)) != NULL &&
+	    len >= 4)
+		info->opp_phandle = (uint32_t)fdt_read_cells(p, 1);
 }
 
 static int
@@ -229,9 +233,66 @@ find_supply(void *cookie, int UNUSED(depth), const char *UNUSED(name),
 	return 1;
 }
 
+/*
+ * The third walk: the operating-point table the node points at, and its
+ * children, one point each.  A walk visits a node's children right after
+ * it, one level deeper; the first node at the table's level or above ends
+ * them.
+ */
+struct opp_search {
+	struct mali_info *info;
+	int table_depth;		/* -1 until the table is met */
+};
+
+static int
+find_opp(void *cookie, int depth, const char *name,
+	const struct fdt_node *node)
+{
+	struct opp_search *s = cookie;
+	struct mali_info *info = s->info;
+	struct mali_opp *o;
+	const void *p;
+	unsigned len;
+
+	if (s->table_depth < 0) {
+		if ((p = fdt_getprop(node, "phandle", &len)) != NULL &&
+		    len >= 4 && (uint32_t)fdt_read_cells(p, 1) ==
+		    info->opp_phandle) {
+			if (!fdt_node_is_compatible(node, "operating-points-v2")) {
+				log_warn(&mali_log, "%s: not an "
+				    "operating-points-v2 table\n", name);
+				return 1;
+			}
+			s->table_depth = depth;
+		}
+		return 0;
+	}
+	if (depth <= s->table_depth)
+		return 1;
+	if (depth != s->table_depth + 1 || !node_enabled(node))
+		return 0;
+
+	/* opp-hz is 64 bits; opp-microvolt is one cell or <target min max>. */
+	if ((p = fdt_getprop(node, "opp-hz", &len)) == NULL || len < 8)
+		return 0;
+	if (info->nr_opp == MALI_MAX_OPP) {
+		log_warn(&mali_log, "more than %d operating points; the rest "
+		    "are not used\n", MALI_MAX_OPP);
+		return 1;
+	}
+	o = &info->opp[info->nr_opp];
+	o->hz = fdt_read_cells(p, 2);
+	if ((p = fdt_getprop(node, "opp-microvolt", &len)) == NULL || len < 4)
+		return 0;		/* a point without a voltage is not one */
+	o->uv = (unsigned)fdt_read_cells(p, 1);
+	info->nr_opp++;
+	return 0;
+}
+
 int
 mali_find(struct mali_info *info)
 {
+	struct opp_search os;
 	struct search s;
 	u64_t base, size;
 	void *dtb;
@@ -264,6 +325,12 @@ mali_find(struct mali_info *info)
 	if (info->supply_phandle != 0)
 		(void)fdt_walk(dtb, find_supply, info);
 
+	if (info->opp_phandle != 0) {
+		os.info = info;
+		os.table_depth = -1;
+		(void)fdt_walk(dtb, find_opp, &os);
+	}
+
 	free(dtb);
 
 	log_info(&mali_log, "gpu at 0x%lx (%u bytes), lines gpu %d job %d "
@@ -291,6 +358,20 @@ mali_find(struct mali_info *info)
 			log_warn(&mali_log, "the tree does not keep %s on, "
 			    "and this driver cannot switch it; the GPU may "
 			    "not answer\n", info->supply_name);
+	}
+
+	if (info->opp_phandle == 0)
+		log_info(&mali_log, "the tree names no operating points\n");
+	else {
+		unsigned i;
+
+		for (i = 0; i < info->nr_opp; i++)
+			log_info(&mali_log, "operating point %u MHz at %u uV\n",
+			    (unsigned)(info->opp[i].hz / 1000000),
+			    info->opp[i].uv);
+		if (info->nr_opp == 0)
+			log_warn(&mali_log, "the operating-point table (phandle "
+			    "%u) has no usable point\n", info->opp_phandle);
 	}
 
 	return OK;

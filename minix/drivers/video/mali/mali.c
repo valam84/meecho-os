@@ -53,6 +53,7 @@ static const char *const irq_names[MALI_NR_IRQS] = { "gpu", "job", "mmu" };
 static int probe_only;
 static int selftest = 1;		/* "selftest=0": no job at start */
 static int faulttest;			/* "faulttest=1": and a fault after */
+static long gpu_mhz;			/* "mhz=": an operating point; 0 fastest */
 static long mem_total_mb = 768;		/* "memmb=": buffers of all clients */
 static long mem_client_mb = 512;	/* "clientmb=": of one client */
 
@@ -402,7 +403,7 @@ mali_init(int type, sef_init_info_t *UNUSED(info))
 		return ENXIO;
 	}
 
-	if ((r = mali_rk_clocks_on()) != OK ||
+	if ((r = mali_rk_clocks_on((unsigned)gpu_mhz)) != OK ||
 	    (r = mali_rk_power_domain()) != OK)
 		return r;
 	mali_rk_resets();
@@ -529,6 +530,8 @@ main(int argc, char *argv[])
 		selftest = (int)v;
 	if (env_parse("faulttest", "d", 0, &v, 0, 1) == EP_SET)
 		faulttest = (int)v;
+	if (env_parse("mhz", "d", 0, &v, 0, 10000) == EP_SET)
+		gpu_mhz = v;
 	if (env_parse("memmb", "d", 0, &v, 16, 4096) == EP_SET)
 		mem_total_mb = v;
 	if (env_parse("clientmb", "d", 0, &v, 16, 4096) == EP_SET)

@@ -234,6 +234,19 @@ test_find_cb2(const char *file)
 	    "supply always-on %d boot-on %d", i->supply_always_on,
 	    i->supply_boot_on);
 	CHECK(i->supply_init_uv == 900000, "supply %u uV", i->supply_init_uv);
+	/* opp-table-1: 200/300/400 при 0.85 В, 600 - 0.9, 700 - 0.95, 800 - 1.0. */
+	CHECK(i->nr_opp == 6, "%u operating points", i->nr_opp);
+	CHECK(i->opp[0].hz == 200000000 && i->opp[0].uv == 850000,
+	    "first point %llu Hz %u uV", (unsigned long long)i->opp[0].hz,
+	    i->opp[0].uv);
+	CHECK(i->opp[3].hz == 600000000 && i->opp[3].uv == 900000,
+	    "600 MHz point %llu Hz %u uV", (unsigned long long)i->opp[3].hz,
+	    i->opp[3].uv);
+	CHECK(i->opp[5].hz == 800000000 && i->opp[5].uv == 1000000,
+	    "last point %llu Hz %u uV", (unsigned long long)i->opp[5].hz,
+	    i->opp[5].uv);
+	CHECK(said("operating point 600 MHz at 900000 uV"), "no word about "
+	    "the points");
 	CHECK(warnings == 0, "%u warning(s) on the board's own tree",
 	    warnings);
 }
@@ -321,31 +334,106 @@ test_rk(const char *file)
 	CHECK(said("gpll/2 = 297000 kHz"), "postdiv2 4: %s", logbuf);
 
 	/*
-	 * Такты: слово, на котором вендорская система работает при 200 МГц
-	 * (ref-on.txt: 0x4155 - gpll/6, путь PLL, aclk /2, pclk /5), каким бы
-	 * ни было найденное.  Из 0x4951 (PVTPLL на 600 МГц) - маскированная
-	 * запись полей 0xfbcf, биты 5:4 и 10 не трогаются.
+	 * Такты: путь PLL, как у вендорской системы при 200 МГц (ref-on.txt:
+	 * 0x4155 - gpll/6, aclk /2, pclk /5), каким бы ни было найденное, и
+	 * самая быстрая точка таблицы, на которую хватает 0.9 В загрузки, -
+	 * 600 МГц: gpll платы под Linux 1188 МГц, /2 = 594, слово 0x4141.  Из
+	 * 0x4951 (PVTPLL на 600 МГц) - маскированная запись полей 0xfbcf,
+	 * биты 5:4 и 10 не трогаются.
 	 */
 	board_ready(file);
 	(void)mali_rk_map();
-	r = mali_rk_clocks_on();
+	r = mali_rk_clocks_on(0);
 	CHECK(r == OK, "clocks_on: %d", r);
-	CHECK(C(0x118) == 0xfbcf4145, "CLKSEL_CON6 written 0x%08x, want "
-	    "0xfbcf4145", C(0x118));
-	CHECK(((0x4951u & ~0xfbcfu) | 0x4145u) == 0x4155,
-	    "the masked write does not give the reference word");
-	CHECK(said("comes from its PVTPLL; setting gpll/6 = 198000 kHz"),
+	CHECK(C(0x118) == 0xfbcf4141, "CLKSEL_CON6 written 0x%08x, want "
+	    "0xfbcf4141", C(0x118));
+	CHECK(((0x4951u & ~0xfbcfu) | 0x4141u) == 0x4151,
+	    "the masked write does not give the 600 MHz word");
+	CHECK(said("operating point 600 MHz (900000 uV; the supply boots at "
+	    "900000 uV)"), "point: %s", logbuf);
+	CHECK(said("comes from its PVTPLL; setting gpll/2 = 594000 kHz"),
 	    "clock: %s", logbuf);
+	CHECK(warnings == 0, "default point warned: %s", logbuf);
 	CHECK(C(0x308) == 0x000001c0, "gates written though open: 0x%08x",
 	    C(0x308));
 
-	/* Уже эталонное слово не переписывается. */
+	/* "mhz=" - любая точка не выше напряжения: 200, 300, 400. */
+	board_ready(file);
+	(void)mali_rk_map();
+	r = mali_rk_clocks_on(200);
+	CHECK(r == OK && C(0x118) == 0xfbcf4145 && said("gpll/6 = 198000 kHz"),
+	    "mhz=200: %d 0x%08x %s", r, C(0x118), logbuf);
+	board_ready(file);
+	(void)mali_rk_map();
+	r = mali_rk_clocks_on(400);
+	CHECK(r == OK && C(0x118) == 0xfbcf4142 && said("gpll/3 = 396000 kHz"),
+	    "mhz=400: %d 0x%08x %s", r, C(0x118), logbuf);
+	board_ready(file);
+	(void)mali_rk_map();
+	r = mali_rk_clocks_on(300);
+	CHECK(r == OK && C(0x118) == 0xfbcf4143 && said("gpll/4 = 297000 kHz"),
+	    "mhz=300: %d 0x%08x %s", r, C(0x118), logbuf);
+
+	/* Точка выше напряжения загрузки - нет: самая быстрая разрешённая. */
+	board_ready(file);
+	(void)mali_rk_map();
+	r = mali_rk_clocks_on(800);
+	CHECK(r == OK && C(0x118) == 0xfbcf4141 && said("800 MHz is not an "
+	    "operating point allowed at 900000 uV; taking 600 MHz"),
+	    "mhz=800: %d 0x%08x %s", r, C(0x118), logbuf);
+
+	/* Не точка таблицы - ближайшая снизу. */
+	board_ready(file);
+	(void)mali_rk_map();
+	r = mali_rk_clocks_on(500);
+	CHECK(r == OK && C(0x118) == 0xfbcf4142 && said("taking 400 MHz"),
+	    "mhz=500: %d 0x%08x %s", r, C(0x118), logbuf);
+
+	/* Питание грузится с 0.85 В: только 200-400, самая быстрая - 400. */
+	board_ready(file);
+	(void)mali_rk_map();
+	mali.info.supply_init_uv = 850000;
+	r = mali_rk_clocks_on(0);
+	CHECK(r == OK && C(0x118) == 0xfbcf4142, "850 mV: %d 0x%08x %s", r,
+	    C(0x118), logbuf);
+
+	/* Напряжение загрузки неизвестно: только самая медленная. */
+	board_ready(file);
+	(void)mali_rk_map();
+	mali.info.supply_init_uv = 0;
+	r = mali_rk_clocks_on(0);
+	CHECK(r == OK && C(0x118) == 0xfbcf4145, "unknown voltage: %d 0x%08x "
+	    "%s", r, C(0x118), logbuf);
+
+	/* Ниже самой медленной: она же, с предупреждением. */
+	board_ready(file);
+	(void)mali_rk_map();
+	mali.info.supply_init_uv = 800000;
+	r = mali_rk_clocks_on(0);
+	CHECK(r == OK && C(0x118) == 0xfbcf4145 && said("no operating point "
+	    "fits 800000 uV"), "800 mV: %d 0x%08x %s", r, C(0x118), logbuf);
+
+	/* Таблицы нет: 200 МГц, как до неё. */
+	board_ready(file);
+	(void)mali_rk_map();
+	mali.info.nr_opp = 0;
+	r = mali_rk_clocks_on(0);
+	CHECK(r == OK && C(0x118) == 0xfbcf4145 && said("no operating points"),
+	    "no table: %d 0x%08x %s", r, C(0x118), logbuf);
+
+	/* Уже нужное слово не переписывается. */
 	board_ready(file);
 	(void)mali_rk_map();
 	C(0x118) = 0x00004155;
-	r = mali_rk_clocks_on();
+	r = mali_rk_clocks_on(200);
 	CHECK(r == OK && C(0x118) == 0x00004155 && said("gpll/6 = 198000 kHz "
 	    "already"), "reference word: %d 0x%08x %s", r, C(0x118), logbuf);
+	board_ready(file);
+	(void)mali_rk_map();
+	C(0x118) = 0x00004151;
+	r = mali_rk_clocks_on(0);
+	CHECK(r == OK && C(0x118) == 0x00004151 && said("gpll/2 = 594000 kHz "
+	    "already"), "600 MHz word: %d 0x%08x %s", r, C(0x118), logbuf);
 
 	/*
 	 * Что угодно другое - тоже: после сброса регистр может держать
@@ -354,15 +442,15 @@ test_rk(const char *file)
 	board_ready(file);
 	(void)mali_rk_map();
 	C(0x118) = 0x00000000;
-	r = mali_rk_clocks_on();
-	CHECK(r == OK && C(0x118) == 0xfbcf4145 && said("comes from mpll/1"),
+	r = mali_rk_clocks_on(0);
+	CHECK(r == OK && C(0x118) == 0xfbcf4141 && said("comes from mpll/1"),
 	    "from reset: %d 0x%08x %s", r, C(0x118), logbuf);
 
 	/* gpll, которого не посчитать (глубокий сон), - отказ без записи. */
 	board_ready(file);
 	(void)mali_rk_map();
 	C(0xc0) = 0x00004495;		/* gpll: режим 2 */
-	r = mali_rk_clocks_on();
+	r = mali_rk_clocks_on(0);
 	CHECK(r == EIO, "gpll deep slow: %d, want EIO", r);
 	CHECK(C(0x118) == 0x00004951, "gpll deep slow: CLKSEL written 0x%08x",
 	    C(0x118));
@@ -372,7 +460,7 @@ test_rk(const char *file)
 	(void)mali_rk_map();
 	C(0x118) = 0x00004155;
 	C(0x308) = 0x000001c9;
-	r = mali_rk_clocks_on();
+	r = mali_rk_clocks_on(200);
 	CHECK(r == OK, "gates: %d", r);
 	CHECK(C(0x308) == 0x00090000, "CLKGATE_CON2 written 0x%08x, want "
 	    "0x00090000", C(0x308));
@@ -390,6 +478,11 @@ test_rk(const char *file)
 	P(0x60) = P(0x68) = 0x1ec;
 	log_reset();
 	CHECK(mali_rk_compare() == 0 && !said("DIFFERS"), "working board: %s",
+	    logbuf);
+	/* Делитель - точка, а не расхождение: 600 МГц на пути PLL - тоже 0. */
+	C(0x118) = 0x00004151;
+	log_reset();
+	CHECK(mali_rk_compare() == 0 && !said("DIFFERS"), "600 MHz: %s",
 	    logbuf);
 
 	/* Домен: питание, потом шина - и слова ровно такие. */

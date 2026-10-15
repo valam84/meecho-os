@@ -1,0 +1,48 @@
+== mhz=200
+   mali(info)operating point 200 MHz at 850000 uV
+   mali(info)operating point 300 MHz at 850000 uV
+   mali(info)operating point 400 MHz at 850000 uV
+   mali(info)operating point 600 MHz at 900000 uV
+   mali(info)operating point 700 MHz at 950000 uV
+   mali(info)operating point 800 MHz at 1000000 uV
+   mali(info)found: CLKSEL_CON6 0x00004155: gpll/6 = 200000 kHz, aclk /2, pclk /5
+   mali(info)operating point 200 MHz (850000 uV; the supply boots at 900000 uV)
+   mali(info)the GPU clock is gpll/6 = 200000 kHz already
+   mali(info)chain of 64: done in 4290 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+   == gles2: renderer gles2, 2 window(s)
+   idle      busy   6.5 %  user   0.2 %  sys   6.3 %  meechowm 0.02 s
+   cursor    busy   8.5 %  user   0.5 %  sys   8.0 %  meechowm 0.26 s
+   overview  busy  10.2 %  user   0.7 %  sys   9.6 %  meechowm 0.23 s
+   == gles2: done
+   cube: ok   glGetError() clean: 0x0
+   cube: GLCUBE 300 frames 512x512 in 4.33 s: 69.3 frames/s
+   cube: GLCUBE 14 checks, 0 failed
+== mhz=400
+   mali(info)operating point 400 MHz (850000 uV; the supply boots at 900000 uV)
+   mali(info)the GPU clock comes from gpll/6; setting gpll/3 = 400000 kHz on the PLL path, aclk /2, pclk /5
+   mali(info)up: CLKSEL_CON6 0x00004152: gpll/3 = 400000 kHz, aclk /2, pclk /5
+   mali(info)  CLKSEL_CON6    0x00004152 (reference 0x00004155)
+   mali(info)chain of 64: done in 4374 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+   == gles2: renderer gles2, 2 window(s)
+   idle      busy   6.6 %  user   0.3 %  sys   6.3 %  meechowm 0.03 s
+   cursor    busy   8.5 %  user   0.5 %  sys   8.0 %  meechowm 0.32 s
+   overview  busy  10.6 %  user   0.7 %  sys   9.9 %  meechowm 0.23 s
+   == gles2: done
+   cube: ok   glGetError() clean: 0x0
+   cube: GLCUBE 300 frames 512x512 in 4.04 s: 74.3 frames/s
+   cube: GLCUBE 14 checks, 0 failed
+== mhz=0
+   mali(info)found: CLKSEL_CON6 0x00004152: gpll/3 = 400000 kHz, aclk /2, pclk /5
+   mali(info)operating point 600 MHz (900000 uV; the supply boots at 900000 uV)
+   mali(info)the GPU clock comes from gpll/3; setting gpll/2 = 600000 kHz on the PLL path, aclk /2, pclk /5
+   mali(info)up: CLKSEL_CON6 0x00004151: gpll/2 = 600000 kHz, aclk /2, pclk /5
+   mali(info)  CLKSEL_CON6    0x00004151 (reference 0x00004155)
+   mali(info)chain of 64: done in 4393 us; 0 wrong word(s), canary 0xdeadbeef, job status first 0x1 last 0x1, 0 not done
+   == gles2: renderer gles2, 2 window(s)
+   idle      busy   5.9 %  user   0.2 %  sys   5.7 %  meechowm 0.04 s
+   cursor    busy   8.7 %  user   0.5 %  sys   8.2 %  meechowm 0.30 s
+   overview  busy  10.9 %  user   0.8 %  sys  10.1 %  meechowm 0.24 s
+   == gles2: done
+   cube: ok   glGetError() clean: 0x0
+   cube: GLCUBE 300 frames 512x512 in 3.99 s: 75.2 frames/s
+   cube: GLCUBE 14 checks, 0 failed

@@ -18,9 +18,9 @@
  *
  * The source clock is the one the tree calls "gpu", and it is the secure
  * firmware's: an SCMI clock, whose rate BL31 sets and Linux only asks for.
- * This driver cannot ask, and sets the register to the word the firmware
- * itself uses for the slowest rate (see clock_source below); a faster one
- * is stage 11.8, together with the voltage it needs.
+ * This driver cannot ask, and sets the register itself, on the path the
+ * firmware itself uses for the slow rates, to the fastest operating point
+ * the supply's boot voltage allows (see clock_source below).
  *
  * Order, as the vendor kernel does it: the clocks first, because the power
  * domain's own bus clocks (aclk_gpu_pre, pclk_gpu_pre) hang off the
@@ -232,30 +232,94 @@ mali_rk_report(const char *when)
  * because it reads read-only muxes once, at boot.  Only the register is
  * current.
  *
- * So the driver sets the word the vendor system demonstrably runs on, the
- * slowest operating point of the tree (0.85 V; vdd_gpu boots at 0.9 V),
- * whatever it finds - a PVTPLL that may be dead, or the loader's 500 MHz,
- * or whatever another loader leaves.  The divider is computed from gpll
- * rather than copied - gpll is 1200 MHz after the loader and 1188 under
- * Linux, so the same word is 200 or 198 MHz - and the result is compared
- * with the reference afterwards (mali_rk_compare).  The two bits of the
+ * So the driver puts the core on the PLL path, the one the vendor system
+ * demonstrably runs on, whatever it finds - a PVTPLL that may be dead, or
+ * the loader's 500 MHz, or whatever another loader leaves - and divides
+ * gpll down to an operating point of the tree (pick_rate below).  The
+ * divider is computed from gpll rather than copied - gpll is 1200 MHz after
+ * the loader and 1188 under Linux, so the same word is 200 or 198 MHz - and
+ * rounded up, so the core never runs above the point.  aclk /2 and pclk /5
+ * are the firmware's at 200 MHz and at 600 alike (0x4155, 0x4951): they
+ * divide the core's clock, whichever path it takes.  The two bits of the
  * register whose meaning neither Linux driver gives (5:4 and 10) are left
- * as found.  A faster rate is stage 11.8, together with its voltage.
+ * as found.
+ *
+ * The PLL path reaches every point gpll divides to - 600, 400, 300, 200
+ * from 1200 - and that is as far as this driver goes: past 600 the table
+ * wants more than vdd_gpu boots at, and setting a voltage is the PMIC's,
+ * over I2C, which MEECHO does not have yet.  The firmware's own way to the
+ * high points (SCMI, the PVTPLL) is the same stage's second half.
  */
-#define GPU_CLK_TARGET_KHZ	200000
+#define GPU_CLK_FALLBACK_KHZ	200000	/* no table: what 11.5 ran at */
 #define GPU_SRC_GPLL		1
 #define GPU_ACLK_DIV_REF	2	/* aclk_gpu_pre = core / 2 */
 #define GPU_PCLK_DIV_REF	5	/* pclk_gpu_pre = core / 5 */
 #define CLKSEL_GPU_FIELDS	0xfbcfu	/* 15:12, 11, 9:8, 7:6, 3:0 */
 
+/*
+ * The operating point to run at, in kHz.
+ *
+ * Allowed are the points whose voltage the supply has without anyone
+ * setting it: the tree's regulator-init-microvolt of vdd_gpu, 0.9 V on the
+ * CB2 - and 0.9 V is also what Linux finds on the PMIC at every boot before
+ * it changes anything ("vdd_gpu: ... at 900 mV"), and MEECHO comes up the
+ * same way, through the same loader.  Of those, the fastest, or the one
+ * "mhz=" names.  A tree with no table keeps the rate the driver ran at
+ * before it read one; a supply with no initial voltage allows only the
+ * slowest point.
+ */
+static unsigned
+pick_rate(unsigned want_mhz)
+{
+	const struct mali_info *info = &mali.info;
+	const struct mali_opp *o, *slowest = NULL, *best = NULL, *named = NULL;
+	unsigned i, limit = info->supply_init_uv;
+
+	if (info->nr_opp == 0) {
+		log_info(&mali_log, "no operating points; running at %u kHz\n",
+		    GPU_CLK_FALLBACK_KHZ);
+		return GPU_CLK_FALLBACK_KHZ;
+	}
+	for (i = 0; i < info->nr_opp; i++) {
+		o = &info->opp[i];
+		if (slowest == NULL || o->hz < slowest->hz)
+			slowest = o;
+	}
+	for (i = 0; i < info->nr_opp; i++) {
+		o = &info->opp[i];
+		if (limit == 0 ? o != slowest : o->uv > limit)
+			continue;
+		if (want_mhz == 0 || o->hz <= (uint64_t)want_mhz * 1000000)
+			if (best == NULL || o->hz > best->hz)
+				best = o;
+		if (o->hz / 1000000 == want_mhz)
+			named = o;
+	}
+	if (best == NULL) {
+		/* Even the slowest wants more than the supply has. */
+		log_warn(&mali_log, "no operating point fits %u uV; running at "
+		    "the slowest, %u MHz at %u uV\n", limit,
+		    (unsigned)(slowest->hz / 1000000), slowest->uv);
+		return (unsigned)(slowest->hz / 1000);
+	}
+	if (want_mhz != 0 && named == NULL)
+		log_warn(&mali_log, "%u MHz is not an operating point allowed "
+		    "at %u uV; taking %u MHz\n", want_mhz, limit,
+		    (unsigned)(best->hz / 1000000));
+	log_info(&mali_log, "operating point %u MHz (%u uV; the supply boots "
+	    "at %u uV)\n", (unsigned)(best->hz / 1000000), best->uv, limit);
+	return (unsigned)(best->hz / 1000);
+}
+
 static int
-clock_source(void)
+clock_source(unsigned want_mhz)
 {
 	const struct mali_regs *cru = &mali.info.cru;
 	uint32_t sel = mali_rd(cru, CRU_CLKSEL_CON(CLKSEL_GPU)), want;
-	unsigned src = GPU_SRC_MUX(sel), khz, div;
+	unsigned src = GPU_SRC_MUX(sel), khz, div, target;
 	char was[48];
 
+	target = pick_rate(want_mhz);
 	khz = pll_khz(gpu_src[GPU_SRC_GPLL].index,
 	    gpu_src[GPU_SRC_GPLL].mode_shift);
 	if (khz == 0) {
@@ -263,12 +327,12 @@ clock_source(void)
 		    "can compute; not touching the GPU\n");
 		return EIO;
 	}
-	div = (khz + GPU_CLK_TARGET_KHZ - 1) / GPU_CLK_TARGET_KHZ;
+	div = (khz + target - 1) / target;
 	if (div < 1)
 		div = 1;
 	if (div > 16) {
 		log_warn(&mali_log, "gpll at %u kHz cannot be divided to %u "
-		    "kHz; not touching the GPU\n", khz, GPU_CLK_TARGET_KHZ);
+		    "kHz; not touching the GPU\n", khz, target);
 		return EIO;
 	}
 	want = ((GPU_PCLK_DIV_REF - 1) << 12) | ((GPU_ACLK_DIV_REF - 1) << 8) |
@@ -303,13 +367,13 @@ clock_source(void)
 }
 
 int
-mali_rk_clocks_on(void)
+mali_rk_clocks_on(unsigned want_mhz)
 {
 	const struct mali_regs *cru = &mali.info.cru;
 	uint32_t gate, want = GATE_CLK_GPU_SRC | GATE_CLK_GPU;
 	int r;
 
-	if ((r = clock_source()) != OK)
+	if ((r = clock_source(want_mhz)) != OK)
 		return r;
 
 	gate = mali_rd(cru, CRU_CLKGATE_CON(CLKGATE_GPU));
@@ -415,6 +479,8 @@ mali_rk_resets(void)
  * and this says whether the result is what the board runs with.  Only the
  * bits this driver is responsible for are compared - the other gates of
  * CLKGATE_CON2 (the PVTM's) and the other domains are somebody else's.
+ * The divider of CLKSEL_CON6 neither: it is the operating point, and the
+ * reference holds the slowest one; the log line before says which.
  */
 static const struct {
 	const char *name;
@@ -423,7 +489,7 @@ static const struct {
 	uint32_t value, mask;
 } reference[] = {
 	{ "CLKSEL_CON6",  0, CRU_CLKSEL_CON(CLKSEL_GPU), 0x00004155,
-	    CLKSEL_GPU_FIELDS },
+	    CLKSEL_GPU_FIELDS & ~0xfu },
 	{ "CLKGATE_CON2", 0, CRU_CLKGATE_CON(CLKGATE_GPU), 0x000001c0,
 	    GATE_CLK_GPU_SRC | GATE_CLK_GPU },
 	{ "SOFTRST_CON2", 0, CRU_SOFTRST_CON(SOFTRST_GPU), 0x00000000,

@@ -1,0 +1,15 @@
+1
+GLCUBE 3000 frames 1024x1024 in 127.71 s: 23.5 frames/s
+GLCUBE 14 checks, 0 failed
+GLCUBE 3000 frames 1024x1024 in 127.92 s: 23.5 frames/s
+GLCUBE 14 checks, 0 failed
+GLCUBE 3000 frames 1024x1024 in 127.82 s: 23.5 frames/s
+GLCUBE 14 checks, 0 failed
+GLCUBE 3000 frames 1024x1024 in 128.03 s: 23.4 frames/s
+GLCUBE 14 checks, 0 failed
+GLCUBE 3000 frames 1024x1024 in 127.75 s: 23.5 frames/s
+GLCUBE 14 checks, 0 failed
+mali(info)client 0 is gone (0 failed job(s))
+mali(info)client 0 is gone (0 failed job(s))
+mali(info)client 0 is gone (0 failed job(s))
+1703.90

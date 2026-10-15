@@ -53,6 +53,7 @@
 #define MALI_PAGE		4096u
 #define MALI_NR_AS		8	/* address-space windows (AS_PRESENT) */
 #define MALI_NR_SLOTS		3	/* job slots (JS_PRESENT) */
+#define MALI_MAX_OPP		16	/* operating points kept from the tree */
 
 struct mali_regs {
 	phys_bytes base;
@@ -84,6 +85,20 @@ struct mali_info {
 	int supply_always_on;
 	int supply_boot_on;
 	unsigned supply_init_uv;
+
+	/*
+	 * The operating points ("operating-points-v2"), in the tree's order:
+	 * a rate and the voltage it needs - the first, target, cell of
+	 * opp-microvolt.  The per-bin variants (opp-microvolt-L0..L3) are
+	 * lower or equal and are not read: without knowing the bin, the
+	 * target is the one that holds for every chip.
+	 */
+	uint32_t opp_phandle;
+	unsigned nr_opp;
+	struct mali_opp {
+		uint64_t hz;
+		unsigned uv;
+	} opp[MALI_MAX_OPP];
 
 	/* The SoC blocks around the GPU, by compatible string. */
 	struct mali_regs cru;
@@ -150,7 +165,7 @@ int mali_find(struct mali_info *info);
 /* mali_rk.c */
 int mali_rk_map(void);
 void mali_rk_report(const char *when);
-int mali_rk_clocks_on(void);
+int mali_rk_clocks_on(unsigned want_mhz);
 int mali_rk_power_domain(void);
 void mali_rk_resets(void);
 unsigned mali_rk_compare(void);

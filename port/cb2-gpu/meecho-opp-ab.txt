@@ -1,0 +1,32 @@
+== mhz=200
+             renderer gles2 path direct built 13 shown 13 render_ms 40.0 sync_ms 20.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0
+   cursor    busy   8.7 %  user   0.5 %  sys   8.2 %  meechowm 0.30 s
+             renderer gles2 path direct built 86 shown 86 render_ms 420.0 sync_ms 430.0 copy_ms 0.0 flip_ms 10.0 copied_mib 0.0
+   overview  busy  10.2 %  user   0.7 %  sys   9.5 %  meechowm 0.23 s
+             renderer gles2 path direct built 90 shown 90 render_ms 750.0 sync_ms 280.0 copy_ms 0.0 flip_ms 10.0 copied_mib 0.0
+   xray      busy  10.1 %  user   2.1 %  sys   8.0 %  meechowm 0.09 s
+             renderer gles2 path direct built 25 shown 25 render_ms 350.0 sync_ms 250.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0
+== mhz=0
+             renderer gles2 path direct built 12 shown 12 render_ms 70.0 sync_ms 0.0 copy_ms 0.0 flip_ms 10.0 copied_mib 0.0
+   cursor    busy   8.8 %  user   0.5 %  sys   8.3 %  meechowm 0.34 s
+             renderer gles2 path direct built 93 shown 93 render_ms 830.0 sync_ms 70.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0
+   overview  busy   9.3 %  user   0.7 %  sys   8.6 %  meechowm 0.21 s
+             renderer gles2 path direct built 84 shown 84 render_ms 840.0 sync_ms 130.0 copy_ms 0.0 flip_ms 10.0 copied_mib 0.0
+   xray      busy   9.9 %  user   2.1 %  sys   7.8 %  meechowm 0.09 s
+             renderer gles2 path direct built 23 shown 23 render_ms 350.0 sync_ms 40.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0
+== mhz=200
+             renderer gles2 path direct built 13 shown 13 render_ms 150.0 sync_ms 0.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0
+   cursor    busy   9.7 %  user   0.5 %  sys   9.3 %  meechowm 0.32 s
+             renderer gles2 path direct built 86 shown 86 render_ms 460.0 sync_ms 410.0 copy_ms 0.0 flip_ms 20.0 copied_mib 0.0
+   overview  busy  10.3 %  user   0.6 %  sys   9.7 %  meechowm 0.19 s
+             renderer gles2 path direct built 80 shown 80 render_ms 700.0 sync_ms 240.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0
+   xray      busy  10.0 %  user   2.1 %  sys   7.9 %  meechowm 0.09 s
+             renderer gles2 path direct built 23 shown 23 render_ms 300.0 sync_ms 270.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0
+== mhz=0
+             renderer gles2 path direct built 12 shown 12 render_ms 90.0 sync_ms 0.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0
+   cursor    busy   8.5 %  user   0.5 %  sys   8.0 %  meechowm 0.31 s
+             renderer gles2 path direct built 84 shown 84 render_ms 660.0 sync_ms 90.0 copy_ms 0.0 flip_ms 40.0 copied_mib 0.0
+   overview  busy   9.5 %  user   0.6 %  sys   8.9 %  meechowm 0.20 s
+             renderer gles2 path direct built 79 shown 79 render_ms 750.0 sync_ms 100.0 copy_ms 0.0 flip_ms 30.0 copied_mib 0.0
+   xray      busy   9.7 %  user   2.0 %  sys   7.7 %  meechowm 0.10 s
+             renderer gles2 path direct built 23 shown 23 render_ms 360.0 sync_ms 100.0 copy_ms 0.0 flip_ms 0.0 copied_mib 0.0

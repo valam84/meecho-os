@@ -30,6 +30,10 @@ tty, memory, pfs, ds, sched, vfs and pm all restart through
 SEF_CB_INIT_RESTART_STATEFUL - a state transfer from the dead instance,
 which libsys refuses for a crash that was not injected; see rs-crash.py.
 So rc gives RS the path of mib only, and `-E mib` is the check for that.
+
+The mib check here is one sysctl after the restart, and it cannot see a
+call caught in the middle of one - that one hung for good until 2026-10-15
+(ISSUES.md, O54).  mib-restart.py restarts mib under sysctl load.
 """
 
 import argparse

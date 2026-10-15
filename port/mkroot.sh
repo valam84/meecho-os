@@ -244,6 +244,15 @@ then
 	    echo "WARNING: no Unix98 pseudo terminals"
 fi
 
+# The device name database: devname(3) - ps(1)'s TTY column - otherwise
+# walks /dev and stats every node, once per process (O55).  As NetBSD's
+# rc.d/sysdb: only when /dev is newer.
+if [ -x /usr/sbin/dev_mkdb ] &&
+   { [ ! -f /var/run/dev.cdb ] || [ /dev -nt /var/run/dev.cdb ]; }
+then
+	/usr/sbin/dev_mkdb || echo "WARNING: dev_mkdb failed"
+fi
+
 # ssh. Ключ хоста делается ЗДЕСЬ, на первой загрузке, а не кладётся в образ:
 # ключ, лежащий в образе, одинаков у всех, кто этот образ развернул, и
 # перестаёт быть ключом. Отсюда же требование к предыдущему шагу: ssh-keygen

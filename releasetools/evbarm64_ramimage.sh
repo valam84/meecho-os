@@ -356,6 +356,16 @@ then
 	    echo "WARNING: no Unix98 pseudo terminals"
 fi
 
+# The device name database.  devname(3) - ps(1)'s TTY column, w, who -
+# looks a device number up there, and without it walks /dev and stats
+# every node, once per process: one `ps -ax` was 19 s under TCG (O55).
+# NetBSD's rc.d/sysdb does the same: only when /dev is newer.
+if [ -x /usr/sbin/dev_mkdb ] &&
+   { [ ! -f /var/run/dev.cdb ] || [ /dev -nt /var/run/dev.cdb ]; }
+then
+	/usr/sbin/dev_mkdb || echo "WARNING: dev_mkdb failed"
+fi
+
 # Networking (8.4).  The driver first: LWIP watches DS for "drv.net.*" and
 # would pick up a driver started later just as well, but starting it first
 # means the interface is there by the time this script configures it.

@@ -56,6 +56,11 @@ static const struct host_driver drivers[] = {
 	 * generic one first means a future rk3588 needs no new line. */
 	{ "rockchip,dwcmshc-sdhci",	sdhci_probe },
 	{ "rockchip,rk3568-dwcmshc",	sdhci_probe },
+	/* Qualcomm's SDHCI, version 5 of their wrapper (SDM630/636/660 and
+	 * later): taken over as the boot loader left it, never set up
+	 * again, and written only through a GPT window - see
+	 * sdmmc_sdhci.c, msm_takeover(), and sdmmc_gpt.c. */
+	{ "qcom,sdhci-msm-v5",		sdhci_probe },
 	/* The Synopsys DesignWare MSHC: Rockchip's SD and SDIO sockets from
 	 * the RK3288 on, and the generic binding every other SoC with the
 	 * part uses. sdmmc_dwmshc.c tells the two apart itself. */

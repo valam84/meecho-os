@@ -250,6 +250,21 @@ struct sdmmc_host {
 	 * See sdmmc_gpt.c.
 	 */
 	int		protect;
+
+	/*
+	 * The controller and the card are taken over as the boot loader
+	 * left them - clock, bus width, timing (HS200/HS400), the card
+	 * selected - rather than set up again (a Qualcomm sdhci-msm: its
+	 * power, voltage and clock changes need a handshake and a clock
+	 * framework this driver does not have).  The card layer then finds
+	 * the card's address and reads its EXT_CSD, and changes nothing.
+	 * set_clock/set_bus_width/set_timing are not called; adopt_width and
+	 * adopt_hz say what the boot loader left, adopt_mode in words.
+	 */
+	int		adopt;
+	unsigned	adopt_width;
+	uint32_t	adopt_hz;
+	const char     *adopt_mode;
 };
 
 /* The card, as the block layer sees it. */

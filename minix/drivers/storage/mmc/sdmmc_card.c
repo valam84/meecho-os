@@ -676,6 +676,125 @@ mmc_enable_cache(void)
 	log_info(&sdmmc_log, "write cache on, %u KiB\n", size);
 }
 
+/*
+ * An eMMC as the boot loader left it (host->adopt): selected, at whatever
+ * clock, width and timing it chose - HS400 on a Qualcomm phone - and nothing
+ * here may change that, because the host cannot set any of it up again.  So
+ * no CMD0, no identification, no CMD9/CMD10 (legal only in standby, and the
+ * card is in transfer), no CMD16 (illegal in a DDR mode), no CMD6: the
+ * address is found by asking every small one for the card's status, the
+ * capacity comes from the EXT_CSD, and a card left in a state this driver
+ * cannot use as it is - another hardware partition selected, command queueing
+ * on - is refused rather than switched.
+ *
+ * Only the user area is ever addressed: the boot partitions and the RPMB are
+ * reached through PARTITION_CONFIG, which this driver never writes.
+ */
+#define EXT_CSD_CMDQ_MODE_EN	15
+#define EXT_CSD_PART_CONFIG	179
+#define PART_ACCESS_MASK	0x07
+#define R1_STATE(st)		(((st) >> 9) & 0xf)
+#define R1_STATE_STBY		3
+#define R1_STATE_TRAN		4
+#define ADOPT_MAX_RCA		16
+
+static int
+mmc_adopt(void)
+{
+	struct sdmmc_cmd cmd;
+	uint32_t rca, st = 0;
+	unsigned tries;
+	int r;
+
+	card->is_sd = 0;
+	card->sector_addressed = 1;	/* every eMMC above 2 GiB */
+
+	/* The address: the one RCA the card answers to. */
+	for (rca = 1; rca <= ADOPT_MAX_RCA; rca++) {
+		if (send(MMC_SEND_STATUS, MMC_ARG_RCA(rca), SDMMC_RSP_R1,
+		    &cmd) == OK) {
+			st = MMC_R1(cmd.resp);
+			break;
+		}
+	}
+	if (rca > ADOPT_MAX_RCA) {
+		log_warn(&sdmmc_log, "adopt: no card answers CMD13 at RCA "
+		    "1..%u\n", ADOPT_MAX_RCA);
+		return ENODEV;
+	}
+	card->rca = rca;
+	log_info(&sdmmc_log, "adopt: the card is at RCA %u, state %u (status "
+	    "0x%08x)\n", rca, R1_STATE(st), st);
+
+	/* Selected and ready, or made so: CMD7 from standby, a short wait
+	 * for a card still finishing what the boot loader asked of it. */
+	if (R1_STATE(st) == R1_STATE_STBY) {
+		if ((r = send(MMC_SELECT_CARD, MMC_ARG_RCA(rca), SDMMC_RSP_R1B,
+		    &cmd)) != OK)
+			return r;
+	}
+	for (tries = 0; tries < 100; tries++) {
+		if (send(MMC_SEND_STATUS, MMC_ARG_RCA(rca), SDMMC_RSP_R1,
+		    &cmd) != OK)
+			return EIO;
+		st = MMC_R1(cmd.resp);
+		if (R1_STATE(st) == R1_STATE_TRAN)
+			break;
+		micro_delay(1000);
+	}
+	if (R1_STATE(st) != R1_STATE_TRAN) {
+		log_warn(&sdmmc_log, "adopt: the card stays in state %u\n",
+		    R1_STATE(st));
+		return EIO;
+	}
+
+	memset(ext_csd, 0, sizeof(ext_csd));
+	STEP("adopt: CMD8 (send EXT_CSD)",
+	    send_data(MMC_SEND_EXT_CSD, 0, SDMMC_RSP_R1, 0, ext_csd, 0, 1, 0,
+	    &cmd));
+	STEP("adopt: CMD8 status", check_r1(&cmd));
+
+	log_info(&sdmmc_log, "adopt: EXT_CSD rev %u, HS_TIMING %u, BUS_WIDTH "
+	    "0x%02x, PARTITION_CONFIG 0x%02x, CMDQ %u, cache %s\n",
+	    ext_csd[EXT_CSD_REV], ext_csd[EXT_CSD_HS_TIMING],
+	    ext_csd[EXT_CSD_BUS_WIDTH], ext_csd[EXT_CSD_PART_CONFIG],
+	    ext_csd[EXT_CSD_CMDQ_MODE_EN],
+	    (ext_csd[EXT_CSD_CACHE_CTRL] & 1) ? "on" : "off");
+	if (ext_csd[EXT_CSD_PART_CONFIG] & PART_ACCESS_MASK) {
+		log_warn(&sdmmc_log, "adopt: hardware partition %u is "
+		    "selected, not the user area; refusing rather than "
+		    "switching\n", ext_csd[EXT_CSD_PART_CONFIG] &
+		    PART_ACCESS_MASK);
+		return EIO;
+	}
+	if (ext_csd[EXT_CSD_CMDQ_MODE_EN] & 1) {
+		log_warn(&sdmmc_log, "adopt: command queueing is on; plain "
+		    "reads and writes are illegal in that mode\n");
+		return EIO;
+	}
+
+	read_capacity();
+	if (card->sectors == 0) {
+		log_warn(&sdmmc_log, "adopt: the card reports no capacity\n");
+		return EIO;
+	}
+	card->cmd23 = 1;
+	/* A cache the boot loader turned on is flushed; none is turned on. */
+	card->cache_on = (ext_csd[EXT_CSD_CACHE_CTRL] & 1) != 0;
+	card->bus_width = host->adopt_width;
+	card->clock = host->adopt_hz;
+	card->high_speed = ext_csd[EXT_CSD_HS_TIMING] != 0;
+	strlcpy(card->name, "eMMC", sizeof(card->name));
+	card->present = 1;
+
+	log_info(&sdmmc_log, "eMMC adopted: %llu sectors (%llu MiB), %u-bit "
+	    "bus, %s%s\n", (unsigned long long)card->sectors,
+	    (unsigned long long)(card->sectors / 2048), card->bus_width,
+	    host->adopt_mode != NULL ? host->adopt_mode : "as left",
+	    card->cache_on ? ", write cache on" : "");
+	return OK;
+}
+
 int
 sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 {
@@ -688,6 +807,9 @@ sdmmc_card_init(struct sdmmc_host *h, struct sdmmc_card *c)
 
 	memset(card, 0, sizeof(*card));
 	card->bus_width = 1;
+
+	if (host->adopt)
+		return mmc_adopt();
 
 	{
 		long v;

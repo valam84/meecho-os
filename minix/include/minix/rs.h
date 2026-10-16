@@ -41,8 +41,12 @@ Interface to the reincarnation server
  * with an integrated PHY would want a sixth. The number costs a pointer's
  * worth of unused array per service and nothing else, and the failure it
  * causes is a service that will not start at all.
+ *
+ * Twelve since sdmmc needed a ninth: the Qualcomm SDHCI of the Mi Pad 4 next
+ * to the Rockchip and Allwinner parts it already listed.  minix-service and
+ * RS pass the array between them, so both are rebuilt with the header.
  */
-#define RSS_NR_DEVICETREE	8
+#define RSS_NR_DEVICETREE	12
 #define RSS_DEVICETREE_LEN	40
 #define RSS_IPC_ALL		"IPC_ALL"
 #define RSS_IPC_ALL_SYS		"IPC_ALL_SYS"

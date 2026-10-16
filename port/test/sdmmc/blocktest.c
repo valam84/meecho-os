@@ -44,6 +44,8 @@ void default_log(void) { }
 void env_setargs(int UNUSED(c), char **UNUSED(v)) { }
 int env_parse(const char *UNUSED(n), const char *UNUSED(f), int UNUSED(i),
 	long *UNUSED(p), long UNUSED(lo), long UNUSED(hi)) { return 0; }
+int env_get_param(const char *UNUSED(k), char *UNUSED(v),
+	int UNUSED(n)) { return -1; }	/* nothing set: no gptpartN */
 void sef_setcb_init_fresh(int (*cb)(int, sef_init_info_t *)) { (void)cb; }
 void sef_setcb_signal_handler(void (*cb)(int)) { (void)cb; }
 void sef_startup(void) { }
@@ -236,6 +238,7 @@ sdmmc_card_flush(void)
 
 /* Драйвер целиком, вместе со своими статическими таблицами. */
 #include "sdmmc.c"
+#include "sdmmc_gpt.c"
 
 /* main() драйвера уехал под другое имя ключом компилятора; вернуть имя
  * стенду. */
@@ -584,6 +587,215 @@ test_phys_address(void)
 	    "и в обратную сторону адрес тот же");
 }
 
+/*
+ * Окно GPT (gptpartN=, sdmmc_gpt.c): на модели карты — настоящая разметка
+ * GPT, CRC которой считает своя, табличная реализация (у драйвера —
+ * побитовая), и драйвер должен найти раздел по имени, отдать его как минор 0
+ * и не пустить к карте ни одного сектора за его границами. Плюс отказы
+ * разбора: любое сомнение в таблице — отказ, а не «вся карта».
+ */
+#define G_ENT_LBA	2
+#define G_NENT		128
+#define G_ESIZE		128
+#define G_FIRST		34
+#define G_LAST		(CARD_SECTORS - 34)
+
+static uint32_t
+t_crc32(const uint8_t *p, size_t n)
+{
+	static uint32_t tab[256];
+	uint32_t c = 0xffffffffu;
+	unsigned i, k;
+
+	if (tab[1] == 0)
+		for (i = 0; i < 256; i++) {
+			uint32_t v = i;
+
+			for (k = 0; k < 8; k++)
+				v = (v & 1) ? 0xedb88320u ^ (v >> 1) : v >> 1;
+			tab[i] = v;
+		}
+	while (n-- > 0)
+		c = tab[(c ^ *p++) & 0xff] ^ (c >> 8);
+	return c ^ 0xffffffffu;
+}
+
+static void
+put32(uint8_t *p, uint32_t v)
+{
+	p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24;
+}
+
+static void
+put64(uint8_t *p, uint64_t v)
+{
+	put32(p, (uint32_t)v);
+	put32(p + 4, (uint32_t)(v >> 32));
+}
+
+static void
+g_entry(unsigned i, const char *name, uint64_t lo, uint64_t hi)
+{
+	uint8_t *e = medium + G_ENT_LBA * SDMMC_SECTOR_SIZE + i * G_ESIZE;
+	unsigned k;
+
+	memset(e, 0, G_ESIZE);
+	e[0] = 0xaf; e[1] = 0x3d;		/* тип: что угодно, не нули */
+	e[16] = (uint8_t)(i + 1);		/* уникальный GUID */
+	put64(e + 32, lo);
+	put64(e + 40, hi);
+	for (k = 0; name[k] != '\0'; k++)
+		e[56 + 2 * k] = (uint8_t)name[k];
+}
+
+/* Заголовок с посчитанными CRC; broken: 1 — CRC заголовка, 2 — записей. */
+static void
+g_seal(int broken)
+{
+	uint8_t *h = medium + SDMMC_SECTOR_SIZE;
+	uint32_t ecrc;
+
+	memset(h, 0, SDMMC_SECTOR_SIZE);
+	memcpy(h, "EFI PART", 8);
+	put32(h + 8, 0x00010000);
+	put32(h + 12, 92);
+	put64(h + 24, 1);
+	put64(h + 32, CARD_SECTORS - 1);
+	put64(h + 40, G_FIRST);
+	put64(h + 48, G_LAST);
+	put64(h + 72, G_ENT_LBA);
+	put32(h + 80, G_NENT);
+	put32(h + 84, G_ESIZE);
+	ecrc = t_crc32(medium + G_ENT_LBA * SDMMC_SECTOR_SIZE,
+	    G_NENT * G_ESIZE);
+	put32(h + 88, ecrc ^ (broken == 2 ? 1 : 0));
+	put32(h + 16, t_crc32(h, 92) ^ (broken == 1 ? 1 : 0));
+}
+
+static void
+g_layout(void)
+{
+	memset(medium + G_ENT_LBA * SDMMC_SECTOR_SIZE, 0,
+	    G_NENT * G_ESIZE);
+	g_entry(0, "xbl", 34, 99);
+	g_entry(1, "abl", 100, 199);
+	g_entry(5, "userdata", 1024, G_LAST);
+	g_seal(0);
+}
+
+static void
+test_gpt_window(void)
+{
+	static uint8_t buf[8 * SDMMC_SECTOR_SIZE];
+	u64_t first, count;
+	iovec_t iov;
+	int r, before;
+
+	printf("Окно GPT: один раздел вместо карты\n");
+	setup(0, CARD_SECTORS);
+	g_layout();
+
+	r = sdmmc_gpt_find("userdata", CARD_SECTORS, chunk, SDMMC_CHUNK_BYTES,
+	    chunk_phys, &first, &count);
+	check_i64(r, OK, "userdata найден");
+	check_i64((long long)first, 1024, "с сектора 1024");
+	check_i64((long long)count, G_LAST - 1024 + 1, "до последнего полезного");
+	check_i64(sdmmc_gpt_find("abl", CARD_SECTORS, chunk, SDMMC_CHUNK_BYTES,
+	    chunk_phys, &first, &count), OK, "abl тоже находится");
+	check_i64((long long)first, 100, "abl с сектора 100");
+	check_i64(sdmmc_gpt_find("system", CARD_SECTORS, chunk,
+	    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count), ENOENT,
+	    "нет такого — ENOENT");
+	check_i64(sdmmc_gpt_find("userdat", CARD_SECTORS, chunk,
+	    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count), ENOENT,
+	    "префикс имени — не имя");
+
+	/* Окно в драйвере: минор 0 — раздел. */
+	win_lo = 1024ULL * SDMMC_SECTOR_SIZE;
+	win_hi = (G_LAST + 1ULL) * SDMMC_SECTOR_SIZE;
+	open_count = 0;
+	check_i64(sdmmc_open(0, 0), OK, "открытие с окном");
+	check_i64((long long)part[0].dv_base, (long long)win_lo,
+	    "минор 0 начинается с раздела");
+	check_i64((long long)part[0].dv_size, (long long)(win_hi - win_lo),
+	    "и равен ему по размеру");
+
+	iov.iov_addr = grant_make(0, buf, sizeof(buf));
+	iov.iov_size = sizeof(buf);
+	check_i64(sdmmc_transfer(0, 0, 0, 42, &iov, 1, 0), sizeof(buf),
+	    "чтение в начале окна");
+	check(memcmp(buf, medium + 1024 * SDMMC_SECTOR_SIZE, sizeof(buf)) == 0,
+	    "читается сектор 1024, а не 0", NULL);
+	memset(buf, 0x5a, sizeof(buf));
+	check_i64(sdmmc_transfer(0, 1, 8 * SDMMC_SECTOR_SIZE, 42, &iov, 1, 0),
+	    sizeof(buf), "запись внутри окна");
+	check(medium[1032 * SDMMC_SECTOR_SIZE] == 0x5a, "легла в сектор 1032",
+	    NULL);
+
+	/* Подраздел, который таблица внутри окна вывела бы за его край. */
+	part[1].dv_base = 100ULL * SDMMC_SECTOR_SIZE;	/* это abl */
+	part[1].dv_size = 64ULL * SDMMC_SECTOR_SIZE;
+	before = nops;
+	check_i64(sdmmc_transfer(1, 1, 0, 42, &iov, 1, 0), EIO,
+	    "запись в abl через минор 1 — отказ");
+	check_i64(nops, before, "до карты не дошло ни одной операции");
+	check_i64(sdmmc_transfer(1, 0, 0, 42, &iov, 1, 0), EIO,
+	    "и чтение тоже");
+	part[1].dv_base = (G_LAST - 2ULL) * SDMMC_SECTOR_SIZE;	/* через край */
+	part[1].dv_size = 64ULL * SDMMC_SECTOR_SIZE;
+	before = nops;
+	check_i64(sdmmc_transfer(1, 1, 0, 42, &iov, 1, 0), EIO,
+	    "запись через правый край окна — отказ");
+	check_i64(nops, before, "и снова ни одной операции");
+	(void)sdmmc_close(0);
+
+	/* Защищённый хост без окна: только чтение. */
+	win_lo = win_hi = 0;
+	host.protect = 1;
+	host.name = "qcom,sdhci-msm-v5";
+	setup(0, CARD_SECTORS);
+	before = nops;
+	check_i64(sdmmc_transfer(0, 1, 0, 42, &iov, 1, 0), EROFS,
+	    "запись без окна на защищённом хосте — EROFS");
+	check_i64(nops, before, "до карты не дошла");
+	check_i64(sdmmc_transfer(0, 0, 0, 42, &iov, 1, 0), sizeof(buf),
+	    "чтение без окна — можно");
+	host.protect = 0;
+
+	/* Отказы разбора. */
+	g_layout();
+	g_seal(1);
+	check_i64(sdmmc_gpt_find("userdata", CARD_SECTORS, chunk,
+	    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count), ENXIO,
+	    "испорченная CRC заголовка — отказ");
+	g_layout();
+	g_seal(2);
+	check_i64(sdmmc_gpt_find("userdata", CARD_SECTORS, chunk,
+	    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count), ENXIO,
+	    "испорченная CRC записей — отказ");
+	g_layout();
+	g_entry(6, "userdata", 200, 300);
+	g_seal(0);
+	check_i64(sdmmc_gpt_find("userdata", CARD_SECTORS, chunk,
+	    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count), ENOENT,
+	    "два раздела с одним именем — отказ");
+	g_layout();
+	g_entry(5, "userdata", 1024, G_LAST + 10);
+	g_seal(0);
+	check_i64(sdmmc_gpt_find("userdata", CARD_SECTORS, chunk,
+	    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count), ENXIO,
+	    "раздел за полезной областью — отказ");
+	g_layout();
+	memcpy(medium + SDMMC_SECTOR_SIZE, "EFI PARX", 8);
+	check_i64(sdmmc_gpt_find("userdata", CARD_SECTORS, chunk,
+	    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count), ENXIO,
+	    "нет подписи — отказ");
+	g_layout();
+	check_i64(sdmmc_gpt_find("userdata", 2048, chunk, SDMMC_CHUNK_BYTES,
+	    chunk_phys, &first, &count), ENXIO,
+	    "заголовок шире карты — отказ");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -600,6 +812,7 @@ main(int argc, char **argv)
 	test_error_midway();
 	test_flush_and_open();
 	test_phys_address();
+	test_gpt_window();
 
 	printf("\n%d проверок, %d отказов\n", checks, failures);
 	return failures != 0;

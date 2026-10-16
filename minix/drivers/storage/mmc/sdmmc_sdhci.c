@@ -136,6 +136,45 @@ static unsigned vendor_area;
 static struct sdmmc_host *this_host;
 
 /*
+ * A Qualcomm sdhci-msm (v5: "qcom,sdhci-msm-v5"), the Mi Pad 4's eMMC, is
+ * taken over as the boot loader left it and never set up again (see
+ * port/clover/hw-sdhci-msm.md and msm_takeover()).  Its power, voltage and
+ * reset requests raise an interrupt that has to be answered, its card clock
+ * is the GCC's and not the divider's, and its DLL holds a calibration this
+ * driver could not redo: so no RESET_ALL, no POWER_CONTROL, no voltage
+ * switch, no clock change, ever.  The registers it has beyond the standard
+ * are inside the same block (v5), and the command queueing engine's are in
+ * a second one, "cqhci".
+ */
+static int is_msm;
+static int msm_cdr;		/* toggle the DLL's CDR around every command */
+static phys_bytes cq_base;
+static size_t cq_size;
+static vir_bytes cq_regs;
+
+#define MSM_DLL_CONFIG		0x200
+#define MSM_DLL_STATUS		0x208
+#define MSM_VENDOR_SPEC		0x20c
+#define MSM_DDR_200_CFG		0x224
+#define MSM_PWRCTL_STATUS	0x240
+#define MSM_PWRCTL_CLEAR	0x248
+#define MSM_PWRCTL_CTL		0x24c
+#define MSM_MCI_VERSION		0x318
+#define MSM_CDR_EN		(1u << 17)
+#define MSM_CDR_EXT_EN		(1u << 19)
+#define MSM_DLL_LOCK		(1u << 7)
+#define MSM_DDR_DLL_LOCK	(1u << 11)
+#define MSM_ENH_STROBE		(1u << 1)	/* DDR_200_CFG CMDIN_RCLK_EN */
+#define MSM_PWR_BUS_SUCCESS	(1u << 0)
+#define MSM_PWR_IO_SUCCESS	(1u << 2)
+#define CQ_CFG			0x08
+#define CQ_CFG_ENABLE		(1u << 0)
+#define CQ_CRYPTO_PARM		0x70
+#define CQ_CRYPTO_CE		(1u << 8)
+#define HC2_V4_ENABLE		(1u << 12)
+#define HC2_64BIT_ADDR		(1u << 13)
+
+/*
  * The interrupt.
  *
  * irq_line is what the tree says; irq_ok is whether RS actually granted it
@@ -475,6 +514,17 @@ reset(uint8_t mask)
 	 * restored below, which is what Linux does around the same reset.
 	 * Skipped before the registers are known to be readable.
 	 */
+	/*
+	 * A full reset of a Qualcomm part is a power request that has to be
+	 * answered, and drops what the boot loader set up; command and data
+	 * resets raise no request and are what error recovery needs.
+	 */
+	if (is_msm && (mask & SDHC_RESET_ALL)) {
+		log_warn(&sdmmc_log, "refusing a full reset of the taken-over "
+		    "controller\n");
+		return EPERM;
+	}
+
 	if (is_dwcmshc && regs != 0)
 		misc = rd32(DWCMSHC_EMMC_MISC_CON);
 
@@ -956,6 +1006,21 @@ sdhci_command(struct sdmmc_cmd *cmd)
 	if (cmd->data_dir != SDMMC_DATA_NONE)
 		creg |= SDHC_DATA_PRESENT_SELECT;
 
+	/*
+	 * A tuned Qualcomm part (HS200, or HS400 without the enhanced strobe)
+	 * samples read data with its clock-data recovery on and everything
+	 * else with it off: Linux flips the two bits on every command.
+	 */
+	if (msm_cdr) {
+		uint32_t dll = rd32(MSM_DLL_CONFIG);
+
+		if (cmd->data_dir == SDMMC_DATA_READ)
+			dll = (dll | MSM_CDR_EN) & ~MSM_CDR_EXT_EN;
+		else
+			dll = (dll & ~MSM_CDR_EN) | MSM_CDR_EXT_EN;
+		wr32(MSM_DLL_CONFIG, dll);
+	}
+
 	wr32(SDHC_ARGUMENT, cmd->arg);
 	log_debug(&sdmmc_log, "CMD%u: creg %04x mode %04x st %08x\n",
 	    cmd->index, creg, mode, rd32(SDHC_PRESENT_STATE));
@@ -1063,9 +1128,152 @@ sdhci_command(struct sdmmc_cmd *cmd)
 }
 
 /*
+ * Take a Qualcomm sdhci-msm over as the boot loader left it (is_msm).  The
+ * order is port/clover/hw-sdhci-msm.md's checklist: the block answers; a
+ * power request left pending is answered; command queueing is off (or the
+ * driver stops here) and inline encryption is off; the bus is read rather
+ * than set - width, timing, the clock running, the DLL locked where the
+ * timing needs it - and anything this driver cannot use as it stands is a
+ * refusal.  The only writes are to the power acknowledgement, the crypto
+ * parameter, and Host Control 2's version-4 bits (so that ADMA descriptors
+ * have the 32-bit shape this driver writes), with its voltage bit kept.
+ */
+static int
+msm_takeover(void)
+{
+	uint32_t mci, s, vs, dll, dlls, ddr200, st;
+	uint16_t ver, hc2, clk;
+	uint8_t hc1;
+	unsigned i, uhs;
+	int hs400, es;
+	void *v;
+
+	ver = rd16(SDHC_HOST_CTL_VERSION);
+	mci = rd32(MSM_MCI_VERSION);
+	if (ver == 0xffff || mci == 0 || mci == 0xffffffff) {
+		log_warn(&sdmmc_log, "msm: the controller does not answer "
+		    "(version %04x, core %08x): clock off?\n", ver, mci);
+		return ENXIO;
+	}
+
+	/* A power request nobody answered: answer it, success. */
+	if ((s = rd32(MSM_PWRCTL_STATUS) & 0xf) != 0) {
+		uint32_t ack = 0;
+
+		for (i = 0; i < 10; i++) {
+			wr32(MSM_PWRCTL_CLEAR, s);
+			if ((rd32(MSM_PWRCTL_STATUS) & s) == 0)
+				break;
+			micro_delay(10);
+		}
+		if (s & 0x3)
+			ack |= MSM_PWR_BUS_SUCCESS;
+		if (s & 0xc)
+			ack |= MSM_PWR_IO_SUCCESS;
+		wr32(MSM_PWRCTL_CTL, ack);
+		log_info(&sdmmc_log, "msm: answered a pending power request "
+		    "0x%x\n", s);
+	}
+
+	/* Command queueing must be off; inline encryption off. */
+	if (cq_size != 0 && cq_regs == 0) {
+		if ((v = vm_map_phys(SELF, (void *)cq_base, cq_size)) ==
+		    MAP_FAILED) {
+			log_warn(&sdmmc_log, "msm: cannot map the cqhci block\n");
+			return EPERM;
+		}
+		cq_regs = (vir_bytes)v;
+	}
+	if (cq_regs != 0) {
+		if (*(volatile uint32_t *)(cq_regs + CQ_CFG) & CQ_CFG_ENABLE) {
+			log_warn(&sdmmc_log, "msm: command queueing was left "
+			    "on; not taking the controller over\n");
+			return EIO;
+		}
+		if (*(volatile uint32_t *)(cq_regs + CQ_CRYPTO_PARM) &
+		    CQ_CRYPTO_CE) {
+			*(volatile uint32_t *)(cq_regs + CQ_CRYPTO_PARM) = 0;
+			log_info(&sdmmc_log, "msm: inline encryption turned "
+			    "off for plain requests\n");
+		}
+	}
+
+	/* What the boot loader left. */
+	hc1 = rd8(SDHC_HOST_CTL);
+	hc2 = rd16(SDHC_HOST_CTL2);
+	clk = rd16(SDHC_CLOCK_CTL);
+	vs = rd32(MSM_VENDOR_SPEC);
+	dll = rd32(MSM_DLL_CONFIG);
+	dlls = rd32(MSM_DLL_STATUS);
+	ddr200 = rd32(MSM_DDR_200_CFG);
+	log_info(&sdmmc_log, "msm: core %u.%02x; host ctl %02x/%04x, clock "
+	    "%04x, vendor %08x, dll %08x/%08x, ddr200 %08x\n", mci >> 28,
+	    mci & 0xff, hc1, hc2, clk, vs, dll, dlls, ddr200);
+
+	if ((clk & (SDHC_INTCLK_STABLE | SDHC_SDCLK_ENABLE)) !=
+	    (SDHC_INTCLK_STABLE | SDHC_SDCLK_ENABLE)) {
+		log_warn(&sdmmc_log, "msm: the card clock is not running\n");
+		return EIO;
+	}
+	uhs = hc2 & 7;
+	hs400 = ((vs >> 8) & 3) == 3;
+	es = (ddr200 & MSM_ENH_STROBE) != 0;
+	if (uhs >= 3 && !(dlls & MSM_DLL_LOCK)) {
+		log_warn(&sdmmc_log, "msm: HS200/HS400 timing without a "
+		    "locked DLL\n");
+		return EIO;
+	}
+	if (hs400 && !(dlls & MSM_DDR_DLL_LOCK))
+		log_warn(&sdmmc_log, "msm: HS400 with the DDR DLL not "
+		    "reported locked; going on\n");
+	msm_cdr = (uhs == 3 && !es);
+
+	if (this_host != NULL) {
+		this_host->adopt_width = (hc1 & SDHC_8BIT_MODE) ? 8 :
+		    (hc1 & SDHC_4BIT_MODE) ? 4 : 1;
+		if (hs400) {
+			this_host->adopt_mode = es ? "HS400 enhanced strobe "
+			    "(as left)" : "HS400 (as left)";
+			this_host->adopt_hz = 200000000;
+		} else if (uhs == 3) {
+			this_host->adopt_mode = "HS200 (as left)";
+			this_host->adopt_hz = 200000000;
+		} else if (uhs == 4) {
+			this_host->adopt_mode = "DDR52 (as left)";
+			this_host->adopt_hz = 52000000;
+		} else {
+			this_host->adopt_mode = (hc1 & SDHC_HIGH_SPEED) ?
+			    "high speed (as left)" : "legacy (as left)";
+			this_host->adopt_hz = (hc1 & SDHC_HIGH_SPEED) ?
+			    52000000 : 26000000;
+		}
+	}
+
+	/* 32-bit ADMA2 descriptors: version 4 mode and 64-bit off. */
+	if (hc2 & (HC2_V4_ENABLE | HC2_64BIT_ADDR)) {
+		wr16(SDHC_HOST_CTL2, hc2 & ~(HC2_V4_ENABLE | HC2_64BIT_ADDR));
+		log_info(&sdmmc_log, "msm: host version 4 mode off (%04x -> "
+		    "%04x)\n", hc2, rd16(SDHC_HOST_CTL2));
+	}
+
+	/* The upper half of the ADMA address, which 64-bit mode used. */
+	wr32(SDHC_ADMA_ADDR + 4, 0);
+
+	/* Nothing in flight from the boot loader. */
+	st = rd32(SDHC_PRESENT_STATE);
+	if (st & (SDHC_CMD_INHIBIT_CMD | SDHC_CMD_INHIBIT_DAT)) {
+		(void)reset(SDHC_RESET_CMD);
+		(void)reset(SDHC_RESET_DAT);
+	}
+	wr16(SDHC_NINTR_STATUS, 0xffff);
+	wr16(SDHC_EINTR_STATUS, 0xffff);
+	return OK;
+}
+
+/*
  * Bring the controller up: reset it, give the socket power, and leave it at
  * the slowest clock with a one-bit bus, which is where a card expects to be
- * spoken to first.
+ * spoken to first.  A Qualcomm part is taken over instead (msm_takeover()).
  */
 static int
 sdhci_init(void)
@@ -1085,7 +1293,10 @@ sdhci_init(void)
 		regs = (vir_bytes)v;
 	}
 
-	if ((r = reset(SDHC_RESET_ALL)) != OK)
+	if (is_msm) {
+		if ((r = msm_takeover()) != OK)
+			return r;
+	} else if ((r = reset(SDHC_RESET_ALL)) != OK)
 		return r;
 
 	/*
@@ -1196,7 +1407,7 @@ sdhci_init(void)
 	if (!(caps & SDHC_ADMA2_SUPPORT))
 		log_info(&sdmmc_log, "no ADMA2 in the capabilities; the "
 		    "processor will move the data\n");
-	else if (caps & SDHC_64BIT_BUS_V3)
+	else if ((caps & SDHC_64BIT_BUS_V3) && !is_msm)
 		log_info(&sdmmc_log, "the part wants 64-bit descriptors, "
 		    "which this driver does not write; the processor will "
 		    "move the data\n");
@@ -1227,14 +1438,16 @@ sdhci_init(void)
 	 * embedded eMMC has its supply wired up and this register only gates
 	 * it, while a socket needs it turned on at all.
 	 */
-	if (caps & SDHC_VOLTAGE_SUPP_3_3V)
-		pwr = SDHC_VOLTAGE_3_3V << SDHC_VOLTAGE_SHIFT;
-	else if (caps & SDHC_VOLTAGE_SUPP_3_0V)
-		pwr = SDHC_VOLTAGE_3_0V << SDHC_VOLTAGE_SHIFT;
-	else
-		pwr = SDHC_VOLTAGE_1_8V << SDHC_VOLTAGE_SHIFT;
-	wr8(SDHC_POWER_CTL, pwr);
-	wr8(SDHC_POWER_CTL, pwr | SDHC_BUS_POWER);
+	if (!is_msm) {		/* a Qualcomm part keeps what it was given */
+		if (caps & SDHC_VOLTAGE_SUPP_3_3V)
+			pwr = SDHC_VOLTAGE_3_3V << SDHC_VOLTAGE_SHIFT;
+		else if (caps & SDHC_VOLTAGE_SUPP_3_0V)
+			pwr = SDHC_VOLTAGE_3_0V << SDHC_VOLTAGE_SHIFT;
+		else
+			pwr = SDHC_VOLTAGE_1_8V << SDHC_VOLTAGE_SHIFT;
+		wr8(SDHC_POWER_CTL, pwr);
+		wr8(SDHC_POWER_CTL, pwr | SDHC_BUS_POWER);
+	}
 
 	/* The data timeout counter, at its longest. */
 	wr8(SDHC_TIMEOUT_CTL, SDHC_TIMEOUT_MAX);
@@ -1300,11 +1513,13 @@ sdhci_init(void)
 		wr16(SDHC_EINTR_SIGNAL_EN, 0);
 	}
 
-	if ((r = sdhci_set_bus_width(1)) != OK)
-		return r;
-	(void)sdhci_set_timing(0);
-	if ((r = sdhci_set_clock(SDMMC_IDENT_HZ, NULL)) != OK)
-		return r;
+	if (!is_msm) {
+		if ((r = sdhci_set_bus_width(1)) != OK)
+			return r;
+		(void)sdhci_set_timing(0);
+		if ((r = sdhci_set_clock(SDMMC_IDENT_HZ, NULL)) != OK)
+			return r;
+	}
 
 	/*
 	 * The version field is not a number to add one to: 0, 1 and 2 are
@@ -1340,7 +1555,13 @@ sdhci_exit(void)
 		 */
 		wr16(SDHC_NINTR_SIGNAL_EN, 0);
 		wr16(SDHC_EINTR_SIGNAL_EN, 0);
-		(void)sdhci_set_clock(0, NULL);
+		/*
+		 * Not the clock of a taken-over part: stopping it is a
+		 * change this driver could not undo, and the next owner -
+		 * a restarted instance - takes the part over as it finds it.
+		 */
+		if (!is_msm)
+			(void)sdhci_set_clock(0, NULL);
 		vm_unmap_phys(SELF, (void *)regs, reg_size);
 	}
 	if (irq_ok) {
@@ -1380,6 +1601,32 @@ sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 		clk_core.ctl = SDMMC_NO_LINE;
 	is_dwcmshc =fdt_node_is_compatible(node, "rockchip,dwcmshc-sdhci") ||
 	    fdt_node_is_compatible(node, "rockchip,rk3568-dwcmshc");
+
+	/*
+	 * A Qualcomm part: taken over, never set up (msm_takeover()), and a
+	 * phone's eMMC - the boot loaders live on it - so written only
+	 * through a gptpartN= window (sdmmc_gpt.c).  Its "cqhci" block is
+	 * found by name; the tree lists hc, cqhci, ice.
+	 */
+	is_msm = fdt_node_is_compatible(node, "qcom,sdhci-msm-v5");
+	if (is_msm) {
+		const char *names, *p;
+		unsigned len, idx;
+		u64_t a, sz;
+
+		cq_base = 0;
+		cq_size = 0;
+		if ((names = fdt_getprop(node, "reg-names", &len)) != NULL)
+			for (p = names, idx = 0; p < names + len;
+			    p += strlen(p) + 1, idx++)
+				if (strcmp(p, "cqhci") == 0 &&
+				    fdt_node_reg(node, idx, &a, &sz) == 0) {
+					cq_base = (phys_bytes)a;
+					cq_size = (size_t)sz;
+				}
+		host->protect = 1;
+		host->adopt = 1;
+	}
 
 	host->init = sdhci_init;
 	host->exit = sdhci_exit;

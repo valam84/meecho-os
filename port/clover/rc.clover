@@ -46,9 +46,8 @@ then
 	    echo "WARNING: no touch screen driver"
 fi
 
-# Randomness.  This SoC's random source has no driver yet, so the pool is
-# fed by interrupt timing only and may stay unseeded; nothing here needs
-# keys.
+# Randomness: the SoC's PRNG (qcom,prng-ee, random/qcom_prng.c) seeds the
+# pool; sshd's host key below is made from it.
 minix-service up /service/random -dev /dev/random ||
     echo "WARNING: no random device"
 
@@ -72,6 +71,77 @@ if [ -x /usr/sbin/dev_mkdb ] &&
    { [ ! -f /var/run/dev.cdb ] || [ /dev -nt /var/run/dev.cdb ]; }
 then
 	/usr/sbin/dev_mkdb || echo "WARNING: dev_mkdb failed"
+fi
+
+# The network: the USB-C port in device mode, a CDC Ethernet adapter to
+# the hub on the cable (dwc3_ecm, port/clover/hw-net.md); netdrv= names
+# another.  The driver takes the port over only as the boot loader left
+# it running - after "fastboot boot" - and otherwise says so and leaves.
+# No DHCP: the other end is a hub with a fixed address, and this end is
+# netaddr= or 10.42.0.2/24.  The interface appears when the stack has
+# heard from the driver, so it is waited for.
+netdrv=dwc3_ecm
+if sysenv netdrv >/dev/null
+then	netdrv="`sysenv netdrv`"
+fi
+netaddr=10.42.0.2/24
+if sysenv netaddr >/dev/null
+then	netaddr="`sysenv netaddr`"
+fi
+netlog=2
+if sysenv netlog >/dev/null
+then	netlog="`sysenv netlog`"
+fi
+netif=
+if [ -x "/service/$netdrv" ] &&
+   minix-service up "/service/$netdrv" -label "${netdrv}_0" \
+    -args "instance=0 log=$netlog" &&
+   minix-service up /service/lwip -dev /dev/bpf
+then
+	for t in 1 2 3 4 5
+	do
+		for i in `ifconfig -l 2>/dev/null`
+		do
+			[ "$i" != lo0 ] && netif=$i
+		done
+		[ -n "$netif" ] && break
+		sleep 1
+	done
+	ifconfig lo0 inet 127.0.0.1 up 2>/dev/null
+	if [ -n "$netif" ]
+	then
+		ifconfig "$netif" inet "$netaddr" up &&
+		    ifconfig "$netif" | grep 'inet ' ||
+		    echo "WARNING: $netif has no address"
+	else
+		echo "WARNING: no interface from $netdrv"
+	fi
+else
+	echo "No network: no $netdrv, or it found nothing to drive"
+fi
+
+# ssh, as on the CB2 (port/mkroot.sh): the host key made here, on the
+# first boot, never put in the image; whether the pool is seeded asked
+# outright, because arc4random(3) would make a weak key without a word.
+if [ -n "$netif" ]
+then
+	if ! dd if=/dev/random bs=1 count=1 >/dev/null 2>&1
+	then
+		echo "WARNING: /dev/random is not seeded; keys made now are weak"
+	fi
+	if [ -x /usr/bin/ssh-keygen ] &&
+	   [ ! -f /etc/ssh/ssh_host_ed25519_key ]
+	then
+		echo "Generating an SSH host key"
+		/usr/bin/ssh-keygen -q -t ed25519 -N '' \
+		    -f /etc/ssh/ssh_host_ed25519_key ||
+		    echo "WARNING: could not generate a host key"
+	fi
+	if [ -x /usr/sbin/sshd ] && [ -f /etc/ssh/ssh_host_ed25519_key ]
+	then
+		echo "Starting sshd"
+		/usr/sbin/sshd || echo "WARNING: sshd did not start"
+	fi
 fi
 
 exit 0

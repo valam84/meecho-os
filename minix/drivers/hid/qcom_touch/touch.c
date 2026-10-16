@@ -87,6 +87,7 @@ static int osk_on, ev_ft;
 static unsigned active;			/* touch ids in the last frame */
 static unsigned long frames, errors, polls, int_low;
 static unsigned shown;			/* touches written to the log */
+static unsigned chip_id;		/* FocalTech id at 0xa8 */
 
 /*===========================================================================*
  *    the tree                                                                *
@@ -245,7 +246,7 @@ bring_up(void)
 		free(dtb);
 		return ENXIO;
 	}
-	log_info(&tlog, "FT5x06 at 0x%02x on the QUP at 0x%llx; clocks %u/%u, "
+	log_debug(&tlog, "FT5x06 at 0x%02x on the QUP at 0x%llx; clocks %u/%u, "
 	    "reset gpio%u, interrupt gpio%u, %ux%u%s\n", dt.addr,
 	    (unsigned long long)dt.bus_pa, dt.clk_core, dt.clk_iface,
 	    dt.reset_pin, dt.int_pin, dt.size_x, dt.size_y,
@@ -275,7 +276,7 @@ bring_up(void)
 	 */
 	nbus = dt.pinctrl != 0 ? qsoc_pinctrl_pins(dtb, dt.pinctrl, bus_pin,
 	    2) : 0;
-	log_info(&tlog, "lines as found: SDA %d SCL %d, reset %d, interrupt "
+	log_debug(&tlog, "lines as found: SDA %d SCL %d, reset %d, interrupt "
 	    "%d\n", bus_line(0), bus_line(1),
 	    dt.have_reset ? qsoc_pin_get(dt.reset_pin) : -1,
 	    dt.have_int ? qsoc_pin_get(dt.int_pin) : -1);
@@ -303,7 +304,7 @@ bring_up(void)
 		log_warn(&tlog, "QUP would not start: %d\n", r);
 		return r;
 	}
-	log_info(&tlog, "QUP version 0x%08x, FIFOs %u/%u bytes, clock word "
+	log_debug(&tlog, "QUP version 0x%08x, FIFOs %u/%u bytes, clock word "
 	    "0x%08x\n", qup.hw_version, qup.out_fifo, qup.in_fifo,
 	    qup.clk_ctl);
 
@@ -315,7 +316,7 @@ bring_up(void)
 	 * saw, and a controller that never answers ends in a scan of the bus.
 	 */
 	r = reg_read(0xa8, &v, 1);
-	log_info(&tlog, "before reset: 0x%02x answers %d (chip id 0x%02x), "
+	log_debug(&tlog, "before reset: 0x%02x answers %d (chip id 0x%02x), "
 	    "SDA %d SCL %d\n", dt.addr, r, r == QUP_OK ? v : 0,
 	    bus_line(0), bus_line(1));
 	if (r != QUP_OK && dt.have_reset) {
@@ -331,7 +332,7 @@ bring_up(void)
 			if ((r = reg_read(0xa8, &v, 1)) == QUP_OK)
 				break;
 		}
-		log_info(&tlog, "after reset: 0x%02x answers %d (try %u), "
+		log_debug(&tlog, "after reset: 0x%02x answers %d (try %u), "
 		    "reset line %d, interrupt %d\n", dt.addr, r, i + 1,
 		    qsoc_pin_get(dt.reset_pin),
 		    dt.have_int ? qsoc_pin_get(dt.int_pin) : -1);
@@ -367,8 +368,9 @@ bring_up(void)
 		return ENODEV;
 	}
 	if (reg_read(0xa8, &v, 1) == QUP_OK) {
+		chip_id = v;
 		ev_ft = (v == 0x59);
-		log_info(&tlog, "FocalTech chip id 0x%02x%s\n", v,
+		log_debug(&tlog, "FocalTech chip id 0x%02x%s\n", v,
 		    ev_ft ? " (EV-FT: x and y swapped)" : "");
 	}
 	(void)reg_read(0x00, &v, 1);
@@ -435,7 +437,7 @@ read_frame(void)
 		/* The first few, where a person at the screen reads them. */
 		if (shown < 6) {
 			shown++;
-			log_info(&tlog, "touch %u: %s at %u,%u (line was low in "
+			log_debug(&tlog, "touch %u: %s at %u,%u (line was low in "
 			    "%lu of %lu polls)\n", tid, ev == 0 ? "down" :
 			    ev == 1 ? "up" : "contact", x, y, int_low, polls);
 		}
@@ -489,7 +491,7 @@ touch_alarm(clock_t UNUSED(stamp))
 	 * tells "no touches arrive" from "touches arrive and miss the keys".
 	 */
 	if (polls % (10 * POLL_HZ) == 0 && polls <= 90 * POLL_HZ)
-		log_info(&tlog, "%lu polls: %lu frames, %lu errors (last %d), "
+		log_debug(&tlog, "%lu polls: %lu frames, %lu errors (last %d), "
 		    "status 0x%02x, line low %lu times, keyboard %s\n", polls,
 		    frames, errors, r, td, int_low, osk_on ? "on" : "off");
 	arm();
@@ -518,9 +520,14 @@ touch_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 		log_warn(&tlog, "no screen size in the tree\n");
 		return EINVAL;
 	}
-	log_info(&tlog, "polling %u times a second; the on-screen keyboard "
-	    "%s\n", POLL_HZ, osk_on ? "is live" : "is off (osk=0): touches "
-	    "only logged");
+	/*
+	 * One line when it works; the bring-up details, the first touches
+	 * and the ten-second summaries are at debug level (log=3), as the
+	 * person at the Mi Pad 4 asked once the touch screen worked.
+	 */
+	log_info(&tlog, "FocalTech 0x%02x at 0x%02x ready; the on-screen "
+	    "keyboard %s\n", chip_id, dt.addr, osk_on ? "is live" :
+	    "is off (osk=0)");
 	inputdriver_announce(INPUT_DEV_KBD);
 	arm();
 	return OK;

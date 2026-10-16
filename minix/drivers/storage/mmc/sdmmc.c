@@ -96,6 +96,7 @@ static int sdmmc_ioctl(devminor_t minor, unsigned long request,
 static struct device *sdmmc_part(devminor_t minor);
 static void sdmmc_geometry(devminor_t minor, struct part_geom *entry);
 static int sdmmc_flush(devminor_t minor);
+static void window_identify(const char *name);
 
 static struct blockdriver sdmmc_dtab = {
 	.bdr_type	= BLOCKDRIVER_TYPE_DISK,
@@ -461,6 +462,7 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 			}
 			win_lo = first * SDMMC_SECTOR_SIZE;
 			win_hi = (first + count) * SDMMC_SECTOR_SIZE;
+			window_identify(name);
 		} else if (host.protect) {
 			log_info(&sdmmc_log, "%s holds the boot loaders: "
 			    "read-only without %s=\n", host.name, key);
@@ -472,6 +474,49 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 
 	blockdriver_announce(type);
 	return OK;
+}
+
+/*
+ * What the window starts with, read and only read - one line, so that a
+ * person who meant to write a root image there can see whether it got
+ * there before anything tries to mount it.  On the Mi Pad 4 the first root
+ * on userdata failed with fsck's "bad magic number" and nothing on the
+ * screen could say whether the partition still held Android's f2fs.
+ * Magics: MFS V4 "MFS4" at byte 1024, MFS V3 0x4d5a at 1024 + 24
+ * (minix/fs/mfs/ondisk.h), f2fs 0xf2f52010 at 1024, ext4 0xef53 at 1080.
+ */
+static void
+window_identify(const char *name)
+{
+	const uint8_t *b = chunk;
+	const char *what;
+	unsigned i;
+
+	if (SDMMC_CHUNK_BYTES < 4096 ||
+	    sdmmc_card_read(win_lo / SDMMC_SECTOR_SIZE, 8, chunk,
+	    chunk_phys) != OK) {
+		log_warn(&sdmmc_log, "%s: cannot read its first sectors\n",
+		    name);
+		return;
+	}
+	for (i = 0; i < 4096 && b[i] == 0; i++)
+		;
+	if (memcmp(b + 1024, "MFS4", 4) == 0)
+		what = "a MEECHO file system (MFS V4)";
+	else if (b[1024 + 24] == 0x5a && b[1024 + 25] == 0x4d)
+		what = "an MFS V3 file system";
+	else if (b[1024] == 0x10 && b[1025] == 0x20 && b[1026] == 0xf5 &&
+	    b[1027] == 0xf2)
+		what = "f2fs - Android's; no root image was written here";
+	else if (b[1080] == 0x53 && b[1081] == 0xef)
+		what = "ext4";
+	else if (i == 4096)
+		what = "zeros";
+	else
+		what = "nothing this driver recognises";
+	log_info(&sdmmc_log, "%s starts with %s (at 1024: %02x %02x %02x %02x "
+	    "%02x %02x %02x %02x)\n", name, what, b[1024], b[1025], b[1026],
+	    b[1027], b[1028], b[1029], b[1030], b[1031]);
 }
 
 static void

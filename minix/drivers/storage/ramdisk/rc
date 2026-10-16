@@ -6,6 +6,47 @@ PATH=/sbin:/usr/sbin:/bin:/usr/bin
 FSCK=/bin/fsck_mfs
 ACPI=/service/acpi
 
+# Whether this image stays the root: asked for (bootramdisk=1), or because
+# the root on the disk could not be used - the driver did not start, the
+# check refused the volume, the mount failed.  Then the reason is printed,
+# the machine gets its screen and input as a ramdisk root has them, and the
+# boot goes on to a login here, the disk not mounted.  Before this the boot
+# stopped at the failure, and on the Mi Pad 4 - whose only console is its
+# screen and whose only keyboard is a driver started below - that was a
+# screen saying "fatal" and nothing to type with.
+ramroot=
+disk_failed=
+if sysenv bootramdisk >/dev/null
+then	ramroot=1
+fi
+
+no_disk_root()
+{
+	echo "WARNING: $1"
+	echo "WARNING: the root stays on the ramdisk; the disk is not mounted"
+	ramroot=1
+	disk_failed=1
+}
+
+# The screen and the input of a machine with no keyboard: the frame the boot
+# loader left running (simple-framebuffer: the Mi Pad 4; card=0, no test
+# card), the input server, then whatever feeds it - the PMIC's buttons
+# (volume up and down as the arrow keys, power for the backlight) and the
+# touch screen as the keys of the keyboard fb draws with osk=1.  Between
+# them qcom_rpm, which asks the RPM for the regulators the tree keeps on -
+# without it the touch screen has no analogue supply.  Each driver finds its
+# hardware in the device tree or says there is none and leaves (QEMU's
+# virt).  The CB2's root on eMMC starts fb from its own rc, with the card.
+console_drivers()
+{
+	minix-service up /service/fb -dev /dev/fb0 -args card=0 \
+		2>/dev/null || :
+	minix-service up /service/input -dev /dev/kbdmux 2>/dev/null || :
+	minix-service up /service/qcom_pmic 2>/dev/null || :
+	minix-service up /service/qcom_rpm 2>/dev/null || :
+	minix-service up /service/qcom_touch 2>/dev/null || :
+}
+
 if [ X`sysenv arch` = Xi386 ]
 then	if [ -e $ACPI -a -n "`sysenv acpi`" ]
 	then
@@ -58,30 +99,10 @@ then
 	minix-service -c up /service/readclock.drv
 	readclock -q || date 201301010000
 
-	# The screen, on a ramdisk root - the console of a machine whose only
-	# display is a frame the boot loader left running (simple-framebuffer:
-	# the Mi Pad 4).  The driver finds its display in the device tree, or
-	# says there is none and leaves (QEMU's virt), so it is simply tried.
-	# card=0: no test card, the console at once.  The CB2's root on eMMC
-	# starts it from its own rc, with the card.
-	if sysenv bootramdisk >/dev/null
+	# The screen and input, on a ramdisk root (console_drivers above).
+	if [ -n "$ramroot" ]
 	then
-		minix-service up /service/fb -dev /dev/fb0 -args card=0 \
-			2>/dev/null || :
-
-		# Input for a machine with no keyboard: the input server,
-		# then whatever feeds it - the PMIC's buttons (volume up and
-		# down as the arrow keys, power for the backlight) and the
-		# touch screen as the keys of the keyboard fb draws with
-		# osk=1.  Between them qcom_rpm, which asks the RPM for the
-		# regulators the tree keeps on - without it the touch screen
-		# has no analogue supply.  On QEMU's virt none
-		# of the three finds its hardware.
-		minix-service up /service/input -dev /dev/kbdmux \
-			2>/dev/null || :
-		minix-service up /service/qcom_pmic 2>/dev/null || :
-		minix-service up /service/qcom_rpm 2>/dev/null || :
-		minix-service up /service/qcom_touch 2>/dev/null || :
+		console_drivers
 	fi
 
 	# The disk driver, which finds its own device in the device tree but
@@ -118,7 +139,8 @@ then
 		sdmmc)
 			echo Starting the SD/MMC block driver
 			minix-service -c up /service/sdmmc -dev /dev/c0d0 \
-				-label sdmmc_0 -args instance=0
+				-label sdmmc_0 -args instance=0 ||
+				no_disk_root "the SD/MMC block driver did not start"
 			# And the machine's second storage controller, if it
 			# has one: soldered devices are numbered first, so on
 			# the CB2 this is the SD socket behind the eMMC, and on
@@ -133,7 +155,8 @@ then
 		*)
 			echo Starting the virtio block driver
 			minix-service -c up /service/virtio_blk -dev /dev/c0d0 \
-				-label virtio_blk_0 -args instance=0
+				-label virtio_blk_0 -args instance=0 ||
+				no_disk_root "the virtio block driver did not start"
 			;;
 		esac
 	fi
@@ -185,20 +208,22 @@ echo "Root device name is $rootdevname"
 # There is nothing to check and no unmounted device to check it on -
 # $rootdevname is the bare name "imgrd", not a path fsck could open - so the
 # check goes the way of the mount.
-if ! sysenv cdproberoot >/dev/null && ! sysenv bootramdisk >/dev/null
+if ! sysenv cdproberoot >/dev/null && [ -z "$ramroot" ]
 then
 	if [ -e $FSCK ]
 	then
 		# Exit code 16 means fsck does not know this file system's
-		# format, which is not the same as finding it broken: a V4
-		# root has no fsck yet (stage 7.5).  It is mounted with a
-		# warning; every other failure stops the boot, as before.
+		# format, which is not the same as finding it broken.  It is
+		# mounted with a warning; every other failure keeps the root
+		# here (no_disk_root) - on a disk that holds no MEECHO volume
+		# fsck says "bad magic number" and changes nothing.
 		$FSCK -p $rootdevname && fsck_rc=0 || fsck_rc=$?
 		if [ $fsck_rc != 0 ]
 		then
 			if [ $fsck_rc = 16 ]
 			then	echo "WARNING: $rootdevname was not checked"
-			else	exit 1
+			else	no_disk_root "$rootdevname holds no file system \
+this system can use (fsck: $fsck_rc); was the root image written to it?"
 			fi
 		fi
 	fi
@@ -217,17 +242,28 @@ fi
 # the root file system exit, says so and stops the machine.  Measured with
 # port/test/audit/rootfs-crash.py.  The label is the one mount(8) would
 # make; rslabel= is how mount -e finds the server while the type stays mfs.
-if ! sysenv bootramdisk >/dev/null; then
+if [ -z "$ramroot" ]; then
 	rootlabel=fs_`printf %.12s "${rootdevname##*/}"`
 	minix-service $bin_img-f up /service/mfs -label "$rootlabel" \
-		-args "$rootdevname /"
-	mount -e -n -t mfs -o rslabel="$rootlabel" "$rootdevname" /
-
+		-args "$rootdevname /" ||
+		no_disk_root "no file system server for $rootdevname"
+fi
+if [ -z "$ramroot" ]; then
+	mount -e -n -t mfs -o rslabel="$rootlabel" "$rootdevname" / ||
+		no_disk_root "$rootdevname would not mount"
+fi
+if [ -z "$ramroot" ]; then
 	# Reopen standard file descriptors, so that we can unmount the ramdisk.
 	# That is essentially a VFS shortcoming that should be fixed, though..
 	exec >/dev/log
 	exec 2>/dev/log
 	exec </dev/console
+fi
+
+# The root stayed here after all: the screen and input it would have had.
+if [ -n "$disk_failed" ] && [ X`sysenv arch` = Xaarch64 ]
+then
+	console_drivers
 fi
 
 # Give RS the binary of the one boot-image service that can be restarted.
@@ -249,6 +285,6 @@ fi
 mount -e -n -t procfs none /proc || echo "WARNING: couldn't mount procfs"
 
 # Start the NetBSD rc infrastructure
-if ! sysenv bootramdisk >/dev/null; then
+if [ -z "$ramroot" ]; then
 	exec sh /etc/rc "$@"
 fi

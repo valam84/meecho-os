@@ -11,8 +11,11 @@
  * "regulator-always-on" or "regulator-boot-on" - with "uv" when its
  * minimum and maximum are one value (apply_uV), "swen" = 1 always
  * (qcom_smd-regulator.c, rpm_reg_write_active()).  On the Mi Pad 4 the
- * touch screen's 1.8 V supply, L11A, is one of those: the boot loader
- * leaves it off, and the touch controller does not answer on its bus.
+ * touch controller did not answer on its bus until this ran.  Its tree
+ * names only the 1.8 V vcc (L11A), and that one the boot loader had left
+ * on - qcom_pmic read it so on the tablet; what was missing is one of the
+ * others, by all appearances L3B, 3.0 V, the controller's analogue supply,
+ * which the tree keeps on without naming a consumer.
  *
  * This driver does that much and no more: no voltage that the tree does
  * not pin, no regulator that it does not mark, no disabling, no loads.

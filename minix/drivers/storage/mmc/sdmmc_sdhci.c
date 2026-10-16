@@ -147,14 +147,41 @@ static struct sdmmc_host *this_host;
  * a second one, "cqhci".
  */
 static int is_msm;
-static int msm_cdr;		/* toggle the DLL's CDR around every command */
+/*
+ * The DLL's clock-data recovery is never touched.  Linux flips CDR_EN and
+ * CDR_EXT_EN around every command only when use_cdr is set, and use_cdr is
+ * set in exactly one place: sdhci_msm_execute_tuning(), after Linux has
+ * tuned the part itself.  Here the boot loader tuned it - and left both
+ * bits clear - so the Linux rule for a part it did not tune applies: hands
+ * off.  The first version flipped them as if it had tuned, and on the
+ * Mi Pad 4 the first read (CMD8) moved its data and never completed.
+ */
 static phys_bytes cq_base;
 static size_t cq_size;
 static vir_bytes cq_regs;
+
+/*
+ * Every transfer of a Qualcomm part goes through ADMA2, as Linux's and the
+ * boot loader's do: sdhci-msm never uses the data port (SDHCI_USE_ADMA from
+ * the capabilities, no PIO quirk), and the boot loader left ADMA2 selected
+ * in Host Control 1.  A buffer the caller gives no physical address for -
+ * the card layer's own short reads, EXT_CSD - goes through this one and is
+ * copied.  On the Mi Pad 4 the programmed path moved CMD8's data and never
+ * saw Transfer Complete.
+ */
+#define MSM_BOUNCE_BYTES	4096
+static uint8_t *msm_bounce;
+static phys_bytes msm_bounce_phys;
 static struct sdmmc_line msm_iface, msm_core;	/* its two GCC branches */
 static int msm_alive;		/* both seen running: registers may be read */
 
 #define MSM_DLL_CONFIG		0x200
+#define MSM_DLL_CONFIG_2	0x254
+#define MSM_DLL_CONFIG_3	0x258
+#define MSM_DLL_USR_CTL		0x388
+#define MSM_DDR_CONFIG		0x25c
+#define MSM_VENDOR_FUNC2	0x210
+#define MSM_VENDOR_SPEC3	0x250
 #define MSM_DLL_STATUS		0x208
 #define MSM_VENDOR_SPEC		0x20c
 #define MSM_DDR_200_CFG		0x224
@@ -913,8 +940,33 @@ dma_setup(struct sdmmc_cmd *cmd)
 	return OK;
 }
 
+/*
+ * What sdhci_msm_dump_vendor_regs() prints, plus the standard registers a
+ * stuck transfer is read from - at warning level on a Qualcomm part, where
+ * the screen is the only log there is.
+ */
+static void
+msm_dump(const char *when)
+{
+	if (!is_msm || !msm_alive)
+		return;
+	log_warn(&sdmmc_log, "%s: st %08x nis %04x eis %04x ctl %02x ctl2 "
+	    "%04x bs %04x bc %04x mode %04x adma %08x\n", when,
+	    rd32(SDHC_PRESENT_STATE), rd16(SDHC_NINTR_STATUS),
+	    rd16(SDHC_EINTR_STATUS), rd8(SDHC_HOST_CTL),
+	    rd16(SDHC_HOST_CTL2), rd16(SDHC_BLOCK_SIZE),
+	    rd16(SDHC_BLOCK_COUNT), rd16(SDHC_TRANSFER_MODE),
+	    rd32(SDHC_ADMA_ADDR));
+	log_warn(&sdmmc_log, "%s: dll %08x/%08x cfg2 %08x cfg3 %08x usr %08x "
+	    "ddr %08x vendor %08x %08x %08x\n", when, rd32(MSM_DLL_STATUS),
+	    rd32(MSM_DLL_CONFIG), rd32(MSM_DLL_CONFIG_2),
+	    rd32(MSM_DLL_CONFIG_3), rd32(MSM_DLL_USR_CTL),
+	    rd32(MSM_DDR_CONFIG), rd32(MSM_VENDOR_SPEC),
+	    rd32(MSM_VENDOR_FUNC2), rd32(MSM_VENDOR_SPEC3));
+}
+
 static int
-sdhci_command(struct sdmmc_cmd *cmd)
+sdhci_command_one(struct sdmmc_cmd *cmd)
 {
 	uint32_t mask, i;
 	uint16_t mode, creg, got;
@@ -1017,21 +1069,6 @@ sdhci_command(struct sdmmc_cmd *cmd)
 	if (cmd->data_dir != SDMMC_DATA_NONE)
 		creg |= SDHC_DATA_PRESENT_SELECT;
 
-	/*
-	 * A tuned Qualcomm part (HS200, or HS400 without the enhanced strobe)
-	 * samples read data with its clock-data recovery on and everything
-	 * else with it off: Linux flips the two bits on every command.
-	 */
-	if (msm_cdr) {
-		uint32_t dll = rd32(MSM_DLL_CONFIG);
-
-		if (cmd->data_dir == SDMMC_DATA_READ)
-			dll = (dll | MSM_CDR_EN) & ~MSM_CDR_EXT_EN;
-		else
-			dll = (dll & ~MSM_CDR_EN) | MSM_CDR_EXT_EN;
-		wr32(MSM_DLL_CONFIG, dll);
-	}
-
 	wr32(SDHC_ARGUMENT, cmd->arg);
 	log_debug(&sdmmc_log, "CMD%u: creg %04x mode %04x st %08x\n",
 	    cmd->index, creg, mode, rd32(SDHC_PRESENT_STATE));
@@ -1042,6 +1079,7 @@ sdhci_command(struct sdmmc_cmd *cmd)
 			return command_error(cmd);
 		log_warn(&sdmmc_log, "CMD%u: no completion\n", cmd->index);
 		dump_regs("stuck");
+		msm_dump("no completion");
 		(void)reset(SDHC_RESET_CMD);
 		(void)reset(SDHC_RESET_DAT);
 		return r;
@@ -1085,6 +1123,7 @@ sdhci_command(struct sdmmc_cmd *cmd)
 				    rd32(SDHC_PRESENT_STATE),
 				    rd16(SDHC_BLOCK_SIZE),
 				    rd16(SDHC_BLOCK_COUNT));
+				msm_dump("block");
 				if (r == EIO)
 					return command_error(cmd);
 				log_warn(&sdmmc_log,
@@ -1106,6 +1145,7 @@ sdhci_command(struct sdmmc_cmd *cmd)
 		if (r != OK) {
 			log_warn(&sdmmc_log, "CMD%u: transfer never "
 			    "completed\n", cmd->index);
+			msm_dump("never completed");
 			(void)reset(SDHC_RESET_CMD);
 			(void)reset(SDHC_RESET_DAT);
 			return r;
@@ -1136,6 +1176,29 @@ sdhci_command(struct sdmmc_cmd *cmd)
 	}
 
 	return OK;
+}
+
+static int
+sdhci_command(struct sdmmc_cmd *cmd)
+{
+	struct sdmmc_cmd c;
+	size_t total = (size_t)cmd->blocks * cmd->blocklen;
+	int r;
+
+	if (!is_msm || cmd->data_dir == SDMMC_DATA_NONE || cmd->data_phys != 0 ||
+	    msm_bounce == NULL || total == 0 || total > MSM_BOUNCE_BYTES)
+		return sdhci_command_one(cmd);
+
+	c = *cmd;
+	c.data = msm_bounce;
+	c.data_phys = msm_bounce_phys;
+	if (cmd->data_dir == SDMMC_DATA_WRITE)
+		memcpy(msm_bounce, cmd->data, total);
+	r = sdhci_command_one(&c);
+	memcpy(cmd->resp, c.resp, sizeof(cmd->resp));
+	if (r == OK && cmd->data_dir == SDMMC_DATA_READ)
+		memcpy(cmd->data, msm_bounce, total);
+	return r;
 }
 
 /*
@@ -1253,7 +1316,9 @@ msm_takeover(void)
 	if (hs400 && !(dlls & MSM_DDR_DLL_LOCK))
 		log_warn(&sdmmc_log, "msm: HS400 with the DDR DLL not "
 		    "reported locked; going on\n");
-	msm_cdr = (uhs == 3 && !es);
+	log_info(&sdmmc_log, "msm: CDR %s, external CDR %s (as left; never "
+	    "touched)\n", (dll & MSM_CDR_EN) ? "on" : "off",
+	    (dll & MSM_CDR_EXT_EN) ? "on" : "off");
 
 	if (this_host != NULL) {
 		this_host->adopt_width = (hc1 & SDHC_8BIT_MODE) ? 8 :
@@ -1444,6 +1509,20 @@ sdhci_init(void)
 		    "processor will move the data\n");
 	else
 		dma_mode = SDHC_DMA_SELECT_ADMA2_32;
+
+	if (is_msm && dma_mode >= 0 && msm_bounce == NULL) {
+		msm_bounce = alloc_contig(MSM_BOUNCE_BYTES, AC_ALIGN4K,
+		    &msm_bounce_phys);
+		if (msm_bounce != NULL && (msm_bounce_phys == 0 ||
+		    msm_bounce_phys + MSM_BOUNCE_BYTES > 0x100000000ULL)) {
+			free_contig(msm_bounce, MSM_BOUNCE_BYTES);
+			msm_bounce = NULL;
+		}
+		if (msm_bounce == NULL)
+			log_warn(&sdmmc_log, "msm: no DMA buffer below 4 GiB "
+			    "for short transfers; they will use the data "
+			    "port\n");
+	}
 
 	/*
 	 * And the ceiling on one command.

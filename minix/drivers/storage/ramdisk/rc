@@ -74,8 +74,8 @@ then
 		# down as the arrow keys, power for the backlight) and the
 		# touch screen as the keys of the keyboard fb draws with
 		# osk=1.  Between them qcom_rpm, which asks the RPM for the
-		# regulators the tree keeps on - the touch screen's supply is
-		# one, and the boot loader leaves it off.  On QEMU's virt none
+		# regulators the tree keeps on - without it the touch screen
+		# has no analogue supply.  On QEMU's virt none
 		# of the three finds its hardware.
 		minix-service up /service/input -dev /dev/kbdmux \
 			2>/dev/null || :

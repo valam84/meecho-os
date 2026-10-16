@@ -1,0 +1,71 @@
+#!/bin/sh
+# /etc/rc of the Mi Pad 4's root on eMMC (the userdata partition, through
+# the gptpart0=userdata window).  The ramdisk has started sdmmc, checked
+# this volume and mounted it over the root; init runs this script, and the
+# sessions of /etc/ttys after it.
+#
+# Not the CB2's rc (port/mkroot.sh): this machine has no network, no USB
+# host and no Mali, and on a Snapdragon a driver that probes a block whose
+# clock nobody turned on can stall the bus - so nothing is started here
+# that was not written for this SoC or does not touch hardware at all.
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+export PATH
+
+# Nobody else sets it, and services started from here would make files
+# writable by everyone.
+umask 022
+
+echo "Root is on `sysenv rootdevname` (`sysenv gptpart0`), driver `sysenv blkdrv`."
+
+# The screen: the frame the boot loader left running (simple-framebuffer).
+# card=0: no test card.  osk= and fontscale= come from the boot arguments.
+if [ -x /service/fb ]
+then
+	minix-service up /service/fb -dev /dev/fb0 -args card=0 ||
+	    echo "WARNING: no display"
+fi
+
+# Input: the input server, the PMIC's buttons (volume keys as the arrows,
+# power for the backlight; battery and charger in the log) and the touch
+# screen as the keys of the keyboard fb draws with osk=1.
+minix-service up /service/input -dev /dev/kbdmux ||
+    echo "WARNING: no input server"
+if [ -x /service/qcom_pmic ]
+then
+	minix-service up /service/qcom_pmic || echo "WARNING: no PMIC driver"
+fi
+if [ -x /service/qcom_touch ]
+then
+	minix-service up /service/qcom_touch ||
+	    echo "WARNING: no touch screen driver"
+fi
+
+# Randomness.  This SoC's random source has no driver yet, so the pool is
+# fed by interrupt timing only and may stay unseeded; nothing here needs
+# keys.
+minix-service up /service/random -dev /dev/random ||
+    echo "WARNING: no random device"
+
+# Local sockets (AF_UNIX): socketpair(2) fails without them.
+minix-service up /service/uds || echo "WARNING: no local sockets"
+
+# Pseudo terminals, both kinds (see the CB2's rc for the reasons).
+if [ -x /service/pty ]
+then
+	minix-service up /service/pty -dev /dev/ptyp0 \
+	    -args "gid=$(stat -f %g /dev/ptmx)" ||
+	    echo "WARNING: no pseudo terminals"
+fi
+if [ -x /service/ptyfs ]
+then
+	mount -t ptyfs -o rslabel=ptyfs none /dev/pts >/dev/null ||
+	    echo "WARNING: no Unix98 pseudo terminals"
+fi
+
+if [ -x /usr/sbin/dev_mkdb ] &&
+   { [ ! -f /var/run/dev.cdb ] || [ /dev -nt /var/run/dev.cdb ]; }
+then
+	/usr/sbin/dev_mkdb || echo "WARNING: dev_mkdb failed"
+fi
+
+exit 0

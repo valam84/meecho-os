@@ -33,7 +33,10 @@ BS=4096
 
 RAMDISK_OBJ=${OBJ}/minix/drivers/storage/ramdisk
 MKFSMFS=${MKFSMFS:-${CROSS_TOOLS}/nbmkfs.mfs}
-IMG=${WORK}/root-emmc.img
+# Имя образа и /etc/rc - переменными, чтобы тем же кодом собирался корень
+# другой машины: у Mi Pad 4 свой rc (port/clover/rc.clover - ни сети, ни
+# USB, ни ускорителя Mali; экран, кнопки PMIC и сенсор) и свой образ.
+IMG=${WORK}/${ROOT_NAME:-root-emmc}.img
 
 [ -f "${RAMDISK_OBJ}/proto.gen" ] || {
 	echo "$0: нет ${RAMDISK_OBJ}/proto.gen - сначала собрать ramdisk" >&2
@@ -305,7 +308,12 @@ END_RC
 python3 "${SRC}/releasetools/evbarm64_rootproto.py" \
 	"${RAMDISK_OBJ}/proto.gen" "${RAMDISK_OBJ}" "${DEST}" ${SUBDIRS:-} \
 	> "${WORK}/proto.full"
-sed "s|^\([ 	]*rc ---755 0 0 \).*|\1${WORK}/rc.emmc|" \
+ROOT_RC=${RC_FILE:-${WORK}/rc.emmc}
+[ -f "${ROOT_RC}" ] || { echo "$0: нет ${ROOT_RC}" >&2; exit 1; }
+# proto берёт пути как есть, а mkfs может идти из другого каталога.
+ROOT_RC=$(cd "$(dirname "${ROOT_RC}")" && pwd)/$(basename "${ROOT_RC}")
+echo "/etc/rc: ${ROOT_RC}"
+sed "s|^\([ 	]*rc ---755 0 0 \).*|\1${ROOT_RC}|" \
 	"${WORK}/proto.full" > "${WORK}/proto.emmc"
 
 # Открытый ключ, которому разрешён вход как root. В дереве ОС ему не место

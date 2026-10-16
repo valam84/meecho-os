@@ -87,11 +87,23 @@ then
 	# which one this machine has, the same way it says which console;
 	# without a word, it is virtio, which is what the emulator has.
 	#
-	# Started only when the root is going to be on it: with bootramdisk=1
-	# this image is the root and no disk is needed.  -c keeps a copy of
-	# the binary inside RS, because this image is unmounted from under it
-	# once the disk is the root.
-	if ! sysenv bootramdisk >/dev/null
+	# Started when the root is going to be on it, or when the boot script
+	# names a driver although this image stays the root (bootramdisk=1
+	# blkdrv=...): a disk to look at from a system that does not depend
+	# on it - the first boot of a machine whose disk driver is new (the
+	# Mi Pad 4's eMMC, read-only without a gptpartN= window).  There a
+	# driver that fails is a warning, not the end of the boot, and only
+	# the machine's own disk (instance 0) is looked at.  -c keeps a copy
+	# of the binary inside RS, because this image is unmounted from under
+	# it once the disk is the root.
+	if sysenv bootramdisk >/dev/null && sysenv blkdrv >/dev/null
+	then
+		blkdrv="`sysenv blkdrv`"
+		echo "Starting the $blkdrv block driver (the root stays here)"
+		minix-service -c up /service/$blkdrv -dev /dev/c0d0 \
+			-label ${blkdrv}_0 -args instance=0 ||
+			echo "WARNING: no disk from $blkdrv"
+	elif ! sysenv bootramdisk >/dev/null
 	then
 		if sysenv blkdrv >/dev/null
 		then	blkdrv="`sysenv blkdrv`"

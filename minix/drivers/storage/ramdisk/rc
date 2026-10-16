@@ -106,9 +106,12 @@ then
 	fi
 
 	# The network driver netdrv= names, on a ramdisk root that carries
-	# it - dwc3_ecm, the Mi Pad 4's USB-C port.  No network stack here:
-	# this is for trying the driver on the machine, with its log level
-	# from netlog= as on a disk root.
+	# it - dwc3_ecm, the Mi Pad 4's USB-C port - with its log level from
+	# netlog= as on a disk root; then the stack, and the driver's
+	# interface gets the address netaddr= gives (10.42.0.2/24): no DHCP
+	# here, the other end of the cable is a hub with a fixed address.
+	# The interface appears when the stack has heard from the driver,
+	# so it is waited for.
 	if [ -n "$ramroot" ] && sysenv netdrv >/dev/null &&
 	   [ -x "/service/`sysenv netdrv`" ]
 	then
@@ -117,8 +120,30 @@ then
 		if sysenv netlog >/dev/null
 		then	netlog="`sysenv netlog`"
 		fi
-		minix-service up "/service/$netdrv" -label "${netdrv}_0" \
-		    -args "instance=0 log=$netlog" 2>/dev/null || :
+		if minix-service up "/service/$netdrv" -label "${netdrv}_0" \
+		    -args "instance=0 log=$netlog" 2>/dev/null &&
+		   minix-service up /service/lwip -dev /dev/bpf
+		then
+			netif=
+			for t in 1 2 3 4 5
+			do
+				for i in `ifconfig -l 2>/dev/null`
+				do
+					[ "$i" != lo0 ] && netif=$i
+				done
+				[ -n "$netif" ] && break
+				sleep 1
+			done
+			ifconfig lo0 inet 127.0.0.1 up 2>/dev/null
+			if [ -n "$netif" ] && sysenv netaddr >/dev/null
+			then
+				ifconfig "$netif" inet "`sysenv netaddr`" up &&
+				    ifconfig "$netif" | grep 'inet ' ||
+				    echo "WARNING: $netif has no address"
+			elif [ -z "$netif" ]
+			then	echo "WARNING: no interface from $netdrv"
+			fi
+		fi
 	fi
 
 	# The disk driver, which finds its own device in the device tree but

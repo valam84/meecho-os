@@ -182,6 +182,29 @@ dir.qcom_rpm:=	minix/drivers/power/qcom_rpm
 # (port/clover/hw-net.md); rc starts it when netdrv= names it.
 PROGRAMS+=		dwc3_ecm
 dir.dwc3_ecm:=	minix/drivers/net/dwc3_ecm
+# And the network on a ramdisk root, for the driver netdrv= names: the
+# stack, ifconfig to give its interface the address in netaddr=, ping to
+# see the other end answer.  The stack's lines of system.conf are a file
+# of its own in system.conf.d, which minix-service reads beside
+# system.conf; its source is the stack's directory, not etc/.
+PROGRAMS+=		lwip
+dir.lwip:=	minix/net/lwip
+PROGRAMS+=		ifconfig
+dir.ifconfig:=	sbin/ifconfig
+PROGRAMS+=		ping
+dir.ping:=	sbin/ping
+# rc waits for the stack to name the driver's interface.
+PROGRAMS+=		sleep
+dir.sleep:=	bin/sleep
+ETC+=			system.conf.d/lwip
+ETCSRC.system.conf.d/lwip=	${NETBSDSRCDIR}/minix/net/lwip/lwip.conf
+# QEMU's network device beside it, the way virtio_blk stands beside sdmmc:
+# the same rc lines are then tried on the emulator (netdrv=virtio_net).
+PROGRAMS+=		virtio_net
+dir.virtio_net:= minix/drivers/net/virtio_net
+ETC+=			system.conf.d/virtio_net
+ETCSRC.system.conf.d/virtio_net= \
+	${NETBSDSRCDIR}/minix/drivers/net/virtio_net/virtio_net.conf
 # The binary of mib, the one boot-image service that restarts without
 # state: rc hands RS its path, and on a ramdisk root this is the only copy
 # there is.  See the comment in rc.

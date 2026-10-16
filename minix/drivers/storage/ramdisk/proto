@@ -25,6 +25,7 @@ d--755 0 0
 		mv ---755 0 0 mv
 		cp ---755 0 0 cp
 		sync ---755 0 0 sync
+		sleep ---755 0 0 sleep
 /* Raw sectors first, a filesystem second: dd is how a block driver nobody
  * has run before gets tried, and df is how the result is looked at.
  */
@@ -46,6 +47,8 @@ d--755 0 0
 		mkfs.mfs s--755 0 0 /sbin/mkfs.mfsv3
 		diskctl ---755 0 0 diskctl
 		sysctl ---755 0 0 sysctl
+		ifconfig ---755 0 0 ifconfig
+		ping ---755 0 0 ping
 /* reboot decides what to do from the name it was called by, the way the
  * installed system links it three ways.
  */
@@ -82,6 +85,8 @@ d--755 0 0
 		qcom_touch ---755 0 0 qcom_touch
 		qcom_rpm ---755 0 0 qcom_rpm
 		dwc3_ecm ---755 0 0 dwc3_ecm
+		lwip ---755 0 0 lwip
+		virtio_net ---755 0 0 virtio_net
 #endif
 		mfs ---755 0 0 mfs
 		procfs ---755 0 0 procfs

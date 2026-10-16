@@ -19,6 +19,10 @@
 		dhcpcd.conf ---644 0 0 etc/dhcpcd.conf
 		services ---644 0 0 etc/services
 		protocols ---644 0 0 etc/protocols
+		system.conf.d d--755 0 0
+			lwip ---644 0 0 etc/system.conf.d/lwip
+			virtio_net ---644 0 0 etc/system.conf.d/virtio_net
+		$
 		ssh d--755 0 0
 			sshd_config ---644 0 0 etc/sshd_config
 		$

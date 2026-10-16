@@ -53,7 +53,8 @@ fastboot boot meecho-clover-boot.img
 - [ ] `cat /proc/cpuinfo` — сколько ядер (ожидается 8). Строки
       `SMP: CPU N did not come up` при загрузке — сфотографировать.
 - [ ] Строки `sdmmc(…)` при загрузке. Ожидается примерно:
-      `msm: core …; host ctl …`, `adopt: the card is at RCA …`,
+      `msm: core …; host ctl …`, `msm: CDR off, external CDR off (as
+      left; never touched)`, `adopt: the card is at RCA …`,
       `eMMC adopted: … sectors (… MiB), 8-bit bus, HS400 …`.
       Если вместо этого `clocks iface off/unknown` или `refusing` —
       сфотографировать: драйвер отказался, ничего не трогая.

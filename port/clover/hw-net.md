@@ -379,6 +379,23 @@ Ramdisk несёт службу; его `rc` поднимает `netdrv=`, ес�
 
 ### Шаг 3. Перечисление (только ep0) — сначала на том, что поднял ABL
 
+**3а сделан и работает на планшете, 2026-10-16** (`3d900bd9a`, образ
+`meecho-clover-usbenum.img`, поставлен хранителем с хаба) [T, `dmesg` и
+`lsusb -v` хаба, без фото]:
+
+```
+usb 1-2: new high-speed USB device number 21 using xhci-hcd
+usb 1-2: New USB device found, idVendor=0525, idProduct=a4a1, bcdDevice= 1.00
+usb 1-2: Product: MEECHO USB (dwc3_ecm)
+usb 1-2: Manufacturer: MEECHO
+```
+
+Через 5.3 с после ухода fastboot с шины (загрузка MEECHO до `rc`),
+перечисление — 0.32 с; скорость 480, `bConfigurationValue` 1; `lsusb -v`
+через 3.5 минуты — дескрипторы байт в байт как в стенде, qualifier,
+`Device Status: Self Powered` (GET_STATUS). LPM хаб не включал: BOS нет.
+Стенд — 141 проверка на модели ядра, `mutate.sh` — 10 из 10.
+
 После шага 2 порядок такой (решено по снимку с планшета):
 
 - **3а. Принять состояние загрузчика** (образ запущен `fastboot boot`):

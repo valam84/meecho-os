@@ -427,13 +427,19 @@ static struct inputdriver pmic_tab = {
 };
 
 /*
- * Which of the first PMIC's LDOs are on, read and only read: the one a
- * device on the board is powered from is somewhere in this line.  The
- * touch screen of the Mi Pad 4 did not answer on its bus, and its supply
- * (L11A) is on in Linux only because Linux asks for it.  Every peripheral
- * of LDO type (TYPE 0x21) in 0x4000-0x5fff is LDO (base - 0x4000) / 0x100 +
- * 1; EN_CTL (0x46) bit 7 says enabled, STATUS1 (0x08) bit 7 ready.
+ * Which of the PM660's LDOs are on, read and only read: the one a device on
+ * the board is powered from is somewhere in this line.  The touch screen of
+ * the Mi Pad 4 did not answer on its bus, and its supply (L11A) is on in
+ * Linux only because Linux asks the RPM for it.
+ *
+ * The regulators are on the PMIC's second SID (pmic@1 in the tree, its
+ * "regulators" node); SID 0 at 0x4000 is the fuel gauge, which is where the
+ * first version of this looked and found nothing.  Every peripheral of LDO
+ * type (TYPE 0x21) in 0x4000-0x5fff is LDO (base - 0x4000) / 0x100 + 1;
+ * EN_CTL (0x46) bit 7 says enabled, STATUS1 (0x08) bit 7 ready.  "*" marks
+ * one this execution environment owns and could switch itself.
  */
+#define SID_PM660_REGS		1
 #define LDO_FIRST		0x4000
 #define LDO_LAST		0x5f00
 #define PERIPH_TYPE		0x04
@@ -444,29 +450,38 @@ static struct inputdriver pmic_tab = {
 static void
 ldo_report(void)
 {
-	char on[96], off[96];
-	int lon = 0, loff = 0;
+	char on[96], off[96], other[64];
+	int lon = 0, loff = 0, lo = 0;
 	unsigned base, n;
 	uint8_t t, en, st;
+	const char *mine;
 
-	on[0] = off[0] = '\0';
+	on[0] = off[0] = other[0] = '\0';
 	for (base = LDO_FIRST; base <= LDO_LAST; base += 0x100) {
-		if (rd8(SID_PM660, base + PERIPH_TYPE, &t) != OK_SPMI ||
-		    t != TYPE_LDO ||
-		    rd8(SID_PM660, base + LDO_EN_CTL, &en) != OK_SPMI ||
-		    rd8(SID_PM660, base + LDO_STATUS1, &st) != OK_SPMI)
+		if (rd8(SID_PM660_REGS, base + PERIPH_TYPE, &t) != OK_SPMI)
+			continue;
+		if (t != TYPE_LDO) {
+			if (lo < (int)sizeof(other) - 12)
+				lo += snprintf(other + lo, sizeof(other) - lo,
+				    " %x:%02x", base >> 8, t);
+			continue;
+		}
+		if (rd8(SID_PM660_REGS, base + LDO_EN_CTL, &en) != OK_SPMI ||
+		    rd8(SID_PM660_REGS, base + LDO_STATUS1, &st) != OK_SPMI)
 			continue;
 		n = (base - LDO_FIRST) / 0x100 + 1;
+		mine = spmi_writable(&spmi, SID_PM660_REGS, base) ? "*" : "";
 		if ((en & 0x80) || (st & 0x80)) {
 			if (lon < (int)sizeof(on) - 8)
 				lon += snprintf(on + lon, sizeof(on) - lon,
-				    " %u%s", n, (st & 0x80) ? "" : "?");
+				    " %u%s%s", n, (st & 0x80) ? "" : "?", mine);
 		} else if (loff < (int)sizeof(off) - 8)
-			loff += snprintf(off + loff, sizeof(off) - loff, " %u",
-			    n);
+			loff += snprintf(off + loff, sizeof(off) - loff,
+			    " %u%s", n, mine);
 	}
-	log_info(&pmic_log, "PM660 LDOs on:%s; off:%s\n", lon ? on : " none",
-	    loff ? off : " none");
+	log_info(&pmic_log, "PM660 LDOs on:%s; off:%s%s%s\n",
+	    lon ? on : " none", loff ? off : " none",
+	    lo ? "; not LDOs:" : "", other);
 }
 
 static int

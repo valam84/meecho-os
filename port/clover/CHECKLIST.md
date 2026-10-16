@@ -119,6 +119,11 @@ fastboot boot meecho-clover-nextboot.img
 - [ ] Не выходя из fastboot, переткнуть кабель планшета в хаб — дальше
       агент проверяет `fastboot devices` сам.
 
+Если после `fastboot reboot` планшет снова и снова попадает в fastboot
+(загрузчик не сбросил причину сам), то `fastboot boot
+meecho-clover-nextnormal.img`: он ставит `nextboot=normal` и через минуту
+перезагружает в обычный режим.
+
 ## Что заведомо не сделано
 
 - Выключение по `poweroff` может не работать (нужен PS_HOLD PMIC,

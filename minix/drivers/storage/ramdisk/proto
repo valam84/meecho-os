@@ -45,6 +45,7 @@ d--755 0 0
 		mkfs.mfsv3 ---755 0 0 mkfs.mfsv3
 		mkfs.mfs s--755 0 0 /sbin/mkfs.mfsv3
 		diskctl ---755 0 0 diskctl
+		sysctl ---755 0 0 sysctl
 /* reboot decides what to do from the name it was called by, the way the
  * installed system links it three ways.
  */

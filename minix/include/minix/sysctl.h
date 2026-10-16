@@ -29,6 +29,7 @@
 #define MINIX_MIB	1
 #define MINIX_PROC	2
 #define MINIX_LWIP	3
+#define MINIX_PMIC	4	/* a PMIC driver's subtree (qcom_pmic) */
 
 /*
  * These identifiers, under MINIX_TEST, are used by test87 to test the MIB

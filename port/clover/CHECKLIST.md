@@ -96,6 +96,29 @@ fastboot boot meecho-clover-emmc.img
 Только когда шаг 2 или 3 работает — по [FLASH.md](FLASH.md):
 `fastboot flash boot <образ>`.
 
+## Сеть, шаг 1: перезагрузка в fastboot — `meecho-clover-nextboot.img`
+
+Первый шаг сети через USB ([hw-net.md](hw-net.md)): MEECHO сама уводит
+планшет в fastboot. Образ — тот же, что `meecho-clover-boot.img` (корень в
+памяти, eMMC только на чтение), плюс `nextboot=bootloader bootwd=120`;
+ничего не пишет, кроме одного регистра PMIC — причины следующей загрузки.
+
+```
+fastboot boot meecho-clover-nextboot.img
+```
+
+- [ ] Фото строк `pmic(…)` при загрузке, особенно
+      `pmic(info)PON rev …: PS_HOLD drop = …; next boot …` и
+      `pmic(info)next boot: bootloader (0x88f: 0x.. -> 0x04)`, и обе
+      строки `PM660 LDOs on` / `PM660L LDOs on`.
+- [ ] (по желанию) войти `root`, набрать `sysctl minix.pmic` — ожидается
+      `minix.pmic.nextboot = bootloader`.
+- [ ] Через 2 минуты после старта планшет перезагрузится сам. Ожидается
+      **экран fastboot**, а не MEECHO. Если загрузилась MEECHO из `boot` —
+      сфотографировать и написать.
+- [ ] Не выходя из fastboot, переткнуть кабель планшета в хаб — дальше
+      агент проверяет `fastboot devices` сам.
+
 ## Что заведомо не сделано
 
 - Выключение по `poweroff` может не работать (нужен PS_HOLD PMIC,

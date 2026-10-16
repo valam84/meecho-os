@@ -18,11 +18,19 @@
  *                      when the state changes, every 10% and every ten
  *                      minutes; warnings at 15% and 5%.  A charger watchdog
  *                      the boot loader left armed is fed, or charging stops.
+ *   Next boot          where the boot loader goes after the next reset:
+ *                      "bootloader" (fastboot), "recovery" or "normal", from
+ *                      the boot argument nextboot= or, as root, sysctl -w
+ *                      minix.pmic.nextboot=... - so that whoever reaches
+ *                      the machine over the network can bring it back to
+ *                      fastboot without anyone at its buttons.
  *
  * It writes as little as it can: the volume-up pin's input configuration
- * once, the backlight's module enable, the charger watchdog's pet.  Each
- * write goes only to a peripheral this EE owns (spmi_write()).  It never
- * writes the PON reset timers, the regulators, or the charger's settings.
+ * once, the backlight's module enable, the charger watchdog's pet, and the
+ * PON's soft reboot spare register when asked.  Each write goes only to a
+ * peripheral this EE owns (spmi_write()).  It never writes the PON reset
+ * timers, the PS_HOLD reset type, the regulators, or the charger's
+ * settings.
  *
  * Powering off properly would need the PMIC told what to do when PS_HOLD
  * drops (hw-pmic.md, section 5) before PSCI's SYSTEM_OFF; that is not done
@@ -34,6 +42,8 @@
 #include <minix/fdt.h>
 #include <minix/log.h>
 #include <minix/osk.h>
+#include <minix/rmib.h>
+#include <minix/sysctl.h>
 #include <minix/sysutil.h>
 #include <minix/vm.h>
 
@@ -55,9 +65,14 @@ static struct log pmic_log = {
 #define SID_PM660L_A		2
 #define SID_PM660L_B		3
 
+#define PON_REV2		0x0801	/* 0: PS_HOLD enable in RST_CTL */
 #define PON_RT_STS		0x0810	/* bit0 power, bit1 volume down */
 #define PON_KPDPWR		0x01
 #define PON_RESIN		0x02
+#define PON_PS_HOLD_RST_CTL	0x085a	/* bits 3:0 what a PS_HOLD drop does */
+#define PON_PS_HOLD_RST_CTL2	0x085b	/* bit7 enable, if PON_REV2 != 0 */
+#define PON_SOFT_RB_SPARE	0x088f	/* bits 7:1 the boot loader's mode */
+#define PON_REASON_SHIFT	1	/* gen2, as qcom,pm8998-pon */
 
 #define VOLUP_BASE		0xc600	/* PM660L GPIO7 */
 #define GPIO_TYPE		0x04
@@ -404,6 +419,174 @@ battery_poll(int force)
 }
 
 /*===========================================================================*
+ *    where the next reset goes                                               *
+ *===========================================================================*/
+/*
+ * The boot loader's modes, as the PM660's PON node in the tree numbers them
+ * (pm660.dtsi: mode-recovery = <1>, mode-bootloader = <2>), written the way
+ * Linux's reboot-mode writes them (qcom-pon.c, gen2): the mode shifted left
+ * by one into bits 7:1 of PON_SOFT_RB_SPARE, bit 0 kept.  The register
+ * outlives the reset; Qualcomm's ABL reads it and goes to fastboot on 2.
+ *
+ * Linux also makes a PS_HOLD drop a hard reset before it restarts
+ * (pm8941-pwrkey.c), and the mode is meant to survive that.  This driver
+ * does not touch the PS_HOLD setting: it prints what the boot loader left,
+ * so that one reset on the machine shows whether the mode survives as it
+ * is (port/clover/hw-net.md, step 1).
+ */
+static const struct { const char *name; unsigned mode; } boot_modes[] = {
+	{ "normal",	0 },
+	{ "recovery",	1 },
+	{ "bootloader",	2 },
+};
+
+static int have_spare;		/* PON_SOFT_RB_SPARE is ours to write */
+static char nextboot_str[16];	/* minix.pmic.nextboot's buffer */
+
+static const char *
+mode_name(unsigned mode)
+{
+	unsigned i;
+
+	for (i = 0; i < __arraycount(boot_modes); i++)
+		if (boot_modes[i].mode == mode)
+			return boot_modes[i].name;
+	return NULL;
+}
+
+/* The mode the register holds, by name, or as a number if it has none. */
+static void
+mode_string(uint8_t spare, char *buf, size_t size)
+{
+	const char *name;
+
+	if ((name = mode_name(spare >> PON_REASON_SHIFT)) != NULL)
+		strlcpy(buf, name, size);
+	else
+		snprintf(buf, size, "%u", (unsigned)(spare >> PON_REASON_SHIFT));
+}
+
+static void
+pon_report(void)
+{
+	uint8_t rev, ctl, en, spare;
+	unsigned type;
+	char mode[16];
+
+	if (rd8(SID_PM660, PON_REV2, &rev) != OK_SPMI ||
+	    rd8(SID_PM660, PON_PS_HOLD_RST_CTL, &ctl) != OK_SPMI ||
+	    rd8(SID_PM660, rev == 0 ? PON_PS_HOLD_RST_CTL :
+	    PON_PS_HOLD_RST_CTL2, &en) != OK_SPMI ||
+	    rd8(SID_PM660, PON_SOFT_RB_SPARE, &spare) != OK_SPMI) {
+		log_warn(&pmic_log, "PON: unreadable; no next boot\n");
+		return;
+	}
+	have_spare = spmi_writable(&spmi, SID_PM660, PON_SOFT_RB_SPARE);
+	type = ctl & 0x0f;
+	mode_string(spare, mode, sizeof(mode));
+	log_info(&pmic_log, "PON rev %u: PS_HOLD drop = %s (type %u, %s); "
+	    "next boot %s (0x%03x = 0x%02x), %s\n", rev,
+	    type == 1 ? "warm reset" : type == 4 ? "shutdown" :
+	    type == 7 ? "hard reset" : "?", type,
+	    (en & 0x80) ? "enabled" : "disabled", mode, PON_SOFT_RB_SPARE,
+	    spare, have_spare ? "writable" : "not this EE's");
+}
+
+static int
+nextboot_set(const char *name)
+{
+	uint8_t old, now;
+	unsigned i, mode;
+
+	for (i = 0; i < __arraycount(boot_modes); i++)
+		if (strcmp(name, boot_modes[i].name) == 0)
+			break;
+	if (i == __arraycount(boot_modes)) {
+		log_warn(&pmic_log, "next boot \"%s\": not normal, recovery or "
+		    "bootloader\n", name);
+		return EINVAL;
+	}
+	mode = boot_modes[i].mode;
+	if (!have_spare) {
+		log_warn(&pmic_log, "next boot %s: the PON is not this EE's to "
+		    "write\n", name);
+		return EPERM;
+	}
+	if (rd8(SID_PM660, PON_SOFT_RB_SPARE, &old) != OK_SPMI ||
+	    wr8(SID_PM660, PON_SOFT_RB_SPARE, (uint8_t)((old &
+	    ((1u << PON_REASON_SHIFT) - 1)) | mode << PON_REASON_SHIFT)) !=
+	    OK_SPMI || rd8(SID_PM660, PON_SOFT_RB_SPARE, &now) != OK_SPMI) {
+		log_warn(&pmic_log, "next boot %s: the PON did not take it\n",
+		    name);
+		return EIO;
+	}
+	if ((unsigned)(now >> PON_REASON_SHIFT) != mode) {
+		log_warn(&pmic_log, "next boot %s: wrote it, reads back 0x%02x\n",
+		    name, now);
+		return EIO;
+	}
+	log_info(&pmic_log, "next boot: %s (0x%03x: 0x%02x -> 0x%02x)\n", name,
+	    PON_SOFT_RB_SPARE, old, now);
+	return OK;
+}
+
+/*
+ * sysctl minix.pmic.nextboot: reading gives the register's mode now,
+ * writing one of the names sets it.  Writing takes root, which the remote
+ * MIB library checks before this is called.
+ */
+static ssize_t nextboot_func(struct rmib_call *, struct rmib_node *,
+	struct rmib_oldp *, struct rmib_newp *);
+
+static struct rmib_node nextboot_data = RMIB_STRING(RMIB_RW, nextboot_str,
+	"nextboot", "Where the boot loader goes after the next reset");
+
+static struct rmib_node pmic_table[] = {
+/* 0*/	[0]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RW, sizeof(nextboot_str),
+		    nextboot_func, "nextboot", "Where the boot loader goes "
+		    "after the next reset: normal, recovery or bootloader"),
+};
+
+static struct rmib_node pmic_node = RMIB_NODE(RMIB_RO, pmic_table, "pmic",
+	"Qualcomm PMIC");
+static int pmic_node_registered;
+
+static ssize_t
+nextboot_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
+	struct rmib_oldp *oldp, struct rmib_newp *newp)
+{
+	uint8_t spare;
+	ssize_t r;
+	int s;
+
+	if (rd8(SID_PM660, PON_SOFT_RB_SPARE, &spare) != OK_SPMI)
+		return EIO;
+	mode_string(spare, nextboot_str, sizeof(nextboot_str));
+	if ((r = rmib_readwrite(call, &nextboot_data, oldp, newp)) < 0 ||
+	    newp == NULL)
+		return r;
+	if ((s = nextboot_set(nextboot_str)) != OK)
+		return s;
+	return r;
+}
+
+static void
+nextboot_init(void)
+{
+	static const int mib[] = { CTL_MINIX, MINIX_PMIC };
+	char arg[16];
+	int r;
+
+	pon_report();
+	if (env_get_param("nextboot", arg, sizeof(arg)) == OK)
+		(void)nextboot_set(arg);
+	if ((r = rmib_register(mib, __arraycount(mib), &pmic_node)) != OK)
+		log_warn(&pmic_log, "no sysctl minix.pmic: %d\n", r);
+	else
+		pmic_node_registered = 1;
+}
+
+/*===========================================================================*
  *    the driver                                                              *
  *===========================================================================*/
 static void
@@ -427,8 +610,17 @@ pmic_alarm(clock_t UNUSED(stamp))
 	arm();
 }
 
+/* The MIB service, with a request for minix.pmic. */
+static void
+pmic_other(message *m, int ipc_status)
+{
+	if (m->m_source == MIB_PROC_NR)
+		rmib_process(m, ipc_status);
+}
+
 static struct inputdriver pmic_tab = {
-	.idr_alarm	= pmic_alarm
+	.idr_alarm	= pmic_alarm,
+	.idr_other	= pmic_other
 };
 
 /*
@@ -506,6 +698,7 @@ pmic_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	if ((r = arb_init()) != OK)
 		return r;
 	buttons_init();
+	nextboot_init();
 	ldo_report();
 	battery_init();
 	battery_poll(1);
@@ -517,8 +710,11 @@ pmic_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 static void
 pmic_signal(int signo)
 {
-	if (signo == SIGTERM)
-		inputdriver_terminate();
+	if (signo != SIGTERM)
+		return;
+	if (pmic_node_registered)
+		(void)rmib_deregister(&pmic_node);
+	inputdriver_terminate();
 }
 
 int

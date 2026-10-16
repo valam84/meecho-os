@@ -57,4 +57,8 @@
 [C]: enable = 0x85a, если 0x801 == 0, иначе 0x85b; enable bit7 = 0;
 ждать ≥ 100 мкс; 0x85a bits 3:0 = 4 (выключить) / 7 (жёсткий сброс);
 enable bit7 = 1. **Без этого «выключение» может оказаться сбросом** [I].
-Режим перезагрузки в загрузчик/recovery — 0x88f bits 7:1.
+Режим перезагрузки в загрузчик/recovery — 0x88f bits 7:1: режим << 1,
+bit 0 сохранить (`qcom-pon.c`, gen2); `pm660.dtsi`: `mode-recovery = <1>`,
+`mode-bootloader = <2>` [C]. Перезагрузка Linux ставит PS_HOLD в 7 (жёсткий
+сброс; 1 — тёплый только при `reboot_mode = warm`) [C]. В MEECHO —
+`nextboot=` и `sysctl minix.pmic.nextboot` (`hw-net.md`, шаг 1).

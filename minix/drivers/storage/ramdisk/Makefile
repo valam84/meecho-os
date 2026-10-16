@@ -222,6 +222,11 @@ PROGRAMS+=		dd
 dir.dd:=	bin/dd
 PROGRAMS+=		df
 dir.df:=	bin/df
+# The knobs services hang in the sysctl tree - minix.pmic.nextboot among
+# them, which sends the Mi Pad 4 to fastboot on its next reset: on a ramdisk
+# root nothing else can turn them.
+PROGRAMS+=		sysctl
+dir.sysctl:=	sbin/sysctl
 # A filesystem that is only ever read can be sized to its contents exactly,
 # and that is what mkfs.mfs does by default.  This one is written to - utmpx,
 # wtmpx, lastlogx, /tmp - so it needs free inodes and free blocks, or the

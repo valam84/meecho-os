@@ -26,9 +26,11 @@ SRC=$(cd "$HERE/../.." && pwd)
 : ${WORK_DIR:=$HOME/work-clover}
 : ${DTS_TREE:=$HOME/sdm660-linux}
 : ${DTS:=sdm660-xiaomi-clover}
-# One core, a word per boot step on the screen, and a reset through PSCI
-# after ten minutes - which, after "fastboot boot", is LineageOS again.
-: ${CMDLINE:=bootramdisk=1 console=tty00 no_smp=1 verbose=3 bootwd=600}
+# One core, userland on the framebuffer console, a word per boot step, and a
+# reset through PSCI after ten minutes - which, after "fastboot boot", is
+# LineageOS again. tty00 is a Qualcomm UART on test points and its controller
+# is not one of the PL011/8250 parts the current tty driver knows.
+: ${CMDLINE:=bootramdisk=1 console=console no_smp=1 verbose=3 bootwd=600}
 export WORK_DIR
 OUT=${1:-$WORK_DIR/boot.img}
 mkdir -p "$WORK_DIR"

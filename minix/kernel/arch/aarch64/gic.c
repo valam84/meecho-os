@@ -54,14 +54,6 @@ static kern_phys_map gicd_phys_map, gicr_phys_map;
  *
  * Everything else the kernel needs it asks the hardware for.
  */
-/*
- * At any depth, with the parent's cell widths (fdt_node_reg()). QEMU and the
- * RK3566 put the GIC at the root; a Qualcomm SoC puts it in its /soc bus with
- * one-cell addresses, and the first version of this walk, which looked at the
- * root's children with the root's widths, simply did not see it there - the
- * Mi Pad 4's first boot ended in "describes no GIC". The bus's ranges are
- * not applied: every tree in hand maps /soc one to one.
- */
 struct gic_scan {
 	int version;
 	phys_bytes dist, dist_size;
@@ -76,32 +68,34 @@ find_gic(void *cookie, int depth, const char *name,
 	const struct fdt_node *node)
 {
 	struct gic_scan *s = cookie;
-	u64_t addr, size;
+	u64_t dist, dist_size, second, second_size;
 	unsigned len;
 	const void *p;
-	int version;
-
-	(void)name;
 
 	if (depth == 0)
 		return 0;
 
 	if (compatible_with(node, "arm,gic-v3"))
-		version = 3;
+		s->version = 3;
 	else if (compatible_with(node, "arm,cortex-a15-gic"))
-		version = 2;
+		s->version = 2;
 	else
 		return 0;
 
-	if (fdt_node_reg(node, 0, &addr, &size) != 0)
+	/*
+	 * QEMU puts its GIC directly below the root. Real SoCs commonly put
+	 * it below /soc, whose address and size cell widths need not match the
+	 * root's. fdt_walk() records the parent widths in each node, so use
+	 * the common reg reader rather than assuming a root child here.
+	 */
+	if (fdt_node_reg(node, 0, &dist, &dist_size) != 0 ||
+	    fdt_node_reg(node, 1, &second, &second_size) != 0)
 		return 0;
-	s->dist = (phys_bytes)addr;
-	s->dist_size = (phys_bytes)size;
-	if (fdt_node_reg(node, 1, &addr, &size) != 0)
-		return 0;
-	s->second = (phys_bytes)addr;
-	s->second_size = (phys_bytes)size;
-	s->version = version;
+
+	s->dist = (phys_bytes)dist;
+	s->dist_size = (phys_bytes)dist_size;
+	s->second = (phys_bytes)second;
+	s->second_size = (phys_bytes)second_size;
 
 	/*
 	 * GICv3 may split its redistributors across several ranges, one per

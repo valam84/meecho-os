@@ -1,22 +1,15 @@
 /*
  * ARM generic timer.
  *
- * The counter is 64 bits and free running. The comparator, CNTV_CVAL_EL0,
+ * The counter is 64 bits and free running. The comparator, CNTP_CVAL_EL0,
  * fires when the counter reaches it and stays fired until moved, so each tick
  * has to push it forward. Pushing it by a fixed interval from its previous
  * value rather than from the current count is what keeps the tick from
  * drifting by however long the handler took to run.
  *
- * CNTV_* is the virtual timer, the one EL1 always owns. It used to be the
- * physical one, CNTP_*, which EL1 reaches only when EL2 allows it
- * (CNTHCTL_EL2.EL1PCEN): head.S grants that on the path through EL2, which
- * QEMU's virtualization=on and U-Boot on the CB2 take. A Qualcomm machine
- * enters at EL1 with its own hypervisor holding EL2, and nothing promises
- * that grant there - Linux on the Mi Pad 4 runs on the virtual timer (PPI 3,
- * /proc/interrupts), as Linux at EL1 always does. head.S zeroes CNTVOFF_EL2
- * on the EL2 path, so where it can see both, the two timers count alike; and
- * everything else here - the scheduler clock, the spinlock watchdog, libsys -
- * already read the virtual count.
+ * CNTP_* is the physical timer as seen by EL1. Reaching it from EL1 needs
+ * CNTHCTL_EL2.EL1PCEN, which head.S sets on the entry path through EL2 - the
+ * path real firmware uses.
  *
  * Nothing here is specific to a board. Even the interrupt is not: which PPI
  * the timer raises comes out of the device tree, so this file is the same on
@@ -40,7 +33,7 @@
 #include "bsp_intr.h"
 #include "bsp_timer.h"
 
-/* CNTV_CTL_EL0 bits (the same layout as CNTP_CTL_EL0). */
+/* CNTP_CTL_EL0 bits. */
 #define CNTP_CTL_ENABLE		(1UL << 0)
 #define CNTP_CTL_IMASK		(1UL << 1)	/* interrupt masked */
 #define CNTP_CTL_ISTATUS	(1UL << 2)	/* condition met, read-only */
@@ -71,7 +64,7 @@ read_cntfrq(void)
 }
 
 static inline u64_t
-read_cntvct(void)
+read_cntpct(void)
 {
 	u64_t v;
 
@@ -81,20 +74,20 @@ read_cntvct(void)
 	 * being timed.
 	 */
 	__asm__ volatile("isb" ::: "memory");
-	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(v));
+	__asm__ volatile("mrs %0, cntpct_el0" : "=r"(v));
 	return v;
 }
 
 static inline void
 write_cval(u64_t v)
 {
-	__asm__ volatile("msr cntv_cval_el0, %0" :: "r"(v));
+	__asm__ volatile("msr cntp_cval_el0, %0" :: "r"(v));
 }
 
 static inline void
 write_ctl(u64_t v)
 {
-	__asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(v));
+	__asm__ volatile("msr cntp_ctl_el0, %0" :: "r"(v));
 	__asm__ volatile("isb" ::: "memory");
 }
 
@@ -102,15 +95,15 @@ write_ctl(u64_t v)
  *				find_timer_intid			     *
  *===========================================================================*/
 /*
- * Which interrupt the virtual timer raises, from the device tree.
+ * Which interrupt the non-secure physical timer raises, from the device tree.
  *
  * The armv8-timer binding lists four interrupts in a fixed order: secure
- * physical, non-secure physical, virtual, hypervisor. This is the third.
+ * physical, non-secure physical, virtual, hypervisor. EL1 uses the second.
  * Each is a triplet <type number flags>, where type 1 means PPI and the INTID
  * is the number plus 16.
  *
- * Every tree in hand says PPI 11 here except the Mi Pad 4's, which says
- * PPI 3 - so a constant would have broken on the third machine. It is read,
+ * QEMU's virt and a Raspberry Pi both happen to say PPI 14 here, so a
+ * constant would work on the two boards in front of us. It is read anyway,
  * because the triplet costs a dozen lines and a wrong hardcoded interrupt is
  * a machine that boots and then never schedules - a symptom that points
  * nowhere near its cause.
@@ -141,11 +134,11 @@ find_timer(void *cookie, int depth, const char *name,
 	if ((irqs = fdt_getprop(node, "interrupts", &len)) == NULL)
 		return 0;
 
-	/* The third triplet, so at least three of them have to be there. */
-	if (len < 3 * IRQ_CELLS * 4)
+	/* The second triplet, so at least two of them have to be there. */
+	if (len < 2 * IRQ_CELLS * 4)
 		return 0;
 
-	irqs += 2 * IRQ_CELLS * 4;
+	irqs += IRQ_CELLS * 4;
 	type = fdt_read_cells(irqs, 1);
 	number = fdt_read_cells(irqs + 4, 1);
 
@@ -175,7 +168,7 @@ arm_this_cpu(void)
 	/* Off while it is programmed. */
 	write_ctl(0);
 
-	timer_next[cpuid] = read_cntvct() + virt_timer.interval;
+	timer_next[cpuid] = read_cntpct() + virt_timer.interval;
 	write_cval(timer_next[cpuid]);
 	write_ctl(CNTP_CTL_ENABLE);
 
@@ -263,7 +256,7 @@ bsp_timer_idle_wake(u64_t ticks)
 	 * of idle has already replaced it.
 	 */
 	write_ctl(0);
-	write_cval(read_cntvct() + ticks);
+	write_cval(read_cntpct() + ticks);
 	write_ctl(CNTP_CTL_ENABLE);
 	bsp_irq_unmask(virt_timer.intid);
 	timer_running[cpuid] = 0;

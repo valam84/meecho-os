@@ -443,6 +443,24 @@ usb0: … CDC Ethernet Device, 06:4d:45:43:48:4f`, carrier 1; IPv6 в обе
 кадров по 1000 байт через 10 мс — без потерь; 0.4–10 мс (опрос раз в
 тик).
 
+**4в (корень на eMMC с ssh) — готово всё, кроме записи `userdata`.**
+`rc.clover` поднимает `netdrv=`, `lwip`, адрес и `sshd`; `random` берёт
+`qcom,prng-ee` (`qcom_prng.c`; на планшете ещё не исполнялся). QEMU [T]:
+тот же корень (`root-clover-net.img`, `mkroot.sh` с `RC_FILE=` и
+`AUTHKEYS=`) как диск virtio с `netdrv=virtio_net` — драйверы clover
+говорят, что узлов нет, `vio0` с адресом, ключ хоста, вход по ключу
+снаружи. Чтение eMMC планшетом есть на снимке шага 2 (EXT_CSD, GPT,
+`userdata` 51927 МиБ); запись и монтирование корня там не проверены.
+Хаб: постоянный профиль NetworkManager `meecho-clover` (через netplan,
+`/etc/netplan/90-NM-5df2ef50….yaml`, совпадение по MAC хоста,
+10.42.0.1/24, без шлюза). Рабочая машина: `clover-usb` в `~/.ssh/config`
+(`ProxyJump cb2-hub`, `known_hosts` не ведётся — ключ хоста свой у
+каждого корня). Образ загрузки — `meecho-clover-emmcnet.img`
+(`rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata … netdrv=dwc3_ecm
+nextboot=bootloader bootwd=1800`). **Запись `userdata` портит данные
+Android** (LineageOS после неё загрузится только после `fastboot -w`) —
+только с явного согласия.
+
 Функция ECM — драйвер `libnetdriver` (образец — `dwmac`), MAC пары
 постоянные, локально администрируемые (аргументы `hwaddr=`, `hostaddr=`).
 `rc.clover`: `netdrv=dwc3_ecm`, `lwip`, `ifconfig 10.42.0.2/24`,

@@ -168,12 +168,57 @@ tx1(void)
 	    "r %d, проб %u - mmc0 выключен, mmc1 - SDIO", r, probes);
 }
 
+/*
+ * Mi Pad 4 (clover, SDM660; дерево mainline, собирается port/clover/
+ * mkboot.sh). eMMC и гнездо - оба "qcom,sdhci-msm-v5"; гнездо в порядке
+ * дерева первое. Номер 0 - eMMC, номер 1 - гнездо (его настоящая проба
+ * откажет: несъёмное только то, что брал загрузчик), номера 2 нет.
+ */
+static void
+clover(void)
+{
+	int r;
+
+	printf("clover: instance=0 - eMMC, не гнездо, которое в дереве раньше\n");
+	r = find(0);
+	CHECK(r == OK && probes == 1, "r %d, проб %u", r, probes);
+	CHECK(probed_base == 0xc0c4000 && probed_by != NULL &&
+	    strcmp(probed_by, "sdhci") == 0,
+	    "достался 0x%lx пробе %s, ждали eMMC 0xc0c4000 у sdhci",
+	    (unsigned long)probed_base, probed_by ? probed_by : "-");
+	CHECK(probed_info.non_removable && probed_info.bus_width == 8 &&
+	    probed_info.size == 0x1000 && probed_info.irq == 32 + 110 &&
+	    probed_info.nresets == 1 && probed_info.reset[0].id == 10,
+	    "сведения eMMC: несъёмная %d, шина %u, окно 0x%zx, линия %d, "
+	    "сбросов %u (%u)", probed_info.non_removable,
+	    probed_info.bus_width, probed_info.size, probed_info.irq,
+	    probed_info.nresets, probed_info.reset[0].id);
+
+	printf("clover: instance=1 - гнездо, и оно съёмное\n");
+	r = find(1);
+	CHECK(r == OK && probes == 1, "r %d, проб %u", r, probes);
+	CHECK(probed_base == 0xc084000 && !probed_info.non_removable &&
+	    probed_info.bus_width == 4,
+	    "достался 0x%lx (несъёмное %d, шина %u), ждали гнездо 0xc084000",
+	    (unsigned long)probed_base, probed_info.non_removable,
+	    probed_info.bus_width);
+
+	printf("clover: instance=2 - больше контроллеров нет\n");
+	r = find(2);
+	CHECK(r == ENXIO && probes == 0, "r %d, проб %u", r, probes);
+}
+
 int
 main(int argc, char **argv)
 {
 	int r;
 
 	dtb_file = (argc > 1) ? argv[1] : "live.dtb";
+	if (argc > 2 && strcmp(argv[2], "clover") == 0) {
+		clover();
+		printf("\n%u проверок, %u отказов\n", checks, failures);
+		return failures ? 1 : 0;
+	}
 	if (argc > 2 && strcmp(argv[2], "tx1") == 0) {
 		tx1();
 		printf("\n%u проверок, %u отказов\n", checks, failures);

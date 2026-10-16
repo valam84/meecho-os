@@ -333,6 +333,8 @@ int sdmmc_clk_set_rate(const struct sdmmc_line *line, uint32_t hz,
 int sdmmc_clk_set_phase(const struct sdmmc_line *line, unsigned degrees);
 int sdmmc_reset_set(const struct sdmmc_line *line, int asserted);
 void sdmmc_reset_pulse(const struct sdmmc_line *lines, unsigned n);
+/* 1: the clock runs, 0: it is gated, -1: nothing here can tell. */
+int sdmmc_clk_is_on(const struct sdmmc_line *line);
 
 /*
  * One clock-and-reset controller this driver knows: what its registers mean.
@@ -348,6 +350,8 @@ struct sdmmc_clkctl_ops {
 		    unsigned degrees);
 	int	(*reset)(volatile uint8_t *regs, size_t size, unsigned id,
 		    int asserted);
+	/* Optional: 1 running, 0 gated, -1 not a clock this file knows. */
+	int	(*is_on)(volatile uint8_t *regs, size_t size, unsigned id);
 };
 
 /* sdmmc_clk_rk3568.c: the RK3566/RK3568 clock and reset unit. */
@@ -355,6 +359,9 @@ extern const struct sdmmc_clkctl_ops sdmmc_rk3568_cru;
 
 /* sdmmc_clk_h616.c: the Allwinner H616/H313 clock control unit. */
 extern const struct sdmmc_clkctl_ops sdmmc_h616_ccu;
+
+/* sdmmc_clk_sdm660.c: the SDM630/660 GCC, read-only (is a clock on). */
+extern const struct sdmmc_clkctl_ops sdmmc_sdm660_gcc;
 
 /* sdmmc_sdhci.c: the SD Host Controller standard register set. */
 int sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,

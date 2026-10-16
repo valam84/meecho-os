@@ -55,10 +55,20 @@ static unsigned maps;
 static uint8_t ccu[CCU_SIZE] __attribute__((aligned(8)));
 static unsigned ccu_maps;
 
+/* GCC SDM660 - из дерева Mi Pad 4 (clover). */
+#define GCC_BASE	0x00100000UL
+#define GCC_SIZE	0x94000
+static uint8_t gcc[GCC_SIZE] __attribute__((aligned(8)));
+static unsigned gcc_maps;
+
 void *
 vm_map_phys(int who, void *phys, size_t len)
 {
 	(void)who;
+	if ((unsigned long)phys == GCC_BASE && len == GCC_SIZE) {
+		gcc_maps++;
+		return gcc;
+	}
 	if ((unsigned long)phys == CRU_BASE && len == CRU_SIZE) {
 		maps++;
 		return cru;
@@ -383,6 +393,97 @@ check_h616_registers(void)
 	    "фаз у этого блока нет - ENOSYS");
 }
 
+/*
+ * Mi Pad 4: GCC только читается.  Номера тактов - из дерева, смещения CBCR -
+ * из таблицы, которую gen-sdm660-tables.py снимает с gcc-sdm660.c Linux
+ * (sdm660_gcc.h у qcom_touch): бит 31 CLK_OFF по смещению из неё должен
+ * гасить ровно этот такт.  И ни одной записи в GCC.
+ */
+#include "sdm660_gcc.h"
+
+static struct sdmmc_line cl_iface, cl_core, cl_ice, cl_rst, sd2_iface, sd2_core;
+
+static void
+check_clover_emmc(const struct fdt_node *node)
+{
+	CHECK(sdmmc_clk_get(node, "iface", &cl_iface) == OK && cl_iface.id == 74,
+	    "iface eMMC: id %u, ждали 74 (GCC_SDCC1_AHB_CLK)", cl_iface.id);
+	CHECK(sdmmc_clk_get(node, "core", &cl_core) == OK && cl_core.id == 75,
+	    "core eMMC: id %u, ждали 75 (GCC_SDCC1_APPS_CLK)", cl_core.id);
+	CHECK(sdmmc_clk_get(node, "ice", &cl_ice) == OK && cl_ice.id == 76,
+	    "ice eMMC: id %u, ждали 76", cl_ice.id);
+	CHECK(sdmmc_line_get(node, "resets", NULL, NULL, 0, &cl_rst) == OK,
+	    "сброс eMMC держит GCC");
+}
+
+static void
+check_clover_sd(const struct fdt_node *node)
+{
+	CHECK(sdmmc_clk_get(node, "iface", &sd2_iface) == OK &&
+	    sd2_iface.id == 77, "iface гнезда: id %u, ждали 77", sd2_iface.id);
+	CHECK(sdmmc_clk_get(node, "core", &sd2_core) == OK &&
+	    sd2_core.id == 78, "core гнезда: id %u, ждали 78", sd2_core.id);
+}
+
+static uint32_t
+gcc_halt(unsigned id)
+{
+	unsigned i;
+
+	for (i = 0; i < sizeof(sdm660_gcc) / sizeof(sdm660_gcc[0]); i++)
+		if (sdm660_gcc[i].id == id)
+			return sdm660_gcc[i].halt;
+	return 0;
+}
+
+static void
+check_clover_gcc(void)
+{
+	static uint8_t before[GCC_SIZE];
+	const struct sdmmc_line *l[] = { &cl_iface, &cl_core, &cl_ice,
+	    &sd2_iface, &sd2_core };
+	struct sdmmc_line bogus = cl_iface;
+	uint32_t got;
+	unsigned i, k;
+
+	memset(gcc, 0, sizeof(gcc));
+	for (i = 0; i < 5; i++) {
+		uint32_t off = gcc_halt(l[i]->id);
+
+		CHECK(off != 0 && off + 4 <= GCC_SIZE,
+		    "такта %u нет в sdm660_gcc.h", l[i]->id);
+		if (off == 0)
+			continue;
+		CHECK(sdmmc_clk_is_on(l[i]) == 1, "такт %u: CLK_OFF снят - "
+		    "должен быть «идёт»", l[i]->id);
+		*(uint32_t *)(gcc + off) = 0x80000000u;
+		CHECK(sdmmc_clk_is_on(l[i]) == 0, "такт %u: CLK_OFF по 0x%x "
+		    "не увиден", l[i]->id, off);
+		for (k = 0; k < 5; k++)
+			if (k != i)
+				CHECK(sdmmc_clk_is_on(l[k]) == 1, "CLK_OFF такта "
+				    "%u погасил такт %u", l[i]->id, l[k]->id);
+		/* Прочие биты CBCR (включение, делители) - не «выключен». */
+		*(uint32_t *)(gcc + off) = 0x7fffffffu;
+		CHECK(sdmmc_clk_is_on(l[i]) == 1, "такт %u: младшие биты "
+		    "приняты за CLK_OFF", l[i]->id);
+		*(uint32_t *)(gcc + off) = 0;
+	}
+	bogus.id = 26;		/* QUP: в таблице sdmmc его нет */
+	CHECK(sdmmc_clk_is_on(&bogus) == -1, "чужой такт - «не знаю»");
+
+	memcpy(before, gcc, sizeof(gcc));
+	CHECK(sdmmc_clk_enable(&cl_core) == ENOSYS, "enable - ENOSYS");
+	CHECK(sdmmc_clk_set_rate(&cl_core, 52000000, &got) == ENOSYS,
+	    "set_rate - ENOSYS");
+	CHECK(sdmmc_clk_set_phase(&cl_core, 90) == ENOSYS,
+	    "set_phase - ENOSYS");
+	CHECK(sdmmc_reset_set(&cl_rst, 1) == ENOSYS, "сброс - ENOSYS");
+	sdmmc_reset_pulse(&cl_rst, 1);
+	CHECK(memcmp(before, gcc, sizeof(gcc)) == 0,
+	    "в GCC что-то записано");
+}
+
 static int
 load(const char *path)
 {
@@ -418,6 +519,20 @@ main(int argc, char **argv)
 	FILE *f;
 	long n;
 	char *buf;
+
+	if (argc > 2 && strcmp(argv[2], "clover") == 0) {
+		if (load(path) != 0)
+			return 2;
+		printf("Такты SDCC по дереву Mi Pad 4\n");
+		with_node("mmc@c0c4000", check_clover_emmc);
+		with_node("mmc@c084000", check_clover_sd);
+		printf("GCC SDM660: только чтение CLK_OFF\n");
+		check_clover_gcc();
+		CHECK(gcc_maps == 1, "GCC отображён %u раз, ждали один",
+		    gcc_maps);
+		printf("\n%u проверок, %u отказов\n", checks, failures);
+		return failures ? 1 : 0;
+	}
 
 	if (argc > 2 && strcmp(argv[2], "tx1") == 0) {
 		if (load(path) != 0)

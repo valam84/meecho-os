@@ -47,6 +47,8 @@ struct clkctl_driver {
 static const struct clkctl_driver clkctl_drivers[] = {
 	{ "rockchip,rk3568-cru",	&sdmmc_rk3568_cru },
 	{ "allwinner,sun50i-h616-ccu",	&sdmmc_h616_ccu },
+	{ "qcom,gcc-sdm660",		&sdmmc_sdm660_gcc },
+	{ "qcom,gcc-sdm630",		&sdmmc_sdm660_gcc },
 };
 
 /*
@@ -323,6 +325,16 @@ sdmmc_reset_set(const struct sdmmc_line *line, int asserted)
 	if (c == NULL || c->ops->reset == NULL)
 		return ENOSYS;
 	return c->ops->reset(c->regs, c->size, line->id, asserted);
+}
+
+int
+sdmmc_clk_is_on(const struct sdmmc_line *line)
+{
+	struct ctl *c = ctl_of(line);
+
+	if (c == NULL || c->ops->is_on == NULL)
+		return -1;
+	return c->ops->is_on(c->regs, c->size, line->id);
 }
 
 /*

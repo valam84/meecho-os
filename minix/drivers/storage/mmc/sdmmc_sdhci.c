@@ -151,6 +151,8 @@ static int msm_cdr;		/* toggle the DLL's CDR around every command */
 static phys_bytes cq_base;
 static size_t cq_size;
 static vir_bytes cq_regs;
+static struct sdmmc_line msm_iface, msm_core;	/* its two GCC branches */
+static int msm_alive;		/* both seen running: registers may be read */
 
 #define MSM_DLL_CONFIG		0x200
 #define MSM_DLL_STATUS		0x208
@@ -565,6 +567,9 @@ sdhci_set_clock(uint32_t hz, uint32_t *actual)
 	uint16_t clk;
 	spin_t s;
 
+	if (is_msm)		/* taken over: the bus stays as it was left */
+		return EPERM;
+
 	/* Stop the clock before touching the divider, as the standard says. */
 	wr16(SDHC_CLOCK_CTL, rd16(SDHC_CLOCK_CTL) & ~SDHC_SDCLK_ENABLE);
 
@@ -649,6 +654,9 @@ sdhci_set_bus_width(unsigned bits)
 {
 	uint8_t ctl;
 
+	if (is_msm)
+		return EPERM;
+
 	ctl = rd8(SDHC_HOST_CTL) & ~(SDHC_4BIT_MODE | SDHC_8BIT_MODE);
 
 	switch (bits) {
@@ -681,6 +689,9 @@ static int
 sdhci_set_timing(int high_speed)
 {
 	uint8_t ctl;
+
+	if (is_msm)
+		return EPERM;
 
 	ctl = rd8(SDHC_HOST_CTL);
 	if (high_speed)
@@ -1145,8 +1156,24 @@ msm_takeover(void)
 	uint16_t ver, hc2, clk;
 	uint8_t hc1;
 	unsigned i, uhs;
-	int hs400, es;
+	int hs400, es, on_iface, on_core;
 	void *v;
+
+	/*
+	 * Before the first read of the block: both of its clocks running, as
+	 * the GCC itself reports it.  "Not known" is a refusal like "off" -
+	 * a stalled bus is not a failure anything after it can report.
+	 */
+	on_iface = sdmmc_clk_is_on(&msm_iface);
+	on_core = sdmmc_clk_is_on(&msm_core);
+	if (on_iface != 1 || on_core != 1) {
+		log_warn(&sdmmc_log, "msm: clocks iface %s, core %s; not "
+		    "touching the controller\n",
+		    on_iface == 1 ? "on" : on_iface == 0 ? "off" : "unknown",
+		    on_core == 1 ? "on" : on_core == 0 ? "off" : "unknown");
+		return ENXIO;
+	}
+	msm_alive = 1;
 
 	ver = rd16(SDHC_HOST_CTL_VERSION);
 	mci = rd32(MSM_MCI_VERSION);
@@ -1547,7 +1574,7 @@ sdhci_init(void)
 static void
 sdhci_exit(void)
 {
-	if (regs != 0) {
+	if (regs != 0 && (!is_msm || msm_alive)) {
 		/*
 		 * The signals go before the line does: a bit left signalled
 		 * on a line nobody is listening to is the same livelock as
@@ -1562,13 +1589,19 @@ sdhci_exit(void)
 		 */
 		if (!is_msm)
 			(void)sdhci_set_clock(0, NULL);
-		vm_unmap_phys(SELF, (void *)regs, reg_size);
 	}
+	/* A block whose clocks were off is unmapped untouched. */
+	if (regs != 0)
+		vm_unmap_phys(SELF, (void *)regs, reg_size);
+	if (cq_regs != 0)
+		vm_unmap_phys(SELF, (void *)cq_regs, cq_size);
 	if (irq_ok) {
 		(void)sys_irqrmpolicy(&irq_hook);
 		irq_ok = 0;
 	}
 	regs = 0;
+	cq_regs = 0;
+	msm_alive = 0;
 }
 
 /*
@@ -1613,6 +1646,26 @@ sdhci_probe(const struct fdt_node *node, const struct sdmmc_devinfo *info,
 		const char *names, *p;
 		unsigned len, idx;
 		u64_t a, sz;
+
+		/*
+		 * Only what the boot loader itself used: the soldered eMMC
+		 * it read this kernel from.  A socket it may never have
+		 * clocked, and on this SoC a read of an unclocked block does
+		 * not return ones, it stalls the bus - so a socket is not
+		 * taken over at all, and the eMMC only with both of its
+		 * clocks seen running (msm_takeover()).
+		 */
+		if (!info->non_removable) {
+			log_info(&sdmmc_log, "a Qualcomm socket is not taken "
+			    "over: nothing says the boot loader clocked it\n");
+			return ENXIO;
+		}
+		if (sdmmc_clk_get(node, "iface", &msm_iface) != OK)
+			msm_iface.ctl = SDMMC_NO_LINE;
+		if (sdmmc_clk_get(node, "core", &msm_core) != OK)
+			msm_core.ctl = SDMMC_NO_LINE;
+		/* Never pulled: the reset lines are the GCC's block reset. */
+		rst_n = 0;
 
 		cq_base = 0;
 		cq_size = 0;

@@ -201,10 +201,18 @@ collect_host(void *cookie, int depth, const char *name,
 	 * - the Wi-Fi chip of the Tanix TX1 is "wifi@1" under mmc1, with no
 	 * "no-sd" or "no-mmc" to say so, and soldered on, which would make
 	 * it the machine's disk number 0.
+	 *
+	 * A device on the bus has an address there - "reg", the function
+	 * number.  A child without one is a description of the controller,
+	 * not a device: the Qualcomm trees put an "opp-table" (the
+	 * controller's clock and bandwidth levels) under every host, and the
+	 * first version of this rule called the Mi Pad 4's eMMC an SDIO slot
+	 * for it and left the machine without a disk.
 	 */
 	if (s->open >= 0 && depth <= s->c[s->open].depth)
 		s->open = -1;
 	if (s->open >= 0 && depth == s->c[s->open].depth + 1 &&
+	    fdt_getprop(node, "reg", NULL) != NULL &&
 	    !fdt_node_is_compatible(node, "mmc-card"))
 		s->c[s->open].sdio = 1;
 

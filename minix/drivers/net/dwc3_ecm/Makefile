@@ -2,7 +2,7 @@
 # interface to the host on the cable (CDC-ECM) - the Mi Pad 4's USB-C port.
 PROG=	dwc3_ecm
 SRCS=	dwc3_ecm.c dwc3_find.c dwc3_qcom.c qusb2.c dwc3_dev.c dwc3_ep0.c \
-	qcom_soc.c
+	ecm.c qcom_soc.c
 
 # The GCC tables and looks are qcom_touch's (qcom_soc.c, sdm660_gcc.h),
 # generated from the Linux sources by port/clover/gen-sdm660-tables.py.
@@ -10,8 +10,8 @@ SRCS=	dwc3_ecm.c dwc3_find.c dwc3_qcom.c qusb2.c dwc3_dev.c dwc3_ep0.c \
 CPPFLAGS+=	-I${.CURDIR}/../../hid/qcom_touch
 
 # libsys's timer calls are built on libtimers, so it comes after.
-DPADD+=	${LIBSYS} ${LIBTIMERS}
-LDADD+=	-lsys -ltimers
+DPADD+=	${LIBNETDRIVER} ${LIBSYS} ${LIBTIMERS}
+LDADD+=	-lnetdriver -lsys -ltimers
 
 WARNS?=	5
 

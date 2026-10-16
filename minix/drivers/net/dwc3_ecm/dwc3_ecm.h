@@ -117,6 +117,7 @@ extern const struct dwc3_phy_ops qusb2_phy;		/* qusb2.c */
  */
 int dwc3_dev_start(volatile uint8_t *core);
 void dwc3_dev_poll(void);
+void dwc3_dev_stop(void);		/* the pull-up off: the host sees it go */
 
 /* The register map of a block, or NULL - mapped once, kept. */
 volatile uint8_t *dwc3_map(u64_t pa, u64_t size, const char *what);

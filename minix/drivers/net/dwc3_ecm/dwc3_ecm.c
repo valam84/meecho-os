@@ -1,5 +1,6 @@
 /*
- * dwc3_ecm: the driver's life (dwc3_ecm.h).
+ * dwc3_ecm: the driver's life (dwc3_ecm.h) - a network driver of
+ * libnetdriver, whose interface lwip names "ecm0".
  *
  * Found by the wrapper's compatible ("qcom,dwc3"); a machine without one
  * (QEMU's virt, the CB2) gets a line saying so and nothing else.  The
@@ -7,18 +8,18 @@
  * SoC's clock controller (GCC), which qcom_soc maps; a tree that points
  * them elsewhere is not trusted.
  *
- * It reports what powers, clocks and resets the block has (step 2), and
- * then - when the report finds the block running, as a boot loader that
- * used it leaves it - takes the core over in device mode and answers the
- * host's control transfers on ep0, reading the core's events on every
- * clock tick (step 3a of port/clover/hw-net.md).  A block that is not
- * running is left alone: only the report is printed.
+ * It reports what powers, clocks and resets the block has (step 2 of
+ * port/clover/hw-net.md), and then - when the report finds the block
+ * running, as a boot loader that used it leaves it - takes the core over
+ * in device mode (step 3a) as a CDC Ethernet device (step 4, ecm.c).  The
+ * core's events are read on every clock tick.  A block that is not running
+ * is left alone: the report is printed and the driver leaves.
  *
  * Arguments: log=N (0 none .. 4 trace); probe=1 - report only, write
- * nothing.
+ * nothing, and leave.
  */
 
-#include "dwc3_ecm.h"
+#include "dwc3_dev.h"
 #include "qcom_soc.h"
 
 #include <minix/sysutil.h>
@@ -35,7 +36,7 @@ struct log dwc3_log = {
 };
 
 static struct dwc3_dt dt;
-static int running;		/* the core is ours: poll it */
+static int running;		/* the core is ours */
 
 volatile uint8_t *
 dwc3_map(u64_t pa, u64_t size, const char *what)
@@ -68,7 +69,8 @@ dwc3_clk_state(const struct dwc3_clk *c, char *buf, size_t size)
 }
 
 static int
-dwc3_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
+dwc3_init(unsigned int UNUSED(instance), netdriver_addr_t *hwaddr,
+	uint32_t *caps, unsigned int *ticks)
 {
 	volatile uint8_t *core = NULL;
 	void *dtb;
@@ -109,12 +111,12 @@ dwc3_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	rg = dt.glue->report(&dt, &core);
 	rp = dt.phy->report(&dt);
 	if (probe)
-		return OK;
+		return ENXIO;
 	if (rg != OK || rp != OK) {
 		log_info(&dwc3_log, "not taking the USB block over: %s is not "
 		    "running as a boot loader leaves it\n", rg != OK ?
 		    "the wrapper or core" : "the PHY");
-		return OK;
+		return ENXIO;
 	}
 
 	/* hw-net.md, step 3a: the block as the boot loader left it. */
@@ -123,40 +125,44 @@ dwc3_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	dt.glue->peripheral();
 	if ((r = dwc3_dev_start(core)) != OK) {
 		log_warn(&dwc3_log, "device mode did not start: %d\n", r);
-		return OK;
+		return r;
 	}
 	running = 1;
-	(void)sys_setalarm(1, 0);
+	ecm_hwaddr(hwaddr);
+	*caps = NDEV_CAP_BCAST | NDEV_CAP_MCAST;
+	*ticks = 1;			/* the events, on every clock tick */
 	return OK;
 }
 
 static void
-dwc3_signal(int signo)
+dwc3_stop(void)
 {
-	if (signo == SIGTERM)
-		exit(0);
+	if (running)
+		dwc3_dev_stop();
+	running = 0;
 }
+
+static void
+dwc3_tick(void)
+{
+	if (running)
+		dwc3_dev_poll();
+}
+
+static const struct netdriver dwc3_table = {
+	.ndr_name	= "ecm",
+	.ndr_init	= dwc3_init,
+	.ndr_stop	= dwc3_stop,
+	.ndr_recv	= ecm_recv,
+	.ndr_send	= ecm_send,
+	.ndr_get_link	= ecm_get_link,
+	.ndr_tick	= dwc3_tick,
+};
 
 int
 main(int argc, char **argv)
 {
-	message m;
-	int ipc_status;
-
 	env_setargs(argc, argv);
-	sef_setcb_init_fresh(dwc3_init);
-	sef_setcb_signal_handler(dwc3_signal);
-	sef_startup();
-
-	/* The core's events, on every clock tick; the network: step 4. */
-	for (;;) {
-		if (sef_receive_status(ANY, &m, &ipc_status) != OK)
-			continue;
-		if (running && is_ipc_notify(ipc_status) &&
-		    _ENDPOINT_P(m.m_source) == CLOCK) {
-			dwc3_dev_poll();
-			(void)sys_setalarm(1, 0);
-		}
-	}
+	netdriver_task(&dwc3_table);
 	return 0;
 }

@@ -79,6 +79,7 @@
 #define DWC3_DEPCFG_ACTION_MODIFY (2u << 30)
 #define DWC3_DEPCFG_XFER_COMPLETE_EN (1u << 8)
 #define DWC3_DEPCFG_XFER_NOT_READY_EN (1u << 10)
+#define DWC3_DEPCFG_BINTERVAL_M1(n) (((uint32_t)(n) & 0xff) << 16)
 #define DWC3_DEPCFG_EP_NUMBER(n) (((uint32_t)(n) & 0x1f) << 25)
 #define DWC3_DEPXFERCFG_NUM_XFER_RES(n)	((uint32_t)(n) & 0xffff)
 
@@ -94,6 +95,7 @@
 #define DWC3_TRBCTL_STATUS2	DWC3_TRB_CTRL_TRBCTL(3)
 #define DWC3_TRBCTL_STATUS3	DWC3_TRB_CTRL_TRBCTL(4)
 #define DWC3_TRBCTL_DATA	DWC3_TRB_CTRL_TRBCTL(5)
+#define DWC3_TRBCTL_NORMAL	DWC3_TRB_CTRL_TRBCTL(1)
 
 /*
  * Events, one 32-bit word each.  Bit 0 clear: an endpoint event - its

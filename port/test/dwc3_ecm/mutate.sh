@@ -37,11 +37,15 @@ mutate "events not invalidated" dwc3_dev.c \
     's/	dwc3_take(dwc.ev, DWC3_EVBUF_SIZE);//'
 mutate "status types swapped" dwc3_ep0.c \
     's/DWC3_TRBCTL_STATUS3 : DWC3_TRBCTL_STATUS2/DWC3_TRBCTL_STATUS2 : DWC3_TRBCTL_STATUS3/'
-mutate "maxpacket stays 512" dwc3_dev.c \
-    's/(void)ep_config(0, DWC3_DEPCFG_ACTION_MODIFY, 64);/(void)ep_config(0, DWC3_DEPCFG_ACTION_MODIFY, 512);/'
+mutate "maxpacket stays 512" dwc3_dev.c '0,/DWC3_EP_CONTROL, 64, 0);/s//DWC3_EP_CONTROL, 512, 0);/'
 mutate "address not set" dwc3_ep0.c 's/DWC3_DCFG_DEVADDR(value));/0);/'
-mutate "BOS answered" dwc3_ep0.c 's/		return -1;		\/\* BOS among them/		return copy(qual_desc, 5);	\/* BOS among them/'
+mutate "BOS answered" ecm.c 's/		return -1;		\/\* BOS among them/		return copy(qual_desc, 5, buf, max); \/* BOS among them/'
 mutate "PHY lock not required" qusb2.c \
     's/return (v \& QUSB2_PLL_LOCKED) \&\& /return 1 \&\& /'
+mutate "no zero-length packet" ecm.c 's/int zlp = size % 512 == 0;/int zlp = 0;/'
+mutate "receive not queued again" ecm.c '/netdriver_copyout(data, 0, RX, len);/,/queue_rx();/{s/	queue_rx();/	;/}'
+mutate "link not told to lwip" ecm.c 's/	netdriver_link();/	;/'
+mutate "no DEPSTARTCFG(2)" dwc3_ep0.c 's/dwc3_restart_config() != OK/0/'
+mutate "receive TRB without ISP" ecm.c 's/DWC3_TRB_CTRL_IOC | DWC3_TRB_CTRL_ISP_IMI);/DWC3_TRB_CTRL_IOC);/'
 echo "mutate: $caught caught, $missed missed"
 [ "$missed" -eq 0 ]

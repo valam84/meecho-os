@@ -23,7 +23,7 @@ CC=(cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -O1 -g
     "-D__unused=__attribute__((unused))"
     "-DREAL_FDT_H=\"$INC/minix/fdt.h\"")
 # The core's register access goes to the model: dev-hook.h.
-for f in dwc3_dev dwc3_ep0; do
+for f in dwc3_dev dwc3_ep0 ecm; do
 	"${CC[@]}" -include "$HERE/dev-hook.h" -c -o "$T/$f.o" "$SRC/$f.c"
 done
 for f in dwc3_find dwc3_qcom qusb2; do

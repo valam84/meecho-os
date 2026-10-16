@@ -89,18 +89,92 @@ dwc3_ep_cmd(unsigned ep, uint32_t cmd, uint32_t p0, uint32_t p1, uint32_t p2,
 	return OK;
 }
 
-/* ep0 OUT (0) or IN (1) as a control endpoint of maxpacket mps. */
+/*
+ * SETEPCONFIG (dwc3_gadget_set_ep_config()): the type, maxpacket, the TX
+ * FIFO of an IN endpoint (its USB number), the events wanted - control
+ * endpoints XferNotReady too, as Linux does for ep0 - and an interrupt
+ * endpoint's interval.  Every endpoint here ends its transfers with
+ * XferComplete: one transfer per frame, not Linux's endless ring.
+ */
 static int
-ep_config(unsigned ep, uint32_t action, unsigned mps)
+ep_config(unsigned ep, uint32_t action, unsigned type, unsigned mps,
+	unsigned interval)
 {
 	uint32_t p0, p1;
 
-	p0 = DWC3_DEPCFG_EP_TYPE(0) | DWC3_DEPCFG_MPS(mps) | action;
+	p0 = DWC3_DEPCFG_EP_TYPE(type) | DWC3_DEPCFG_MPS(mps) | action;
 	if (ep & 1)
 		p0 |= DWC3_DEPCFG_FIFO_NUMBER(ep >> 1);
-	p1 = DWC3_DEPCFG_XFER_COMPLETE_EN | DWC3_DEPCFG_XFER_NOT_READY_EN |
-	    DWC3_DEPCFG_EP_NUMBER(ep);
+	p1 = DWC3_DEPCFG_XFER_COMPLETE_EN | DWC3_DEPCFG_EP_NUMBER(ep);
+	if (type == DWC3_EP_CONTROL)
+		p1 |= DWC3_DEPCFG_XFER_NOT_READY_EN;
+	if (interval != 0)
+		p1 |= DWC3_DEPCFG_BINTERVAL_M1(interval - 1);
 	return dwc3_ep_cmd(ep, DWC3_DEPCMD_SETEPCONFIG, p0, p1, 0, NULL);
+}
+
+/* __dwc3_gadget_ep_enable(): configured, a transfer resource, enabled. */
+int
+dwc3_ep_enable(unsigned ep, unsigned type, unsigned mps, unsigned interval)
+{
+	int r;
+
+	if (ep >= DWC3_NEP)
+		return EINVAL;
+	if ((r = ep_config(ep, DWC3_DEPCFG_ACTION_INIT, type, mps, interval))
+	    != OK || (r = dwc3_ep_cmd(ep, DWC3_DEPCMD_SETTRANSFRESOURCE,
+	    DWC3_DEPXFERCFG_NUM_XFER_RES(1), 0, 0, NULL)) != OK)
+		return r;
+	dwc3_wr(DWC3_DALEPENA, dwc3_rd(DWC3_DALEPENA) | (1u << ep));
+	return OK;
+}
+
+void
+dwc3_ep_end(unsigned ep)
+{
+	if (ep >= DWC3_NEP || !dwc.busy[ep])
+		return;
+	(void)dwc3_ep_cmd(ep, DWC3_DEPCMD_ENDTRANSFER |
+	    DWC3_DEPCMD_PARAM(dwc.rsc[ep]), 0, 0, 0, NULL);
+	micro_delay(100);	/* Linux: an EndTransfer without IOC */
+	dwc.busy[ep] = 0;
+}
+
+void
+dwc3_ep_disable(unsigned ep)
+{
+	if (ep >= DWC3_NEP)
+		return;
+	dwc3_ep_end(ep);
+	dwc3_wr(DWC3_DALEPENA, dwc3_rd(DWC3_DALEPENA) & ~(1u << ep));
+}
+
+/* StartTransfer of the TRB(s) at trb, which the caller filled. */
+int
+dwc3_ep_start(unsigned ep, struct dwc3_trb *trb)
+{
+	phys_bytes pa = dwc3_pa(trb);
+	uint32_t done;
+	int r;
+
+	if (ep >= DWC3_NEP || dwc.busy[ep])
+		return EBUSY;
+	dwc3_give(trb, DWC3_LINE);
+	if ((r = dwc3_ep_cmd(ep, DWC3_DEPCMD_STARTTRANSFER,
+	    (uint32_t)((uint64_t)pa >> 32), (uint32_t)pa, 0, &done)) != OK)
+		return r;
+	dwc.busy[ep] = 1;
+	dwc.rsc[ep] = DWC3_DEPCMD_RSC_IDX(done);
+	return OK;
+}
+
+/* dwc3_ep0_set_config() in the Address state: the other endpoints'
+ * transfer resources start again from index 2. */
+int
+dwc3_restart_config(void)
+{
+	return dwc3_ep_cmd(0, DWC3_DEPCMD_DEPSTARTCFG | DWC3_DEPCMD_PARAM(2),
+	    0, 0, 0, NULL);
 }
 
 static int
@@ -109,27 +183,27 @@ dma_alloc(void)
 	phys_bytes pa;
 	uint8_t *p;
 
-	if ((p = alloc_contig(2 * 4096, AC_ALIGN4K, &pa)) == NULL) {
+	if ((p = alloc_contig(DWC3_DMA_SIZE, AC_ALIGN4K, &pa)) == NULL) {
 		log_warn(&dwc3_log, "no DMA memory\n");
 		return ENOMEM;
 	}
-	if ((uint64_t)pa + 2 * 4096 > 0x100000000ULL) {
+	if ((uint64_t)pa + DWC3_DMA_SIZE > 0x100000000ULL) {
 		log_warn(&dwc3_log, "DMA memory at 0x%llx: above 4 GiB\n",
 		    (unsigned long long)pa);
 		return ENOMEM;
 	}
-	memset(p, 0, 2 * 4096);
+	memset(p, 0, DWC3_DMA_SIZE);
 	dwc.dma = p;
 	dwc.dma_pa = pa;
-	dwc.trb = (struct dwc3_trb *)p;
-	dwc.trb_pa = pa;
-	dwc.setup = p + DWC3_LINE;
-	dwc.setup_pa = pa + DWC3_LINE;
-	dwc.buf = p + 2 * DWC3_LINE;
-	dwc.buf_pa = pa + 2 * DWC3_LINE;
-	dwc.ev = p + 4096;
-	dwc.ev_pa = pa + 4096;
-	dwc3_give(p, 2 * 4096);
+	dwc.trb = (struct dwc3_trb *)(p + DWC3_OFF_EP0_TRB);
+	dwc.trb_pa = pa + DWC3_OFF_EP0_TRB;
+	dwc.setup = p + DWC3_OFF_SETUP;
+	dwc.setup_pa = pa + DWC3_OFF_SETUP;
+	dwc.buf = p + DWC3_OFF_EP0_BUF;
+	dwc.buf_pa = pa + DWC3_OFF_EP0_BUF;
+	dwc.ev = p + DWC3_OFF_EVENTS;
+	dwc.ev_pa = pa + DWC3_OFF_EVENTS;
+	dwc3_give(p, DWC3_DMA_SIZE);
 	return OK;
 }
 
@@ -191,13 +265,9 @@ dwc3_dev_start(volatile uint8_t *core)
 	if ((r = dwc3_ep_cmd(0, DWC3_DEPCMD_DEPSTARTCFG | DWC3_DEPCMD_PARAM(0),
 	    0, 0, 0, NULL)) != OK)
 		return r;
-	for (t = 0; t < 2; t++) {
-		if ((r = ep_config(t, DWC3_DEPCFG_ACTION_INIT, 512)) != OK ||
-		    (r = dwc3_ep_cmd(t, DWC3_DEPCMD_SETTRANSFRESOURCE,
-		    DWC3_DEPXFERCFG_NUM_XFER_RES(1), 0, 0, NULL)) != OK)
+	for (t = DWC3_EP0_OUT; t <= DWC3_EP0_IN; t++)
+		if ((r = dwc3_ep_enable(t, DWC3_EP_CONTROL, 512, 0)) != OK)
 			return r;
-		dwc3_wr(DWC3_DALEPENA, dwc3_rd(DWC3_DALEPENA) | (1u << t));
-	}
 	dwc3_ep0_setup_start();
 
 	/* 7. The events wanted (dwc3_gadget_enable_irq(), 3.00a), and run. */
@@ -224,6 +294,20 @@ dwc3_dev_start(volatile uint8_t *core)
 	return OK;
 }
 
+/* dwc3_gadget_run_stop(0): the host sees the device leave. */
+void
+dwc3_dev_stop(void)
+{
+	unsigned t;
+
+	ecm_reset();
+	dwc3_wr(DWC3_DCTL, dwc3_rd(DWC3_DCTL) & ~DWC3_DCTL_RUN_STOP);
+	for (t = 0; t < 500 && !(dwc3_rd(DWC3_DSTS) & DWC3_DSTS_DEVCTRLHLT);
+	    t++)
+		micro_delay(1000);
+	log_info(&dwc3_log, "stopped (DSTS 0x%08x)\n", dwc3_rd(DWC3_DSTS));
+}
+
 /*===========================================================================*
  *    events                                                                  *
  *===========================================================================*/
@@ -238,6 +322,7 @@ device_event(unsigned type, unsigned info)
 		/* dwc3_gadget_reset_interrupt(), as far as ep0 goes. */
 		dwc.resets++;
 		dwc3_ep0_reset();
+		ecm_reset();
 		v = dwc3_rd(DWC3_DCTL) & ~DWC3_DCTL_TSTCTRL_MASK;
 		dwc3_wr(DWC3_DCTL, v);
 		dwc3_wr(DWC3_DCFG, dwc3_rd(DWC3_DCFG) & ~DWC3_DCFG_DEVADDR_MASK);
@@ -249,8 +334,10 @@ device_event(unsigned type, unsigned info)
 	case DWC3_DEVT_CONNECT_DONE:
 		/* ep0's maxpacket for the speed (64 at high and full). */
 		speed = dwc3_rd(DWC3_DSTS) & DWC3_DSTS_CONNECTSPD;
-		(void)ep_config(0, DWC3_DEPCFG_ACTION_MODIFY, 64);
-		(void)ep_config(1, DWC3_DEPCFG_ACTION_MODIFY, 64);
+		(void)ep_config(DWC3_EP0_OUT, DWC3_DEPCFG_ACTION_MODIFY,
+		    DWC3_EP_CONTROL, 64, 0);
+		(void)ep_config(DWC3_EP0_IN, DWC3_DEPCFG_ACTION_MODIFY,
+		    DWC3_EP_CONTROL, 64, 0);
 		if (dwc.resets <= 3)
 			log_info(&dwc3_log, "connect: %s\n", speed == 0 ?
 			    "high-speed" : speed == 1 ? "full-speed" :
@@ -258,6 +345,8 @@ device_event(unsigned type, unsigned info)
 		break;
 	case DWC3_DEVT_DISCONNECT:
 		dwc3_ep0_reset();
+		ecm_reset();
+		dwc.address = dwc.config = 0;
 		dwc.connected = 0;
 		log_info(&dwc3_log, "disconnect\n");
 		break;
@@ -283,8 +372,14 @@ event(uint32_t e)
 		return;
 	}
 	ep = DWC3_EV_EP(e);
-	if (ep > 1) {
-		log_debug(&dwc3_log, "event 0x%08x on ep%u\n", e, ep);
+	if (ep > DWC3_EP0_IN) {
+		/* The function's endpoints: a transfer is over. */
+		if (ep < DWC3_NEP &&
+		    DWC3_EV_EP_TYPE(e) == DWC3_DEPEVT_XFERCOMPLETE) {
+			dwc.busy[ep] = 0;
+			ecm_xfer_complete(ep);
+		} else
+			log_debug(&dwc3_log, "event 0x%08x on ep%u\n", e, ep);
 		return;
 	}
 	switch (DWC3_EV_EP_TYPE(e)) {

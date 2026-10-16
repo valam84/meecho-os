@@ -39,6 +39,10 @@ int qsoc_pin_get(unsigned pin);
  */
 int qsoc_pinctrl(const void *dtb, uint32_t phandle);
 
+/* The GPIO numbers such a node names, into pins[max]; nothing is set. */
+unsigned qsoc_pinctrl_pins(const void *dtb, uint32_t phandle, unsigned *pins,
+	unsigned max);
+
 /*
  * Turn on the GCC branch clock with device tree number id; if it hangs off
  * a root of its own and hz is 19200000, that root is set to the crystal

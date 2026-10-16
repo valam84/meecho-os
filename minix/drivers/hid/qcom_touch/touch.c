@@ -71,6 +71,15 @@ static struct {
 	unsigned scr_w, scr_h;
 } dt;
 
+/* The bus's own pins, from its pinctrl-0: SDA and SCL in the tree's order. */
+static unsigned bus_pin[2], nbus;
+
+static int
+bus_line(unsigned i)
+{
+	return i < nbus ? qsoc_pin_get(bus_pin[i]) : -1;
+}
+
 static struct qup qup;
 static volatile uint8_t *qup_regs;
 static struct keys keys;
@@ -259,16 +268,24 @@ bring_up(void)
 		return r;
 	}
 
-	/* Pins. */
+	/*
+	 * The lines as the boot loader left them, before anything here is
+	 * touched.  SDA and SCL are pulled up to the touch screen's 1.8 V
+	 * supply: both low says the supply is off, not the driver wrong.
+	 */
+	nbus = dt.pinctrl != 0 ? qsoc_pinctrl_pins(dtb, dt.pinctrl, bus_pin,
+	    2) : 0;
+	log_info(&tlog, "lines as found: SDA %d SCL %d, reset %d, interrupt "
+	    "%d\n", bus_line(0), bus_line(1),
+	    dt.have_reset ? qsoc_pin_get(dt.reset_pin) : -1,
+	    dt.have_int ? qsoc_pin_get(dt.int_pin) : -1);
+
+	/* Pins: the bus, and the interrupt as an input.  Reset not yet. */
 	if (dt.pinctrl != 0 && (r = qsoc_pinctrl(dtb, dt.pinctrl)) != OK)
 		log_warn(&tlog, "bus pins (phandle %u): %d\n", dt.pinctrl, r);
 	free(dtb);
 	if (dt.have_int)
 		(void)qsoc_pin(dt.int_pin, 0, 8, QSOC_PULL_UP, 0);
-	if (dt.have_reset) {
-		qsoc_pin_set(dt.reset_pin, 0);		/* value first */
-		(void)qsoc_pin(dt.reset_pin, 0, 8, QSOC_PULL_UP, 1);
-	}
 
 	/* The controller. */
 	if ((qup_regs = vm_map_phys(SELF, (void *)(phys_bytes)dt.bus_pa,
@@ -290,16 +307,57 @@ bring_up(void)
 	    "0x%08x\n", qup.hw_version, qup.out_fifo, qup.in_fifo,
 	    qup.clk_ctl);
 
-	/* Reset the touch controller: low 6 ms, high, 300 ms. */
-	if (dt.have_reset) {
+	/*
+	 * First as the boot loader left the controller - running, if the
+	 * panel is - and only then through a reset (low 6 ms, high, then
+	 * waits of 300 ms growing to two seconds).  On the Mi Pad 4 the
+	 * address did not answer after the reset, so each step says what it
+	 * saw, and a controller that never answers ends in a scan of the bus.
+	 */
+	r = reg_read(0xa8, &v, 1);
+	log_info(&tlog, "before reset: 0x%02x answers %d (chip id 0x%02x), "
+	    "SDA %d SCL %d\n", dt.addr, r, r == QUP_OK ? v : 0,
+	    bus_line(0), bus_line(1));
+	if (r != QUP_OK && dt.have_reset) {
+		static const unsigned waits_ms[] = { 300, 300, 400, 1000 };
+		unsigned i;
+
+		qsoc_pin_set(dt.reset_pin, 0);		/* value first */
+		(void)qsoc_pin(dt.reset_pin, 0, 8, QSOC_PULL_UP, 1);
 		micro_delay(6000);
 		qsoc_pin_set(dt.reset_pin, 1);
-		micro_delay(300000);
+		for (i = 0; i < sizeof(waits_ms) / sizeof(waits_ms[0]); i++) {
+			micro_delay(waits_ms[i] * 1000);
+			if ((r = reg_read(0xa8, &v, 1)) == QUP_OK)
+				break;
+		}
+		log_info(&tlog, "after reset: 0x%02x answers %d (try %u), "
+		    "reset line %d, interrupt %d\n", dt.addr, r, i + 1,
+		    qsoc_pin_get(dt.reset_pin),
+		    dt.have_int ? qsoc_pin_get(dt.int_pin) : -1);
+	}
+	if (r != QUP_OK) {
+		unsigned a, n = 0;
+		char seen[96];
+		int len = 0;
+
+		seen[0] = '\0';
+		for (a = 0x08; a < 0x78; a++)
+			if (qup_read_reg(&qup, a, 0x00, &v, 1) == QUP_OK) {
+				n++;
+				if (len < (int)sizeof(seen) - 6)
+					len += snprintf(seen + len,
+					    sizeof(seen) - len, " 0x%02x", a);
+			}
+		log_warn(&tlog, "no answer from 0x%02x: %d; on the bus %u "
+		    "device(s):%s\n", dt.addr, r, n, n ? seen : " none");
+		return r;
 	}
 
 	/* Who it is: EDT's "EP0..." id, or FocalTech's chip id at 0xa8. */
 	if ((r = reg_read(0xbb, id, sizeof(id))) != QUP_OK) {
-		log_warn(&tlog, "no answer from 0x%02x: %d\n", dt.addr, r);
+		log_warn(&tlog, "no answer from 0x%02x to 0xbb: %d\n", dt.addr,
+		    r);
 		return r;
 	}
 	if ((id[1] == 'E' || id[1] == 'e') && (id[2] == 'P' || id[2] == 'p') &&

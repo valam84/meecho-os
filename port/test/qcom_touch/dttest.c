@@ -203,9 +203,14 @@ main(int argc, char **argv)
 	    "pull, input)", pin_cfg(10), pin_cfg(11));
 	CHECK(pin_cfg(67) == 0x0c3, "interrupt pin cfg 0x%03x, expected "
 	    "0x0c3 (gpio, 8 mA, pull-up, input)", pin_cfg(67));
-	CHECK(pin_cfg(66) == 0x2c3 && (pin_io(66) & 2) == 0,
-	    "reset pin cfg 0x%03x io 0x%x, expected 0x2c3 driven low",
-	    pin_cfg(66), pin_io(66));
+	/*
+	 * The reset line is not touched before the controller has been asked
+	 * as the boot loader left it - and here the QUP never starts, so not
+	 * at all.
+	 */
+	CHECK(pin_cfg(66) == 0 && pin_io(66) == 0,
+	    "reset pin cfg 0x%03x io 0x%x: touched before the controller "
+	    "was asked", pin_cfg(66), pin_io(66));
 	for (t = 0, written = 0; t < 3; t++)
 		for (off = 0; off < TILE_SZ; off += 4) {
 			uint32_t v = *(uint32_t *)(tiles[t] + off);

@@ -228,6 +228,7 @@ qsoc_phandle(const struct fdt_node *node)
 struct pc_walk {
 	uint32_t phandle;
 	int in, depth, applied, err;
+	unsigned *list, max, n;		/* list only: nothing is set */
 };
 
 static void
@@ -256,6 +257,11 @@ apply(const struct fdt_node *node, struct pc_walk *w)
 			continue;
 		}
 		pin = (unsigned)strtoul(p + 4, NULL, 10);
+		if (w->list != NULL) {
+			if (w->n < w->max)
+				w->list[w->n++] = pin;
+			continue;
+		}
 		func = qsoc_func(pin, fn != NULL ? fn : "gpio");
 		if (func < 0 || qsoc_pin(pin, func, drive, pull, 0) != OK) {
 			w->err = EINVAL;
@@ -294,6 +300,20 @@ qsoc_pinctrl(const void *dtb, uint32_t phandle)
 	if (w.err != 0)
 		return w.err;
 	return w.applied > 0 ? OK : ENOENT;
+}
+
+unsigned
+qsoc_pinctrl_pins(const void *dtb, uint32_t phandle, unsigned *pins,
+	unsigned max)
+{
+	struct pc_walk w;
+
+	memset(&w, 0, sizeof(w));
+	w.phandle = phandle;
+	w.list = pins;
+	w.max = max;
+	fdt_walk(dtb, pc_cb, &w);
+	return w.n;
 }
 
 /*===========================================================================*

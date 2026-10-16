@@ -426,6 +426,49 @@ static struct inputdriver pmic_tab = {
 	.idr_alarm	= pmic_alarm
 };
 
+/*
+ * Which of the first PMIC's LDOs are on, read and only read: the one a
+ * device on the board is powered from is somewhere in this line.  The
+ * touch screen of the Mi Pad 4 did not answer on its bus, and its supply
+ * (L11A) is on in Linux only because Linux asks for it.  Every peripheral
+ * of LDO type (TYPE 0x21) in 0x4000-0x5fff is LDO (base - 0x4000) / 0x100 +
+ * 1; EN_CTL (0x46) bit 7 says enabled, STATUS1 (0x08) bit 7 ready.
+ */
+#define LDO_FIRST		0x4000
+#define LDO_LAST		0x5f00
+#define PERIPH_TYPE		0x04
+#define TYPE_LDO		0x21
+#define LDO_STATUS1		0x08
+#define LDO_EN_CTL		0x46
+
+static void
+ldo_report(void)
+{
+	char on[96], off[96];
+	int lon = 0, loff = 0;
+	unsigned base, n;
+	uint8_t t, en, st;
+
+	on[0] = off[0] = '\0';
+	for (base = LDO_FIRST; base <= LDO_LAST; base += 0x100) {
+		if (rd8(SID_PM660, base + PERIPH_TYPE, &t) != OK_SPMI ||
+		    t != TYPE_LDO ||
+		    rd8(SID_PM660, base + LDO_EN_CTL, &en) != OK_SPMI ||
+		    rd8(SID_PM660, base + LDO_STATUS1, &st) != OK_SPMI)
+			continue;
+		n = (base - LDO_FIRST) / 0x100 + 1;
+		if ((en & 0x80) || (st & 0x80)) {
+			if (lon < (int)sizeof(on) - 8)
+				lon += snprintf(on + lon, sizeof(on) - lon,
+				    " %u%s", n, (st & 0x80) ? "" : "?");
+		} else if (loff < (int)sizeof(off) - 8)
+			loff += snprintf(off + loff, sizeof(off) - loff, " %u",
+			    n);
+	}
+	log_info(&pmic_log, "PM660 LDOs on:%s; off:%s\n", lon ? on : " none",
+	    loff ? off : " none");
+}
+
 static int
 pmic_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 {
@@ -437,6 +480,7 @@ pmic_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	if ((r = arb_init()) != OK)
 		return r;
 	buttons_init();
+	ldo_report();
 	battery_init();
 	battery_poll(1);
 	inputdriver_announce(INPUT_DEV_KBD);

@@ -7,10 +7,15 @@
  * SoC's clock controller (GCC), which qcom_soc maps; a tree that points
  * them elsewhere is not trusted.
  *
- * At this milestone the service starts, reports and then waits for nothing
- * - the controller is not touched (port/clover/hw-net.md, step 2).
+ * It reports what powers, clocks and resets the block has (step 2), and
+ * then - when the report finds the block running, as a boot loader that
+ * used it leaves it - takes the core over in device mode and answers the
+ * host's control transfers on ep0, reading the core's events on every
+ * clock tick (step 3a of port/clover/hw-net.md).  A block that is not
+ * running is left alone: only the report is printed.
  *
- * Arguments: log=N (0 none .. 4 trace).
+ * Arguments: log=N (0 none .. 4 trace); probe=1 - report only, write
+ * nothing.
  */
 
 #include "dwc3_ecm.h"
@@ -30,6 +35,7 @@ struct log dwc3_log = {
 };
 
 static struct dwc3_dt dt;
+static int running;		/* the core is ours: poll it */
 
 volatile uint8_t *
 dwc3_map(u64_t pa, u64_t size, const char *what)
@@ -64,12 +70,15 @@ dwc3_clk_state(const struct dwc3_clk *c, char *buf, size_t size)
 static int
 dwc3_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 {
+	volatile uint8_t *core = NULL;
 	void *dtb;
 	long v;
-	int r;
+	int r, rg, rp, probe = 0;
 
 	if (env_parse("log", "d", 0, &v, LEVEL_NONE, LEVEL_TRACE) == EP_SET)
 		dwc3_log.log_level = (int)v;
+	if (env_parse("probe", "d", 0, &v, 0, 1) == EP_SET)
+		probe = (int)v;
 	if ((dtb = fdt_fetch()) == NULL) {
 		log_info(&dwc3_log, "no device tree; nothing to do\n");
 		return ENXIO;
@@ -95,10 +104,29 @@ dwc3_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 		return EINVAL;
 	}
 
-	log_info(&dwc3_log, "probe only (hw-net.md, step 2): nothing is "
-	    "written\n");
-	dt.glue->report(&dt);
-	dt.phy->report(&dt);
+	if (probe)
+		log_info(&dwc3_log, "probe=1: nothing is written\n");
+	rg = dt.glue->report(&dt, &core);
+	rp = dt.phy->report(&dt);
+	if (probe)
+		return OK;
+	if (rg != OK || rp != OK) {
+		log_info(&dwc3_log, "not taking the USB block over: %s is not "
+		    "running as a boot loader leaves it\n", rg != OK ?
+		    "the wrapper or core" : "the PHY");
+		return OK;
+	}
+
+	/* hw-net.md, step 3a: the block as the boot loader left it. */
+	log_info(&dwc3_log, "taking over the USB block the boot loader left "
+	    "running; GCC and PHY untouched\n");
+	dt.glue->peripheral();
+	if ((r = dwc3_dev_start(core)) != OK) {
+		log_warn(&dwc3_log, "device mode did not start: %d\n", r);
+		return OK;
+	}
+	running = 1;
+	(void)sys_setalarm(1, 0);
 	return OK;
 }
 
@@ -120,8 +148,15 @@ main(int argc, char **argv)
 	sef_setcb_signal_handler(dwc3_signal);
 	sef_startup();
 
-	/* Nothing to serve yet: the network side comes with step 4. */
-	for (;;)
-		(void)sef_receive_status(ANY, &m, &ipc_status);
+	/* The core's events, on every clock tick; the network: step 4. */
+	for (;;) {
+		if (sef_receive_status(ANY, &m, &ipc_status) != OK)
+			continue;
+		if (running && is_ipc_notify(ipc_status) &&
+		    _ENDPOINT_P(m.m_source) == CLOCK) {
+			dwc3_dev_poll();
+			(void)sys_setalarm(1, 0);
+		}
+	}
 	return 0;
 }

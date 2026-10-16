@@ -4,9 +4,12 @@
  * register layout and table, a PLL_TEST register, a differential reference
  * clock (port/clover/hw-net.md, §3).
  *
- * At this milestone it only reports: its clocks, reset and supplies, the
+ * It only reports, and never writes: its clocks, reset and supplies, the
  * tuning fuse in the QFPROM, and - when its interface clock (cfg_ahb) runs
- * and its reset is released - its PLL status and power-down register.
+ * and its reset is released - its PLL status and power-down register.  A
+ * PHY a boot loader left running (PLL locked, not powered down) is used as
+ * it is, tuning and all (hw-net.md, step 3a): the boot loader's TUNE2 is
+ * not what mainline's formula would make from the same fuse.
  */
 
 #include "dwc3_ecm.h"
@@ -17,7 +20,8 @@
 #define QUSB2_PLL_LOCKED	0x20
 #define QUSB2_TUNE1		0x80
 #define QUSB2_TUNE2		0x84
-#define QUSB2_POWERDOWN		0xb4	/* bit0 POWER_DOWN */
+#define QUSB2_POWERDOWN		0xb4
+#define QUSB2_POWER_DOWN	0x01
 #define QUSB2_MIN_SIZE		(QUSB2_POWERDOWN + 4)
 
 static uint32_t
@@ -49,7 +53,7 @@ fuse_report(const struct dwc3_dt *dt)
 	    trim == 0 ? " (not fused: the table's value stays)" : "");
 }
 
-static void
+static int
 qusb2_report(const struct dwc3_dt *dt)
 {
 	char line[256], part[64];
@@ -87,20 +91,23 @@ qusb2_report(const struct dwc3_dt *dt)
 	if (!ahb_on || held) {
 		log_info(&dwc3_log, "not reading the phy: %s\n", !ahb_on ?
 		    "cfg_ahb is off" : "its reset is held");
-		return;
+		return EBUSY;
 	}
 	if (dt->phy_sz < QUSB2_MIN_SIZE) {
 		log_warn(&dwc3_log, "reg of the phy too short\n");
-		return;
+		return EBUSY;
 	}
 	if ((p = dwc3_map(dt->phy_pa, dt->phy_sz, "phy")) == NULL)
-		return;
+		return EBUSY;
 	v = rd32(p, QUSB2_PLL_STATUS);
 	log_info(&dwc3_log, "phy PLL_STATUS 0x%02x (%s), POWERDOWN 0x%02x, "
 	    "PLL_TEST 0x%02x, TUNE1 0x%02x, TUNE2 0x%02x\n", v & 0xff,
 	    (v & QUSB2_PLL_LOCKED) ? "locked" : "not locked",
 	    rd32(p, QUSB2_POWERDOWN) & 0xff, rd32(p, QUSB2_PLL_TEST) & 0xff,
 	    rd32(p, QUSB2_TUNE1) & 0xff, rd32(p, QUSB2_TUNE2) & 0xff);
+	/* Running: the PLL locked and the PHY not powered down. */
+	return (v & QUSB2_PLL_LOCKED) && !(rd32(p, QUSB2_POWERDOWN) &
+	    QUSB2_POWER_DOWN) ? OK : EBUSY;
 }
 
 const struct dwc3_phy_ops qusb2_phy = {

@@ -88,14 +88,35 @@ int dwc3_find(const void *dtb, struct dwc3_dt *dt);
 /* A wrapper (glue) or PHY this driver knows, by compatible string. */
 struct dwc3_glue_ops {
 	const char *compatible;
-	void (*report)(const struct dwc3_dt *dt);
+	/*
+	 * Print what powers, resets and clocks the wrapper and core have.
+	 * OK, with the core's registers mapped into *core, when both are
+	 * powered, out of reset and clocked - running, as a boot loader that
+	 * used them leaves them; EBUSY when not, and then nothing was mapped.
+	 */
+	int (*report)(const struct dwc3_dt *dt, volatile uint8_t **core);
+	/*
+	 * Device mode without a VBUS detector of the wrapper's own: tell the
+	 * core the session is valid (Linux does this for dr_mode
+	 * "peripheral").  Only after report() said OK.
+	 */
+	void (*peripheral)(void);
 };
 struct dwc3_phy_ops {
 	const char *compatible;
-	void (*report)(const struct dwc3_dt *dt);
+	/* Print the PHY's state; OK when it runs (powered, PLL locked). */
+	int (*report)(const struct dwc3_dt *dt);
 };
 extern const struct dwc3_glue_ops dwc3_qcom_glue;	/* dwc3_qcom.c */
 extern const struct dwc3_phy_ops qusb2_phy;		/* qusb2.c */
+
+/*
+ * dwc3_dev.c: the core in device mode, taken over as a boot loader left
+ * it running: events masked, the core reset, an event buffer of its own,
+ * ep0, run.  Then dwc3_dev_poll() on every tick.
+ */
+int dwc3_dev_start(volatile uint8_t *core);
+void dwc3_dev_poll(void);
 
 /* The register map of a block, or NULL - mapped once, kept. */
 volatile uint8_t *dwc3_map(u64_t pa, u64_t size, const char *what);

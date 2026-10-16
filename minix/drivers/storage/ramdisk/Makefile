@@ -165,6 +165,15 @@ dir.readclock.drv:= minix/drivers/clock/readclock
 # says so and leaves.
 PROGRAMS+=		fb
 dir.fb:=	minix/drivers/video/fb
+# And the rest of what a machine with no keyboard and no serial line needs
+# to be used at all - the Mi Pad 4's: its buttons, backlight and battery
+# (qcom_pmic, over the SPMI PMIC arbiter) and its touch screen as the
+# on-screen keyboard's keys (qcom_touch).  Each finds its hardware in the
+# device tree or says there is none and leaves.
+PROGRAMS+=		qcom_pmic
+dir.qcom_pmic:=	minix/drivers/power/qcom_pmic
+PROGRAMS+=		qcom_touch
+dir.qcom_touch:= minix/drivers/hid/qcom_touch
 # The binary of mib, the one boot-image service that restarts without
 # state: rc hands RS its path, and on a ramdisk root this is the only copy
 # there is.  See the comment in rc.

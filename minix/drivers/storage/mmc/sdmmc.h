@@ -242,6 +242,14 @@ struct sdmmc_host {
 	 */
 	unsigned	max_blocks;
 	unsigned	max_blocks_pio;
+
+	/*
+	 * The device carries the machine's own boot loaders and firmware
+	 * (a phone's eMMC: xbl, abl, TrustZone, the modem's): it is written
+	 * only through a gptpartN= window, and is read-only without one.
+	 * See sdmmc_gpt.c.
+	 */
+	int		protect;
 };
 
 /* The card, as the block layer sees it. */
@@ -360,6 +368,14 @@ int sdmmc_card_read(uint64_t sector, uint32_t count, void *buf,
 int sdmmc_card_write(uint64_t sector, uint32_t count, const void *buf,
 	phys_bytes phys);
 int sdmmc_card_flush(void);
+
+/*
+ * sdmmc_gpt.c: partition "name" of a GPT card, checked as UEFI says, as
+ * first sector and length; buf/bytes/phys is a transfer buffer to read
+ * through.  Any doubt about the table is an error.
+ */
+int sdmmc_gpt_find(const char *name, uint64_t sectors, uint8_t *buf,
+	size_t bytes, phys_bytes phys, uint64_t *first, uint64_t *count);
 
 /* Logging, shared so that one -args log_level= reaches every file. */
 extern struct log sdmmc_log;

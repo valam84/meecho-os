@@ -75,6 +75,14 @@ static struct sdmmc_card card;
 
 static int open_count;
 
+/*
+ * The window, with gptpart=NAME (sdmmc_gpt.c): the one partition of the
+ * card this driver serves, in bytes from the card's start.  Minor 0 is the
+ * window and nothing outside it is ever read or written, whatever the
+ * partition code above believes.  win_hi == 0: no window, the whole card.
+ */
+static u64_t win_lo, win_hi;
+
 /* One drive, its four partitions and their sub-partitions. */
 static struct device part[DEV_PER_DRIVE];
 static struct device subpart[SUB_PER_DRIVE];
@@ -136,7 +144,11 @@ sdmmc_open(devminor_t minor, int access)
 	if (open_count == 0) {
 		memset(part, 0, sizeof(part));
 		memset(subpart, 0, sizeof(subpart));
-		part[0].dv_size = card.sectors * SDMMC_SECTOR_SIZE;
+		if (win_hi != 0) {
+			part[0].dv_base = win_lo;
+			part[0].dv_size = win_hi - win_lo;
+		} else
+			part[0].dv_size = card.sectors * SDMMC_SECTOR_SIZE;
 		partition(&sdmmc_dtab, 0, P_PRIMARY, 0 /* ATAPI */);
 	}
 
@@ -248,6 +260,33 @@ sdmmc_transfer(devminor_t minor, int write, u64_t position, endpoint_t endpt,
 				return done;
 
 			count = (uint32_t)(bytes / SDMMC_SECTOR_SIZE);
+
+			/*
+			 * The window is checked here, at the last step before
+			 * the card, and not only through part[]: a partition
+			 * table inside the window is the user's, and nothing
+			 * it says may reach past the window's edges.
+			 */
+			if (win_hi != 0 && (pos < win_lo ||
+			    pos + bytes > win_hi)) {
+				log_warn(&sdmmc_log, "refused: %s of %u sectors "
+				    "at %llu is outside the gptpart window\n",
+				    write ? "write" : "read", count,
+				    (unsigned long long)
+				    (pos / SDMMC_SECTOR_SIZE));
+				return (done > 0) ? (ssize_t)done : EIO;
+			}
+			/*
+			 * A controller that carries the machine's own boot
+			 * loaders (host.protect) is written only through a
+			 * window: without gptpart= it is read-only.
+			 */
+			if (write && host.protect && win_hi == 0) {
+				log_warn(&sdmmc_log, "refused: write to %s "
+				    "without gptpartN=; the device holds the "
+				    "boot loaders\n", host.name);
+				return (done > 0) ? (ssize_t)done : EROFS;
+			}
 
 			if (write) {
 				r = copy_from_caller(endpt, &iov[i], iov_done,
@@ -394,6 +433,37 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 		log_warn(&sdmmc_log, "no usable card: %d\n", r);
 		host.exit();
 		return r;
+	}
+
+	/*
+	 * gptpartN=NAME, N the instance: serve that GPT partition and nothing
+	 * else.  Numbered because a boot parameter reaches every instance,
+	 * and the SD socket's card has no "userdata".  A table that does not
+	 * check out, or a name that is not there exactly once, is a refusal
+	 * to serve - never the whole card instead.
+	 */
+	{
+		char name[40], key[16];
+		u64_t first, count;
+		long inst = 0;
+
+		(void)env_parse("instance", "d", 0, &inst, 0, 3);
+		snprintf(key, sizeof(key), "gptpart%ld", inst);
+		if (env_get_param(key, name, sizeof(name)) == OK) {
+			if ((r = sdmmc_gpt_find(name, card.sectors, chunk,
+			    SDMMC_CHUNK_BYTES, chunk_phys, &first,
+			    &count)) != OK) {
+				log_warn(&sdmmc_log, "%s=%s: no such "
+				    "partition to serve; not starting\n",
+				    key, name);
+				host.exit();
+				return r;
+			}
+			win_lo = first * SDMMC_SECTOR_SIZE;
+			win_hi = (first + count) * SDMMC_SECTOR_SIZE;
+		} else if (host.protect)
+			log_info(&sdmmc_log, "%s holds the boot loaders: "
+			    "read-only without %s=\n", host.name, key);
 	}
 
 	blockdriver_announce(type);

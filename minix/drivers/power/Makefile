@@ -9,4 +9,8 @@ SUBDIR+=	tps65217
 SUBDIR+=	tps65950
 .endif # ${MACHINE_ARCH} == "earm"
 
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+=	qcom_pmic
+.endif # ${MACHINE_ARCH} == "aarch64"
+
 .include <bsd.subdir.mk>

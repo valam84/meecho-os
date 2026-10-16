@@ -18,7 +18,7 @@ PROGS=		sdmmc
 MAN.sdmmc=
 SRCS.sdmmc=	sdmmc.c sdmmc_card.c sdmmc_host.c sdmmc_sdhci.c \
 		sdmmc_dwmshc.c sdmmc_sunxi.c sdmmc_clk.c sdmmc_clk_rk3568.c \
-		sdmmc_clk_h616.c sdmmc_ring.c
+		sdmmc_clk_h616.c sdmmc_ring.c sdmmc_gpt.c
 
 .else
 

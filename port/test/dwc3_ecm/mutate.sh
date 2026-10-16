@@ -47,5 +47,7 @@ mutate "receive not queued again" ecm.c '/netdriver_copyout(data, 0, RX, len);/,
 mutate "link not told to lwip" ecm.c 's/	netdriver_link();/	;/'
 mutate "no DEPSTARTCFG(2)" dwc3_ep0.c 's/dwc3_restart_config() != OK/0/'
 mutate "receive TRB without ISP" ecm.c 's/DWC3_TRB_CTRL_IOC | DWC3_TRB_CTRL_ISP_IMI);/DWC3_TRB_CTRL_IOC);/'
+mutate "short frame not padded" ecm.c 's/	if (len < NDEV_ETH_PACKET_MIN) {/	if (0) {/'
+mutate "padding not zeroed" ecm.c 's/		memset(RX + len, 0, NDEV_ETH_PACKET_MIN - len);/		;/'
 echo "mutate: $caught caught, $missed missed"
 [ "$missed" -eq 0 ]

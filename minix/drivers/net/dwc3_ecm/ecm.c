@@ -378,6 +378,18 @@ ecm_recv(struct netdriver_data *data, size_t max)
 		queue_rx();
 		return SUSPEND;
 	}
+	/*
+	 * USB carries a frame as long as it is, without Ethernet's padding:
+	 * the host's ARP request comes in 42 bytes.  libnetdriver drops
+	 * anything under NDEV_ETH_PACKET_MIN and leaves padding to the
+	 * driver, so the frame is padded with zeros, as a NIC's receiver
+	 * would have seen it.  Without this the tablet answered IPv6 and
+	 * never ARP.
+	 */
+	if (len < NDEV_ETH_PACKET_MIN) {
+		memset(RX + len, 0, NDEV_ETH_PACKET_MIN - len);
+		len = NDEV_ETH_PACKET_MIN;
+	}
 	netdriver_copyout(data, 0, RX, len);
 	ecm.rx_frames++;
 	queue_rx();

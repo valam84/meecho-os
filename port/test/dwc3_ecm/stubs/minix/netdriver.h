@@ -10,6 +10,7 @@
 #include <sys/types.h>
 
 #define NDEV_HWADDR_MAX		6
+#define NDEV_ETH_PACKET_MIN	60	/* <minix/const.h> */
 #define NDEV_ETH_PACKET_MAX	1514
 #define NDEV_ETH_PACKET_MAX_TAGGED (NDEV_ETH_PACKET_MAX + 4)
 #define NDEV_CAP_MCAST		0x20000000

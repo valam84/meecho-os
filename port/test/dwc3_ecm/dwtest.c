@@ -439,6 +439,9 @@ was_given(const void *p, size_t len)
 #define R(off)		(*(uint32_t *)(coremem + (off)))
 #define NEP		DWC3_NEP
 
+/* Commands the model keeps; a full log is a model error, not a silent drop. */
+#define MLOG	1024
+
 static struct {
 	uint32_t pending;	/* event bytes not yet acked */
 	unsigned evw;		/* where the next event goes */
@@ -448,7 +451,7 @@ static struct {
 	int stalled;		/* ep0 stalled since the host last looked */
 	uint32_t dcfg_at_status;	/* DCFG when the last status began */
 	unsigned errors;
-	struct { unsigned ep, cmd; uint32_t p0, p1; } log[64];
+	struct { unsigned ep, cmd; uint32_t p0, p1; } log[MLOG];
 	unsigned nlog;
 } M;
 
@@ -505,7 +508,9 @@ model_wr(unsigned off, uint32_t v)
 		cmd = v & 0xf;
 		if (!(v & DWC3_DEPCMD_CMDACT))
 			MERR("ep%u command %u without CMDACT", ep, cmd);
-		if (M.nlog < 64) {
+		if (M.nlog >= MLOG)
+			MERR("command log full");
+		else {
 			M.log[M.nlog].ep = ep;
 			M.log[M.nlog].cmd = cmd | (v & 0xffff0000u);
 			M.log[M.nlog].p0 = R(DWC3_DEPCMDPAR0(ep));
@@ -967,6 +972,24 @@ ecm_checks(void)
 	CHECK(N.recv == 0 && N.ierr == 1 && trb_on(DWC3_EP1_OUT,
 	    DWC3_TRBCTL_NORMAL, "after a runt") != NULL, "runt: %d %u",
 	    N.recv, N.ierr);
+	/*
+	 * An ARP request: 42 bytes, as the host's cdc_ether sends it - USB
+	 * does not pad.  libnetdriver drops under 60, so it comes up padded
+	 * with zeros, not with what the 98-byte frame left in the buffer.
+	 * The tablet answered IPv6 and never ARP until this.
+	 */
+	t = trb_on(DWC3_EP1_OUT, DWC3_TRBCTL_NORMAL, "receive");
+	if (t != NULL) {
+		memcpy(trb_buf(t, 42), frame + 100, 42);
+		N.recv = 0;
+		finish(DWC3_EP1_OUT, t, 2048 - 42);
+	}
+	memset(got, 0xa5, sizeof(got));
+	r = ecm_recv(&d, 1514);
+	for (i = 42; i < 60 && got[i] == 0; i++)
+		;
+	CHECK(N.recv == 1 && r == 60 && memcmp(got, frame + 100, 42) == 0 &&
+	    i == 60, "42-byte frame: %zd, padding byte %u", r, i);
 
 	/* A frame to the host, then one that waits for it. */
 	d.buf = frame;

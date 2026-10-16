@@ -87,6 +87,9 @@ static struct log pmic_log = {
 #define BATT_EVERY		(60 * POLL_TICKS_HZ)
 #define BATT_REPORT_EVERY	10	/* minutes between plain reports */
 #define WD_PET_EVERY		(10 * POLL_TICKS_HZ)
+#define LDO_REPORT_AGAIN	(10 * POLL_TICKS_HZ)	/* after qcom_rpm */
+
+static void ldo_report(void);
 
 static struct spmi spmi;
 static int have_pon, have_volup, have_wled, have_fg, have_chg;
@@ -419,6 +422,8 @@ pmic_alarm(clock_t UNUSED(stamp))
 		(void)wr8(SID_PM660, CHG_WD_PET, 0x01);
 	if (polls % BATT_EVERY == 0)
 		battery_poll(0);
+	if (polls == LDO_REPORT_AGAIN)
+		ldo_report();
 	arm();
 }
 
@@ -434,54 +439,50 @@ static struct inputdriver pmic_tab = {
  *
  * The regulators are on the PMIC's second SID (pmic@1 in the tree, its
  * "regulators" node); SID 0 at 0x4000 is the fuel gauge, which is where the
- * first version of this looked and found nothing.  Every peripheral of LDO
- * type (TYPE 0x21) in 0x4000-0x5fff is LDO (base - 0x4000) / 0x100 + 1;
- * EN_CTL (0x46) bit 7 says enabled, STATUS1 (0x08) bit 7 ready.  "*" marks
- * one this execution environment owns and could switch itself.
+ * first version of this looked and found nothing.  The second looked for
+ * type 0x21, which is SPMI_REGULATOR_TYPE_ULT_LDO; the PM660's LDOs are
+ * SPMI_REGULATOR_TYPE_LDO, 0x04 (qcom_spmi-regulator.c), and LDO n is at
+ * 0x4000 + (n - 1) * 0x100 (pm660_regulators[]; L4 is not accessible).
+ * Enabled is ENABLE (0x46) bit 7, as spmi_regulator_common_is_enabled()
+ * reads it - for an RPM-owned regulator, what the RPM made of every vote.
+ * "*" marks one this execution environment owns and could switch itself.
+ * Printed at start and again ten seconds later, after qcom_rpm.
  */
 #define SID_PM660_REGS		1
 #define LDO_FIRST		0x4000
-#define LDO_LAST		0x5f00
+#define LDO_LAST		0x5200		/* L19 */
 #define PERIPH_TYPE		0x04
-#define TYPE_LDO		0x21
-#define LDO_STATUS1		0x08
-#define LDO_EN_CTL		0x46
+#define TYPE_LDO		0x04
+#define TYPE_ULT_LDO		0x21
+#define LDO_ENABLE		0x46
 
 static void
 ldo_report(void)
 {
-	char on[96], off[96], other[64];
-	int lon = 0, loff = 0, lo = 0;
+	char on[128], off[128];
+	int lon = 0, loff = 0;
 	unsigned base, n;
-	uint8_t t, en, st;
+	uint8_t t, en;
 	const char *mine;
 
-	on[0] = off[0] = other[0] = '\0';
+	on[0] = off[0] = '\0';
 	for (base = LDO_FIRST; base <= LDO_LAST; base += 0x100) {
-		if (rd8(SID_PM660_REGS, base + PERIPH_TYPE, &t) != OK_SPMI)
-			continue;
-		if (t != TYPE_LDO) {
-			if (lo < (int)sizeof(other) - 12)
-				lo += snprintf(other + lo, sizeof(other) - lo,
-				    " %x:%02x", base >> 8, t);
-			continue;
-		}
-		if (rd8(SID_PM660_REGS, base + LDO_EN_CTL, &en) != OK_SPMI ||
-		    rd8(SID_PM660_REGS, base + LDO_STATUS1, &st) != OK_SPMI)
+		if (rd8(SID_PM660_REGS, base + PERIPH_TYPE, &t) != OK_SPMI ||
+		    (t != TYPE_LDO && t != TYPE_ULT_LDO) ||
+		    rd8(SID_PM660_REGS, base + LDO_ENABLE, &en) != OK_SPMI)
 			continue;
 		n = (base - LDO_FIRST) / 0x100 + 1;
 		mine = spmi_writable(&spmi, SID_PM660_REGS, base) ? "*" : "";
-		if ((en & 0x80) || (st & 0x80)) {
+		if (en & 0x80) {
 			if (lon < (int)sizeof(on) - 8)
 				lon += snprintf(on + lon, sizeof(on) - lon,
-				    " %u%s%s", n, (st & 0x80) ? "" : "?", mine);
+				    " %u%s", n, mine);
 		} else if (loff < (int)sizeof(off) - 8)
 			loff += snprintf(off + loff, sizeof(off) - loff,
 			    " %u%s", n, mine);
 	}
-	log_info(&pmic_log, "PM660 LDOs on:%s; off:%s%s%s\n",
-	    lon ? on : " none", loff ? off : " none",
-	    lo ? "; not LDOs:" : "", other);
+	log_info(&pmic_log, "PM660 LDOs on:%s; off:%s\n", lon ? on : " none",
+	    loff ? off : " none");
 }
 
 static int

@@ -174,6 +174,10 @@ PROGRAMS+=		qcom_pmic
 dir.qcom_pmic:=	minix/drivers/power/qcom_pmic
 PROGRAMS+=		qcom_touch
 dir.qcom_touch:= minix/drivers/hid/qcom_touch
+# The regulators the tree keeps on, asked of the RPM (qcom_rpm): without it
+# the touch screen has no supply.
+PROGRAMS+=		qcom_rpm
+dir.qcom_rpm:=	minix/drivers/power/qcom_rpm
 # The binary of mib, the one boot-image service that restarts without
 # state: rc hands RS its path, and on a ramdisk root this is the only copy
 # there is.  See the comment in rc.

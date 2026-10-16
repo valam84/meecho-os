@@ -73,10 +73,14 @@ then
 		# then whatever feeds it - the PMIC's buttons (volume up and
 		# down as the arrow keys, power for the backlight) and the
 		# touch screen as the keys of the keyboard fb draws with
-		# osk=1.  On QEMU's virt neither driver finds its hardware.
+		# osk=1.  Between them qcom_rpm, which asks the RPM for the
+		# regulators the tree keeps on - the touch screen's supply is
+		# one, and the boot loader leaves it off.  On QEMU's virt none
+		# of the three finds its hardware.
 		minix-service up /service/input -dev /dev/kbdmux \
 			2>/dev/null || :
 		minix-service up /service/qcom_pmic 2>/dev/null || :
+		minix-service up /service/qcom_rpm 2>/dev/null || :
 		minix-service up /service/qcom_touch 2>/dev/null || :
 	fi
 

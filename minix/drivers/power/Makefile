@@ -11,6 +11,7 @@ SUBDIR+=	tps65950
 
 .if ${MACHINE_ARCH} == "aarch64"
 SUBDIR+=	qcom_pmic
+SUBDIR+=	qcom_rpm
 .endif # ${MACHINE_ARCH} == "aarch64"
 
 .include <bsd.subdir.mk>

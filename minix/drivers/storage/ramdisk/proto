@@ -79,6 +79,7 @@ d--755 0 0
 		fb ---755 0 0 fb
 		qcom_pmic ---755 0 0 qcom_pmic
 		qcom_touch ---755 0 0 qcom_touch
+		qcom_rpm ---755 0 0 qcom_rpm
 #endif
 		mfs ---755 0 0 mfs
 		procfs ---755 0 0 procfs

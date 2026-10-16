@@ -34,6 +34,12 @@ if [ -x /service/qcom_pmic ]
 then
 	minix-service up /service/qcom_pmic || echo "WARNING: no PMIC driver"
 fi
+# The regulators the tree keeps on, from the RPM - the touch screen's
+# 1.8 V (L11A) among them, which the boot loader leaves off.
+if [ -x /service/qcom_rpm ]
+then
+	minix-service up /service/qcom_rpm || echo "WARNING: no RPM regulators"
+fi
 if [ -x /service/qcom_touch ]
 then
 	minix-service up /service/qcom_touch ||

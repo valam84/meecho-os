@@ -89,3 +89,30 @@ static const struct { unsigned short id; unsigned int halt, en; unsigned char bi
 	{ 132, 0x7d048, 0x7d048,  0, 0, 0, 0x00000, "GCC_HLOS1_VOTE_TURING_ADSP_SMMU_CLK" },
 	{ 133, 0x7e048, 0x7e048,  0, 0, 0, 0x00000, "GCC_HLOS2_VOTE_TURING_ADSP_SMMU_CLK" },
 };
+/*
+ * Per power domain (GDSC), by its device tree number ("power-domains"):
+ * the GDSCR, and whether the boot processor's enable is a vote (VOTABLE).
+ */
+static const struct { unsigned short id; unsigned int gdscr; unsigned char votable; const char *name; } sdm660_gdsc[] = {
+	{   0, 0x6b004, 1, "PCIE_0_GDSC" },
+	{   1, 0x75004, 1, "UFS_GDSC" },
+	{   2, 0x0f004, 1, "USB_30_GDSC" },
+	{   3, 0x7d04c, 1, "HLOS1_VOTE_TURING_ADSP_GDSC" },
+	{   4, 0x7e04c, 1, "HLOS2_VOTE_TURING_ADSP_GDSC" },
+	{   5, 0x7d034, 1, "HLOS1_VOTE_LPASS_ADSP_GDSC" },
+};
+/* Per block reset, by its device tree number ("resets"): the BCR. */
+static const struct { unsigned short id; unsigned int bcr; const char *name; } sdm660_bcr[] = {
+	{   0, 0x12000, "GCC_QUSB2PHY_PRIM_BCR" },
+	{   1, 0x12004, "GCC_QUSB2PHY_SEC_BCR" },
+	{   2, 0x75000, "GCC_UFS_BCR" },
+	{   3, 0x50028, "GCC_USB3_DP_PHY_BCR" },
+	{   4, 0x50020, "GCC_USB3_PHY_BCR" },
+	{   5, 0x50024, "GCC_USB3PHY_PHY_BCR" },
+	{   6, 0x2f000, "GCC_USB_20_BCR" },
+	{   7, 0x0f000, "GCC_USB_30_BCR" },
+	{   8, 0x6a000, "GCC_USB_PHY_CFG_AHB2PHY_BCR" },
+	{   9, 0x79000, "GCC_MSS_RESTART" },
+	{  10, 0x16000, "GCC_SDCC1_BCR" },
+	{  11, 0x14000, "GCC_SDCC2_BCR" },
+};

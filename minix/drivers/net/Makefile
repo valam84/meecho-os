@@ -26,6 +26,9 @@ SUBDIR+=	virtio_net
 # board has.  It stands beside virtio_net the way sdmmc stands beside
 # virtio_blk: one part for the emulator, one for the board.
 SUBDIR+=	dwmac
+# The Mi Pad 4 has no network controller at all; its network is its USB-C
+# port in device mode, to a host that sees an Ethernet adapter (CDC-ECM).
+SUBDIR+=	dwc3_ecm
 .endif # ${MACHINE_ARCH} == "aarch64"
 
 .include <bsd.subdir.mk>

@@ -24,6 +24,31 @@
  */
 int qsoc_init(const void *dtb);
 
+/* The GCC alone, for a driver that sets no pins (dwc3_ecm). */
+int qsoc_init_gcc(const void *dtb);
+
+/* The GCC node's phandle: what a "clocks" or "resets" entry points at. */
+uint32_t qsoc_gcc_phandle(void);
+
+/*
+ * Looks that write nothing, for a driver that must see a block powered
+ * and clocked before it so much as reads it - on this SoC a read of an
+ * unclocked block can stall the bus.  Each takes a device tree number,
+ * returns 1 for on (asserted, for a reset), 0 for off, ENOENT for a number
+ * the table does not have; *reg gets the register read, *name the SoC's
+ * name for it (either may be NULL).
+ */
+int qsoc_clk_on(unsigned id, uint32_t *reg, const char **name);
+int qsoc_gdsc_on(unsigned id, uint32_t *reg, const char **name);
+int qsoc_bcr_asserted(unsigned id, uint32_t *reg, const char **name);
+
+/*
+ * The root (RCG) a branch clock hangs off: CMD_RCGR and CFG_RCGR, OK, or
+ * ENOENT when it has none of its own.  CFG_RCGR's source is bits 10:8 and
+ * its half-divider bits 4:0 (divide by (n + 1) / 2).
+ */
+int qsoc_clk_root(unsigned id, uint32_t *cmd, uint32_t *cfg);
+
 /* The mux value of function "name" on GPIO pin (0 is "gpio"), or -1. */
 int qsoc_func(unsigned pin, const char *name);
 

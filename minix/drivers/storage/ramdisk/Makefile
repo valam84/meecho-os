@@ -178,6 +178,10 @@ dir.qcom_touch:= minix/drivers/hid/qcom_touch
 # the touch screen has no supply.
 PROGRAMS+=		qcom_rpm
 dir.qcom_rpm:=	minix/drivers/power/qcom_rpm
+# The Mi Pad 4's USB-C port in device mode, its network to the hub
+# (port/clover/hw-net.md); rc starts it when netdrv= names it.
+PROGRAMS+=		dwc3_ecm
+dir.dwc3_ecm:=	minix/drivers/net/dwc3_ecm
 # The binary of mib, the one boot-image service that restarts without
 # state: rc hands RS its path, and on a ramdisk root this is the only copy
 # there is.  See the comment in rc.

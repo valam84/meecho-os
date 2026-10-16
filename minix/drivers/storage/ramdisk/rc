@@ -105,6 +105,22 @@ then
 		console_drivers
 	fi
 
+	# The network driver netdrv= names, on a ramdisk root that carries
+	# it - dwc3_ecm, the Mi Pad 4's USB-C port.  No network stack here:
+	# this is for trying the driver on the machine, with its log level
+	# from netlog= as on a disk root.
+	if [ -n "$ramroot" ] && sysenv netdrv >/dev/null &&
+	   [ -x "/service/`sysenv netdrv`" ]
+	then
+		netdrv="`sysenv netdrv`"
+		netlog=2
+		if sysenv netlog >/dev/null
+		then	netlog="`sysenv netlog`"
+		fi
+		minix-service up "/service/$netdrv" -label "${netdrv}_0" \
+		    -args "instance=0 log=$netlog" 2>/dev/null || :
+	fi
+
 	# The disk driver, which finds its own device in the device tree but
 	# cannot be guessed at from here: QEMU's virt has a virtio disk and
 	# the CB2 has an eMMC behind an SD host controller, and the driver

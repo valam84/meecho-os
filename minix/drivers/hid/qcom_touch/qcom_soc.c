@@ -14,7 +14,9 @@
  * divider field 1 in CFG_RCGR and the update bit in CMD_RCGR.
  *
  * Everything is read-modify-write of the fields named; nothing else in
- * either block is touched.
+ * either block is touched.  The looks (qsoc_clk_on() and the rest) only
+ * read: a GDSC is powered when GDSCR's PWR_ON (31) is set, a block reset
+ * is held while its BCR's bit 0 is.
  */
 
 #include <minix/drivers.h>
@@ -50,10 +52,14 @@
 #define RCG_CMD_UPDATE	0x00000001u
 #define RCG_CFG_FIELDS	0x0010371fu	/* 4:0, 10:8, 13:12, 20 */
 
+#define GDSC_PWR_ON	0x80000000u
+#define BCR_ASSERT	0x00000001u
+
 static volatile uint8_t *tile[3];
 static size_t tile_size[3];
 static volatile uint8_t *gcc;
 static size_t gcc_size;
+static uint32_t gcc_phandle;
 
 static uint32_t
 rd32(volatile uint8_t *b, size_t off)
@@ -71,8 +77,10 @@ wr32(volatile uint8_t *b, size_t off, uint32_t v)
  *    finding the blocks                                                      *
  *===========================================================================*/
 struct soc_find {
+	int want_tlmm;
 	int tlmm, gcc;
 	u64_t tile_pa[3], tile_sz[3], gcc_pa, gcc_sz;
+	uint32_t gcc_phandle;
 };
 
 static int
@@ -84,7 +92,8 @@ find_soc(void *cookie, int UNUSED(depth), const char *UNUSED(name),
 	unsigned len, idx, t;
 	u64_t a, sz;
 
-	if (!f->tlmm && (fdt_node_is_compatible(node, "qcom,sdm660-pinctrl") ||
+	if (f->want_tlmm && !f->tlmm &&
+	    (fdt_node_is_compatible(node, "qcom,sdm660-pinctrl") ||
 	    fdt_node_is_compatible(node, "qcom,sdm630-pinctrl")) &&
 	    (names = fdt_getprop(node, "reg-names", &len)) != NULL) {
 		for (p = names, idx = 0; p < names + len;
@@ -99,9 +108,11 @@ find_soc(void *cookie, int UNUSED(depth), const char *UNUSED(name),
 	}
 	if (!f->gcc && (fdt_node_is_compatible(node, "qcom,gcc-sdm660") ||
 	    fdt_node_is_compatible(node, "qcom,gcc-sdm630")) &&
-	    fdt_node_reg(node, 0, &f->gcc_pa, &f->gcc_sz) == 0)
+	    fdt_node_reg(node, 0, &f->gcc_pa, &f->gcc_sz) == 0) {
 		f->gcc = 1;
-	return f->tlmm && f->gcc;
+		f->gcc_phandle = qsoc_phandle(node);
+	}
+	return (f->tlmm || !f->want_tlmm) && f->gcc;
 }
 
 static volatile uint8_t *
@@ -112,17 +123,18 @@ map(u64_t pa, u64_t sz)
 	return v == MAP_FAILED ? NULL : v;
 }
 
-int
-qsoc_init(const void *dtb)
+static int
+soc_init(const void *dtb, int want_tlmm)
 {
 	struct soc_find f;
 	unsigned t;
 
 	memset(&f, 0, sizeof(f));
+	f.want_tlmm = want_tlmm;
 	fdt_walk(dtb, find_soc, &f);
-	if (!f.tlmm || !f.gcc)
+	if ((want_tlmm && !f.tlmm) || !f.gcc)
 		return ENXIO;
-	for (t = 0; t < 3; t++) {
+	for (t = 0; want_tlmm && t < 3; t++) {
 		if ((tile[t] = map(f.tile_pa[t], f.tile_sz[t])) == NULL)
 			return EPERM;
 		tile_size[t] = (size_t)f.tile_sz[t];
@@ -130,7 +142,26 @@ qsoc_init(const void *dtb)
 	if ((gcc = map(f.gcc_pa, f.gcc_sz)) == NULL)
 		return EPERM;
 	gcc_size = (size_t)f.gcc_sz;
+	gcc_phandle = f.gcc_phandle;
 	return OK;
+}
+
+int
+qsoc_init(const void *dtb)
+{
+	return soc_init(dtb, 1);
+}
+
+int
+qsoc_init_gcc(const void *dtb)
+{
+	return soc_init(dtb, 0);
+}
+
+uint32_t
+qsoc_gcc_phandle(void)
+{
+	return gcc_phandle;
 }
 
 /*===========================================================================*
@@ -365,4 +396,92 @@ qsoc_clk_enable(unsigned id, uint32_t hz)
 		micro_delay(1);
 	}
 	return ETIMEDOUT;
+}
+
+/*===========================================================================*
+ *    looks                                                                   *
+ *===========================================================================*/
+static int
+gcc_read(unsigned off, uint32_t *reg, uint32_t *v)
+{
+	if (gcc == NULL || off == 0 || off + 4 > gcc_size)
+		return EINVAL;
+	*v = rd32(gcc, off);
+	if (reg != NULL)
+		*reg = *v;
+	return OK;
+}
+
+int
+qsoc_clk_on(unsigned id, uint32_t *reg, const char **name)
+{
+	unsigned i;
+	uint32_t v;
+
+	for (i = 0; i < (sizeof(sdm660_gcc) / sizeof(sdm660_gcc[0])); i++)
+		if (sdm660_gcc[i].id == id)
+			break;
+	if (i == (sizeof(sdm660_gcc) / sizeof(sdm660_gcc[0])))
+		return ENOENT;
+	if (name != NULL)
+		*name = sdm660_gcc[i].name;
+	if (sdm660_gcc[i].nocheck)	/* no status: the enable bit says */
+		return gcc_read(sdm660_gcc[i].en, reg, &v) == OK ?
+		    (v >> sdm660_gcc[i].bit) & 1 : EINVAL;
+	if (gcc_read(sdm660_gcc[i].halt, reg, &v) != OK)
+		return EINVAL;
+	return branch_on(v);
+}
+
+int
+qsoc_gdsc_on(unsigned id, uint32_t *reg, const char **name)
+{
+	unsigned i;
+	uint32_t v;
+
+	for (i = 0; i < (sizeof(sdm660_gdsc) / sizeof(sdm660_gdsc[0])); i++)
+		if (sdm660_gdsc[i].id == id)
+			break;
+	if (i == (sizeof(sdm660_gdsc) / sizeof(sdm660_gdsc[0])))
+		return ENOENT;
+	if (name != NULL)
+		*name = sdm660_gdsc[i].name;
+	if (gcc_read(sdm660_gdsc[i].gdscr, reg, &v) != OK)
+		return EINVAL;
+	return (v & GDSC_PWR_ON) != 0;
+}
+
+int
+qsoc_bcr_asserted(unsigned id, uint32_t *reg, const char **name)
+{
+	unsigned i;
+	uint32_t v;
+
+	for (i = 0; i < (sizeof(sdm660_bcr) / sizeof(sdm660_bcr[0])); i++)
+		if (sdm660_bcr[i].id == id)
+			break;
+	if (i == (sizeof(sdm660_bcr) / sizeof(sdm660_bcr[0])))
+		return ENOENT;
+	if (name != NULL)
+		*name = sdm660_bcr[i].name;
+	if (gcc_read(sdm660_bcr[i].bcr, reg, &v) != OK)
+		return EINVAL;
+	return (v & BCR_ASSERT) != 0;
+}
+
+int
+qsoc_clk_root(unsigned id, uint32_t *cmd, uint32_t *cfg)
+{
+	unsigned i;
+	uint32_t c, f;
+
+	for (i = 0; i < (sizeof(sdm660_gcc) / sizeof(sdm660_gcc[0])); i++)
+		if (sdm660_gcc[i].id == id)
+			break;
+	if (i == (sizeof(sdm660_gcc) / sizeof(sdm660_gcc[0])) || sdm660_gcc[i].rcg == 0)
+		return ENOENT;
+	if (gcc_read(sdm660_gcc[i].rcg, cmd, &c) != OK ||
+	    gcc_read(sdm660_gcc[i].rcg + 4, cfg, &f) != OK)
+		return EINVAL;
+	return OK;
 }

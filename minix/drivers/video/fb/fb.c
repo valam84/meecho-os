@@ -358,7 +358,21 @@ sef_cb_init(int type, sef_init_info_t *UNUSED(info))
 	if (type != SEF_INIT_LU) {
 		(void)env_parse("fbcon", "d", 0, &console_on, 0, 1);
 		(void)env_parse("card", "d", 0, &card_seconds, 0, 3600);
-		(void)env_parse("kmess", "d", 0, &kmess_on, 0, 1);
+		/*
+		 * kmess=2: the kernel's messages from before the console was
+		 * up as well.  The default where the screen is the machine's
+		 * console (console=console, the Mi Pad 4): there is no serial
+		 * log, and the drivers started before this one - the touch
+		 * screen's errors among them - would be shown nowhere.
+		 */
+		{
+			char c[16];
+
+			if (env_get_param("console", c, sizeof(c)) == OK &&
+			    strcmp(c, "console") == 0)
+				kmess_on = 2;
+		}
+		(void)env_parse("kmess", "d", 0, &kmess_on, 0, 2);
 		(void)sys_setalarm(card_seconds > 0 ?
 		    card_seconds * sys_hz() : 1, 0);
 	}

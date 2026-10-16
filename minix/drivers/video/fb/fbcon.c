@@ -664,13 +664,22 @@ fbcon_attach(int minor, int kmess)
 	con.attached = 1;
 
 	/*
-	 * Kernel messages from here on.  Their past is not taken: it cannot
-	 * be put in order with tty's, and half of it is this very boot's
-	 * driver chatter that the serial log has anyway.
+	 * Kernel messages from here on (kmess 1).  Their past is not taken:
+	 * it cannot be put in order with tty's, and half of it is this very
+	 * boot's driver chatter that the serial log has anyway.  Unless there
+	 * is no serial log (kmess 2, see fb.c): then the past is the only
+	 * place a driver started before this one said why it failed, and the
+	 * whole buffer is drawn first, oldest byte first.
 	 */
 	con.kmess_on = kmess;
-	if ((con.kmess = get_minix_kerninfo()->kmessages) != NULL)
+	if ((con.kmess = get_minix_kerninfo()->kmessages) != NULL) {
 		con.kmess_next = con.kmess->km_next;
+		if (kmess == 2 && con.kmess->km_size > 0 &&
+		    con.kmess->km_size <= _KMESS_BUF_SIZE &&
+		    con.kmess_next >= 0 && con.kmess_next < _KMESS_BUF_SIZE)
+			con.kmess_next = (con.kmess_next + _KMESS_BUF_SIZE -
+			    con.kmess->km_size) % _KMESS_BUF_SIZE;
+	}
 	printf("fb: console on the screen, %ux%u characters, font x%u%s\n",
 	    con.cols, con.rows, con.scale, con.osk ? ", on-screen keyboard" :
 	    "");

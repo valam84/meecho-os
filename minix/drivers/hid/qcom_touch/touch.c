@@ -418,11 +418,22 @@ touch_alarm(clock_t UNUSED(stamp))
 	polls++;
 	if (dt.have_int && !qsoc_pin_get(dt.int_pin))
 		int_low++;
+	td = 0xff;
 	if ((r = reg_read(0x02, &td, 1)) != QUP_OK) {
 		if (errors++ < 5)
 			log_warn(&tlog, "status read failed: %d\n", r);
 	} else if ((td & 0x0f) != 0 || active != 0)
 		read_frame();
+
+	/*
+	 * For the first ninety seconds, every ten: what the polling sees.  On
+	 * a machine whose only log is its screen this is how a person there
+	 * tells "no touches arrive" from "touches arrive and miss the keys".
+	 */
+	if (polls % (10 * POLL_HZ) == 0 && polls <= 90 * POLL_HZ)
+		log_info(&tlog, "%lu polls: %lu frames, %lu errors (last %d), "
+		    "status 0x%02x, line low %lu times, keyboard %s\n", polls,
+		    frames, errors, r, td, int_low, osk_on ? "on" : "off");
 	arm();
 }
 

@@ -461,9 +461,13 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 			}
 			win_lo = first * SDMMC_SECTOR_SIZE;
 			win_hi = (first + count) * SDMMC_SECTOR_SIZE;
-		} else if (host.protect)
+		} else if (host.protect) {
 			log_info(&sdmmc_log, "%s holds the boot loaders: "
 			    "read-only without %s=\n", host.name, key);
+			/* What there is to choose from: read only. */
+			(void)sdmmc_gpt_find(NULL, card.sectors, chunk,
+			    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count);
+		}
 	}
 
 	blockdriver_announce(type);

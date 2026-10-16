@@ -84,6 +84,11 @@ name_is(const uint8_t *utf16, const char *s)
  * driver's transfer buffer, "bytes" long at physical "phys", and is used to
  * read through.  On success the partition's first sector and its length in
  * sectors; on any doubt about the table, an error and nothing.
+ *
+ * With name NULL nothing is looked up: the table is checked all the same,
+ * and the number of partitions and the largest one are reported - what a
+ * person about to give one of them to gptpartN= wants to see first, on the
+ * screen of the machine itself.  first and count are then the largest's.
  */
 int
 sdmmc_gpt_find(const char *name, uint64_t sectors, uint8_t *buf, size_t bytes,
@@ -93,8 +98,11 @@ sdmmc_gpt_find(const char *name, uint64_t sectors, uint8_t *buf, size_t bytes,
 	uint32_t hsize, hcrc, nent, esize, ecrc, crc;
 	uint64_t my_lba, first_usable, last_usable, ent_lba, lo, hi;
 	uint64_t table_bytes, done, lba;
-	unsigned per_read, i, found = 0;
+	unsigned per_read, i, found = 0, used = 0;
+	char big[GPT_NAME_UNITS + 1];
 	int r;
+
+	big[0] = '\0';
 
 	if (bytes < SDMMC_SECTOR_SIZE)
 		return EINVAL;
@@ -169,10 +177,30 @@ sdmmc_gpt_find(const char *name, uint64_t sectors, uint8_t *buf, size_t bytes,
 
 			if (memcmp(e, zero, 16) == 0)	/* unused entry */
 				continue;
-			if (!name_is(e + 56, name))
-				continue;
 			lo = le64(e + 32);
 			hi = le64(e + 40);
+			if (name == NULL) {
+				unsigned k;
+
+				used++;
+				if (hi < lo || hi - lo + 1 <= *count)
+					continue;
+				*first = lo;
+				*count = hi - lo + 1;
+				for (k = 0; k < GPT_NAME_UNITS; k++) {
+					uint8_t c = e[56 + 2 * k];
+
+					if (c == 0 && e[57 + 2 * k] == 0)
+						break;
+					big[k] = (c >= 0x20 && c < 0x7f &&
+					    e[57 + 2 * k] == 0) ? (char)c :
+					    '?';
+				}
+				big[k] = '\0';
+				continue;
+			}
+			if (!name_is(e + 56, name))
+				continue;
 			if (found++ == 0) {
 				*first = lo;
 				*count = hi >= lo ? hi - lo + 1 : 0;
@@ -184,6 +212,14 @@ sdmmc_gpt_find(const char *name, uint64_t sectors, uint8_t *buf, size_t bytes,
 		log_warn(&sdmmc_log, "gpt: entries CRC 0x%08x, computed "
 		    "0x%08x\n", ecrc, crc);
 		return ENXIO;
+	}
+	if (name == NULL) {
+		log_info(&sdmmc_log, "gpt: table good, %u partitions; the "
+		    "largest is \"%s\", sectors %llu-%llu (%llu MiB)\n", used,
+		    big, (unsigned long long)*first,
+		    (unsigned long long)(*first + *count - 1),
+		    (unsigned long long)(*count / 2048));
+		return OK;
 	}
 	if (found != 1) {
 		log_warn(&sdmmc_log, "gpt: %u partitions named \"%s\"; "

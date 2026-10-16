@@ -709,6 +709,10 @@ test_gpt_window(void)
 	check_i64(sdmmc_gpt_find("userdat", CARD_SECTORS, chunk,
 	    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count), ENOENT,
 	    "префикс имени — не имя");
+	check_i64(sdmmc_gpt_find(NULL, CARD_SECTORS, chunk, SDMMC_CHUNK_BYTES,
+	    chunk_phys, &first, &count), OK, "отчёт о таблице");
+	check_i64((long long)first, 1024, "самый большой — userdata, с 1024");
+	check_i64((long long)count, G_LAST - 1024 + 1, "и его длина");
 
 	/* Окно в драйвере: минор 0 — раздел. */
 	win_lo = 1024ULL * SDMMC_SECTOR_SIZE;

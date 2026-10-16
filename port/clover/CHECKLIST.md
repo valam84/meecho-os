@@ -58,6 +58,9 @@ fastboot boot meecho-clover-boot.img
       `eMMC adopted: … sectors (… MiB), 8-bit bus, HS400 …`.
       Если вместо этого `clocks iface off/unknown` или `refusing` —
       сфотографировать: драйвер отказался, ничего не трогая.
+- [ ] Строка `sdmmc(info)gpt: table good, N partitions; the largest is
+      "userdata", sectors …-… (… MiB)`. **Если самый большой — не
+      `userdata`, шаг 3 не делать** и прислать фото.
 - [ ] Чтение eMMC (ничего не пишет):
       ```
       dd if=/dev/c0d0 bs=512 skip=1 count=1 2>/dev/null | dd bs=8 count=1 2>/dev/null; echo
@@ -67,7 +70,8 @@ fastboot boot meecho-clover-boot.img
 ## Шаг 3. Корень на eMMC: `meecho-clover-emmc.img` + `meecho-clover-root.img`
 
 **Этот шаг стирает данные Android** (раздел `userdata`). Делать, только
-если шаг 2 показал `eMMC adopted` и `EFI PART`.
+если шаг 2 показал `eMMC adopted`, `table good … the largest is
+"userdata"` и `EFI PART`.
 
 ```
 gunzip meecho-clover-root.img.gz          # 1 ГиБ

@@ -11,6 +11,7 @@
 #include "random.h"
 #include "trng.h"
 #include "virtio_rng.h"
+#include "qcom_prng.h"
 
 #define NR_DEVS            1		/* number of minor devices */
 #  define RANDOM_DEV  0			/* minor device for /dev/random */
@@ -102,6 +103,7 @@ static int sef_cb_init_fresh(int UNUSED(type), sef_init_info_t *UNUSED(info))
    */
   (void)trng_init();
   (void)vrng_init();
+  (void)qprng_init();		/* the Mi Pad 4's: qcom_prng.c */
 
   r_random(0);				/* also set periodic timer */
 
@@ -265,6 +267,7 @@ static void r_random(clock_t UNUSED(stamp))
 	trng_countdown = 0;
 	(void)trng_feed();
 	(void)vrng_feed();
+	(void)qprng_feed();
   }
 
   if(sys_getrandom_bin(&krandom_bin, bin) == OK)

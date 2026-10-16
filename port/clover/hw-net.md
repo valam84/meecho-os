@@ -309,39 +309,104 @@ boot meecho-clover-nextboot.img` → через 2 с планшета на ши�
   не MEECHO из `boot`. Если MEECHO — фото строки PON: дальше — тип сброса
   PS_HOLD, как у Linux (7, жёсткий).
 
-### Шаг 2. Новый драйвер `dwc3_ecm`, проба без записей (`probe=1`)
+### Шаг 2. Новый драйвер `dwc3_ecm`, проба без записей
 
-Обвязка (`dwc3_qcom.c`), PHY (`qusb2.c`) — файлами рядом с таблицей
-`compatible → ops`; GCC — общий `qcom_soc` (вынести из `qcom_touch` в
-библиотеку: второй потребитель). **Регистры DWC3/QSCRATCH/PHY не
-читаются, пока GCC не показал GDSC и такты включёнными** — на этой SoC
-чтение неготового блока вешает шину (как у eMMC).
+**Сделано 2026-10-16** (`4edea27c6`), на планшете — образ
+`meecho-clover-usbprobe.img` (`netdrv=dwc3_ecm nextboot=bootloader
+bootwd=600`). Служба `minix/drivers/net/dwc3_ecm`: дерево (`dwc3_find.c`),
+обвязка (`dwc3_qcom.c`) и PHY (`qusb2.c`) — файлами за таблицами
+`compatible → ops`, жизнь службы — `dwc3_ecm.c`. GCC — общий `qcom_soc`
+через `.PATH` (в библиотеку — когда появится третий потребитель); у него
+теперь есть взгляды только на чтение (`qsoc_clk_on`, `qsoc_gdsc_on`,
+`qsoc_bcr_asserted`, `qsoc_clk_root`) и `qsoc_init_gcc()` — без TLMM.
+GDSC и BCR генерируются из `gcc-sdm660.c` тем же `gen-sdm660-tables.py`.
+**Регистры обвязки, ядра и PHY не отображаются вовсе, пока GCC не показал
+GDSC, сбросы и такты** — на этой SoC чтение неготового блока вешает шину.
+Ramdisk несёт службу; его `rc` поднимает `netdrv=`, если ramdisk остаётся
+корнем.
 
-- Стенд (хост): разбор дерева clover — адреса, прерывание, фазы тактов,
-  питание PHY по phandle; `mutate.sh`.
-- Планшет, строки:
-  `dwc3(info)usb@a8f8800: qcom,dwc3, core usb@a800000 irq 163, phy qusb2 @0xc012000`,
-  `dwc3(info)gcc: gdsc USB_30 on/off; master on 120 MHz | off; utmi …; ahb2phy …; clkref …`,
-  при включённых — `dwc3(info)core GSNPSID 0x5533xxxx, GCTL …, DSTS …`,
-  `qusb2(info)efuse trim N; PLL_STATUS 0x…, POWERDOWN 0x…`.
+- Стенд `port/test/dwc3_ecm` (78 проверок) на дереве clover: разбор против
+  выписанного из исходника дерева; шесть состояний GCC — что отображено;
+  после каждого прогона все модели побайтно прежние; три испорченных
+  дерева отвергнуты, ничего не отображено. QEMU: «no USB wrapper … nothing
+  to do», система грузится.
+- Планшет, строки (`dwc3(info)…`):
+  `usb@a8f8800 (qcom,dwc3): qscratch 0xa8f8800, core 0xa800000 irq 163;
+  peripheral, high-speed, utmi as pipe`; `USB_30_GDSC on|off (0x…),
+  GCC_USB_30_BCR released|held`; `clocks: cfg_noc … core … iface … sleep …
+  mock_utmi …`; `roots: core: root on, src N div M; mock_utmi: …`; при
+  всём включённом — `core GSNPSID 0x5533…, GCTL … (device|host), …`,
+  `device DCFG …, DCTL … (running|stopped), DSTS …`, `qscratch …`; иначе
+  `not reading the wrapper or the core: …`. PHY: `phy … supplies vdd l1
+  (pm660l), vdda-pll l10 (pm660), vdda-phy-dpdm l7 (pm660l)`, `phy clocks:
+  cfg_ahb … ref …; GCC_QUSB2PHY_PRIM_BCR …`, `phy: fuse 0x780243 = 0x…,
+  bits 1..3: trim N`, `phy PLL_STATUS … (locked|not locked), POWERDOWN …`.
+- **Планшет, 2026-10-16** [T, фото; образ поставлен хранителем с хаба,
+  то есть после `fastboot boot`]:
+  - `USB_30_GDSC on (0xa0222000)`, `GCC_USB_30_BCR released`; все пять
+    тактов обвязки `on`; корни: `core` — src 1 div 5 = GPLL0/5 = 120 МГц,
+    как у Linux; `mock_utmi` — **src 6 div 7.5 = GPLL0_EARLY_DIV/7.5 =
+    40 МГц** (Linux ставит 19.2).
+  - Ядро: `GSNPSID 0x5533300a` — **DWC3 3.00a**, та же ревизия, что у
+    CB2; `GCTL 0x00112000` (device), `GUSB2PHYCFG 0x00002400` (UTMI
+    8 бит, USBTRDTIM 9, SUSPHY и ENBLSLPM сняты), `GHWPARAMS3 0x10420085`
+    (HS PHY — UTMI).
+  - Устройство: `DCFG 0x00480880` — HS, адрес 16, NUMP 4 и **LPM_CAP
+    (bit 22) поднят**: ABL объявляет LPM — отсюда `EPROTO` fastboot на этом
+    хабе; `DCTL 0x10f00000` — **остановлено**; `DSTS 0x00d30641` —
+    DEVCTRLHLT, COREIDLE, линия 4 (disconnected).
+  - **Буфер событий ABL оставлен: `0x9b566000`, 4096 байт** — это
+    свободная память MEECHO (кусок `0x95100000–0x9cc00000` в карте ядра).
+    Пока ядро стоит, событий ждать неоткуда [I], но первое, что делает
+    захват, — маска событий (GEVNTSIZ bit 31) и сброс ядра, и только
+    потом свой буфер.
+  - QSCRATCH: `GENERAL_CFG 0x0000000d` — utmi-as-pipe ABL уже выбрал;
+    `HS_PHY_CTRL 0`, `SS_PHY_CTRL 0` — подмены VBUS нет.
+  - PHY: `cfg_ahb`, `ref` on, сброс снят; fuse `0x18` → trim 4;
+    `PLL_STATUS 0x30` (locked), `POWERDOWN 0x22` (CLAMP_N_EN + FREEZIO_N,
+    POWER_DOWN снят — включён), `PLL_TEST 0x00` (опора дифференциальная),
+    `TUNE1 0xf8` (как таблица), **`TUNE2 0xa3`** — формула mainline дала
+    бы `0x43` (trim 4 в биты 7:4): у загрузчика своя поправка.
+  - **Вывод для шага 3**: после `fastboot boot` весь путь USB уже поднят
+    загрузчиком, и рабочим на этом хабе. Первым шагом — принять его, как
+    eMMC: такты, PHY и его подстройку не трогать, ядро сбросить и
+    запустить в режиме устройства. Полный подъём (для обычной загрузки из
+    `boot`, где ABL USB не поднимает) — отдельно, с регистрами ABL как
+    эталоном.
+- Образы с хаба ставит `hub-keeper.sh` (шаг 5): fastboot ABL через
+  время гасит планшет, поэтому в fastboot планшет бывает секунды — между
+  пробами он запаркован в MEECHO (`meecho-clover-park.img`, 10 минут).
 
-### Шаг 3. Подъём и перечисление (только ep0)
+### Шаг 3. Перечисление (только ep0) — сначала на том, что поднял ABL
 
-GDSC, BCR, корни, QSCRATCH, питание PHY (если шаг 0 показал выключенное —
-запрос к `qcom_rpm` по phandle потребителя, расширение `rpm.c`), PHY,
-ядро, ep0 со строками дескрипторов (`bcdUSB 0x0200`). VID:PID —
-`0525:a4a1` (Linux g_ether по умолчанию; `cdc_ether` берёт класс, не ID).
+После шага 2 порядок такой (решено по снимку с планшета):
+
+- **3а. Принять состояние загрузчика** (образ запущен `fastboot boot`):
+  проверить, что GDSC, такты, сбросы и PHY такие, как в снимке шага 2
+  (иначе — отказ строкой, ничего не трогая); GCC, PHY, QSCRATCH-выбор
+  utmi **не трогать**. Ядро: маска событий (GEVNTSIZ bit 31) → DCTL
+  CSFTRST и ждать → свой буфер событий (4 КиБ, физически непрерывный,
+  ниже 4 ГиБ) → подмена VBUS в QSCRATCH (HS_PHY_CTRL bits 20, 28;
+  SS_PHY_CTRL bit 24 — как Linux для `peripheral`) → GUSB2PHYCFG как есть
+  → DCFG HS, **LPM_CAP снят** → ep0 → DEVTEN → RUN_STOP. ep0 отвечает
+  дескрипторами (`bcdUSB 0x0200`, без BOS). VID:PID — `0525:a4a1` (Linux
+  g_ether по умолчанию; `cdc_ether` берёт класс, не ID).
+- **3б. Полный подъём** — для загрузки из `boot` без fastboot: GDSC, BCR,
+  корни (`mock_utmi` — как ABL, 40 МГц, или 19.2 как Linux — решить
+  замером), питание PHY (L1B, L7B, L10A уже включены, §3), PHY по Linux с
+  `TUNE2` как у ABL. Эталон — снимок шага 2.
 
 - Стенд: модель DWC3 со стороны устройства (как `port/test/xhci/`):
   события Reset/ConnectDone/XferNotReady/XferComplete, SETUP-пакеты из
-  перечисления Linux; проверка TRB и команд, мутации. Ловит ошибки
-  логики, не непонимание железа.
-- Планшет: `dwc3(info)qusb2 pll locked`, `dwc3(info)run`,
-  `dwc3(info)reset`, `dwc3(info)connect: high-speed`,
+  перечисления Linux; проверка TRB и команд, мутации; и что до записи
+  своего буфера события замаскированы. Ловит ошибки логики, не
+  непонимание железа.
+- Планшет: `dwc3(info)adopted: …`, `dwc3(info)core reset`,
+  `dwc3(info)run`, `dwc3(info)reset`, `dwc3(info)connect: high-speed`,
   `dwc3(info)address N`, `dwc3(info)configuration 1`. **Хаб**: `dmesg` —
-  `new high-speed USB device … idVendor=0525`. Отказ: строка с
-  этапом и регистром (`pll lock failed: status 0x…`,
-  `core reset timeout`, `no reset from the host in 10 s: DSTS 0x…`).
+  `new high-speed USB device … idVendor=0525` — это агент видит сам, без
+  фото. Отказ: строка с этапом и регистром (`core reset timeout`,
+  `no reset from the host in 10 s: DSTS 0x…`).
 
 ### Шаг 4. ECM + `lwip`, затем ssh
 
@@ -367,6 +432,15 @@ GDSC, BCR, корни, QSCRATCH, питание PHY (если шаг 0 пока�
 `fastboot boot` с хаба → ждать ssh → прогон → журнал. Пробные образы — с
 `bootwd`: зависший вернётся к образу из `boot`. Прошивка `boot` — только
 с явного согласия.
+
+**Половина есть с шага 1** [T, 2026-10-16]: fastboot ABL через некоторое
+время гасит планшет (вернуть — только кнопками), поэтому на хабе работает
+`hub-keeper.sh` (ограниченное число часов, `touch stop`): как только
+планшет показывается в fastboot, ставит образ из `queue/` или парковочный
+`meecho-clover-park.img` (`nextboot=bootloader bootwd=600`). В fastboot
+планшет бывает секунды, образ из очереди ждёт не больше 10 минут. Пока
+вручную вводить планшет в fastboot нельзя: хранитель тут же поставит
+образ.
 
 ## Что остаётся человеку
 

@@ -10,6 +10,9 @@
  */
 
 #include "kernel/system.h"
+#if defined(__aarch64__)
+#include "arch_proto.h"		/* fbcon_owned() */
+#endif
 
 
 /*===========================================================================*
@@ -60,6 +63,21 @@ int do_diagctl(struct proc * caller, message * m_ptr)
 		return EPERM;
 	priv(caller)->s_diag_sig = FALSE;
 	return OK;
+    case DIAGCTL_CODE_SCREEN:
+	/*
+	 * A screen the kernel draws on by itself (aarch64: a frame buffer
+	 * the boot loader left running, fbcon.c) is taken over by a driver
+	 * that draws better, and handed back if it asks.  Elsewhere the
+	 * kernel has no screen console, and there is nothing to give up.
+	 */
+	if (!(priv(caller)->s_flags & SYS_PROC))
+		return EPERM;
+#if defined(__aarch64__)
+	fbcon_owned(m_ptr->m_lsys_krn_sys_diagctl.len == 0);
+	return OK;
+#else
+	return ENOSYS;
+#endif
     default:
 	printf("do_diagctl: invalid request %d\n", m_ptr->m_lsys_krn_sys_diagctl.code);
         return(EINVAL);

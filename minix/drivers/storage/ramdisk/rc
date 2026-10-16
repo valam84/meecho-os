@@ -58,6 +58,18 @@ then
 	minix-service -c up /service/readclock.drv
 	readclock -q || date 201301010000
 
+	# The screen, on a ramdisk root - the console of a machine whose only
+	# display is a frame the boot loader left running (simple-framebuffer:
+	# the Mi Pad 4).  The driver finds its display in the device tree, or
+	# says there is none and leaves (QEMU's virt), so it is simply tried.
+	# card=0: no test card, the console at once.  The CB2's root on eMMC
+	# starts it from its own rc, with the card.
+	if sysenv bootramdisk >/dev/null
+	then
+		minix-service up /service/fb -dev /dev/fb0 -args card=0 \
+			2>/dev/null || :
+	fi
+
 	# The disk driver, which finds its own device in the device tree but
 	# cannot be guessed at from here: QEMU's virt has a virtio disk and
 	# the CB2 has an eMMC behind an SD host controller, and the driver

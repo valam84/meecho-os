@@ -50,6 +50,8 @@
 #include <dev/videomode/videomode.h>
 #include <dev/videomode/edidvar.h>
 
+#include <minix/osk.h>
+
 #include "fb.h"
 #include "fbcon.h"
 #include "style.h"
@@ -101,6 +103,17 @@ static struct {
 	unsigned	stride;		/* bytes per line */
 	unsigned	width, height;
 	uint32_t	pixel[16];	/* the palette in the buffer's format */
+
+	/*
+	 * The cell in pixels: the font, drawn "scale" times its size - twice
+	 * on a dense panel (fontscale=, or a screen a thousand pixels across
+	 * or more: Spleen 8x16 on the Mi Pad 4's eight-inch 1200x1920 is
+	 * under a millimetre wide).  Below text_h the screen is the on-screen
+	 * keyboard (osk=1, <minix/osk.h>), or nothing.
+	 */
+	unsigned	scale, cw, ch;
+	unsigned	text_h;
+	int		osk;
 
 	/* The grid. */
 	unsigned	cols, rows;
@@ -395,14 +408,45 @@ feed(const uint8_t *s, size_t n)
 	}
 }
 
+/*
+ * One glyph at pixel (px, py), each font pixel drawn as an s by s square.
+ * The caller keeps it on the screen.
+ */
+static void
+draw_glyph(unsigned px, unsigned py, uint8_t c, uint32_t fg, uint32_t bg,
+	unsigned s)
+{
+	const uint8_t *g;
+	unsigned y, x, i, j;
+	uint32_t *p;
+	uint8_t bits;
+
+	if (c < FONT.firstchar || c >= FONT.firstchar + FONT.numchars)
+		c = '?';
+	g = (const uint8_t *)FONT.data +
+	    (size_t)(c - FONT.firstchar) * CH * FONT.stride;
+	for (y = 0; y < CH; y++) {
+		bits = g[y];
+		for (j = 0; j < s; j++) {
+			p = (uint32_t *)(con.fb + (size_t)(py + y * s + j) *
+			    con.stride) + px;
+			for (x = 0; x < CW; x++) {
+				uint32_t v = (bits & (0x80 >> x)) ? fg : bg;
+
+				for (i = 0; i < s; i++)
+					*p++ = v;
+			}
+		}
+	}
+}
+
 /* Draw one row of cells. */
 static void
 draw_row(unsigned row)
 {
-	const uint8_t *glyphs = FONT.data, *g;
-	unsigned col, y, x;
-	uint32_t v, fg, bg, *p;
-	uint8_t c, bits;
+	unsigned col;
+	uint32_t v, fg, bg;
+	uint8_t c;
 	int cursor;
 
 	for (col = 0; col < con.cols; col++) {
@@ -416,18 +460,85 @@ draw_row(unsigned row)
 			fg = bg;
 			bg = t;
 		}
-		if (c < FONT.firstchar ||
-		    c >= FONT.firstchar + FONT.numchars)
-			c = '?';
-		g = glyphs + (size_t)(c - FONT.firstchar) * CH * FONT.stride;
-		for (y = 0; y < CH; y++) {
-			p = (uint32_t *)(con.fb + (size_t)(row * CH + y) *
-			    con.stride) + col * CW;
-			bits = g[y];
-			for (x = 0; x < CW; x++)
-				p[x] = (bits & (0x80 >> x)) ? fg : bg;
-		}
+		draw_glyph(col * con.cw, row * con.ch, c, fg, bg, con.scale);
 	}
+}
+
+/*
+ * The on-screen keyboard (osk=1): every key of <minix/osk.h> as a face with
+ * a gap round it and its label in the middle, in the console's palette.  It
+ * is drawn whole, whenever the console takes the screen; nothing on it
+ * changes - the touch driver that reads it keeps the Shift and Ctrl state.
+ */
+#define OSK_GAP_BG	0		/* the ground: ink */
+#define OSK_FACE	8		/* bright black: the key */
+#define OSK_LABEL	15		/* bright white */
+
+static void
+osk_draw(void)
+{
+	unsigned i, j, x0, y0, x1, y1, x, y, n, gap, lw, lh, s;
+	uint32_t face = con.pixel[OSK_FACE], ground = con.pixel[OSK_GAP_BG];
+	uint32_t *p;
+	const struct osk_key *k;
+
+	if (!con.osk)
+		return;
+	for (y = con.text_h; y < con.height; y++) {
+		p = (uint32_t *)(con.fb + (size_t)y * con.stride);
+		for (x = 0; x < con.width; x++)
+			p[x] = ground;
+	}
+	gap = con.scale * 2;
+	for (i = 0; i < OSK_NKEYS; i++) {
+		k = &osk_keys[i];
+		osk_rect(k, con.width, con.height, &x0, &y0, &x1, &y1);
+		if (x1 - x0 <= 2 * gap || y1 - y0 <= 2 * gap)
+			continue;
+		for (y = y0 + gap; y < y1 - gap; y++) {
+			p = (uint32_t *)(con.fb + (size_t)y * con.stride);
+			for (x = x0 + gap; x < x1 - gap; x++)
+				p[x] = face;
+		}
+		/* The label, as large as the key allows up to the console's. */
+		n = (unsigned)strlen(k->label);
+		if (n == 0)
+			continue;
+		for (s = con.scale; s > 1 && (n * CW * s + 2 * gap > x1 - x0 ||
+		    CH * s + 2 * gap > y1 - y0); s--)
+			;
+		lw = n * CW * s;
+		lh = CH * s;
+		if (lw + 2 * gap > x1 - x0 || lh + 2 * gap > y1 - y0)
+			continue;
+		x = x0 + (x1 - x0 - lw) / 2;
+		y = y0 + (y1 - y0 - lh) / 2;
+		for (j = 0; j < n; j++)
+			draw_glyph(x + j * CW * s, y, (uint8_t)k->label[j],
+			    con.pixel[OSK_LABEL], face, s);
+	}
+}
+
+/*
+ * The grid's geometry for a v.xres by v.yres screen: the cell, the text
+ * area above the keyboard, and how many cells fit.
+ */
+static void
+geometry(unsigned width, unsigned height, unsigned *cols, unsigned *rows)
+{
+	long v;
+
+	con.scale = (width < height ? width : height) >= 1000 ? 2 : 1;
+	if (env_parse("fontscale", "d", 0, &v, 1, 4) == EP_SET)
+		con.scale = (unsigned)v;
+	con.osk = 0;
+	if (env_parse("osk", "d", 0, &v, 0, 1) == EP_SET)
+		con.osk = (int)v;
+	con.cw = CW * con.scale;
+	con.ch = CH * con.scale;
+	con.text_h = con.osk ? osk_top(height) : height;
+	*cols = width / con.cw;
+	*rows = con.text_h / con.ch;
 }
 
 /* Bring the pixels up to the grid. */
@@ -451,9 +562,9 @@ draw(int all)
 		memset(con.dirty, 1, con.rows);
 	} else if (con.scrolled > 0) {
 		/* Move what is already drawn, rather than drawing it again. */
-		shift = con.scrolled * CH;
+		shift = con.scrolled * con.ch;
 		memmove(con.fb, con.fb + (size_t)shift * con.stride,
-		    (size_t)(con.rows * CH - shift) * con.stride);
+		    (size_t)(con.rows * con.ch - shift) * con.stride);
 		lo = 0;
 		hi = con.rows - 1;
 	}
@@ -475,9 +586,9 @@ draw(int all)
 	con.n_draw++;
 	read_frclock_64(&t1);
 	if (lo <= hi) {
-		arch_fb_flush(con.minor, (size_t)lo * CH * con.stride,
-		    (size_t)(hi - lo + 1) * CH * con.stride);
-		con.n_flushed += (uint64_t)(hi - lo + 1) * CH * con.stride;
+		arch_fb_flush(con.minor, (size_t)lo * con.ch * con.stride,
+		    (size_t)(hi - lo + 1) * con.ch * con.stride);
+		con.n_flushed += (uint64_t)(hi - lo + 1) * con.ch * con.stride;
 	}
 	read_frclock_64(&t2);
 	con.us_draw += frclock_64_to_micros(delta_frclock_64(t0, t1));
@@ -498,6 +609,7 @@ take_screen(void)
 		return;
 	con.fb = (uint8_t *)(vir_bytes)dev.dv_base;
 	memset(con.fb, 0, (size_t)con.height * con.stride);
+	osk_draw();
 	arch_fb_flush(con.minor, 0, (size_t)con.height * con.stride);
 	draw(1);
 }
@@ -527,8 +639,7 @@ fbcon_attach(int minor, int kmess)
 	con.stride = v.xres_virtual * 4;
 	con.width = v.xres;
 	con.height = v.yres;
-	con.cols = v.xres / CW;
-	con.rows = v.yres / CH;
+	geometry(v.xres, v.yres, &con.cols, &con.rows);
 	for (i = 0; i < 16; i++)
 		con.pixel[i] = (COLOUR(i) >> 16 & 0xff) << v.red.offset |
 		    (COLOUR(i) >> 8 & 0xff) << v.green.offset |
@@ -560,8 +671,9 @@ fbcon_attach(int minor, int kmess)
 	con.kmess_on = kmess;
 	if ((con.kmess = get_minix_kerninfo()->kmessages) != NULL)
 		con.kmess_next = con.kmess->km_next;
-	printf("fb: console on the screen, %ux%u characters\n", con.cols,
-	    con.rows);
+	printf("fb: console on the screen, %ux%u characters, font x%u%s\n",
+	    con.cols, con.rows, con.scale, con.osk ? ", on-screen keyboard" :
+	    "");
 
 	/*
 	 * Clear the test card away, then take what tty has so far.  Not if a
@@ -722,8 +834,7 @@ fbcon_resize(void)
 
 	if (!con.attached || arch_get_varscreeninfo(con.minor, &v) != OK)
 		return;
-	cols = v.xres / CW;
-	rows = v.yres / CH;
+	geometry(v.xres, v.yres, &cols, &rows);
 	cells = calloc((size_t)cols * rows, sizeof(cells[0]));
 	dirty = calloc(rows, 1);
 	if (cells == NULL || dirty == NULL || cols == 0 || rows == 0) {

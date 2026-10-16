@@ -20,6 +20,9 @@ int sys_diagctl(int code, char *arg1, int arg2)
 	break;
   case DIAGCTL_CODE_UNREGISTER:
 	break;
+  case DIAGCTL_CODE_SCREEN:
+	m.m_lsys_krn_sys_diagctl.len = arg2;
+	break;
   default:
 	panic("Unknown SYS_DIAGCTL request %d\n", code);
   }

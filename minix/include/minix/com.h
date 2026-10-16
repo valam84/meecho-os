@@ -442,6 +442,10 @@
 #define DIAGCTL_CODE_STACKTRACE	2	/* Print process stack. */
 #define DIAGCTL_CODE_REGISTER	3	/* Register for diagnostic signals */
 #define DIAGCTL_CODE_UNREGISTER	4	/* Unregister for diagnostic signals */
+#define DIAGCTL_CODE_SCREEN	5	/* The kernel's own screen console:
+					 * len 0 - a driver has taken the
+					 * screen, stop drawing; 1 - draw
+					 * again.  System processes only. */
 #define DIAG_BUFSIZE	(80*25)
 
 /* Field names for SYS_VTIMER. */

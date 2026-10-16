@@ -157,6 +157,14 @@ dir.sdmmc:=	minix/drivers/storage/mmc
 # that has no clock, so that the time never stays at the epoch.
 PROGRAMS+=		readclock.drv
 dir.readclock.drv:= minix/drivers/clock/readclock
+# The screen, when there is one the fb driver can draw on.  On a ramdisk root
+# this is the only console a machine without a serial line has - the Mi Pad
+# 4's boot loader leaves its panel lit and the tree says where - and the
+# console there is a better one than the kernel's (scrolling, colour, an
+# on-screen keyboard with osk=1).  QEMU's virt has no display: the driver
+# says so and leaves.
+PROGRAMS+=		fb
+dir.fb:=	minix/drivers/video/fb
 # The binary of mib, the one boot-image service that restarts without
 # state: rc hands RS its path, and on a ramdisk root this is the only copy
 # there is.  See the comment in rc.

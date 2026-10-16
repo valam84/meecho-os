@@ -171,6 +171,8 @@ int sys_umap_remote(endpoint_t proc_ep, endpoint_t grantee, int seg,
 	sys_diagctl(DIAGCTL_CODE_REGISTER, NULL, 0)
 #define sys_diagctl_unregister() \
 	sys_diagctl(DIAGCTL_CODE_UNREGISTER, NULL, 0)
+#define sys_diagctl_screen(on) \
+	sys_diagctl(DIAGCTL_CODE_SCREEN, NULL, on)
 int sys_diagctl(int ctl, char *arg1, int arg2);
 
 /* Shorthands for sys_getinfo() system call. */

@@ -68,6 +68,7 @@ static struct {
 	unsigned cols, rows;
 	unsigned col, row;
 	u32_t fg, bg;
+	int owned;		/* a driver draws here now (fbcon_owned()) */
 } fb;
 
 static kern_phys_map fb_phys_map;
@@ -298,6 +299,22 @@ fbcon_init(phys_bytes dtb)
 }
 
 /*===========================================================================*
+ *				fbcon_owned				     *
+ *===========================================================================*/
+void
+fbcon_owned(int owned)
+{
+	/*
+	 * Given back: start on a cleared line where the driver's picture
+	 * leaves off, which is anywhere - the row this console last wrote is
+	 * as good as any.
+	 */
+	if (fb.owned && !owned && fb.format != FB_NONE)
+		fill_rows(fb.row, 1);
+	fb.owned = owned;
+}
+
+/*===========================================================================*
  *				fbcon_putc				     *
  *===========================================================================*/
 void
@@ -306,6 +323,14 @@ fbcon_putc(char ch)
 	unsigned char c = (unsigned char)ch;
 
 	if (fb.format == FB_NONE)
+		return;
+
+	/*
+	 * A driver has the screen and draws the console better (scrolling,
+	 * colour, a keyboard).  Except on a panic: the driver may be what
+	 * died, and the last words matter more than its picture.
+	 */
+	if (fb.owned && !kinfo.minix_panicing)	/* set only by panic() */
 		return;
 
 	switch (c) {

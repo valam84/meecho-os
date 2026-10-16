@@ -107,7 +107,13 @@ screen_write(tty_t *tp, int try)
 
 	tp->tty_reprint = TRUE;
 	cons_mirror(tp, buf, buf, buf + sizeof(buf), ocount);
-	if (ocount > 0)
+	/*
+	 * Through the kernel only while nobody else draws: once a screen
+	 * driver has taken the console's text (TTY_SCREEN_UP), it draws this
+	 * from the ring and the kernel's messages from the kernel's buffer -
+	 * and a diagnostic is a kernel message, so the text would come twice.
+	 */
+	if (ocount > 0 && screen == NONE)
 		(void)sys_diagctl_diag(buf, ocount);
 	screen_done(tp, count);
 
@@ -124,7 +130,8 @@ screen_echo(tty_t *tp, int character)
 	out_process(tp, buf, buf, buf + sizeof(buf), &count, &ocount);
 	if (ocount > 0) {
 		cons_mirror(tp, buf, buf, buf + sizeof(buf), ocount);
-		(void)sys_diagctl_diag(buf, ocount);
+		if (screen == NONE)	/* as in screen_write() */
+			(void)sys_diagctl_diag(buf, ocount);
 	}
 }
 

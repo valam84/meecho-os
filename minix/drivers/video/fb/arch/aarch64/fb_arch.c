@@ -179,6 +179,29 @@ static unsigned long cur_moves;
 static int virtual_mode;
 static uint32_t virtual_plug = FB_VPLUG_WIDE, virtual_read = FB_VPLUG_WIDE;
 
+/*
+ * A frame buffer the boot loader left running ("simple-framebuffer" in the
+ * device tree): the Mi Pad 4, whose Qualcomm ABL leaves the panel lit with
+ * its splash screen and says where.  No controller is touched - this driver
+ * knows none of the display hardware there - so it is the virtual display
+ * above (virtual_mode is set too: no controller, the buffers only) with one
+ * difference: what the buffers hold is copied to the memory being scanned
+ * out.  The buffers stay ordinary cacheable RAM, so the console and a
+ * compositor draw as fast as anywhere; the copy is the one write to the
+ * scanout, which is mapped as a device and never read.  One mode, the one
+ * the tree gives.  The kernel draws into the same memory until this driver
+ * takes it over (sys_diagctl_screen(), see below).
+ */
+static int simple_mode;
+static struct {
+	phys_bytes pa;
+	size_t size;
+	unsigned width, height, stride;
+	int alpha;			/* a8r8g8b8: set the alpha byte */
+	volatile uint32_t *v;
+} sfb;
+static struct videomode simple_vm;
+
 /* The journal: everything logged, printed and kept (see fb_ioc.h). */
 #define RING_BYTES	16384
 static char ring[RING_BYTES];
@@ -359,6 +382,53 @@ find_display(const void *dtb)
 	return OK;
 }
 
+/*
+ * The "simple-framebuffer" node, if the tree has an enabled one this driver
+ * can draw in: 32-bit pixels, x8r8g8b8 or a8r8g8b8, a stride that holds a
+ * line, and a reg that holds the frame.
+ */
+static int
+find_simple_node(void *cookie, int UNUSED(depth), const char *UNUSED(name),
+	const struct fdt_node *node)
+{
+	int *found = cookie;
+	const char *fmt;
+	unsigned len;
+	u64_t base, size;
+
+	if (!fdt_node_is_compatible(node, "simple-framebuffer") ||
+	    !node_enabled(node))
+		return 0;
+	if (fdt_node_reg(node, 0, &base, &size) != 0)
+		return 0;
+	if ((fmt = fdt_getprop(node, "format", &len)) == NULL || len == 0)
+		return 0;
+	if (strcmp(fmt, "a8r8g8b8") == 0)
+		sfb.alpha = 1;
+	else if (strcmp(fmt, "x8r8g8b8") == 0)
+		sfb.alpha = 0;
+	else {
+		log_warn(&fb_log, "simple-framebuffer in format %s: not one this "
+		    "driver draws in\n", fmt);
+		return 0;
+	}
+	sfb.pa = (phys_bytes)base;
+	sfb.size = (size_t)size;
+	sfb.width = prop_u32(node, "width", 0);
+	sfb.height = prop_u32(node, "height", 0);
+	sfb.stride = prop_u32(node, "stride", 0);
+	if (sfb.width == 0 || sfb.height == 0 ||
+	    sfb.stride < sfb.width * BYTES_PER_PIXEL ||
+	    (u64_t)sfb.stride * sfb.height > size) {
+		log_warn(&fb_log, "simple-framebuffer %ux%u, stride %u, %llu "
+		    "bytes: does not add up\n", sfb.width, sfb.height,
+		    sfb.stride, (unsigned long long)size);
+		return 0;
+	}
+	*found = 1;
+	return 1;
+}
+
 static int
 map(struct disp_regs *r, const char *what)
 {
@@ -381,6 +451,10 @@ map(struct disp_regs *r, const char *what)
 static int
 mode_usable(const struct videomode *m)
 {
+	/* The loader's frame: the one mode, whatever its size. */
+	if (simple_mode)
+		return m->hdisplay == (int)sfb.width &&
+		    m->vdisplay == (int)sfb.height;
 	return m->dot_clock > 0 && m->dot_clock <= MAX_AUTO_KHZ &&
 	    !(m->flags & (VID_INTERLACE | VID_DBLSCAN)) &&
 	    m->hdisplay <= MAX_W && m->vdisplay <= MAX_H;
@@ -593,6 +667,10 @@ static const struct videomode virtual_small[] = {
 static const struct videomode *
 mode_list(int *n)
 {
+	if (simple_mode) {
+		*n = 1;
+		return &simple_vm;
+	}
 	if (virtual_mode) {
 		if (virtual_read == FB_VPLUG_SMALL) {
 			*n = (int)NELEM(virtual_small);
@@ -784,6 +862,10 @@ pick_mode(const char **why)
 		    "driver makes for this screen; choosing as usual\n", w, h);
 	}
 	list = mode_list(&n);
+	if (simple_mode) {
+		*why = "the one the boot loader set up";
+		return &list[0];
+	}
 	if (virtual_mode) {
 		*why = "the virtual monitor's first";
 		return &list[0];
@@ -875,12 +957,50 @@ alloc_frame_buffer(void)
 	return OK;
 }
 
+/*
+ * Bytes off..off+len-1 of buffer b to the loader's frame (simple_mode).
+ * Whole pixels, line by line - the two strides may differ - and with the
+ * alpha byte set when the format has one: the buffers are x8r8g8b8 with
+ * whatever is in the top byte, and what the display pipe does with a pixel
+ * whose alpha is not 0xff is not known without the hardware; the kernel's
+ * console, which drew on this memory before, writes 0xff too.
+ */
+static void
+simple_copy(int b, size_t off, size_t len)
+{
+	const uint32_t *src;
+	volatile uint32_t *dst;
+	uint32_t set = sfb.alpha ? 0xff000000u : 0;
+	size_t end = off + len, line, x0, x1, x;
+
+	if (end > fb_size)
+		end = fb_size;
+	off &= ~(size_t)(BYTES_PER_PIXEL - 1);
+	while (off < end) {
+		line = off / fb_stride;
+		x0 = (off % fb_stride) / BYTES_PER_PIXEL;
+		x1 = ((end - line * fb_stride) < fb_stride ?
+		    (end - line * fb_stride) : fb_stride) / BYTES_PER_PIXEL;
+		if (x1 > sfb.width)
+			x1 = sfb.width;
+		src = (const uint32_t *)(buf_vir[b] + line * fb_stride);
+		dst = (volatile uint32_t *)((volatile uint8_t *)sfb.v +
+		    line * sfb.stride);
+		for (x = x0; x < x1; x++)
+			dst[x] = src[x] | set;
+		off = (line + 1) * fb_stride;
+	}
+}
+
 /* Clean rows y0..y1-1 of a buffer out of the cache, in pieces. */
 static void
 flush_rows(int b, unsigned y0, unsigned y1)
 {
 	size_t off, len, n;
 
+	/* Nothing reads these buffers behind the cache: show() copies them. */
+	if (simple_mode)
+		return;
 	if (y1 > (unsigned)mode.vdisplay)
 		y1 = mode.vdisplay;
 	if (y0 >= y1)
@@ -950,6 +1070,11 @@ show(int b)
 {
 	int r = OK;
 
+	if (simple_mode) {
+		simple_copy(b, 0, fb_size);
+		shown = b;
+		return OK;
+	}
 	if (!virtual_mode &&
 	    (r = vop2_scanout(buf_phys[b], nbuf < FB_MAX_BUFFERS)) != OK)
 		log_warn(&fb_log, "buffer %d did not reach the screen: %d\n",
@@ -1471,9 +1596,9 @@ report_state(void)
 	char stats[256];
 
 	if (virtual_mode) {
-		log_info(&fb_log, "state: virtual, mode %dx%d, buffer %d of %d "
-		    "shown, owner %d\n", mode.hdisplay, mode.vdisplay, shown,
-		    nbuf, owner);
+		log_info(&fb_log, "state: %s, mode %dx%d, buffer %d of %d "
+		    "shown, owner %d\n", simple_mode ? "simple-framebuffer" :
+		    "virtual", mode.hdisplay, mode.vdisplay, shown, nbuf, owner);
 		modes_line(stats, sizeof(stats));
 		log_info(&fb_log, "%s\n", stats);
 		report_cursor();
@@ -1493,6 +1618,58 @@ report_state(void)
 	report_cursor();
 	fbcon_stats(stats, sizeof(stats));
 	log_info(&fb_log, "%s\n", stats);
+}
+
+/*
+ * The loader's frame: map it, take it over from the kernel's console, and
+ * set up the buffers as the virtual display does.  The mode is the frame's;
+ * the timings are made up (nothing here scans them) so that the rate reads
+ * 60 Hz wherever a mode is printed.
+ */
+static int
+simple_bring_up(void)
+{
+	void *v;
+	int r;
+
+	if ((v = vm_map_phys(SELF, (void *)sfb.pa, sfb.size)) == MAP_FAILED) {
+		log_warn(&fb_log, "cannot map the simple-framebuffer at 0x%lx; "
+		    "not granted by RS?\n", (unsigned long)sfb.pa);
+		return EPERM;
+	}
+	sfb.v = v;
+
+	memset(&simple_vm, 0, sizeof(simple_vm));
+	simple_vm.hdisplay = simple_vm.hsync_start = simple_vm.hsync_end =
+	    simple_vm.htotal = (int)sfb.width;
+	simple_vm.vdisplay = simple_vm.vsync_start = simple_vm.vsync_end =
+	    simple_vm.vtotal = (int)sfb.height;
+	simple_vm.dot_clock = (int)((unsigned long)sfb.width * sfb.height * 60 /
+	    1000);
+	simple_vm.name = "simple-framebuffer";
+
+	simple_mode = 1;
+	virtual_mode = 1;		/* no controller: the buffers only */
+	mode = preferred = simple_vm;
+	hpd_known = hpd_line();
+
+	/*
+	 * From here on this driver draws there, and the kernel must stop:
+	 * two writers on one frame would interleave text.  The kernel takes
+	 * the frame back by itself on a panic, when this driver may be the
+	 * thing that died.
+	 */
+	if ((r = sys_diagctl_screen(0)) != OK)
+		log_warn(&fb_log, "the kernel would not give up the screen "
+		    "(%d); its console may draw over this one\n", r);
+
+	if ((r = alloc_frame_buffer()) != OK)
+		return r;
+	log_info(&fb_log, "simple-framebuffer %ux%u, stride %u, %s, at "
+	    "physical 0x%lx: the boot loader's frame\n", sfb.width, sfb.height,
+	    sfb.stride, sfb.alpha ? "a8r8g8b8" : "x8r8g8b8",
+	    (unsigned long)sfb.pa);
+	return OK;
 }
 
 static int
@@ -1528,6 +1705,18 @@ bring_up(void)
 		log_warn(&fb_log, "the kernel has no device tree\n");
 		return ENXIO;
 	}
+
+	/* A frame the boot loader left running (see simple_mode). */
+	{
+		int found = 0;
+
+		fdt_walk(dtb, find_simple_node, &found);
+		if (found) {
+			free(dtb);
+			return simple_bring_up();
+		}
+	}
+
 	r = find_display(dtb);
 	if (r == OK && ((r = map(&disp.vop, "display controller")) != OK ||
 	    (r = map(&disp.hdmi, "HDMI encoder")) != OK ||
@@ -1661,7 +1850,8 @@ arch_get_fixscreeninfo(int minor, struct fb_fix_screeninfo *f)
 	if (minor != 0 || status <= 0)
 		return ENXIO;
 	memset(f, 0, sizeof(*f));
-	strlcpy(f->id, "rk-vop2-hdmi", sizeof(f->id));
+	strlcpy(f->id, simple_mode ? "simple-framebuffer" : "rk-vop2-hdmi",
+	    sizeof(f->id));
 	f->line_length = fb_stride;
 	return OK;
 }
@@ -1681,6 +1871,12 @@ arch_fb_flush(int minor, size_t off, size_t len)
 		return;
 	if (len > fb_size - off)
 		len = fb_size - off;
+
+	/* The loader's frame is read by nobody but the display: copy. */
+	if (simple_mode) {
+		simple_copy(shown, off, len);
+		return;
+	}
 
 	/*
 	 * In pieces.  The kernel does the whole of one request under its big
@@ -1730,7 +1926,7 @@ arch_fb_ioctl(int minor, unsigned long request, endpoint_t ep,
 		uint32_t plug;
 		int r;
 
-		if (status <= 0 || !virtual_mode)
+		if (status <= 0 || !virtual_mode || simple_mode)
 			return ENOTTY;
 		if ((r = sys_safecopyfrom(ep, gid, 0, (vir_bytes)&plug,
 		    sizeof(plug))) != OK)

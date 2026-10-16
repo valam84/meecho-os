@@ -128,6 +128,12 @@ int pg_is_ram(phys_bytes pa);
  */
 void fbcon_init(phys_bytes dtb);
 void fbcon_putc(char c);
+/*
+ * fbcon_owned(1): a driver has taken the frame buffer (SYS_DIAGCTL,
+ * DIAGCTL_CODE_SCREEN) - stop drawing on it; 0: draw again.  A panic
+ * draws regardless, since the driver may be what died.
+ */
+void fbcon_owned(int owned);
 phys_bytes pg_alloc_page(kinfo_t *cbi);
 phys_bytes pg_roundup(phys_bytes b);
 phys_bytes pg_rounddown(phys_bytes b);

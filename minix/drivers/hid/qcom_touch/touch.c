@@ -15,9 +15,9 @@
  *                 of the touch screen's node
  *   controller    reset - low 6 ms, high, 300 ms - then identified
  *
- * Then it polls: fifty times a second it looks at the interrupt line, and
- * when the controller holds it low it reads a frame - up to five touches -
- * and hands each to keys.c, which turns touches on the keyboard <minix/osk.h>
+ * Then it polls: fifty times a second it reads the controller's touch
+ * count, and when there are touches it reads a frame - up to five - and
+ * hands each to keys.c, which turns touches on the keyboard <minix/osk.h>
  * draws into key presses for the input server.  Only with osk=1, the same
  * switch that makes fb draw the keyboard; without it the driver reports
  * touches in its log and sends nothing.
@@ -76,7 +76,8 @@ static volatile uint8_t *qup_regs;
 static struct keys keys;
 static int osk_on, ev_ft;
 static unsigned active;			/* touch ids in the last frame */
-static unsigned long frames, errors;
+static unsigned long frames, errors, polls, int_low;
+static unsigned shown;			/* touches written to the log */
 
 /*===========================================================================*
  *    the tree                                                                *
@@ -373,6 +374,13 @@ read_frame(void)
 		to_screen(&x, &y);
 		if (ev != 1)
 			seen |= 1u << tid;
+		/* The first few, where a person at the screen reads them. */
+		if (shown < 6) {
+			shown++;
+			log_info(&tlog, "touch %u: %s at %u,%u (line was low in "
+			    "%lu of %lu polls)\n", tid, ev == 0 ? "down" :
+			    ev == 1 ? "up" : "contact", x, y, int_low, polls);
+		}
 		log_debug(&tlog, "touch %u: %s at %u,%u\n", tid,
 		    ev == 0 ? "down" : ev == 1 ? "up" : "contact", x, y);
 		if (osk_on)
@@ -393,13 +401,27 @@ arm(void)
 static void
 touch_alarm(clock_t UNUSED(stamp))
 {
+	uint8_t td;
+	int r;
+
 	/*
-	 * The controller holds its line low while it has a frame; without a
-	 * line in the tree, every poll reads one.  A finger still down keeps
-	 * the frames coming, and the last one, with every touch up, is read
-	 * because the line was low for it too.
+	 * Every poll asks the controller how many touches it has (TD_STATUS,
+	 * one byte), and reads the frame when it has any, or when a touch
+	 * was down at the last look - that frame carries the lift.
+	 *
+	 * The first version read only while the interrupt line was low.  The
+	 * line is not a level: in its default ("trigger") mode the FT5x06
+	 * pulses it for each new frame, and a 50 Hz look at a pulse that
+	 * short almost never lands on it - on the Mi Pad 4 the keyboard did
+	 * not answer a single touch.  The line is still counted, for the log.
 	 */
-	if (!dt.have_int || !qsoc_pin_get(dt.int_pin) || active != 0)
+	polls++;
+	if (dt.have_int && !qsoc_pin_get(dt.int_pin))
+		int_low++;
+	if ((r = reg_read(0x02, &td, 1)) != QUP_OK) {
+		if (errors++ < 5)
+			log_warn(&tlog, "status read failed: %d\n", r);
+	} else if ((td & 0x0f) != 0 || active != 0)
 		read_frame();
 	arm();
 }

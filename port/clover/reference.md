@@ -64,5 +64,9 @@ to shutdown» (с обычного ПК такого нет). Лечение н�
 `echo 18d1:d00d:k,18d1:4e11:k > /sys/module/usbcore/parameters/quirks`
 **до** подключения планшета (quirk применяется при перечислении); живёт до
 перезагрузки хаба. Autosuspend (`usbcore.autosuspend=-1`) отдельно не помогал.
+**С 2026-10-16 постоянно**: usbcore у хаба встроен в ядро (`modprobe.d` не
+действует), поэтому `usbcore.quirks=18d1:d00d:k,18d1:4e11:k` дописан в
+`APPEND` файла `/boot/uEnv.txt` (его берёт `boot.cmd`); прежний файл —
+`/boot/uEnv.txt.bak-meecho-20261016`.
 - Для драйверов брать mainline-дерево postmarketOS (`sdm660-xiaomi-clover`), не
   downstream: его привязки другие, адреса блоков те же.

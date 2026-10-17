@@ -26,6 +26,11 @@ else
 	echo "dttest: no $CLOVER - skipped (port/clover/mkboot.sh)"
 fi
 
+# The boost policy (typec.c) against a model of the PM660's OTG block.
+"${DTCC[@]}" -Werror -o "${TMPDIR:-/tmp}/pmic-otgtest" \
+    "$HERE/otgtest.c" "$SRC/typec.c" "$TREE/minix/lib/libsys/fdt.c"
+"${TMPDIR:-/tmp}/pmic-otgtest"
+
 # The Type-C reading (typec.c) against a model of the charger, and its
 # charger node on the same tree when there is one.
 "${DTCC[@]}" -Werror -o "${TMPDIR:-/tmp}/pmic-typectest" \

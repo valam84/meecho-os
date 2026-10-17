@@ -279,6 +279,239 @@ static const unsigned dump_regs[] = {
 	TC_DC_SSUPPLY_CFG2, TC_POWER_PATH, TC_FREQ_CLK_DIV,
 };
 
+/*===========================================================================*
+ *    the port as a source: dual role and the boost                          *
+ *===========================================================================*/
+/* OTG's interrupt status: the boost failed, was overloaded, or cut. */
+#define TC_OTG_RT_FAULTS	0x07
+#define TC_OTG_SOFTSTART_DONE	0x08	/* OTG_STATUS */
+#define TC_OTG_ENG_HALT_1_8	0x01
+#define TC_USBIN_SUSPEND	0x01
+#define TC_SSUPPLY_SLOW		0x03	/* DC_ENG_SSUPPLY_CFG2 2:0 */
+
+/* The soft start's steps (OTG_WA: the PM660 only), and their codes. */
+static const unsigned otg_step_ma[] = { 250, 500, 1000, 1500 };
+
+static unsigned
+otg_code(unsigned ma)
+{
+	return ma <= 250 ? 0 : (ma - 250) / 250;
+}
+
+static int
+rd1(const struct typec_io *io, unsigned off, uint8_t *v)
+{
+	return io->rd(io->ctx, off, v, 1);
+}
+
+/*
+ * A register at or above 0xa0 in its peripheral is secured: 0xa5 goes to
+ * the peripheral's 0xd0 right before the write (smb-lib.c).
+ */
+static int
+wr1(const struct typec_io *io, unsigned off, uint8_t v)
+{
+	if ((off & 0xff) >= 0xa0 &&
+	    io->wr(io->ctx, (off & ~0xffu) | 0xd0, 0xa5) != 0)
+		return -1;
+	return io->wr(io->ctx, off, v);
+}
+
+/* Read, change the bits under mask, write back if that changed anything. */
+static int
+update(const struct typec_io *io, unsigned off, uint8_t mask, uint8_t val,
+	uint8_t *was)
+{
+	uint8_t v;
+
+	if (rd1(io, off, &v) != 0)
+		return -1;
+	if (was != NULL)
+		*was = v;
+	if ((v & mask) == (val & mask))
+		return 0;
+	return wr1(io, off, (uint8_t)((v & ~mask) | (val & mask)));
+}
+
+/* Everything the boost needed, undone: limit, enable, halt mode, USBIN. */
+static void
+boost_regs_off(const struct typec_io *io)
+{
+	(void)wr1(io, TC_OTG_CL, 0);
+	(void)wr1(io, TC_CMD_OTG, 0);
+	(void)update(io, TC_OTG_ENG, TC_OTG_ENG_HALT_1_8, 0, NULL);
+	(void)update(io, TC_USBIN_CMD_IL, TC_USBIN_SUSPEND, 0, NULL);
+}
+
+static int
+softstart_done(const struct typec_io *io)
+{
+	unsigned i;
+	uint8_t st;
+
+	for (i = 0; i < 16; i++) {
+		io->delay_us(io->ctx, i < 7 ? 2000 : 9000);
+		if (rd1(io, TC_OTG_STATUS, &st) == 0 &&
+		    (st & TC_OTG_SOFTSTART_DONE))
+			return 1;
+	}
+	return 0;
+}
+
+/*
+ * smblib_vbus_regulator_enable(): USBIN asleep, so that the charger does
+ * not charge from our own VBUS; the buck-boost's halt mode; then, on the
+ * PM660, the enable at each current step until the soft start finishes,
+ * and the limit after it.
+ */
+static int
+boost_on(const struct typec_io *io, struct typec_otg *o)
+{
+	unsigned i, n = o->pm660 ? sizeof(otg_step_ma) / sizeof(otg_step_ma[0])
+	    : 1;
+
+	if (update(io, TC_USBIN_CMD_IL, TC_USBIN_SUSPEND, TC_USBIN_SUSPEND,
+	    NULL) != 0 ||
+	    update(io, TC_OTG_ENG, TC_OTG_ENG_HALT_1_8, TC_OTG_ENG_HALT_1_8,
+	    NULL) != 0) {
+		boost_regs_off(io);
+		snprintf(o->last, sizeof(o->last), "vbus: the charger did not "
+		    "take the boost's set-up; no boost");
+		o->fault = 1;
+		return -1;
+	}
+	for (i = 0; i < n; i++) {
+		if (o->pm660 && wr1(io, TC_OTG_CL,
+		    (uint8_t)otg_code(otg_step_ma[i])) != 0)
+			break;
+		if (wr1(io, TC_CMD_OTG, 0x01) != 0)
+			break;
+		if (softstart_done(io)) {
+			(void)wr1(io, TC_OTG_CL, (uint8_t)otg_code(TC_OTG_MA));
+			o->boost = 1;
+			o->step_ma = o->pm660 ? otg_step_ma[i] : 0;
+			if (o->pm660)
+				snprintf(o->last, sizeof(o->last), "vbus: boost "
+				    "on (soft start at %u mA), limit %u mA",
+				    o->step_ma, TC_OTG_MA);
+			else
+				snprintf(o->last, sizeof(o->last), "vbus: boost "
+				    "on, limit %u mA", TC_OTG_MA);
+			return 0;
+		}
+		(void)wr1(io, TC_CMD_OTG, 0);
+	}
+	boost_regs_off(io);
+	o->fault = 1;
+	snprintf(o->last, sizeof(o->last), "vbus: the boost's soft start did "
+	    "not finish at any step; no boost until the device is unplugged");
+	return -1;
+}
+
+static void
+boost_off(const struct typec_io *io, struct typec_otg *o, const char *why)
+{
+	boost_regs_off(io);
+	o->boost = 0;
+	snprintf(o->last, sizeof(o->last), "vbus: boost off (%s)", why);
+}
+
+int
+typec_otg_set(const struct typec_io *io, struct typec_otg *o, int policy)
+{
+	uint8_t was;
+	int n = 0;
+
+	o->last[0] = '\0';
+	if (policy == TC_OTG_AUTO && o->policy != TC_OTG_AUTO) {
+		if (update(io, TC_SW_CTRL, TC_ROLE_MASK, TC_ROLE_DRP, &was) !=
+		    0) {
+			snprintf(o->last, sizeof(o->last), "type-c: the power "
+			    "role would not take dual role (0x%04x)",
+			    io->base + TC_SW_CTRL);
+			return -1;
+		}
+		if (!o->role_saved) {
+			o->role_was = was;
+			o->role_saved = 1;
+		}
+		n = snprintf(o->last, sizeof(o->last), "type-c: dual role "
+		    "(0x%04x: 0x%02x -> 0x%02x)", io->base + TC_SW_CTRL, was,
+		    (uint8_t)((was & ~TC_ROLE_MASK) | TC_ROLE_DRP));
+		if (update(io, TC_DC_SSUPPLY_CFG2, 0x07, TC_SSUPPLY_SLOW,
+		    &was) != 0)
+			snprintf(o->last + n, sizeof(o->last) - n, "; the OTG "
+			    "soft start stays as it is (0x%04x unwritable)",
+			    io->base + TC_DC_SSUPPLY_CFG2);
+		else if ((was & 0x07) != TC_SSUPPLY_SLOW)
+			snprintf(o->last + n, sizeof(o->last) - n, "; OTG soft "
+			    "start slow (0x%04x: 0x%02x)",
+			    io->base + TC_DC_SSUPPLY_CFG2, was);
+		o->policy = TC_OTG_AUTO;
+		o->fault = 0;
+		o->sink_seen = 0;
+	} else if (policy == TC_OTG_OFF && o->policy == TC_OTG_AUTO) {
+		if (o->boost)
+			boost_regs_off(io);
+		o->boost = 0;
+		o->policy = TC_OTG_OFF;
+		if (o->role_saved && update(io, TC_SW_CTRL, TC_ROLE_MASK,
+		    o->role_was, NULL) != 0) {
+			snprintf(o->last, sizeof(o->last), "type-c: the power "
+			    "role could not be put back");
+			return -1;
+		}
+		snprintf(o->last, sizeof(o->last), "type-c: no boost; power "
+		    "role back to 0x%02x", o->role_was & TC_ROLE_MASK);
+	}
+	return 0;
+}
+
+int
+typec_otg_poll(const struct typec_io *io, struct typec_otg *o,
+	const struct typec_state *s)
+{
+	int sink = typec_partner(s) == TC_SINK &&
+	    (s->st[3] & TC_ST4_ATTACHED);
+	uint8_t rt;
+
+	if (!sink) {
+		o->sink_seen = 0;
+		o->fault = 0;		/* unplugged: the next one may try */
+	} else if (o->sink_seen < 1000)
+		o->sink_seen++;
+
+	if (o->boost) {
+		if (rd1(io, TC_OTG_RT_STS, &rt) == 0 &&
+		    (rt & TC_OTG_RT_FAULTS)) {
+			boost_off(io, o, "the charger reports it failed or "
+			    "overloaded");
+			o->fault = 1;
+			return 1;
+		}
+		if (!sink) {
+			boost_off(io, o, "the device is gone");
+			return 1;
+		}
+		if (o->policy != TC_OTG_AUTO) {
+			boost_off(io, o, "asked to");
+			return 1;
+		}
+		return 0;
+	}
+
+	/* A sink, steadily, and no boost tried for it yet. */
+	if (o->policy != TC_OTG_AUTO || !sink || o->fault || o->sink_seen < 2)
+		return 0;
+	if ((s->usbin_rt & TC_USBIN_PLUGIN) || (s->st[3] & TC_ST4_VBUS)) {
+		snprintf(o->last, sizeof(o->last), "vbus: a device is attached "
+		    "and VBUS is already there; no boost");
+		o->fault = 1;
+		return 1;
+	}
+	return boost_on(io, o) == 0 ? 1 : -1;
+}
+
 int
 typec_dump(const struct typec_io *io, char *buf, size_t size)
 {

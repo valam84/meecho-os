@@ -134,4 +134,50 @@ int typec_config_text(const struct typec_io *io, char *buf, size_t size);
  */
 int typec_dump(const struct typec_io *io, char *buf, size_t size);
 
+/*
+ * The port as a source: dual role, and VBUS from the charger's boost
+ * (port/clover/hw-usbhost.md, section 3, as the tablet's own Android does
+ * it).  Nothing here writes anything until asked to (typec_otg_set()).
+ *
+ * With the policy "auto": the power role command is made dual role (the
+ * boot loader leaves it sink only) and the OTG soft start slow, and the
+ * boost is switched on when a sink (Rd) is attached and no VBUS comes
+ * from outside, off when the sink goes, the boost fails or is overloaded,
+ * or the policy goes back to "off" - which also puts back the power role
+ * the port had.  A boost that failed or was overloaded is not tried again
+ * until the sink has been unplugged.
+ */
+#define TC_OTG_OFF		0
+#define TC_OTG_AUTO		1
+
+#define TC_OTG_MA		500	/* the limit: a USB 2.0 port's */
+
+struct typec_otg {
+	int policy;			/* TC_OTG_ */
+	int pm660;			/* the soft start work-around */
+	int boost;			/* we switched it on */
+	int fault;			/* failed or overloaded: wait for unplug */
+	int sink_seen;			/* polls in a row a sink was attached */
+	int role_saved;			/* role_was holds what we found */
+	uint8_t role_was;		/* TYPE_C_INTRPT_ENB_SOFTWARE_CTRL */
+	unsigned step_ma;		/* the step the soft start finished at */
+	char last[160];			/* what the last action was, for the log */
+};
+
+/*
+ * The policy: TC_OTG_AUTO makes the port dual role, TC_OTG_OFF switches
+ * the boost off and puts the role back.  0, or -1 on a register that
+ * would not read or write (the message is in o->last).
+ */
+int typec_otg_set(const struct typec_io *io, struct typec_otg *o,
+	int policy);
+
+/*
+ * One look at the state just read: switch the boost on or off as the
+ * policy says.  Returns 1 when it did something (o->last says what), 0
+ * when not, -1 when it tried and failed.
+ */
+int typec_otg_poll(const struct typec_io *io, struct typec_otg *o,
+	const struct typec_state *s);
+
 #endif /* _QCOM_TYPEC_H */

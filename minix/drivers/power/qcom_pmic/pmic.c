@@ -31,13 +31,19 @@
  *                      port is a device or a host (port/clover/
  *                      hw-usbhost.md).  The registers that govern a role
  *                      and VBUS are printed as the boot loader left them.
+ *   VBUS               with usbotg=auto or sysctl minix.pmic.otg=auto, the
+ *                      port is made dual role and powers a device that is
+ *                      attached (Rd) from the charger's boost, the way the
+ *                      tablet's own Android does it; off again when the
+ *                      device goes, the boost fails, or "off" is asked for.
  *
  * It writes as little as it can: the volume-up pin's input configuration
- * once, the backlight's module enable, the charger watchdog's pet, and the
- * PON's soft reboot spare register when asked.  Each write goes only to a
- * peripheral this EE owns (spmi_write()).  It never writes the PON reset
- * timers, the PS_HOLD reset type, the regulators, or the charger's
- * settings.
+ * once, the backlight's module enable, the charger watchdog's pet, the
+ * PON's soft reboot spare register when asked, and - only with the policy
+ * "auto" - the Type-C power role, the OTG soft start and the boost's own
+ * registers.  Each write goes only to a peripheral this EE owns
+ * (spmi_write()).  It never writes the PON reset timers, the PS_HOLD reset
+ * type, the regulators, or the charger's charging settings.
  *
  * Powering off properly would need the PMIC told what to do when PS_HOLD
  * drops (hw-pmic.md, section 5) before PSCI's SYSTEM_OFF; that is not done
@@ -435,6 +441,9 @@ static int have_typec;
 static struct typec_state tstate;
 static enum typec_partner tpartner = TC_UNKNOWN;
 static enum typec_vbus tvbus = TV_NONE;
+static struct typec_otg totg;
+
+static int otg_policy(int policy);
 
 static int
 tc_rd(void *UNUSED(ctx), unsigned off, uint8_t *buf, unsigned n)
@@ -503,6 +512,30 @@ typec_init(void)
 	log_info(&pmic_log, "type-c registers: %s\n", line);
 	(void)typec_describe(&tstate, line, sizeof(line));
 	log_info(&pmic_log, "%s\n", line);
+
+	/*
+	 * The port as a source - dual role and the boost - only when asked:
+	 * the boot parameter usbotg=auto, or sysctl minix.pmic.otg=auto.
+	 */
+	totg.pm660 = tchg.pm660;
+	if (env_get_param("usbotg", line, sizeof(line)) == OK &&
+	    strcmp(line, "auto") == 0)
+		otg_policy(TC_OTG_AUTO);
+}
+
+static int
+otg_policy(int policy)
+{
+	int r;
+
+	r = typec_otg_set(&tio, &totg, policy);
+	if (totg.last[0] != '\0') {
+		if (r != 0)
+			log_warn(&pmic_log, "%s\n", totg.last);
+		else
+			log_info(&pmic_log, "%s\n", totg.last);
+	}
+	return r;
 }
 
 static void
@@ -511,9 +544,18 @@ typec_poll(void)
 	char line[160];
 	enum typec_partner p;
 	enum typec_vbus v;
+	int r;
 
 	if (!have_typec || typec_read(&tio, &tstate) != OK_SPMI)
 		return;
+	if ((r = typec_otg_poll(&tio, &totg, &tstate)) != 0) {
+		if (r < 0)
+			log_warn(&pmic_log, "%s\n", totg.last);
+		else
+			log_info(&pmic_log, "%s\n", totg.last);
+		if (typec_read(&tio, &tstate) != OK_SPMI)
+			return;
+	}
 	p = typec_partner(&tstate);
 	v = typec_vbus(&tstate);
 	if (p == tpartner && v == tvbus)
@@ -548,6 +590,40 @@ vbus_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
 	strlcpy(vbus_str, have_typec ? typec_vbus_name(tvbus) : "unknown",
 	    sizeof(vbus_str));
 	return rmib_readwrite(call, &vbus_data, oldp, newp);
+}
+
+/*
+ * sysctl minix.pmic.otg: "off" or "auto" - whether the port may be a
+ * source (typec.h).  Writing takes root, which the remote MIB library
+ * checks before this is called.
+ */
+static char otg_str[8];
+
+static struct rmib_node otg_data = RMIB_STRING(RMIB_RW, otg_str, "otg",
+	"Whether the USB-C port may power a device: off or auto");
+
+static ssize_t
+otg_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
+	struct rmib_oldp *oldp, struct rmib_newp *newp)
+{
+	ssize_t r;
+
+	strlcpy(otg_str, totg.policy == TC_OTG_AUTO ? "auto" : "off",
+	    sizeof(otg_str));
+	if ((r = rmib_readwrite(call, &otg_data, oldp, newp)) < 0 ||
+	    newp == NULL)
+		return r;
+	if (!have_typec)
+		return ENODEV;
+	if (strcmp(otg_str, "auto") == 0) {
+		if (otg_policy(TC_OTG_AUTO) != 0)
+			return EIO;
+	} else if (strcmp(otg_str, "off") == 0) {
+		if (otg_policy(TC_OTG_OFF) != 0)
+			return EIO;
+	} else
+		return EINVAL;
+	return r;
 }
 
 /*===========================================================================*
@@ -683,6 +759,9 @@ static struct rmib_node pmic_table[] = {
 /* 2*/	[2]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RO, sizeof(vbus_str),
 		    vbus_func, "vbus", "Where VBUS comes from: none, external "
 		    "or boost"),
+/* 3*/	[3]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RW, sizeof(otg_str),
+		    otg_func, "otg", "Whether the USB-C port may power a "
+		    "device: off or auto"),
 };
 
 static struct rmib_node pmic_node = RMIB_NODE(RMIB_RO, pmic_table, "pmic",
@@ -853,6 +932,9 @@ pmic_signal(int signo)
 {
 	if (signo != SIGTERM)
 		return;
+	/* Nobody to watch the boost after this: off, and the role back. */
+	if (have_typec)
+		(void)otg_policy(TC_OTG_OFF);
 	if (pmic_node_registered)
 		(void)rmib_deregister(&pmic_node);
 	inputdriver_terminate();

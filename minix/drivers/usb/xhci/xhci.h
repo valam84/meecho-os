@@ -407,7 +407,19 @@ struct xhci {
 	 * transfer is running (xhci_root_ports()).
 	 */
 	unsigned port_news;
+
+	/*
+	 * Attempts at the device now on each root port that failed.  A device
+	 * that cannot be enumerated would otherwise be tried for ever - every
+	 * failure resets the port, and the reset is news again - and the
+	 * screen of a machine whose console is its screen fills with it.
+	 * Cleared when the port is found empty.
+	 */
+	unsigned char port_tries[XHCI_MAX_PORTS];
 };
+
+/* How many times a device on a root port is tried before it is left. */
+#define XHCI_PORT_TRIES		3
 
 extern struct xhci xhci;
 extern struct log xhci_log;

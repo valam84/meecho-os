@@ -130,3 +130,64 @@ test_root_port_hotplug(void)
 	check(model_complaint() == NULL, "the model saw nothing wrong: %s",
 	    model_complaint() ? model_complaint() : "nothing");
 }
+
+/*
+ * A device that answers nothing: tried XHCI_PORT_TRIES times, then left
+ * alone however much news its port makes, and tried again once it has
+ * been unplugged and plugged in.  On the tablet a low-speed keyboard that
+ * would not give its descriptor filled the screen with retries.
+ */
+static unsigned mute_asked;
+
+static size_t
+mute_control(unsigned slot, const uint8_t setup[8], uint8_t *out, size_t max)
+{
+	(void)slot;
+	(void)setup;
+	(void)out;
+	(void)max;
+	mute_asked++;
+	return 0;
+}
+
+static void
+test_root_port_gives_up(void)
+{
+	unsigned i, asked;
+
+	section("the root port: a device that cannot be enumerated");
+
+	check(bring_up(2) == OK, "the controller starts");
+	xhci.port_major[0] = 2;
+	model_control_handler(mute_control);
+	nannounced = 0;
+	mute_asked = 0;
+
+	model_attach(0, 2 /* low speed */);
+	for (i = 0; i < 10; i++) {
+		news_in();
+		xhci_root_ports();
+	}
+	check(xhci.dev[0].slot == 0 && nannounced == 0, "nothing enumerated");
+	check(xhci.port_tries[0] == XHCI_PORT_TRIES,
+	    "tried %u times, want %u", xhci.port_tries[0], XHCI_PORT_TRIES);
+	asked = mute_asked;
+	for (i = 0; i < 5; i++) {
+		news_in();
+		xhci.port_news |= 0x1;
+		xhci_root_ports();
+	}
+	check(mute_asked == asked, "asked again after giving up (%u more)",
+	    mute_asked - asked);
+
+	model_detach(0);
+	news_in();
+	xhci_root_ports();
+	check(xhci.port_tries[0] == 0, "unplugged: the count is cleared");
+	model_control_handler(kbd_control);
+	model_attach(0, 1);
+	news_in();
+	xhci_root_ports();
+	check(xhci.dev[0].slot != 0 && nannounced == 1,
+	    "a device plugged in after it is tried again, and enumerates");
+}

@@ -257,7 +257,11 @@ xhci_root_ports(void)
 			    "another" : "unplugged");
 			xhci_device_remove(dev);
 		}
-		if (!(v & XHCI_PORTSC_CCS))
+		if (!(v & XHCI_PORTSC_CCS)) {
+			xhci.port_tries[p] = 0;	/* empty: the next one is new */
+			continue;
+		}
+		if (xhci.port_tries[p] >= XHCI_PORT_TRIES)
 			continue;
 
 		micro_delay(100000);
@@ -268,14 +272,21 @@ xhci_root_ports(void)
 			continue;
 		}
 		log_info(&xhci_log, "port %u: a device arrived\n", p + 1);
-		if (xhci_port_reset(p) != OK)
-			continue;
-		if (xhci_device_attach(p, dev) != OK) {
-			log_warn(&xhci_log, "port %u: could not be enumerated\n",
-			    p + 1);
+		if (xhci_port_reset(p) != OK ||
+		    xhci_device_attach(p, dev) != OK) {
 			xhci_device_free(dev);
+			if (++xhci.port_tries[p] >= XHCI_PORT_TRIES)
+				log_warn(&xhci_log, "port %u: could not be "
+				    "enumerated %u times; left alone until it "
+				    "is unplugged\n", p + 1, XHCI_PORT_TRIES);
+			else {
+				log_warn(&xhci_log, "port %u: could not be "
+				    "enumerated\n", p + 1);
+				xhci.port_news |= 1u << p;	/* again */
+			}
 			continue;
 		}
+		xhci.port_tries[p] = 0;
 		xhci_urb_announce(dev);
 	}
 }

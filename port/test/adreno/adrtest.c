@@ -110,20 +110,33 @@ not_saw(const struct scenario *s, const char *stage, const char *needle)
 int
 main(int argc, char **argv)
 {
-	static const struct scenario boot = { "boot", 1, 0, 0, 0, 0, 0, 0, 1 };
+	/* .smmu_tablet = 0: the made-up SMMU of the first stand. */
+	static const struct scenario boot = { "boot", 1, 0, 0, 0, 0, 0, 0, 1,
+	    .smmu_tablet = 0 };
 	static const struct scenario allon = { "all-on", 1, 1, 1, 1, 1, 0, 0,
-	    1 };
-	static const struct scenario cxon = { "cx-on", 1, 0, 1, 0, 0, 0, 0, 0 };
+	    1, .smmu_tablet = 0 };
+	static const struct scenario cxon = { "cx-on", 1, 0, 1, 0, 0, 0, 0, 0,
+	    .smmu_tablet = 0 };
 	static const struct scenario noiface = { "no-iface", 0, 0, 0, 0, 0, 0,
-	    0, 0 };
+	    0, 0, .smmu_tablet = 0 };
 	static const struct scenario gxdead = { "gx-dead", 1, 0, 0, 0, 0, 1, 0,
-	    0 };
+	    0, .smmu_tablet = 0 };
 	static const struct scenario stuck = { "root-stuck", 1, 0, 0, 0, 0, 0,
-	    1, 0 };
+	    1, 0, .smmu_tablet = 0 };
 	static const struct scenario stale = { "stale-clocks", 1, 1, 1, 0, 1,
-	    0, 0, 0 };
+	    0, 0, 0, .smmu_tablet = 0 };
+	/* The SMMU as the tablet answered (hw-gpu.md, §13), and what may
+	 * differ on another: writes dropped, a line not wired, bank 0 taken. */
+	static const struct scenario tablet = { "tablet", 1, 0, 0, 0, 0, 0, 0,
+	    1, .smmu_tablet = 1, .stale_tlb = 1 };
+	static const struct scenario smr_ro = { "smr-ro", 1, 0, 0, 0, 0, 0, 0,
+	    1, .smmu_tablet = 1, .smr_ro = 1, .stale_tlb = 1 };
+	static const struct scenario noline = { "no-line", 1, 0, 0, 0, 0, 0, 0,
+	    1, .smmu_tablet = 1, .no_line = 1, .stale_tlb = 1 };
+	static const struct scenario cbbusy = { "cb0-busy", 1, 0, 0, 0, 0, 0,
+	    0, 1, .smmu_tablet = 1, .cb0_busy = 1 };
 	static const char *const stages[] = { "probe", "cx", "gx", "gpu",
-	    "smmu" };
+	    "smmu", "smr", "cb0", "fault" };
 	const struct scenario *all[] = { &boot, &allon, &cxon };
 	void *dtb, *other;
 	unsigned i, st;
@@ -162,16 +175,22 @@ main(int argc, char **argv)
 	saw(&boot, "probe", "stage probe: nothing written");
 
 	/* The guards themselves: asked to read with nothing powered. */
-	r = run(dtb, &boot, AD_PROBE, 0);
+	r = run(dtb, &tablet, AD_PROBE, 0);
 	if (setjmp(model_hang) == 0) {
 		hw_gpu_report();
 		hw_smmu_report();
+		(void)smmu_smr_test();
+		(void)smmu_cb0(1);
+		smmu_undo();
 		r = OK;
 	} else
 		r = -1000;
 	check(r == OK, "guards: the bus hung: %s", model_violation());
-	saw(&boot, "guards", "Q5 gpu not read: rbbmtimer is off");
-	saw(&boot, "guards", "Q9 smmu not read: mem is off");
+	saw(&tablet, "guards", "Q5 gpu not read: rbbmtimer is off");
+	saw(&tablet, "guards", "Q9 smmu not read: mem is off");
+	saw(&tablet, "guards", "Q13 smmu not written: mem is off");
+	saw(&tablet, "guards", "Q14 smmu not written: mem is off");
+	check(model_writes() == 0, "guards: %u writes", model_writes());
 	/* Every clock reads on, GX does not: the domain alone must stop it. */
 	r = run(dtb, &stale, AD_PROBE, 0);
 	if (setjmp(model_hang) == 0) {
@@ -196,6 +215,9 @@ main(int argc, char **argv)
 		for (st = AD_PROBE; st <= AD_SMMU; st++) {
 			r = run(dtb, all[i], (int)st, 0);
 			expect_clean(all[i], stages[st], r, OK);
+			check(smmu_writes() == 0, "%s/%s: %u SMMU writes before "
+			    "stage smr", all[i]->name, stages[st],
+			    smmu_writes());
 			if (st == AD_PROBE) {
 				check(model_writes() == 0, "%s/probe: %u "
 				    "writes", all[i]->name, model_writes());
@@ -234,6 +256,81 @@ main(int argc, char **argv)
 				not_saw(all[i], stages[st], "Q9");
 		}
 	}
+	/* The SMMU written: the tablet as it answered, stage by stage. */
+	printf("%s\n", tablet.name);
+	r = run(dtb, &tablet, AD_SMMU, 0);
+	expect_clean(&tablet, "smmu", r, OK);
+	check(smmu_writes() == 0, "tablet/smmu: %u SMMU writes", smmu_writes());
+	saw(&tablet, "smmu", "Q9 smmu scr0 00200626 id 48016603 20008005 "
+	    "00007511 gfsr 00000000: 5 cb, 3 smr, 4K pages, ias 36 oas 36 "
+	    "ubs 48");
+	saw(&tablet, "smmu", "Q10 sme 1: smr 00000000 s2cr 00010000");
+	saw(&tablet, "smmu", "Q10 sid 0: no valid SMR routes it");
+	not_saw(&tablet, "smmu", "Q13");
+
+	r = run(dtb, &tablet, AD_SMR, 0);
+	expect_clean(&tablet, "smr", r, OK);
+	saw(&tablet, "smr", "Q13 smr 1 (00000000 00010000): id bits 7 mask "
+	    "bits 7 (numsidb 3)");
+	saw(&tablet, "smr", "Q13 s2cr wrote 00020000 read 00020000; back "
+	    "00000000 00010000: the table takes writes");
+	saw(&tablet, "smr", "Q17 smmu put back: smr 1; all as found");
+	not_saw(&tablet, "smr", "Q14");
+
+	r = run(dtb, &tablet, AD_CB0, 0);
+	expect_clean(&tablet, "cb0", r, OK);
+	saw(&tablet, "cb0", "ias 48 oas 36, 4 levels; sctlr 00001167 tcr "
+	    "00802010 tcr2 00038011");
+	saw(&tablet, "cb0", "Q14 ats pr 1000000: pa ");
+	saw(&tablet, "cb0", "Q14 ats uw a5a5a5a5a000: par 0000000000000009 - "
+	    "fault, read-only");
+	saw(&tablet, "cb0", "Q14 ats pr 1001000: par 0000000000000003 - fault, "
+	    "not mapped");
+	saw(&tablet, "cb0", "Q14 ats pr 1000000: par 0000000000000003 - fault, "
+	    "unmapped");
+	saw(&tablet, "cb0", "Q14 cb0: 7 of 7 translations as the tables say");
+	not_saw(&tablet, "cb0", "NOT as mapped");
+	saw(&tablet, "cb0", "Q15 sid 0 by smr 1 to cb0: smr 80000000 s2cr "
+	    "00000000; 10 ms: fsr 0 gfsr 0; taken back");
+	saw(&tablet, "cb0", "Q17 smmu put back: smr 1 cb0; all as found");
+	not_saw(&tablet, "cb0", "Q16");
+
+	r = run(dtb, &tablet, AD_FAULT, 0);
+	expect_clean(&tablet, "fault", r, OK);
+	saw(&tablet, "fault", "Q16 line 361 quiet before; raised tf: it came, "
+	    "fsr 00000002");
+	saw(&tablet, "fault", "Q16 cleared (fsr 00000000), quiet after: the "
+	    "line works");
+	saw(&tablet, "fault", "all as found");
+
+	/* Writes that do not stick: stop before the bank, nothing changed. */
+	printf("%s\n", smr_ro.name);
+	r = run(dtb, &smr_ro, AD_FAULT, 0);
+	expect_clean(&smr_ro, "fault", r, EIO);
+	saw(&smr_ro, "fault", "writes do NOT stick; stopping");
+	not_saw(&smr_ro, "fault", "Q14");
+
+	/* The line never comes: said so, everything back. */
+	printf("%s\n", noline.name);
+	r = run(dtb, &noline, AD_FAULT, 0);
+	expect_clean(&noline, "fault", r, EIO);
+	saw(&noline, "fault", "raised tf: NOTHING came");
+	saw(&noline, "fault", "the line does NOT work");
+	saw(&noline, "fault", "all as found");
+
+	/* Bank 0 somebody's: refused, nothing of it written. */
+	printf("%s\n", cbbusy.name);
+	r = run(dtb, &cbbusy, AD_FAULT, 0);
+	expect_clean(&cbbusy, "fault", r, EBUSY);
+	saw(&cbbusy, "fault", "Q14 cb0 is in use (sctlr 00000001");
+	not_saw(&cbbusy, "fault", "Q15");
+
+	/* The made-up SMMU routes SID 0 to bank 0 already: refused. */
+	r = run(dtb, &boot, AD_CB0, 0);
+	check(r != -1000, "boot/cb0: the bus hung: %s", model_violation());
+	not_saw(&boot, "cb0", "Q15");
+	saw(&boot, "cb0", "refusing");
+
 	/* What each start state should make of the domains. */
 	r = run(dtb, &boot, AD_GX, 0);
 	saw(&boot, "gx", "Q4 power: cx on in");

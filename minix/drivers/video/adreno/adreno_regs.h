@@ -33,14 +33,35 @@
 #define SMMU_S2CR(n)			(0xc00 + 4 * (n))
 /* global space 1, one page above */
 #define SMMU_CBAR(n)			(4 * (n))
-/* a context bank */
+#define SMMU_CBA2R(n)			(0x800 + 4 * (n))
+/* a context bank (arm-smmu.h; FSRRESTORE is the SMMUv2 architecture's,
+ * and Qualcomm's own interrupt self-test raises a bank's line with it) */
 #define SMMU_CB_SCTLR			0x000
+#define SMMU_CB_TCR2			0x010
+#define SMMU_CB_TTBR0			0x020	/* 64 bits, ASID in 63:48 */
 #define SMMU_CB_TTBR0_LO		0x020
 #define SMMU_CB_TTBR0_HI		0x024
+#define SMMU_CB_TTBR1			0x028
 #define SMMU_CB_TCR			0x030
+#define SMMU_CB_MAIR0			0x038
+#define SMMU_CB_MAIR1			0x03c
+#define SMMU_CB_PAR			0x050	/* 64 bits */
 #define SMMU_CB_FSR			0x058
+#define SMMU_CB_FSRRESTORE		0x05c
+#define SMMU_CB_FAR			0x060	/* 64 bits */
+#define SMMU_CB_FSYNR0			0x068
+#define SMMU_CB_TLBIASID		0x610
+#define SMMU_CB_TLBSYNC			0x7f0
+#define SMMU_CB_TLBSTATUS		0x7f4
+#define SMMU_CB_ATS1PR			0x800	/* 64 bits, written whole */
+#define SMMU_CB_ATS1PW			0x808
+#define SMMU_CB_ATS1UR			0x810
+#define SMMU_CB_ATS1UW			0x818
+#define SMMU_CB_ATSR			0x8f0
 
 #define ID0_SMS				(1u << 27)
+#define ID0_ATOSNS			(1u << 26)
+#define ID0_NUMSIDB(v)			(((v) >> 9) & 0xf)
 #define ID0_NUMSMRG(v)			((v) & 0xff)
 #define ID1_PAGESIZE			(1u << 31)
 #define ID1_NUMPAGENDXB(v)		(((v) >> 28) & 7)
@@ -48,11 +69,48 @@
 #define ID2_IAS(v)			((v) & 0xf)
 #define ID2_OAS(v)			(((v) >> 4) & 0xf)
 #define ID2_UBS(v)			(((v) >> 8) & 0xf)
+#define ID2_PTFS_4K			(1u << 12)
 #define SMR_VALID			(1u << 31)
 #define SMR_MASK(v)			(((v) >> 16) & 0x7fff)
 #define SMR_ID(v)			((v) & 0x7fff)
 #define S2CR_TYPE(v)			(((v) >> 16) & 3)
 #define S2CR_CBNDX(v)			((v) & 0xff)
+#define S2CR_TYPE_TRANS			0
+#define S2CR_TYPE_FAULT			2
+#define S2CR_FIELDS			0x000300ffu	/* TYPE, CBNDX */
+
+/* CBAR of a stage-1 bank, Linux's: S1 with S2 bypassed and the weakest
+ * shareability and memory type (BPSHCFG 3, MEMATTR 0xf), which the tables
+ * override. */
+#define CBAR_S1_BANK			0x0001f300u
+#define CBA2R_VA64			(1u << 0)
+
+#define SCTLR_M				(1u << 0)
+#define SCTLR_TRE			(1u << 1)
+#define SCTLR_AFE			(1u << 2)
+#define SCTLR_CFRE			(1u << 5)
+#define SCTLR_CFIE			(1u << 6)
+#define SCTLR_HUPCF			(1u << 8)
+#define SCTLR_ASIDPNE			(1u << 12)
+
+#define FSR_TF				(1u << 1)
+#define FSR_PF				(1u << 3)
+#define FSR_FAULT			0xc00001feu	/* every fault bit */
+
+/* TCR and TCR2 of an AArch64 stage-1 bank (arm-smmu.h, io-pgtable-arm.c):
+ * no walks through TTBR1, a 4 KiB granule (TG0 0), and a walk that does not
+ * see the processor's caches - outer shareable, non-cacheable both ways. */
+#define TCR_T0SZ(n)			((uint32_t)(n) & 0x3f)
+#define TCR_SH0_OS			(2u << 12)
+#define TCR_EPD1			(1u << 23)
+#define TCR2_AS				(1u << 4)
+#define TCR2_SEP_UPSTREAM		(7u << 15)
+
+#define TLBSTATUS_SACTIVE		(1u << 0)
+#define ATSR_ACTIVE			(1u << 0)
+#define PAR_F				(1ull << 0)
+#define PAR_PA(v)			((v) & 0x0000fffffffff000ull)
+#define PAR_ATTR(v)			((unsigned)((v) >> 56))
 
 /* Qualcomm clock blocks (bytes, within GCC or GPUCC). */
 #define CBCR_ENABLE			(1u << 0)

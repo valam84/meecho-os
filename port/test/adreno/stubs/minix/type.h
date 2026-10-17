@@ -3,6 +3,7 @@
 #define _STUB_MINIX_TYPE_H
 #include <stdint.h>
 #include <stddef.h>
+#include <time.h>
 typedef uint64_t u64_t;
 typedef uint32_t u32_t;
 typedef uint16_t u16_t;

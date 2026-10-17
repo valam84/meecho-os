@@ -31,8 +31,9 @@ $CC -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Werror -O1 -g \
 	-include "$HERE/shim/regs-hook.h" \
 	-D__unused="__attribute__((unused))" \
 	-DREAL_FDT_H="\"$INC/minix/fdt.h\"" \
-	"$HERE/adrtest.c" "$HERE/model.c" \
+	"$HERE/adrtest.c" "$HERE/model.c" "$HERE/smmumodel.c" \
 	"$SRC/adreno_find.c" "$SRC/adreno_run.c" "$SRC/adreno_cc.c" \
-	"$SRC/adreno_hw.c" "$SRC/adreno_tz.c" "$QCOM/qcom_soc.c" \
+	"$SRC/adreno_hw.c" "$SRC/adreno_smmu.c" "$SRC/adreno_pt.c" \
+	"$SRC/adreno_tz.c" "$QCOM/qcom_soc.c" \
 	"$TREE/minix/lib/libsys/fdt.c" -o "$OUT/adreno-test"
 "$OUT/adreno-test" "$@" "$CLOVER" "$OTHER"

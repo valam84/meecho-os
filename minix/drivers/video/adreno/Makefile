@@ -2,7 +2,7 @@
 # Adreno 512, found in the device tree; port/clover/hw-gpu.md)
 PROG=	adreno
 SRCS=	adreno.c adreno_find.c adreno_run.c adreno_cc.c adreno_hw.c \
-	adreno_tz.c qcom_soc.c
+	adreno_smmu.c adreno_pt.c adreno_tz.c qcom_soc.c
 
 FILES=${PROG}.conf
 FILESNAME=${PROG}

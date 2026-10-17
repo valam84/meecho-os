@@ -99,7 +99,10 @@ hw_smmu_report(void)
 	    size_bits(ID2_IAS(id2)), size_bits(ID2_OAS(id2)),
 	    size_bits(ID2_UBS(id2)));
 
-	/* Which entry routes the GPU's stream, and where. */
+	/* Every routing entry, and which one routes the GPU's stream. */
+	for (i = 0; (id0 & ID0_SMS) && i < nsmr && i < 8; i++)
+		log_info(&ad_log, "Q10 sme %u: smr %08x s2cr %08x\n", i,
+		    ad_rd(&ad.smmu, SMMU_SMR(i)), ad_rd(&ad.smmu, SMMU_S2CR(i)));
 	if (id0 & ID0_SMS) {
 		for (i = 0; i < nsmr && i < 128; i++) {
 			smr = ad_rd(&ad.smmu, SMMU_SMR(i));

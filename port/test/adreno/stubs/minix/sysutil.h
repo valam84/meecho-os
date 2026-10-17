@@ -3,4 +3,5 @@
 #ifndef _STUB_MINIX_SYSUTIL_H
 #define _STUB_MINIX_SYSUTIL_H
 void micro_delay(unsigned long micros);
+unsigned sys_hz(void);
 #endif

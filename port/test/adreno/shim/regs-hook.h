@@ -18,6 +18,10 @@
 #include "adreno.h"
 uint32_t model_rd(const struct ad_region *r, uint32_t off);
 void model_wr(const struct ad_region *r, uint32_t off, uint32_t v);
+uint64_t model_rd64(const struct ad_region *r, uint32_t off);
+void model_wr64(const struct ad_region *r, uint32_t off, uint64_t v);
 #define ad_rd(r, off)		model_rd((r), (off))
 #define ad_wr(r, off, v)	model_wr((r), (off), (v))
+#define ad_rd64(r, off)		model_rd64((r), (off))
+#define ad_wr64(r, off, v)	model_wr64((r), (off), (v))
 #endif

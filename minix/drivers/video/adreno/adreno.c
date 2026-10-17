@@ -6,8 +6,9 @@
  *
  *	minix-service up /service/adreno -args "stage=probe tz=1"
  *
- *   stage=   probe (default), cx, gx, gpu, smmu - each one also does the
- *            ones before it
+ *   stage=   probe (default), cx, gx, gpu, smmu, smr, cb0, fault - each
+ *            one also does the ones before it; the last three write the
+ *            SMMU and put it back (adreno_smmu.c)
  *   tz=1     ask TrustZone about the zap shader's calls (Q12)
  *   hold=N   stay N seconds before leaving - to see where it runs
  *            (ps -o cpuid): the stand cannot check "cpu 1", only a machine
@@ -40,7 +41,7 @@ static int
 parse_stage(void)
 {
 	static const char *const names[] = { "probe", "cx", "gx", "gpu",
-	    "smmu" };
+	    "smmu", "smr", "cb0", "fault" };
 	char value[16];
 	unsigned i;
 
@@ -51,8 +52,8 @@ parse_stage(void)
 			stage = (int)i;
 			return OK;
 		}
-	log_warn(&ad_log, "stage=%s is none of probe, cx, gx, gpu, smmu\n",
-	    value);
+	log_warn(&ad_log, "stage=%s is none of probe, cx, gx, gpu, smmu, smr, "
+	    "cb0, fault\n", value);
 	return EINVAL;
 }
 

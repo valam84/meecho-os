@@ -2,8 +2,9 @@
  * The stages (adreno.h), in order, each one only if the one before it
  * answered: what the tree says; the clock blocks as found (Q1-Q3); then,
  * from stage cx on, domains and clocks brought up (Q4), the GPU (Q5-Q8) and
- * the SMMU (Q9, Q10) read, everything undone (Q11); TrustZone (Q12) when
- * asked.  The questions are port/clover/hw-gpu.md, §12.
+ * the SMMU (Q9, Q10) read; from stage smr on, the SMMU written (Q13-Q16)
+ * and put back (Q17); everything undone (Q11); TrustZone (Q12) when asked.
+ * The questions are port/clover/hw-gpu.md, §12 and §14.
  */
 
 #include "adreno.h"
@@ -92,6 +93,11 @@ adreno_run(const void *dtb, int stage, int tz)
 		hw_gpu_report();
 	if (r == OK && stage >= AD_SMMU)
 		hw_smmu_report();
+	if (r == OK && stage >= AD_SMR)
+		r = smmu_smr_test();
+	if (r == OK && stage >= AD_CB0)
+		r = smmu_cb0(stage >= AD_FAULT);
+	smmu_undo();		/* while the SMMU is still powered */
 	cc_power_down();
 	return r;
 }

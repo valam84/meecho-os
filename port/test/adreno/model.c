@@ -23,7 +23,8 @@
  *   GPU     только при CFG_AHB, обеих BIMC, CX, GX и такте gfx3d.
  *           ALWAYSON_COUNTER идёт от времени модели на 19,2 МГц,
  *           CP_SCRATCH хранит записанное.
- *   SMMU    только при CFG_AHB, обеих BIMC, CX и GX.
+ *   SMMU    только при CFG_AHB, обеих BIMC, CX и GX; что внутри —
+ *           smmumodel.c (регистры, таблицы, TLB, линия банка 0).
  *
  * Время — только micro_delay() службы; отложенные изменения применяются
  * при каждом обращении и каждой задержке.
@@ -56,7 +57,7 @@ int model_verbose;
 static uint8_t gcc[GCC_SZ] __attribute__((aligned(8)));
 static uint8_t gpucc[GPUCC_SZ + 8] __attribute__((aligned(8)));
 static uint8_t gpu[GPU_SZ] __attribute__((aligned(8)));
-static uint8_t smmu[SMMU_SZ] __attribute__((aligned(8)));
+#define smmu		smmu_window()	/* smmumodel.c: registers, tables */
 
 /* GCC */
 #define G_IFACE		0x71004
@@ -154,11 +155,29 @@ hang(const char *fmt, ...)
 	longjmp(model_hang, 1);
 }
 
+/* The same, for smmumodel.c: a violation ends the scenario. */
+void
+model_fail(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(violation, sizeof(violation), fmt, ap);
+	va_end(ap);
+	longjmp(model_hang, 1);
+}
+
 void
 micro_delay(unsigned long us)
 {
 	now_us += us;
 	apply_pending();
+}
+
+unsigned long long
+model_now_us(void)
+{
+	return now_us;
 }
 
 static int gcc_on(uint32_t off) { return !(*w32(gcc, off) & CBCR_OFF); }
@@ -326,10 +345,39 @@ model_rd(const struct ad_region *r, uint32_t off)
 	if (r->base == smmu) {
 		if ((off_one = bus_off(1)) != NULL)
 			hang("read of smmu +0x%x with %s off", off, off_one);
-		return *w32(smmu, off);
+		return smmu_rd(off);
 	}
 	hang("read of an unknown region %s", r->name);
 	return 0;
+}
+
+uint64_t
+model_rd64(const struct ad_region *r, uint32_t off)
+{
+	const char *off_one;
+
+	apply_pending();
+	if (off + 8 > r->size || r->base != smmu)
+		hang("%s +0x%x: a 64-bit read the model does not know", r->name,
+		    off);
+	if ((off_one = bus_off(1)) != NULL)
+		hang("read of smmu +0x%x with %s off", off, off_one);
+	return smmu_rd64(off);
+}
+
+void
+model_wr64(const struct ad_region *r, uint32_t off, uint64_t v)
+{
+	const char *off_one;
+
+	apply_pending();
+	writes++;
+	if (off + 8 > r->size || r->base != smmu)
+		hang("%s +0x%x: a 64-bit write the model does not know", r->name,
+		    off);
+	if ((off_one = bus_off(1)) != NULL)
+		hang("write of smmu +0x%x with %s off", off, off_one);
+	smmu_wr64(off, v);
 }
 
 void
@@ -357,8 +405,12 @@ model_wr(const struct ad_region *r, uint32_t off, uint32_t v)
 		*w32(gpu, off) = v;
 		return;
 	}
-	if (r->base == smmu)
-		hang("write of smmu +0x%x: this stage writes none", off);
+	if (r->base == smmu) {
+		if ((off_one = bus_off(1)) != NULL)
+			hang("write of smmu +0x%x with %s off", off, off_one);
+		smmu_wr(off, v);
+		return;
+	}
 	hang("write of an unknown region %s", r->name);
 }
 
@@ -498,7 +550,7 @@ model_same_as_start(char *why, size_t size)
 			    rcgs[i], cfg[i], start.cfg[i]);
 			return 0;
 		}
-	return 1;
+	return smmu_model_same(why, size);
 }
 
 void
@@ -515,7 +567,6 @@ model_reset(const struct scenario *s)
 	memset(gcc, 0, sizeof(gcc));
 	memset(gpucc, 0, sizeof(gpucc));
 	memset(gpu, 0, sizeof(gpu));
-	memset(smmu, 0, sizeof(smmu));
 
 	/* GCC, as the boot loader may leave it. */
 	*w32(gcc, G_IFACE) = s->iface_on ? CBCR_ENABLE : CBCR_OFF;
@@ -551,16 +602,8 @@ model_reset(const struct scenario *s)
 	*w32(gpu, A5XX(A5XX_RBBM_SECVID_TRUST_CNTL)) = 0x1;
 	*w32(gpu, A5XX(A5XX_CP_SCRATCH_REG(0))) = 0x12345678;
 
-	/* SMMU: 5 banks, 16 SMRs, 4K pages, 36-bit IPA/PA, 48-bit VA;
-	 * SID 0 routed by SMR 0 to bank 0. */
-	*w32(smmu, SMMU_SCR0) = 0x1;
-	*w32(smmu, SMMU_ID0) = 0x48000010;
-	*w32(smmu, SMMU_ID1) = 0x20000005;
-	*w32(smmu, SMMU_ID2) = 0x00000511;
-	*w32(smmu, SMMU_SMR(0)) = SMR_VALID;
-	*w32(smmu, SMMU_S2CR(0)) = 0;
-	*w32(smmu, 0x1000 + SMMU_CBAR(0)) = 0x00010000;
-	*w32(smmu, 0x8000 + SMMU_CB_SCTLR) = 0;
+	/* SMMU: smmumodel.c, by the scenario. */
+	smmu_model_reset(s);
 
 	model_log_reset();
 	snapshot(start.gcc_bits, start.p_bits, start.cfg);

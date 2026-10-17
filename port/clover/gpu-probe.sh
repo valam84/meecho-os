@@ -11,7 +11,8 @@
 #		(default D:/minix/clover-flash/gpu)
 #	-l LOG	the log (default DIR/probe-<time>.txt)
 #	STAGE	"probe+tz", "probe", "cx", "gx", "gpu", "smmu" (default all of
-#		them, in that order)
+#		them, in that order); "smr", "cb0", "fault" write the SMMU and
+#		put it back (hw-gpu.md, §14) - only when asked for by name
 #
 # The tablet must be up under MEECHO with its root on eMMC and sshd -
 # after port/clover/cycle.sh, whose image also carries the kernel with
@@ -70,7 +71,7 @@ say "$sums"
 for s in "$@"; do
 	case $s in
 	probe+tz) args="stage=probe tz=1" ;;
-	probe|cx|gx|gpu|smmu) args="stage=$s" ;;
+	probe|cx|gx|gpu|smmu|smr|cb0|fault) args="stage=$s" ;;
 	*) say "FAIL: no stage $s"; exit 2 ;;
 	esac
 	say "--- $args"

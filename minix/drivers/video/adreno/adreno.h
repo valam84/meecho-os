@@ -12,7 +12,11 @@
  *                  the device tree
  *   adreno_run.c   the stages, in order, each one gated on the last
  *   adreno_cc.c    GCC and GPUCC: looks, clocks, power domains, undo
- *   adreno_hw.c    the GPU's and the SMMU's own registers
+ *   adreno_hw.c    the GPU's and the SMMU's own registers, read
+ *   adreno_smmu.c  the SMMU written: a stream-matching entry, context bank
+ *                  0 with tables the SMMU itself translates through, the
+ *                  bank's fault line - and all of it put back
+ *   adreno_pt.c    the GPU's page tables (LPAE stage 1, 4 KiB pages)
  *   adreno_tz.c    TrustZone: is the way to the zap shader there
  */
 #ifndef _ADRENO_H
@@ -44,6 +48,22 @@ static inline void
 ad_wr(const struct ad_region *r, uint32_t off, uint32_t v)
 {
 	*(volatile uint32_t *)(r->base + off) = v;
+}
+
+/*
+ * The SMMU's 64-bit registers, one access each: a translation operation
+ * (ATS1*) starts on its write, and Linux writes those whole.
+ */
+static inline uint64_t
+ad_rd64(const struct ad_region *r, uint32_t off)
+{
+	return *(volatile uint64_t *)(r->base + off);
+}
+
+static inline void
+ad_wr64(const struct ad_region *r, uint32_t off, uint64_t v)
+{
+	*(volatile uint64_t *)(r->base + off) = v;
 }
 
 #define AD_MAXCLK	8
@@ -110,6 +130,10 @@ extern struct adreno ad;
 #define AD_GX		2	/* + the GX domain, its clocks at 19.2 MHz */
 #define AD_GPU		3	/* + the GPU's registers, one scratch write */
 #define AD_SMMU		4	/* + the SMMU's registers, read only */
+#define AD_SMR		5	/* + a free SMR and its S2CR written, put back */
+#define AD_CB0		6	/* + context bank 0 with tables, translations by
+				 * the SMMU itself, SID 0 routed to it a while */
+#define AD_FAULT	7	/* + a fault raised in the bank: its line */
 
 /* adreno_find.c */
 int adreno_find(const void *dtb, struct adreno_dt *dt);
@@ -133,5 +157,25 @@ void hw_smmu_report(void);		/* Q9, Q10 */
 
 /* adreno_tz.c */
 void tz_report(void);			/* Q12 */
+
+/* adreno_smmu.c */
+int smmu_smr_test(void);		/* Q13 */
+int smmu_cb0(int fault);		/* Q14..Q16 */
+void smmu_undo(void);			/* Q17 */
+
+/* adreno_pt.c: one address space of the GPU. */
+#define AD_PT_READ	1
+#define AD_PT_WRITE	2
+struct ad_ptab;
+struct ad_pt {
+	struct ad_ptab *root;
+	unsigned ias, oas;		/* input and output address bits */
+	int start;			/* the level the walk starts at */
+};
+int pt_init(struct ad_pt *pt, unsigned ias, unsigned oas);
+int pt_map(struct ad_pt *pt, uint64_t va, uint64_t pa, int prot);
+int pt_unmap(struct ad_pt *pt, uint64_t va);
+uint64_t pt_root(const struct ad_pt *pt);
+void pt_free(struct ad_pt *pt);
 
 #endif /* _ADRENO_H */

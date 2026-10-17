@@ -134,6 +134,7 @@
 /* The types this milestone uses; the rest arrive with enumeration. */
 #define XHCI_TRB_LINK		6
 #define XHCI_TRB_ENABLE_SLOT	9
+#define XHCI_TRB_DISABLE_SLOT	10
 #define XHCI_TRB_ADDRESS_DEVICE	11
 #define XHCI_TRB_CONFIGURE_EP	12
 #define XHCI_TRB_EVALUATE_CTX	13
@@ -263,6 +264,13 @@
  */
 #define XHCI_SLOT_TT_SLOT(s)	((s) & 0xff)
 #define XHCI_SLOT_TT_PORT(p)	(((p) & 0xff) << 8)
+/*
+ * Word 0 again: the translator above is one of several, one per port of a
+ * multi-TT hub.  This driver leaves such a hub in its single-TT setting
+ * (alternate 0 of its interface, which is what it is configured in) and so
+ * never sets this bit; it is named because the model checks it stays clear.
+ */
+#define XHCI_SLOT_MTT		(1u << 25)
 /*
  * And what the controller is told about a device that IS a hub: that it
  * is one (word 0), how many ports it has (word 1), and how long its

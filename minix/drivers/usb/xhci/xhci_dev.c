@@ -60,6 +60,21 @@ ctx_word(vir_bytes base, unsigned ctx, unsigned word)
 #define IN_SLOT		1
 #define IN_EP0		2
 
+/*
+ * Word 2 of the slot context for a device: the transaction translator, for
+ * a low- or full-speed device that has one above it.  Written in two places
+ * - Address Device and Configure Endpoint both hand the controller a whole
+ * slot context - and so worked out in one.
+ */
+static uint32_t
+slot_tt(const struct xhci_device *dev)
+{
+	if (dev->tt_slot == 0 || (dev->speed != 1 && dev->speed != 2))
+		return 0;
+	return XHCI_SLOT_TT_SLOT(dev->tt_slot) |
+	    XHCI_SLOT_TT_PORT(dev->tt_port);
+}
+
 static void
 build_input_context(struct xhci_device *dev)
 {
@@ -73,12 +88,11 @@ build_input_context(struct xhci_device *dev)
 	    XHCI_INPUT_ADD_SLOT | XHCI_INPUT_ADD_EP0;
 
 	/*
-	 * The slot context.  The route string is zero because this device
-	 * is on a root hub port rather than behind a hub; the day something
-	 * is behind the hub, this is the field that says where.  "Context
-	 * entries" is the index of the last endpoint context that means
-	 * anything, which for a device that only has its control endpoint
-	 * is 1.
+	 * The slot context.  The route string says where the device hangs:
+	 * zero on a root hub port, a nibble per hub on the way down behind
+	 * one (xhci_device_attach_hub()).  "Context entries" is the index of
+	 * the last endpoint context that means anything, which for a device
+	 * that only has its control endpoint is 1.
 	 */
 	w = ctx_word(dev->in_ctx, IN_SLOT, 0);
 	w[0] = XHCI_SLOT_ROUTE(dev->route) | XHCI_SLOT_SPEED(dev->speed) |
@@ -94,10 +108,11 @@ build_input_context(struct xhci_device *dev)
 	 * drive this was first run against is high speed and needs none of
 	 * it - which is exactly why it is written now, while the case that
 	 * needs it is still hypothetical and cheap to reason about.
+	 *
+	 * "Which hub" is the nearest high-speed one, which is not always
+	 * the hub the device hangs off; see tt_slot in xhci.h.
 	 */
-	if (dev->parent_slot != 0 && dev->speed != 3 && dev->speed < 4)
-		w[2] = XHCI_SLOT_TT_SLOT(dev->parent_slot) |
-		    XHCI_SLOT_TT_PORT(dev->parent_port);
+	w[2] = slot_tt(dev);
 
 	/*
 	 * The control endpoint.  Three errors before it gives up, the type
@@ -577,9 +592,7 @@ configure_endpoints(struct xhci_device *dev)
 	w[0] = XHCI_SLOT_ROUTE(dev->route) | XHCI_SLOT_SPEED(dev->speed) |
 	    XHCI_SLOT_ENTRIES(last);
 	w[1] = XHCI_SLOT_RHPORT(dev->port + 1);
-	if (dev->parent_slot != 0 && dev->speed != 3 && dev->speed < 4)
-		w[2] = XHCI_SLOT_TT_SLOT(dev->parent_slot) |
-		    XHCI_SLOT_TT_PORT(dev->parent_port);
+	w[2] = slot_tt(dev);
 
 	xhci_cache(CACHE_CLEAN, (void *)dev->in_ctx, XHCI_PAGE,
 	    "an input context");
@@ -641,6 +654,7 @@ xhci_set_interface(struct xhci_device *dev, unsigned iface, unsigned alt)
 	const uint8_t *eps[XHCI_MAX_EPS];
 	const uint8_t *cfg = dev->cfg;
 	struct xhci_ep *added[XHCI_MAX_EPS];
+	struct xhci_ring dropped[XHCI_MAX_EPS];
 	unsigned off, i, n = 0, nadded = 0, ndropped = 0, len = dev->cfg_len;
 	uint32_t drop = 0, add = XHCI_INPUT_ADD_SLOT, *in, *out;
 	int found = 0, in_it = 0, r;
@@ -665,15 +679,24 @@ xhci_set_interface(struct xhci_device *dev, unsigned iface, unsigned alt)
 		return EINVAL;
 	}
 
-	/* Out with what the interface had. */
+	/*
+	 * Out with what the interface had - from the driver's table now, and
+	 * from memory only once the controller has let go of the endpoints.
+	 * Their rings were freed here, before the command that drops them,
+	 * and the fresh rings of the new setting are allocated straight
+	 * after: the page the controller was still reading an old endpoint
+	 * from could come back as a new endpoint's ring before the command
+	 * had run.  The model of port/test/xhci holds that against a driver
+	 * since the dock's subtree taught it to watch for memory freed under
+	 * an enabled slot.
+	 */
 	for (i = 0; i < dev->neps; i++) {
 		struct xhci_ep *ep = &dev->ep[i];
 
 		if (ep->dci == 0 || ep->iface != iface)
 			continue;
 		drop |= 1U << ep->dci;
-		ndropped++;
-		xhci_ring_free(&ep->ring);
+		dropped[ndropped++] = ep->ring;
 		memset(ep, 0, sizeof(*ep));
 	}
 
@@ -712,6 +735,12 @@ xhci_set_interface(struct xhci_device *dev, unsigned iface, unsigned alt)
 	if ((r = xhci_cmd((uint32_t)dev->in_ctx_phys, 0, 0,
 	    XHCI_TRB_TYPE(XHCI_TRB_CONFIGURE_EP) |
 	    XHCI_TRB_SLOT_ID(dev->slot), NULL)) != OK) {
+		/*
+		 * Refused, the command changed nothing, and the old
+		 * endpoints may still be the controller's: their rings are
+		 * kept - lost to the driver, a page each, rather than freed
+		 * under it.
+		 */
 		log_warn(&xhci_log, "slot %u: the controller would not take "
 		    "interface %u alternate %u (%d); it has no endpoints now\n",
 		    dev->slot, iface, alt, r);
@@ -721,6 +750,9 @@ xhci_set_interface(struct xhci_device *dev, unsigned iface, unsigned alt)
 		}
 		return r;
 	}
+
+	for (i = 0; i < ndropped; i++)
+		xhci_ring_free(&dropped[i]);
 
 	if (iface < sizeof(dev->alt))
 		dev->alt[iface] = (uint8_t)alt;
@@ -1367,8 +1399,7 @@ speed_word(unsigned psiv)
  */
 static int
 device_attach(struct xhci_device *dev, unsigned port, unsigned speed,
-	unsigned route, unsigned tier, unsigned parent_slot,
-	unsigned parent_port)
+	const struct xhci_device *hub, unsigned hubport)
 {
 	struct usb_device_descriptor *desc;
 	struct xhci_trb ev;
@@ -1377,12 +1408,31 @@ device_attach(struct xhci_device *dev, unsigned port, unsigned speed,
 	int r;
 
 	memset(dev, 0, sizeof(*dev));
+	dev->id = xhci_new_id();
 	dev->port = port;
 	dev->speed = speed;
-	dev->route = route;
-	dev->tier = tier;
-	dev->parent_slot = parent_slot;
-	dev->parent_port = parent_port;
+
+	/*
+	 * Where it hangs, when it hangs off a hub.  The route string is the
+	 * hub's plus this port, four bits per tier, saying which port to
+	 * take at each hub on the way down; the controller walks it and the
+	 * driver never addresses anything.  The translator is the hub's own
+	 * when the hub is high speed, and whatever the hub itself goes
+	 * through when it is not.
+	 */
+	if (hub != NULL) {
+		dev->route = hub->route | ((hubport & 0xf) << (4 * hub->tier));
+		dev->tier = hub->tier + 1;
+		dev->hub_id = hub->id;
+		dev->hub_port = hubport;
+		if (hub->speed == 3) {
+			dev->tt_slot = hub->slot;
+			dev->tt_port = hubport;
+		} else {
+			dev->tt_slot = hub->tt_slot;
+			dev->tt_port = hub->tt_port;
+		}
+	}
 
 	/*
 	 * The control endpoint's packet size before anything has been
@@ -1518,13 +1568,46 @@ xhci_device_attach(unsigned port, struct xhci_device *dev)
 	uint32_t portsc = xhci_rd(xhci.regs, xhci.caplength +
 	    XHCI_PORTSC(port));
 
-	return device_attach(dev, port, XHCI_PORTSC_SPEED(portsc), 0, 0, 0, 0);
+	return device_attach(dev, port, XHCI_PORTSC_SPEED(portsc), NULL, 0);
 }
 
+/*
+ * A device that has gone, or never got going: its slot back to the
+ * controller, and its memory back to the system - in that order.
+ *
+ * The slot was not given back at all until a second hub was driven.  With
+ * one hub the only device that left was one pulled out of it, and a slot
+ * the controller still held for it cost nothing anybody saw.  A dock is a
+ * hub and three or four devices at once, pulled out and plugged in
+ * together: every round of that left the controller holding slots whose
+ * contexts - in memory this driver had freed and would hand to the next
+ * device - it still considered its own, and Enable Slot would in the end
+ * have had nothing left to give.  Disable Slot (4.6.4) is the command that
+ * tells it the slot is over; the array entry goes back to zero after it,
+ * as the specification has it and as Linux does (xhci_free_virt_device()).
+ *
+ * A Disable Slot that fails is reported and the memory freed anyway: the
+ * device is gone, and keeping its memory would not make the controller any
+ * less confused.
+ */
 void
 xhci_device_free(struct xhci_device *dev)
 {
 	unsigned i;
+
+	if (dev->slot != 0) {
+		uint64_t *dcbaa = (uint64_t *)xhci.dcbaa;
+
+		if (xhci_cmd(0, 0, 0, XHCI_TRB_TYPE(XHCI_TRB_DISABLE_SLOT) |
+		    XHCI_TRB_SLOT_ID(dev->slot), NULL) != OK)
+			log_warn(&xhci_log, "slot %u: the controller would not "
+			    "give it up\n", dev->slot);
+		if (dcbaa != NULL && dev->slot <= xhci.nslots) {
+			dcbaa[dev->slot] = 0;
+			xhci_cache(CACHE_CLEAN, &dcbaa[dev->slot],
+			    sizeof(dcbaa[0]), "a dcbaa entry");
+		}
+	}
 
 	if (dev->in_ctx != 0)
 		free_contig((void *)dev->in_ctx, XHCI_PAGE);
@@ -1545,28 +1628,29 @@ xhci_device_free(struct xhci_device *dev)
  * Nothing found it by looking at a register.  The hub driver polls its own
  * ports over the wire, resets the one that has something on it, and tells
  * this driver the port number and the speed - so this is the entry point
- * that a hub's news arrives at, and the only difference from a device on a
- * root port is two fields.
+ * that a hub's news arrives at (xhci_hub_port()), and the difference from
+ * a device on a root port is where it hangs: the route string, the hub and
+ * the translator, all worked out in device_attach().  The root hub port
+ * stays that of the hub at the top - the whole chain hangs off it.
  *
- * The route string is the first: four bits per tier, saying which port to
- * take at each hub on the way down.  The controller walks it; the driver
- * never addresses anything.  The second is the root hub port, which stays
- * that of the hub at the top - the whole chain hangs off it.
+ * Five tiers below the root port is as deep as the route string goes, and
+ * as deep as USB allows (USB 2.0, 4.1.1: five hubs between the host and a
+ * device).  A port number above fifteen does not fit its nibble.
  */
 int
 xhci_device_attach_hub(struct xhci_device *hub, unsigned hubport,
 	unsigned speed, struct xhci_device *dev)
 {
-	unsigned route;
-
 	if (hub->tier >= 5) {
 		log_warn(&xhci_log, "a hub five tiers down; USB does not go "
 		    "that deep\n");
 		return EINVAL;
 	}
+	if (hubport == 0 || hubport > 15) {
+		log_warn(&xhci_log, "hub port %u: not a number a route string "
+		    "can carry\n", hubport);
+		return EINVAL;
+	}
 
-	route = hub->route | ((hubport & 0xf) << (4 * hub->tier));
-
-	return device_attach(dev, hub->port, speed, route, hub->tier + 1,
-	    hub->slot, hubport);
+	return device_attach(dev, hub->port, speed, hub, hubport);
 }

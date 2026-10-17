@@ -36,7 +36,7 @@
  *
  * (Both paragraphs describe the first version.  Transfers have since
  * become asynchronous - see "out" below - and a device goes to the driver
- * its interfaces name, wants().)
+ * its interfaces name, xhci_wants() in xhci_tree.c.)
  *
  * Interrupt IN transfers are the one kind that is not one-at-a-time, and
  * see "intr" below for why: a keyboard's transfer finishes when a key is
@@ -116,7 +116,7 @@ xhci_urb_busy(void)
 	return out.busy;
 }
 
-static void hub_news(message *m);
+static int hub_news(message *m);
 
 /*
  * Where the time goes, in microseconds, because guessing at that is how
@@ -256,17 +256,6 @@ static struct intr {
 	    __attribute__((aligned(8)));
 } intr[MAX_INTR];
 
-struct xhci_device *
-xhci_device_by_id(unsigned id)
-{
-	unsigned i;
-
-	for (i = 0; i < XHCI_MAX_PORTS; i++)
-		if (xhci.dev[i].slot != 0 && xhci.dev[i].slot == id)
-			return &xhci.dev[i];
-	return NULL;
-}
-
 static void
 reply(endpoint_t ep, long result, long urb_id)
 {
@@ -338,64 +327,18 @@ client_add(endpoint_t ep, const char *name)
 }
 
 /*
- * Which driver handles this device.
- *
- * This is the job devman does in the system this stack came from: it reads
- * config files that match a device's class against a driver's binary.
- * There is no devman here yet, so the matching is a table of three lines -
- * and it has to exist rather than announcing to everybody, because a
- * driver told about a device it does not handle does not politely decline.
- * The hub driver panics on the second device it is offered.
- *
- * A keyboard is an interface, not a device: class 3 (HID), subclass 1
- * (boot interface), protocol 1 (keyboard), on whichever interface it is.
- * The device's own class is 0 on every keyboard seen so far.  A mouse is
- * the same with protocol 2.
- *
- * So the question is not "which driver" but "does this device want this
- * driver": a receiver for a keyboard and a mouse is one device with both
- * interfaces, and both drivers are told about it - each then speaks to
- * its own interface, and transfers from the two are kept apart by the
- * endpoint, which is the controller's business.  A hub or a flash drive
- * wants exactly one.
- *
- * CDC Ethernet is an interface too: class 2 (communications), subclass 6
- * (Ethernet networking), protocol 0, the one Linux's cdc_ether binds.  The
- * device's own class is 2 on Linux's gadget and on the Mi Pad 4's
- * function, 0 on adapters.
+ * Which driver handles which device is xhci_wants() (xhci_tree.c), where
+ * the stand can reach it.
  */
-static const char *const drivers[] = {
-	"usb_hub", "usb_storage", "usb_kbd", "usb_mouse", "usb_ecm"
-};
-
 static int
-has_iface(const struct xhci_device *dev, unsigned class, unsigned subclass,
-	unsigned protocol)
+client_of(endpoint_t ep)
 {
 	unsigned i;
 
-	for (i = 0; i < dev->niface; i++)
-		if (dev->iface[i].class == class &&
-		    dev->iface[i].subclass == subclass &&
-		    dev->iface[i].protocol == protocol)
-			return 1;
-	return 0;
-}
-
-static int
-wants(const struct xhci_device *dev, const char *driver)
-{
-	if (dev->class == 9)
-		return strcmp(driver, "usb_hub") == 0;
-	if (dev->class == 8 || dev->iface_class == 8)
-		return strcmp(driver, "usb_storage") == 0;
-	if (strcmp(driver, "usb_kbd") == 0)
-		return has_iface(dev, 3, 1, 1);
-	if (strcmp(driver, "usb_mouse") == 0)
-		return has_iface(dev, 3, 1, 2);
-	if (strcmp(driver, "usb_ecm") == 0)
-		return has_iface(dev, 2, 6, 0);
-	return 0;
+	for (i = 0; i < nclients; i++)
+		if (clients[i].ep == ep)
+			return (int)i;
+	return -1;
 }
 
 /*
@@ -422,12 +365,13 @@ announce_to(struct xhci_device *dev, unsigned who)
 
 	memset(&m, 0, sizeof(m));
 	m.m_type = USB_ANNOUCE_DEV;
-	m.USB_DEV_ID = (long)dev->slot;
+	m.USB_DEV_ID = (long)dev->id;
 	m.USB_INTERFACES = (long)dev->interfaces;
 
-	log_info(&xhci_log, "announcing device %u (class %u/%u, interfaces "
-	    "0x%x) to \"%s\"\n", dev->slot, dev->class, dev->iface_class,
-	    dev->interfaces, clients[who].name);
+	log_info(&xhci_log, "announcing device %u (slot %u, route 0x%x, class "
+	    "%u/%u, interfaces 0x%x) to \"%s\"\n", dev->id, dev->slot,
+	    dev->route, dev->class, dev->iface_class, dev->interfaces,
+	    clients[who].name);
 
 	if (asynsend3(clients[who].ep, &m, AMF_NOREPLY) != OK)
 		log_warn(&xhci_log, "the announcement to %d did not go\n",
@@ -440,33 +384,63 @@ void
 xhci_urb_announce(struct xhci_device *dev)
 {
 	unsigned i;
-	int handled = 0;
 
 	if (nclients == 0) {
-		log_info(&xhci_log, "no driver is listening yet; the device "
-		    "on port %u will be announced when one is\n",
-		    dev->port + 1);
+		log_info(&xhci_log, "no driver is listening yet; device %u "
+		    "will be announced when one is\n", dev->id);
 		return;
 	}
 
-	for (i = 0; i < sizeof(drivers) / sizeof(drivers[0]); i++)
-		if (wants(dev, drivers[i]))
-			handled = 1;
-	if (!handled) {
+	if (!xhci_wanted(dev)) {
 		log_info(&xhci_log, "device %u is class %u/%u, which no "
-		    "driver here handles\n", dev->slot, dev->class,
+		    "driver here handles\n", dev->id, dev->class,
 		    dev->iface_class);
 		return;
 	}
 
 	for (i = 0; i < nclients; i++)
-		if (wants(dev, clients[i].name))
+		if (xhci_wants(dev, clients[i].name))
 			announce_to(dev, i);
 
 	if (!dev->announced)
 		log_info(&xhci_log, "device %u wants a driver that is not "
 		    "running; it will be announced when one starts\n",
-		    dev->slot);
+		    dev->id);
+}
+
+/*
+ * And that it has gone.  Nothing sent this until there was a second hub:
+ * a driver learnt that its device had gone from ENODEV on its next
+ * request, which was enough for a keyboard pulled out.  It is not enough
+ * for the hub driver, which keeps a thread per hub and must stop the one
+ * whose hub went - and stop it before the hub's slot, given back to the
+ * controller, can belong to a new hub.  Posted with AMF_NOREPLY like the
+ * announcement: the driver may be in a sendrec of its own.
+ */
+static void
+withdraw(struct xhci_device *dev)
+{
+	message m;
+	unsigned i;
+
+	if (!dev->announced)
+		return;
+
+	for (i = 0; i < nclients; i++) {
+		if (!xhci_wants(dev, clients[i].name))
+			continue;
+
+		memset(&m, 0, sizeof(m));
+		m.m_type = USB_WITHDRAW_DEV;
+		m.USB_DEV_ID = (long)dev->id;
+
+		log_info(&xhci_log, "withdrawing device %u from \"%s\"\n",
+		    dev->id, clients[i].name);
+		if (asynsend3(clients[i].ep, &m, AMF_NOREPLY) != OK)
+			log_warn(&xhci_log, "the withdrawal to %d did not go\n",
+			    clients[i].ep);
+	}
+	dev->announced = 0;
 }
 
 /*
@@ -871,12 +845,35 @@ intr_event(const struct xhci_trb *ev)
 
 /*
  * A device is going away: whoever was waiting on one of its interrupt
- * endpoints is told now, with ENODEV, rather than never.
+ * endpoints is told now, with ENODEV, rather than never; so is the client
+ * whose one-at-a-time transfer it is; and the drivers it was given hear it
+ * is gone.
+ *
+ * The one-at-a-time transfer was not looked at here until there was a
+ * second hub, and with one it never needed to be: the device leaving was
+ * one on the hub's port, and the request in flight was the hub driver's -
+ * which had just sent the news, so had none.  With two hubs the request in
+ * flight can be one for the dock (its driver polling it) or for a device
+ * behind it, while the news of the dock leaving comes from the hub above.
+ * Its device is about to be freed, the controller will never finish it,
+ * and finish() would have read the freed device's buffer; so it ends here,
+ * posted rather than sent, since the client may be the very driver whose
+ * sendrec this news arrived in.
  */
 void
 xhci_urb_device_gone(struct xhci_device *dev)
 {
 	unsigned i;
+
+	if (out.busy && out.dev == dev) {
+		log_info(&xhci_log, "the transfer for %d on device %u ends: "
+		    "the device is gone\n", out.client, dev->id);
+		out.busy = 0;
+		xhci_alarm(0, NULL);
+		complete_posted(out.client, out.gid, out.gsize, urbmem, out.id,
+		    ENODEV, 0);
+		urbstat.last_done = now();
+	}
 
 	for (i = 0; i < MAX_INTR; i++) {
 		struct intr *it = &intr[i];
@@ -888,6 +885,8 @@ xhci_urb_device_gone(struct xhci_device *dev)
 			complete_posted(it->client, it->gid, it->gsize,
 			    it->block, it->id, ENODEV, 0);
 	}
+
+	withdraw(dev);
 }
 
 /*
@@ -1279,85 +1278,72 @@ send_urb(message *m)
 }
 
 /*
- * The hub driver saying that something appeared on one of its ports.
+ * The hub driver saying that something appeared on one of its ports, or
+ * went from it.
  *
  * This is the only way a device behind a hub is ever found: the root ports
  * have registers a driver can read, and everything below them is reached by
  * asking the hub over the wire.  The hub driver does that polling, resets
  * the port itself, and sends this - the speed it saw and the port it saw it
- * on.
+ * on, and which hub (USB_INFO_DEV, its USB_DEV_ID).
  *
- * Which hub it means is not in the message: the client library drops the
- * device when it sends this, so the hub is identified by who is talking.
- * With one hub driver that is exact.  With two it would not be, and the
- * answer then is the same as for announcements - a matchmaker that knows
- * which driver holds which device, which this driver does not have yet.
+ * The hub used to be "the last device of class 9 in the table", because
+ * the client library dropped the device when it sent this.  With one hub
+ * that was exact.  With a dock behind the board's hub it is wrong half the
+ * time, and wrong in the worst way: news about the dock's port 1 attached
+ * the dock's Ethernet chip under the board's hub, with the route string of
+ * a port where something else is.  So the news names its hub now, and it
+ * is believed only from the driver the hub was given to - news about a hub
+ * from a driver that does not drive hubs is refused out loud, as is news
+ * naming something that is not a hub.
+ *
+ * News about a hub this driver does not have any more is the hub driver
+ * not yet knowing: the dock went, its withdrawal is on the way, and its
+ * thread finished a poll first.  That is told quietly and dropped.
+ *
+ * Every answer to a client of the library is zero - libusb panics on
+ * anything else - so a refusal is a line in the log, not an error code.
  */
-static void
+static int
 hub_news(message *m)
 {
-	struct xhci_device *hub = NULL, *dev = NULL;
+	struct xhci_device *hub, *dev;
 	unsigned port = (unsigned)m->USB_INFO_VALUE;
-	unsigned type = (unsigned)m->USB_INFO_TYPE;
-	unsigned speed, i;
+	unsigned news = (unsigned)m->USB_INFO_TYPE;
+	unsigned id = (unsigned)m->USB_INFO_DEV;
+	int who;
 
-	/* The hub this driver was told about: the one of class 9. */
-	for (i = 0; i < XHCI_MAX_PORTS; i++)
-		if (xhci.dev[i].slot != 0 && xhci.dev[i].class == 9)
-			hub = &xhci.dev[i];
-
-	if (hub == NULL) {
-		log_warn(&xhci_log, "news about hub port %u, and no hub is "
-		    "known\n", port);
-		return;
+	if ((who = client_of(m->m_source)) < 0) {
+		log_warn(&xhci_log, "hub news from %d, which has not said "
+		    "hello; refused\n", m->m_source);
+		return EPERM;
 	}
 
-	/*
-	 * The speeds the hub driver reports are its own three constants, in
-	 * the order low, full, high; the fourth is a disconnection.  They
-	 * are turned into the identifiers the controller uses, which happen
-	 * to run in a different order - low is 2 and full is 1 - and a
-	 * table of three is clearer than arithmetic that happens to work.
-	 */
-	switch (type) {
-	case 0:	speed = 2; break;		/* low */
-	case 1:	speed = 1; break;		/* full */
-	case 2:	speed = 3; break;		/* high */
-	default:
-		log_info(&xhci_log, "hub port %u: device gone\n", port);
-		for (i = 0; i < XHCI_MAX_PORTS; i++)
-			if (xhci.dev[i].slot != 0 &&
-			    xhci.dev[i].parent_slot == hub->slot &&
-			    xhci.dev[i].parent_port == port) {
-				xhci_urb_device_gone(&xhci.dev[i]);
-				xhci_device_free(&xhci.dev[i]);
-			}
-		return;
+	if ((hub = xhci_hub_by_id(id)) == NULL) {
+		if (id != 0 && xhci_device_by_id(id) != NULL)
+			log_warn(&xhci_log, "news about port %u of device %u, "
+			    "which is not a hub; refused\n", port, id);
+		else if (id != 0)
+			log_info(&xhci_log, "news about port %u of hub %u, which "
+			    "is gone; dropped\n", port, id);
+		else
+			log_warn(&xhci_log, "news about hub port %u that names "
+			    "no hub, and there is not exactly one; refused\n",
+			    port);
+		return OK;
 	}
 
-	/* A free slot in this driver's own table. */
-	for (i = 0; i < XHCI_MAX_PORTS; i++)
-		if (xhci.dev[i].slot == 0) {
-			dev = &xhci.dev[i];
-			break;
-		}
-
-	if (dev == NULL) {
-		log_warn(&xhci_log, "no room for another device\n");
-		return;
+	/* The driver this hub is for, and nobody else, speaks for it. */
+	if (!xhci_wants(hub, clients[who].name)) {
+		log_warn(&xhci_log, "news about port %u of hub %u from \"%s\", "
+		    "which the hub was not given to; refused\n", port, id,
+		    clients[who].name);
+		return OK;
 	}
 
-	log_info(&xhci_log, "hub port %u: a device at %s speed\n", port,
-	    type == 0 ? "low" : type == 1 ? "full" : "high");
-
-	if (xhci_device_attach_hub(hub, port, speed, dev) != OK) {
-		log_warn(&xhci_log, "hub port %u: could not be enumerated\n",
-		    port);
-		xhci_device_free(dev);
-		return;
-	}
-
-	xhci_urb_announce(dev);
+	if ((dev = xhci_hub_port(hub, port, news)) != NULL)
+		xhci_urb_announce(dev);
+	return OK;
 }
 
 void
@@ -1391,9 +1377,9 @@ xhci_urb_message(message *m)
 		 * spent a run watching a storage driver assert on a device
 		 * it had never been given.
 		 */
-		for (i = 0; i < XHCI_MAX_PORTS; i++)
+		for (i = 0; i < XHCI_MAX_DEVS; i++)
 			if (xhci.dev[i].slot != 0 &&
-			    wants(&xhci.dev[i], clients[who].name))
+			    xhci_wants(&xhci.dev[i], clients[who].name))
 				announce_to(&xhci.dev[i], (unsigned)who);
 		break;
 
@@ -1425,8 +1411,7 @@ xhci_urb_message(message *m)
 		break;
 
 	case USB_RQ_SEND_INFO:
-		hub_news(m);
-		reply(m->m_source, 0, 0);
+		reply(m->m_source, hub_news(m), 0);
 		break;
 
 	default:

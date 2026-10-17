@@ -25,6 +25,10 @@
  *   xhci_find.c  the device tree: what this machine has and where
  *   xhci_rk.c    the glue: power domain, clocks, resets, PHY, DWC3
  *   xhci_ring.c  the structures the controller and the driver share
+ *   xhci_dev.c   one device: its slot, contexts, endpoints, transfers
+ *   xhci_tree.c  the devices together: which hangs off which hub, and
+ *                which client driver each one is for
+ *   xhci_urb.c   the URB protocol the client drivers speak
  *   xhci.c       the controller and the driver's own life
  *
  * The glue is in no Synopsys or xHCI document and was read out of a
@@ -34,6 +38,19 @@
 
 #define XHCI_MAX_RESETS		4
 #define XHCI_MAX_PORTS		8
+
+/*
+ * How many devices the driver keeps, root ports and hubs together.  It was
+ * XHCI_MAX_PORTS, one entry per root port, which was a count of the wrong
+ * thing as soon as a hub was driven: on the CB2 the one root port carries
+ * the Terminus hub, a keyboard, a mouse and a flash drive, and a USB-C dock
+ * behind the hub is a hub of its own with an Ethernet chip, a card reader
+ * and whatever is plugged into its ports.  Thirty-two is that twice over
+ * plus a margin; an entry is a few hundred bytes until a device takes it.
+ * Entries below XHCI_MAX_PORTS stay the root ports' own (xhci.c puts the
+ * device on root port p at entry p); devices behind hubs take the rest.
+ */
+#define XHCI_MAX_DEVS		32
 
 /*
  * The page the controller counts in.  PAGESIZE in its own register says 4
@@ -145,6 +162,17 @@ struct xhci_iface {
  */
 struct xhci_device {
 	unsigned slot;			/* 0 when this entry is unused */
+	/*
+	 * The name the client drivers know this device by (USB_DEV_ID), and
+	 * the one their requests and a hub's news carry.  It is not the slot
+	 * number: the controller gives a slot that was disabled to the next
+	 * device that asks, and a dock pulled out and plugged in again gets
+	 * the same slots back.  A request still in flight for the old hub -
+	 * a poll of its ports that its driver had not yet heard was pointless
+	 * - would then land on the new one and be answered as if nothing had
+	 * happened.  So the name is never given twice (xhci_tree.c).
+	 */
+	unsigned id;
 	unsigned port;			/* the root hub port, counting from 0 */
 	unsigned speed;			/* the PORTSC speed identifier */
 	unsigned max_packet0;
@@ -174,8 +202,21 @@ struct xhci_device {
 	 */
 	unsigned route;
 	unsigned tier;
-	unsigned parent_slot;		/* the hub, for a slow device */
-	unsigned parent_port;
+	unsigned hub_id;		/* the hub it hangs off; 0: a root port */
+	unsigned hub_port;		/* and which of the hub's ports */
+
+	/*
+	 * The transaction translator a low- or full-speed device is reached
+	 * through: the nearest HIGH-speed hub above it, and the port of that
+	 * hub the way down goes through - not the hub the device hangs off.
+	 * The two are the same until there is a full-speed hub in between,
+	 * which has no translator of its own and passes its devices' traffic
+	 * up as it came (USB 2.0, 11.14; Linux's usb_alloc_dev() inherits
+	 * udev->tt the same way).  Zero for a high-speed device and for
+	 * anything with no high-speed hub above it.
+	 */
+	unsigned tt_slot;
+	unsigned tt_port;
 
 	/*
 	 * The endpoints, by entry; an entry whose dci is 0 is free.  neps
@@ -294,7 +335,8 @@ struct xhci {
 	unsigned event_deq;		/* where the driver reads next */
 	unsigned event_cycle;		/* and which cycle bit means "mine" */
 
-	struct xhci_device dev[XHCI_MAX_PORTS];
+	struct xhci_device dev[XHCI_MAX_DEVS];
+	unsigned last_id;		/* the last device name given out */
 };
 
 extern struct xhci xhci;
@@ -389,6 +431,22 @@ int xhci_td_event(struct xhci_td *td, const struct xhci_trb *ev,
 	unsigned *actual, unsigned *cc);
 void xhci_doorbell(struct xhci_device *dev, unsigned target);
 
+/* xhci_tree.c */
+unsigned xhci_new_id(void);
+struct xhci_device *xhci_device_by_id(unsigned id);
+struct xhci_device *xhci_hub_by_id(unsigned id);
+int xhci_wants(const struct xhci_device *dev, const char *driver);
+int xhci_wanted(const struct xhci_device *dev);
+void xhci_device_remove(struct xhci_device *dev);
+
+/* What a hub driver says about one of its ports (USB_INFO_TYPE). */
+#define XHCI_HUB_LOW		0
+#define XHCI_HUB_FULL		1
+#define XHCI_HUB_HIGH		2
+#define XHCI_HUB_GONE		3
+struct xhci_device *xhci_hub_port(struct xhci_device *hub, unsigned port,
+	unsigned news);
+
 /* xhci_urb.c */
 void xhci_urb_message(message *m);
 void xhci_urb_announce(struct xhci_device *dev);
@@ -400,7 +458,6 @@ void xhci_urb_device_gone(struct xhci_device *dev);
 
 /* xhci.c */
 void xhci_defer(message *m, int ipc_status);
-struct xhci_device *xhci_device_by_id(unsigned id);
 
 /* Register access; every block is reached the same way. */
 static inline uint32_t

@@ -10,6 +10,8 @@
  *            one also does the ones before it; the last three write the
  *            SMMU and put it back (adreno_smmu.c)
  *   tz=1     ask TrustZone about the zap shader's calls (Q12)
+ *   route=0  stages cb0 and fault without routing the GPU's stream:
+ *            on the tablet the route stops the machine (hw-gpu.md, §15)
  *   hold=N   stay N seconds before leaving - to see where it runs
  *            (ps -o cpuid): the stand cannot check "cpu 1", only a machine
  *   log=     log level, as other services
@@ -36,6 +38,7 @@ struct log ad_log = {
 static int stage = AD_PROBE;
 static int tz;
 static long hold;
+int ad_route = 1;
 
 static int
 parse_stage(void)
@@ -92,6 +95,8 @@ main(int argc, char *argv[])
 		ad_log.log_level = (int)v;
 	if (env_parse("tz", "d", 0, &v, 0, 1) == EP_SET)
 		tz = (int)v;
+	if (env_parse("route", "d", 0, &v, 0, 1) == EP_SET)
+		ad_route = (int)v;
 	if (env_parse("hold", "d", 0, &v, 0, 60) == EP_SET)
 		hold = v;
 

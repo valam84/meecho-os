@@ -12,7 +12,9 @@
 #	-l LOG	the log (default DIR/probe-<time>.txt)
 #	STAGE	"probe+tz", "probe", "cx", "gx", "gpu", "smmu" (default all of
 #		them, in that order); "smr", "cb0", "fault" write the SMMU and
-#		put it back (hw-gpu.md, §14) - only when asked for by name
+#		put it back (hw-gpu.md, §14) - only when asked for by name;
+#		"cb0-noroute", "fault-noroute": the same without routing the
+#		GPU's stream (route=0; the route stopped the tablet, §15)
 #
 # The tablet must be up under MEECHO with its root on eMMC and sshd -
 # after port/clover/cycle.sh, whose image also carries the kernel with
@@ -72,6 +74,7 @@ for s in "$@"; do
 	case $s in
 	probe+tz) args="stage=probe tz=1" ;;
 	probe|cx|gx|gpu|smmu|smr|cb0|fault) args="stage=$s" ;;
+	cb0-noroute|fault-noroute) args="stage=${s%-noroute} route=0" ;;
 	*) say "FAIL: no stage $s"; exit 2 ;;
 	esac
 	say "--- $args"

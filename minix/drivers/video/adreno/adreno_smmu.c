@@ -410,8 +410,19 @@ route(void)
 	}
 	i = u.smr;
 	u.sme_touched = 1;
-	/* Linux's order (arm_smmu_write_sme()): where to, then what. */
+	/*
+	 * Linux's order (arm_smmu_write_sme()): where to, then what.  On the
+	 * tablet one of these two writes stopped the whole machine
+	 * (hw-gpu.md, §15); a line before each, and time for the screen's
+	 * console (10 Hz) to draw it, so that a photo can tell which.
+	 */
+	log_info(&ad_log, "Q15 writing s2cr %d = 00000000 (translate, cb0)\n",
+	    i);
+	micro_delay(300000);
 	ad_wr(&ad.smmu, SMMU_S2CR(i), ((uint32_t)S2CR_TYPE_TRANS << 16) | 0);
+	log_info(&ad_log, "Q15 s2cr %d reads %08x; writing smr %d = %08x\n",
+	    i, GR0(SMMU_S2CR(i)), i, SMR_VALID | (ad.dt.sid & 0x7fff));
+	micro_delay(300000);
 	ad_wr(&ad.smmu, SMMU_SMR(i), SMR_VALID | (ad.dt.sid & 0x7fff));
 	smr = GR0(SMMU_SMR(i));
 	s2cr = GR0(SMMU_S2CR(i));
@@ -570,9 +581,12 @@ smmu_cb0(int fault)
 	if (r != OK)
 		return r;
 
-	if ((r = route()) != OK || !fault)
+	/* route=0: the line alone - FSRRESTORE needs no stream routed. */
+	if (ad_route && (r = route()) != OK)
 		return r;
-	return fault_line();
+	if (!ad_route)
+		log_info(&ad_log, "Q15 route=0: sid %u not routed\n", ad.dt.sid);
+	return fault ? fault_line() : OK;
 }
 
 /*===========================================================================*
@@ -653,19 +667,50 @@ smmu_undo(void)
 		ad_wr(&ad.smmu, g.gr1 + SMMU_CBA2R(0), u.cba2r);
 		if ((v = CB(SMMU_CB_FSR)) != 0)
 			CB_WR(SMMU_CB_FSR, v);
-		if (CB(SMMU_CB_SCTLR) != u.sctlr || CB(SMMU_CB_TCR) != u.tcr ||
-		    CB(SMMU_CB_TCR2) != u.tcr2 ||
-		    CB(SMMU_CB_MAIR0) != u.mair0 ||
-		    CB(SMMU_CB_MAIR1) != u.mair1 ||
-		    ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0) != u.ttbr0 ||
-		    ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR1) != u.ttbr1 ||
-		    ad_rd(&ad.smmu, g.gr1 + SMMU_CBAR(0)) != u.cbar ||
-		    ad_rd(&ad.smmu, g.gr1 + SMMU_CBA2R(0)) != u.cba2r ||
-		    (CB(SMMU_CB_FSR) & FSR_FAULT) != 0) {
-			strlcat(line, " cb0 differs", sizeof(line));
-			differs++;
-		} else
-			strlcat(line, " cb0", sizeof(line));
+		{
+			/* Each register against what was found, by name. */
+			static const struct { const char *n; int gr1; uint32_t
+			    off; } r32[] = {
+				{ "sctlr", 0, SMMU_CB_SCTLR },
+				{ "tcr", 0, SMMU_CB_TCR },
+				{ "tcr2", 0, SMMU_CB_TCR2 },
+				{ "mair0", 0, SMMU_CB_MAIR0 },
+				{ "mair1", 0, SMMU_CB_MAIR1 },
+				{ "cbar", 1, SMMU_CBAR(0) },
+				{ "cba2r", 1, SMMU_CBA2R(0) },
+			};
+			const uint32_t was[] = { u.sctlr, u.tcr, u.tcr2, u.mair0,
+			    u.mair1, u.cbar, u.cba2r };
+			unsigned k, before = differs;
+			uint64_t q;
+
+			for (k = 0; k < NELEM(r32); k++) {
+				v = ad_rd(&ad.smmu, (r32[k].gr1 ? g.gr1 : g.cb0) +
+				    r32[k].off);
+				if (v != was[k]) {
+					snprintf(part, sizeof(part),
+					    " cb0 %s %08x (was %08x)", r32[k].n,
+					    v, was[k]);
+					strlcat(line, part, sizeof(line));
+					differs++;
+				}
+			}
+			if ((q = ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0)) !=
+			    u.ttbr0 || ad_rd64(&ad.smmu, g.cb0 +
+			    SMMU_CB_TTBR1) != u.ttbr1) {
+				snprintf(part, sizeof(part), " cb0 ttbr0 %llx",
+				    (unsigned long long)q);
+				strlcat(line, part, sizeof(line));
+				differs++;
+			}
+			if ((v = CB(SMMU_CB_FSR)) & FSR_FAULT) {
+				snprintf(part, sizeof(part), " cb0 fsr %08x", v);
+				strlcat(line, part, sizeof(line));
+				differs++;
+			}
+			if (differs == before)
+				strlcat(line, " cb0", sizeof(line));
+		}
 	}
 	strlcat(line, differs == 0 ? "; all as found" : "; NOT all as found",
 	    sizeof(line));

@@ -161,6 +161,7 @@ void tz_report(void);			/* Q12 */
 /* adreno_smmu.c */
 int smmu_smr_test(void);		/* Q13 */
 int smmu_cb0(int fault);		/* Q14..Q16 */
+extern int ad_route;			/* route=0: no stream routed (adreno.c) */
 void smmu_undo(void);			/* Q17 */
 
 /* adreno_pt.c: one address space of the GPU. */

@@ -26,6 +26,7 @@
 #include <string.h>
 
 struct log ad_log = { "adreno", LEVEL_INFO, NULL };
+int ad_route = 1;		/* adreno.c's, route=: the stand sets it */
 
 static int failures, checks;
 
@@ -329,6 +330,17 @@ main(int argc, char **argv)
 	check(model_contig_live() == 0, "measured/fault: memory never freed");
 	r = run(dtb, &measured, AD_SMR, 0);
 	expect_clean(&measured, "smr", r, OK);
+	/* route=0: the bank and its line, no stream routed - S2CR untouched,
+	 * so everything back as it was, bank 0 stage 2 again. */
+	ad_route = 0;
+	r = run(dtb, &measured, AD_FAULT, 0);
+	ad_route = 1;
+	expect_clean(&measured, "fault route=0", r, OK);
+	saw(&measured, "fault route=0", "Q15 route=0: sid 0 not routed");
+	not_saw(&measured, "fault route=0", "Q15 writing s2cr");
+	saw(&measured, "fault route=0", "the line works");
+	saw(&measured, "fault route=0", "Q17 smmu put back: smr 0 cb0; all as "
+	    "found");
 
 	/* A busy SMR, and a free one whose S2CR would bypass the SMMU: the
 	 * order of the writes is all that keeps the GPU's stream inside. */

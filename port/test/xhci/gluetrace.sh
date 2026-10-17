@@ -170,6 +170,19 @@ order=$(grep -n -e "^report" -e "^down" -e "0x00111000" -e "= 0x00112000" "$f" |
 [ $fail = 0 ] && echo "Mi Pad 4, as the boot loader leaves it:" \
     "$(grep -c '^wr' "$f") writes, all as planned"
 
+# The SoC's second controller: its wrapper is disabled, its core node says
+# nothing, and its block is not clocked - it is not there at all.
+f=$T/mipad-second.trace
+"$T/new/gluetest" -w -q on "$T/clover-otg.dtb" 1 > "$f"
+if grep -q "has 1 such controller(s), not 2" "$f" &&
+    [ "$(grep -v '^xhci(' "$f")" = "find 6" ]; then
+	echo "Mi Pad 4, the disabled second controller: not there"
+else
+	echo "Mi Pad 4, the disabled second controller: FAIL"
+	sed 's/^/    /' "$f" | head
+	fail=1
+fi
+
 for mode in off nolock; do
 	f=$T/mipad-$mode.trace
 	"$T/new/gluetest" $V -q $mode -s "$T/clover-otg.dtb" 0 > "$f"

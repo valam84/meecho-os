@@ -53,6 +53,8 @@ mutate "taken over with the PLL unlocked" dwc3_ecm qusb2.c \
     's/return (v \& QUSB2_PLL_LOCKED) \&\& /return 1 \&\& /'
 mutate "taken over with the domain off" dwc3_ecm dwc3_qcom.c \
     's/	if (!pd_on || held || !clk_on) {/	if (0) {/'
+mutate "a core under a disabled wrapper counted" xhci xhci_find.c \
+    's/if (!node_enabled(node) || !node_enabled(parent)) {/if (!node_enabled(node)) {/'
 mutate "rockchip clock gate skipped" xhci xhci_rk.c \
     's/	rk_clocks_on();/	;/'
 echo "gluemutate: $caught caught, $missed missed"

@@ -316,6 +316,30 @@ Type-C; база из его `reg`. При старте — сырые `0x1108`,
   UFP» после Linux/ABL), `0x1153` (программный ли VBUS), `0x14C1`,
   `0x1950`, владеет ли APPS периферией OTG.
 
+**Сделано 2026-10-17** (`653743f20`; стенд `port/test/qcom_pmic/typectest.c`
+56 проверок, `mutate.sh` 9 из 9). **Планшет** [T, по ssh, служба через
+`scp` и перезапуск, кабель к хабу]:
+
+```
+qcom,pm660-charger at SID 0 0x1000: Type-C port, sink only (0x1368 = 0x24);
+  VBUS by software (0x1153 = 0x28); boost off (CMD_OTG 0x00, status 0x00),
+  limit 250 mA; OTG block ours, USBIN ours
+type-c registers: 1108:80 1109:00 1110:40 1140:00 1152:00 1153:28 11c0:00
+  130b:80 130c:10 130d:80 130e:53 130f:08 1310:10 1340:00 1358:ca 1359:01
+  135a:7f 1364:55 1368:24 14c1:c0 160b:95 1950:08
+type-c source (Rp: a host or a charger, we are the device, 500 mA); vbus external
+```
+
+- Кабель хаба — Rp default (`0x130B = 0x80`), VBUS внешний; `0x130F`
+  bit 3 — легаси-кабель C–A. Как и ожидалось.
+- **Порт стоит «только приёмником»** (`0x1368[2:0] = 4`) — то, что
+  оставляет при выключении Linux (§3). **Без записи DRP переходник OTG
+  хостом не сделает** — шаг 5 её делает (как mainline и downstream при
+  старте).
+- VBUS программный (`0x1153` bit 1 = 0); периферии OTG и USBIN пишутся
+  этим EE; мягкий старт **не** медленный (`0x14C1[2:0] = 0`; downstream
+  пишет 3 — шаг 5 тоже).
+
 ### Шаг 2. `xhci`: обвязка за таблицей, общая часть DWC3 — по дереву
 
 `xhci_find.c` выбирает обвязку по `compatible` узла над `snps,dwc3`
@@ -355,6 +379,41 @@ Type-C; база из его `reg`. При старте — сырые `0x1108`,
   0x5533300a`, `xhci 1.x`, порт USB 2 пуст (на том конце хаб — тоже хост),
   порт USB 3 не тронут, no-op прошёл, линия 163; ssh возвращается, `kmsg`
   с отчётом `xhci`; `dmesg` хаба — уход и возврат `MEECHO USB`.
+
+**Шаг 2 сделан 2026-10-17** (`9f5a3b687`): `port/test/xhci/gluetrace.sh`
+собирает драйвер на `653743f20` и как есть и сверяет на дереве CB2 каждое
+отображение, запись и паузу — на контроллере, который поднимает `rc`,
+трасса та же, 16 записей. На втором (не поднимается) — одно намеренное
+отличие: у его узла нет `snps,dis_u2_susphy_quirk`, и `SUSPHY` теперь
+остаётся, как у вендорского Linux. На плате ещё не прогнан.
+
+**Шаг 3 сделан 2026-10-17** (`83b3734d2`, `046de4510`): трасса на дереве
+clover — как mainline (`peripheral`): отказ, ничего не отображено; с
+правкой — шесть записей ровно по плану; при выключенном домене или
+незахваченном PLL — ничего; второй контроллер (обвязка `disabled`, у
+самого ядра статуса нет) не считается вовсе. `gluemutate.sh` — 11 из 11;
+стенд `dwc3_ecm` — 180 из 180, `mutate.sh` — 19 из 19. **Планшет** [T,
+без человека, `port/clover/usbhost-probe.sh`, образ `cycle.sh` с DTB `otg`]:
+
+```
+usb@a8f8800 (qcom,dwc3): dr_mode otg, phy qcom,sdm660-qusb2-phy
+taking over the USB block the boot loader left running; GCC and PHY untouched
+dwc3 in host mode: GCTL 0x00111000, GUSB2PHYCFG 0x00002400, GSTS 0x7e800001
+qscratch: no session override (HS_PHY_CTRL 0x00000000, SS_PHY_CTRL 0x00000000)
+xhci 1.1, 64 slot(s), 2 port(s), 3 interrupter(s)
+contexts 64 bytes, addressing 64-bit, 1 scratchpad buffer(s), page size 4 KiB
+usb 2.00 on port(s) 1..1 / usb 3.00 on port(s) 2..2
+port 1: 0x000002a0  empty, not enabled, link state 5, none speed
+no-op command completed: the command ring, the doorbell and the event ring all work
+interrupt line 163
+...20 s...
+halted: USBCMD 0x00000000, USBSTS 0x00000001
+dwc3 left in device mode: GCTL 0x00112000
+```
+
+и `dwc3_ecm` принял блок снова: хаб перечислил его (адрес 73), `ecm0`
+получил адрес, ssh вернулся. Порт 1 питается (`PP`), но пуст: на кабеле
+хаба тот конец — тоже хост.
 
 ### Шаг 4. `xhci`: горячее подключение на корневом порту
 

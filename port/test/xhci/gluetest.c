@@ -300,6 +300,9 @@ main(int argc, char **argv)
 		if (argc > 1 && strcmp(argv[1], "-v") == 0) {
 			verbose = 1;
 			stub_log_level = LEVEL_INFO;
+		} else if (argc > 1 && strcmp(argv[1], "-w") == 0) {
+			/* The driver's warnings, into the trace. */
+			stub_log_level = LEVEL_WARN;
 		} else if (argc > 1 && strcmp(argv[1], "-d") == 0)
 			down = 1;
 		else if (argc > 1 && strcmp(argv[1], "-s") == 0)

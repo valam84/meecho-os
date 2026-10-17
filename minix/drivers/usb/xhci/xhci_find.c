@@ -200,7 +200,14 @@ collect(void *cookie, int depth, const char *name, const struct fdt_node *node)
 	if (depth == 0 || !fdt_node_is_compatible(node, "snps,dwc3"))
 		return 0;
 
-	if (!node_enabled(node)) {
+	/*
+	 * A core is off when its node says so - or its wrapper's does: the
+	 * Mi Pad 4's second controller has a "disabled" wrapper and a core
+	 * node that says nothing, and its block is not clocked.  On that SoC
+	 * a read of a block that is not clocked can stall the bus.
+	 */
+	parent = &s->stack[depth - 1];
+	if (!node_enabled(node) || !node_enabled(parent)) {
 		log_debug(&xhci_log, "%s: disabled in the tree\n", name);
 		return 0;
 	}
@@ -211,7 +218,6 @@ collect(void *cookie, int depth, const char *name, const struct fdt_node *node)
 	read_ctrl(node, name, &c->info);
 	if (c->info.base == 0)
 		return 0;
-	parent = &s->stack[depth - 1];
 	c->glue = glue_of(node, parent);
 	compat = fdt_getprop(parent, "compatible", &len);
 	strlcpy(c->glue_compat, compat != NULL && len > 0 ? compat : "-",

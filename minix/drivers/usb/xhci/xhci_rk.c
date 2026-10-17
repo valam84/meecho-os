@@ -30,11 +30,277 @@
  */
 
 #include <minix/drivers.h>
+#include <minix/fdt.h>
 #include <minix/syslib.h>
 #include <sys/mman.h>
 
+#include <errno.h>
+#include <string.h>
+
 #include "xhci.h"
 #include "xhcireg.h"
+
+/*===========================================================================*
+ *    the tree                                                               *
+ *===========================================================================*/
+/*
+ * What tells the SoC's two controllers apart is not their names but what
+ * they are wired to.  Both are on the same USB2 PHY, on its two different
+ * ports, and the wiring is written as pointers: the host-capable one names
+ * its PHY port in "phys", and the OTG-capable one names the whole PHY in
+ * "extcon" because on it the PHY also does the role signalling.  So the
+ * walk collects the PHYs, with the phandles of their port children, and
+ * afterwards follows the pointer the tree actually wrote.  Guessing "the
+ * first PHY" would work on this board and stop working on the next.
+ *
+ * The blocks around them are found the same way: the clock-and-reset
+ * controller through the "resets" phandle, the PHY's logical register file
+ * through "rockchip,usbgrf", the PMU's clock controller through the PHY's
+ * "clocks".  Only the power management unit is looked for by compatible
+ * string, because the tree points at its child (the power controller,
+ * which has no registers of its own) rather than at the block.
+ */
+#define MAX_PHYS		4
+#define MAX_PHY_PORTS		2
+
+static const char *const phy_compatibles[] = {
+	"rockchip,rk3568-usb2phy",
+	"rockchip,rk3566-usb2phy",
+};
+
+static const char *const pmu_compatibles[] = {
+	"rockchip,rk3568-pmu",
+	"rockchip,rk3566-pmu",
+};
+
+struct phy {
+	phys_bytes base;
+	size_t size;
+	uint32_t phandle;		/* the PHY node itself */
+	uint32_t usbgrf_phandle;
+	uint32_t clock_phandle;		/* the PMU clock controller */
+	uint32_t port_phandle[MAX_PHY_PORTS];	/* [0] otg, [1] host */
+};
+
+struct rk_search {
+	struct phy phy[MAX_PHYS];
+	unsigned nphys;
+	int in_phy;			/* index+1 of the PHY being walked */
+	int phy_depth;
+
+	phys_bytes pmu_base;
+	size_t pmu_size;
+};
+
+static int
+rk_enabled(const struct fdt_node *node)
+{
+	const char *status;
+	unsigned len;
+
+	status = fdt_getprop(node, "status", &len);
+	if (status == NULL || len == 0)
+		return 1;
+	return strcmp(status, "okay") == 0 || strcmp(status, "ok") == 0;
+}
+
+static uint32_t
+rk_u32(const struct fdt_node *node, const char *name, uint32_t def)
+{
+	const void *p;
+	unsigned len;
+
+	if ((p = fdt_getprop(node, name, &len)) == NULL || len < 4)
+		return def;
+	return (uint32_t)fdt_read_cells(p, 1);
+}
+
+static int
+is_one_of(const struct fdt_node *node, const char *const *list, unsigned n)
+{
+	unsigned i;
+
+	for (i = 0; i < n; i++)
+		if (fdt_node_is_compatible(node, list[i]))
+			return 1;
+	return 0;
+}
+
+static int
+rk_collect(void *cookie, int depth, const char *name,
+	const struct fdt_node *node)
+{
+	struct rk_search *s = cookie;
+
+	if (depth == 0)
+		return 0;
+
+	/*
+	 * Inside a PHY node: its ports are children, and the port is what a
+	 * controller points at.  The tree names them by function, which is
+	 * the only place that distinction is written down.
+	 */
+	if (s->in_phy != 0) {
+		if (depth <= s->phy_depth) {
+			s->in_phy = 0;
+		} else {
+			struct phy *ph = &s->phy[s->in_phy - 1];
+			uint32_t ph_handle = rk_u32(node, "phandle", 0);
+
+			if (ph_handle != 0 && strncmp(name, "otg-port", 8) == 0)
+				ph->port_phandle[0] = ph_handle;
+			else if (ph_handle != 0 &&
+			    strncmp(name, "host-port", 9) == 0)
+				ph->port_phandle[1] = ph_handle;
+			return 0;
+		}
+	}
+
+	if (is_one_of(node, phy_compatibles,
+	    sizeof(phy_compatibles) / sizeof(phy_compatibles[0]))) {
+		u64_t base, size;
+		struct phy *ph;
+
+		if (!rk_enabled(node))
+			return 0;
+		if (s->nphys >= MAX_PHYS)
+			return 0;
+		if (fdt_node_reg(node, 0, &base, &size) != 0)
+			return 0;
+
+		ph = &s->phy[s->nphys++];
+		memset(ph, 0, sizeof(*ph));
+		ph->base = (phys_bytes)base;
+		ph->size = (size_t)size;
+		ph->phandle = rk_u32(node, "phandle", 0);
+		ph->usbgrf_phandle = rk_u32(node, "rockchip,usbgrf", 0);
+		ph->clock_phandle = rk_u32(node, "clocks", 0);
+
+		s->in_phy = (int)s->nphys;
+		s->phy_depth = depth;
+		return 0;
+	}
+
+	if (s->pmu_base == 0 && is_one_of(node, pmu_compatibles,
+	    sizeof(pmu_compatibles) / sizeof(pmu_compatibles[0]))) {
+		u64_t base, size;
+
+		if (fdt_node_reg(node, 0, &base, &size) == 0) {
+			s->pmu_base = (phys_bytes)base;
+			s->pmu_size = (size_t)size;
+		}
+		return 0;
+	}
+
+	return 0;
+}
+
+/*
+ * Which PHY and which of its ports this controller is wired to, following
+ * the pointers the tree wrote.  Answers -1 when nothing matches, and that
+ * is a real answer: a controller whose PHY is not in the tree cannot be
+ * brought up, and saying so beats bringing up the wrong one.
+ */
+static int
+resolve_phy(struct rk_search *s, const struct xhci_devinfo *c,
+	unsigned *phy_idx, int *port)
+{
+	unsigned i, p, k;
+
+	for (k = 0; k < c->nphy_phandles; k++) {
+		uint32_t want = c->phy_phandle[k];
+
+		for (i = 0; i < s->nphys; i++) {
+			for (p = 0; p < MAX_PHY_PORTS; p++) {
+				if (s->phy[i].port_phandle[p] == want &&
+				    want != 0) {
+					*phy_idx = i;
+					*port = (int)p;
+					return 0;
+				}
+			}
+			if (s->phy[i].phandle == want && want != 0) {
+				/*
+				 * The whole PHY, which is how the OTG-capable
+				 * controller names it: the role signalling
+				 * belongs to the PHY as a whole, and the port
+				 * it means is the OTG one.
+				 */
+				*phy_idx = i;
+				*port = 0;
+				return 0;
+			}
+		}
+	}
+	return -1;
+}
+
+static int
+rk_find(const void *dtb, struct xhci_devinfo *info)
+{
+	static struct rk_search s;
+	struct phy *ph;
+	unsigned phy_idx;
+	u64_t base, size;
+	int port;
+
+	memset(&s, 0, sizeof(s));
+	(void)fdt_walk(dtb, rk_collect, &s);
+
+	if (info->reset_phandle != 0 && fdt_phandle_reg(dtb,
+	    info->reset_phandle, 0, &base, &size) == 0) {
+		info->cru_base = (phys_bytes)base;
+		info->cru_size = (size_t)size;
+	}
+
+	info->pmu_base = s.pmu_base;
+	info->pmu_size = s.pmu_size;
+
+	if (resolve_phy(&s, info, &phy_idx, &port) == 0) {
+		ph = &s.phy[phy_idx];
+		info->phy_base = ph->base;
+		info->phy_size = ph->size;
+		info->phy_port = port;
+		info->phy_unit = (ph->base == RK3568_USB2PHY1_BASE) ? 1 : 0;
+
+		if (ph->usbgrf_phandle != 0 && fdt_phandle_reg(dtb,
+		    ph->usbgrf_phandle, 0, &base, &size) == 0) {
+			info->usbgrf_base = (phys_bytes)base;
+			info->usbgrf_size = (size_t)size;
+		}
+		if (ph->clock_phandle != 0 && fdt_phandle_reg(dtb,
+		    ph->clock_phandle, 0, &base, &size) == 0) {
+			info->pmucru_base = (phys_bytes)base;
+			info->pmucru_size = (size_t)size;
+		}
+	}
+
+	log_info(&xhci_log, "cru 0x%lx, %u reset line(s)%s%u, pmu 0x%lx "
+	    "domain %d\n", (unsigned long)info->cru_base, info->nresets,
+	    info->nresets ? ", first " : ", ",
+	    info->nresets ? info->reset_id[0] : 0,
+	    (unsigned long)info->pmu_base, info->power_domain);
+
+	if (info->phy_base == 0) {
+		log_warn(&xhci_log, "the tree names no USB2 PHY for this "
+		    "controller\n");
+		return ENXIO;
+	}
+
+	log_info(&xhci_log, "usb2phy%d at 0x%lx, %s port, usbgrf 0x%lx, "
+	    "pmucru 0x%lx\n", info->phy_unit, (unsigned long)info->phy_base,
+	    info->phy_port == 0 ? "otg" : "host",
+	    (unsigned long)info->usbgrf_base,
+	    (unsigned long)info->pmucru_base);
+
+	if (info->usbgrf_base == 0) {
+		log_warn(&xhci_log, "the PHY names no usbgrf; its suspend "
+		    "and clock-output fields live there and nowhere else\n");
+		return ENXIO;
+	}
+
+	return OK;
+}
 
 /*
  * The reset lines of this SoC that this driver names.  They are numbers in
@@ -102,8 +368,11 @@ static const struct refreg reference[] = {
 	    RK3568_CLKGATE_PIPE), 0x00000010, 0x00000703 },
 };
 
-int
-xhci_rk_map(void)
+/*===========================================================================*
+ *    bringing the blocks up                                                 *
+ *===========================================================================*/
+static int
+rk_map(void)
 {
 	struct xhci_devinfo *in = &xhci.info;
 	void *v;
@@ -189,8 +458,8 @@ xhci_rk_map(void)
  * on - which is the case worth having, because it means this code is not
  * on the path to a working controller until the day it is needed.
  */
-int
-xhci_rk_power_domain(void)
+static int
+rk_power_domain(void)
 {
 	unsigned i, spins;
 	uint32_t pwr_mask = 0, idle_mask = 0;
@@ -278,8 +547,8 @@ controller_unit(void)
  * Let the clocks run.  A bit set in a gate register means the clock is
  * off, so switching one on is writing a zero under its mask.
  */
-void
-xhci_rk_clocks_on(void)
+static void
+rk_clocks_on(void)
 {
 	uint32_t gates;
 	int unit = controller_unit();
@@ -383,8 +652,8 @@ reset_controller(void)
  * pretend to understand - so it does not touch them, and reports them
  * instead.
  */
-void
-xhci_rk_phy_init(void)
+static void
+rk_phy_init(void)
 {
 	unsigned port_off = xhci.info.phy_port == 0 ? RK_USBGRF_OTG_CON0 :
 	    RK_USBGRF_HOST_CON0;
@@ -438,84 +707,23 @@ xhci_rk_phy_init(void)
 }
 
 /*
- * The DWC3 wrapper, and only then the xHCI.
- *
- * Host-only, which shortens this considerably: the device side's own soft
- * reset is for the gadget half, and the vendor driver skips it in host
- * mode on the grounds that the xHCI driver resets the host block itself -
- * which is what xhci.c does with USBCMD.HCRST.  What is left is the mode
- * change, which the core requires be made with its soft reset held, and
- * the description of the HS PHY interface.
+ * Everything before the DWC3 core can be spoken to: the blocks mapped, the
+ * power domain on, the clocks running, the PHY set up, the reset lines
+ * pulsed.  The core itself - its mode and its PHY interface - is
+ * xhci_dwc3.c's, after this.
  */
-int
-xhci_rk_dwc3_init(void)
+static int
+rk_up(void)
 {
-	uint32_t reg, id;
-	unsigned spins;
+	int r;
 
+	if ((r = rk_map()) != OK)
+		return r;
+	if ((r = rk_power_domain()) != OK)
+		return r;
+	rk_clocks_on();
+	rk_phy_init();
 	reset_controller();
-
-	id = xhci_rd(xhci.regs, DWC3_GSNPSID);
-	xhci.dwc3_id = id;
-
-	if ((id & DWC3_GSNPSID_MASK) != DWC3_GSNPSID_DWC3) {
-		log_warn(&xhci_log, "no DWC3 core answers at 0x%lx: "
-		    "GSNPSID 0x%08x\n", (unsigned long)xhci.info.base, id);
-		return ENXIO;
-	}
-
-	log_info(&xhci_log, "dwc3 core %x.%02x (GSNPSID 0x%08x)\n",
-	    (id >> 12) & 0xf, id & 0xfff, id);
-
-	/*
-	 * Hold the core in soft reset for the mode change.  The
-	 * documentation asks for 100 ms before it is let go, and this is
-	 * one of those waits that only shows up as an intermittent failure
-	 * if it is shortened.
-	 */
-	reg = xhci_rd(xhci.regs, DWC3_GCTL);
-	reg |= DWC3_GCTL_CORESOFTRESET;
-	xhci_wr(xhci.regs, DWC3_GCTL, reg);
-
-	micro_delay(100000);
-
-	reg = xhci_rd(xhci.regs, DWC3_GCTL);
-	reg &= ~DWC3_GCTL_CORESOFTRESET;
-	reg &= ~(DWC3_GCTL_PRTCAPDIR_MASK << DWC3_GCTL_PRTCAPDIR_SHIFT);
-	reg |= DWC3_GCTL_PRTCAPDIR_HOST << DWC3_GCTL_PRTCAPDIR_SHIFT;
-	reg &= ~DWC3_GCTL_SCALEDOWN_MASK;
-	reg &= ~DWC3_GCTL_DISSCRAMBLE;
-	xhci_wr(xhci.regs, DWC3_GCTL, reg);
-
-	/*
-	 * The HS PHY interface: sixteen bits wide, which the tree says as
-	 * phy_type = "utmi_wide", and a turnaround time that goes with the
-	 * width.  Then the two suspend-related bits the board's quirk list
-	 * asks to be clear - the core may set them again once it is up, and
-	 * on the other controller of this SoC the vendor system does.
-	 */
-	reg = xhci_rd(xhci.regs, DWC3_GUSB2PHYCFG0);
-	reg |= DWC3_GUSB2PHYCFG_PHYIF;
-	reg &= ~(0xfu << 10);
-	reg |= 5 << 10;				/* USBTRDTIM for 16 bits */
-	reg &= ~DWC3_GUSB2PHYCFG_SUSPHY;
-	reg &= ~DWC3_GUSB2PHYCFG_ENBLSLPM;
-	reg &= ~DWC3_GUSB2PHYCFG_U2FREECLK_EXISTS;
-	xhci_wr(xhci.regs, DWC3_GUSB2PHYCFG0, reg);
-
-	/* And wait for the core to say it is out of reset. */
-	for (spins = 0; spins < 1000; spins++) {
-		if (!(xhci_rd(xhci.regs, DWC3_GCTL) & DWC3_GCTL_CORESOFTRESET))
-			break;
-		micro_delay(100);
-	}
-
-	log_info(&xhci_log, "dwc3 in host mode: GCTL 0x%08x, "
-	    "GUSB2PHYCFG 0x%08x, GSTS 0x%08x\n",
-	    xhci_rd(xhci.regs, DWC3_GCTL),
-	    xhci_rd(xhci.regs, DWC3_GUSB2PHYCFG0),
-	    xhci_rd(xhci.regs, DWC3_GSTS));
-
 	return OK;
 }
 
@@ -528,8 +736,8 @@ xhci_rk_dwc3_init(void)
  * milestones later as "the port sees nothing".  It is the same instrument
  * that found the PHY settings on the GMAC, and it costs one table.
  */
-void
-xhci_rk_report(void)
+static void
+rk_report(void)
 {
 	unsigned i;
 	vir_bytes block;
@@ -569,3 +777,11 @@ xhci_rk_report(void)
 
 	(void)unknown;
 }
+
+/* The glue of the RK3566/RK3568: the wrapper node's string (xhci_find.c). */
+const struct xhci_glue xhci_rk_glue = {
+	.compatible	= "rockchip,rk3568-dwc3",
+	.find		= rk_find,
+	.up		= rk_up,
+	.report		= rk_report,
+};

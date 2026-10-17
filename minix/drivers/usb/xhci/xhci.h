@@ -22,8 +22,9 @@
  *
  * The parts, split by what each one talks to:
  *
- *   xhci_find.c  the device tree: what this machine has and where
- *   xhci_rk.c    the glue: power domain, clocks, resets, PHY, DWC3
+ *   xhci_find.c  the device tree: the core, and which glue wraps it
+ *   xhci_rk.c    Rockchip's glue: power domain, clocks, resets, PHY
+ *   xhci_dwc3.c  the DWC3 core around the xHCI: its mode, its PHY interface
  *   xhci_ring.c  the structures the controller and the driver share
  *   xhci_dev.c   one device: its slot, contexts, endpoints, transfers
  *   xhci_tree.c  the devices together: which hangs off which hub, and
@@ -240,8 +241,30 @@ struct xhci_device {
 	uint8_t alt[32];		/* each interface's current setting */
 };
 
+struct xhci_glue;
+
+/*
+ * What the tree says about the DWC3 core itself - the properties of the
+ * "snps,dwc3" node that Linux's dwc3 core driver reads, as opposed to the
+ * SoC's glue around it.  The core is the same 3.00a on the CB2 and on the
+ * Mi Pad 4; how its PHY interface is wired is not, and the tree says it.
+ */
+#define XHCI_PHY_UNSET		0	/* no phy_type: leave the core's */
+#define XHCI_PHY_UTMI		1	/* "utmi": 8 bits */
+#define XHCI_PHY_UTMI_WIDE	2	/* "utmi_wide": 16 bits */
+
+#define XHCI_Q_DIS_U2_SUSPHY	0x1	/* snps,dis_u2_susphy_quirk */
+#define XHCI_Q_DIS_ENBLSLPM	0x2	/* snps,dis_enblslpm_quirk */
+#define XHCI_Q_DIS_U2_FREECLK	0x4	/* snps,dis-u2-freeclk-exists-quirk */
+
 /* Everything the device tree said about this controller. */
 struct xhci_devinfo {
+	const struct xhci_glue *glue;	/* the SoC's wrapper around it */
+	char node[32];			/* the core's node name */
+	char dr_mode[16];		/* "" when the tree says none */
+	int phy_type;			/* XHCI_PHY_ */
+	unsigned quirks;		/* XHCI_Q_ */
+
 	phys_bytes base;		/* the controller: xHCI and DWC3 */
 	size_t size;
 	int irq;			/* -1 when the tree names none */
@@ -271,7 +294,42 @@ struct xhci_devinfo {
 	size_t pmucru_size;
 	int phy_port;			/* 0 the OTG port, 1 the host port */
 	int phy_unit;			/* 0 or 1: which of the SoC's two */
+
+	/*
+	 * How the core names its PHY, kept for the glue to resolve: "phys"
+	 * points at a port of a PHY, "extcon" at a whole PHY.
+	 */
+	uint32_t reset_phandle;
+	uint32_t phy_phandle[3];
+	unsigned nphy_phandles;
 };
+
+/*
+ * The SoC's wrapper around the core: a file each (xhci_rk.c, xhci_qcom.c)
+ * and a line in the table of xhci_find.c, matched by the compatible string
+ * of the core's node or of its parent - never a test of which board this
+ * is.  Everything the wrapper has that the core does not - power domains,
+ * clocks, resets, the PHY - is the glue's; what the core has is
+ * xhci_dwc3.c's.
+ */
+struct xhci_glue {
+	const char *compatible;
+	/* The rest of the tree: the wrapper's blocks.  OK or ENXIO. */
+	int (*find)(const void *dtb, struct xhci_devinfo *info);
+	/*
+	 * Map xhci.regs and everything else, power, clock and reset what the
+	 * core needs, so that it can be spoken to.  OK, or why not.
+	 */
+	int (*up)(void);
+	/* After the core is in host mode: the wrapper's own host bits. */
+	void (*host)(void);
+	/* The glue's registers against the reference, after the xHCI is up. */
+	void (*report)(void);
+	/* Going down, after the controller is halted and reset. */
+	void (*down)(void);
+};
+
+extern const struct xhci_glue xhci_rk_glue;	/* xhci_rk.c */
 
 struct xhci {
 	struct xhci_devinfo info;
@@ -345,13 +403,9 @@ extern struct log xhci_log;
 /* xhci_find.c */
 int xhci_find(struct xhci_devinfo *info, int skip);
 
-/* xhci_rk.c */
-int xhci_rk_map(void);
-int xhci_rk_power_domain(void);
-void xhci_rk_clocks_on(void);
-void xhci_rk_phy_init(void);
-int xhci_rk_dwc3_init(void);
-void xhci_rk_report(void);
+/* xhci_dwc3.c: the core, whatever wraps it. */
+int xhci_dwc3_init(void);
+void xhci_dwc3_set_mode(unsigned prtcapdir);
 
 /* xhci_ring.c */
 int xhci_dma_alloc(void);

@@ -40,6 +40,7 @@ struct log xhci_log = {
 };
 
 static int instance;
+static int up;				/* the glue brought the block up */
 static int use_irq = 1;		/* "irq=0" falls back to polling */
 static unsigned noops = 1;		/* how many no-op commands to issue */
 
@@ -433,6 +434,10 @@ xhci_signal(int signo)
 	xhci_halt();
 	xhci_dma_free();
 
+	/* And the block as the glue wants it left for whoever comes next. */
+	if (up && xhci.info.glue->down != NULL)
+		xhci.info.glue->down();
+
 	exit(0);
 }
 
@@ -448,17 +453,15 @@ xhci_init(int type, sef_init_info_t *info)
 	if ((r = xhci_find(&xhci.info, instance)) != OK)
 		return r;
 
-	if ((r = xhci_rk_map()) != OK)
+	/* The SoC's wrapper first: power, clocks, resets, PHY. */
+	if ((r = xhci.info.glue->up()) != OK)
 		return r;
+	up = 1;
 
-	if ((r = xhci_rk_power_domain()) != OK)
+	if ((r = xhci_dwc3_init()) != OK)
 		return r;
-
-	xhci_rk_clocks_on();
-	xhci_rk_phy_init();
-
-	if ((r = xhci_rk_dwc3_init()) != OK)
-		return r;
+	if (xhci.info.glue->host != NULL)
+		xhci.info.glue->host();
 
 	read_capabilities();
 
@@ -476,7 +479,8 @@ xhci_init(int type, sef_init_info_t *info)
 
 	read_protocols();
 	read_ports();
-	xhci_rk_report();
+	if (xhci.info.glue->report != NULL)
+		xhci.info.glue->report();
 
 	/*
 	 * And the structures the controller and the driver share, after

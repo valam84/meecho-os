@@ -63,6 +63,8 @@ int sys_cacheinfo(unsigned long *ctr, unsigned long *clidr);
 struct qcomscm_answer;
 int sys_qcomscm(int op, uint32_t svc, uint32_t cmd,
 	struct qcomscm_answer *ans);
+int sys_qcomscm_mem(int op, uint32_t id, void *addr, size_t len,
+	struct qcomscm_answer *ans);
 int sys_vmctl(endpoint_t who, int param, u32_t value);
 int sys_vmctl_get_pdbr(endpoint_t who, u32_t *pdbr);
 int sys_vmctl_get_memreq(endpoint_t *who, vir_bytes *mem, vir_bytes

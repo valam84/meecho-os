@@ -3,9 +3,12 @@
  *
  * The parameters for this kernel call are:
  *	QSCM_OP		which operation (QCOMSCM_* in <minix/qcomscm.h>)
- *	QSCM_SVC	the SCM service it asks about (QCOMSCM_AVAIL)
+ *	QSCM_SVC	the SCM service it asks about (QCOMSCM_AVAIL), or the
+ *			state to set (QCOMSCM_REMOTE_STATE)
  *	QSCM_CMD	the SCM command (QCOMSCM_AVAIL), or the peripheral
- *			(QCOMSCM_PAS_SUPPORTED)
+ *			(the PAS operations, QCOMSCM_REMOTE_STATE)
+ *	QSCM_ADDR	memory the call names, in the caller's address space
+ *	QSCM_LEN	(QCOMSCM_PAS_INIT, QCOMSCM_PAS_MEM_SETUP)
  * and the answer:
  *	QSCM_CONV	the calling convention the firmware speaks
  *	QSCM_STATUS	the firmware's x0
@@ -15,8 +18,9 @@
  * device TrustZone has a say in - the Adreno GPU leaves secure mode only by
  * a shader TrustZone loads (port/clover/hw-gpu.md, §5).  The kernel does
  * not pass an SMC through: it offers operations it knows the meaning of,
- * and the ones there are so far only ask.  Which processes may make the
- * call at all is the ordinary per-call privilege ("system QCOMSCM;").
+ * and translates and checks every address one names (arch_qcomscm()).
+ * Which processes may make the call at all is the ordinary per-call
+ * privilege ("system QCOMSCM;").
  */
 
 #include "kernel/system.h"
@@ -29,30 +33,23 @@
  *				do_qcomscm				     *
  *===========================================================================*/
 int
-do_qcomscm(struct proc * UNUSED(caller), message * m_ptr)
+do_qcomscm(struct proc * caller, message * m_ptr)
 {
-	u64_t res[3];
-	i64_t status;
-	int conv, r;
-
 	switch (m_ptr->QSCM_OP) {
 	case QCOMSCM_AVAIL:
 	case QCOMSCM_PAS_SUPPORTED:
+	case QCOMSCM_PAS_STATE:
+	case QCOMSCM_PAS_INIT:
+	case QCOMSCM_PAS_MEM_SETUP:
+	case QCOMSCM_PAS_AUTH:
+	case QCOMSCM_REMOTE_STATE:
+	case QCOMSCM_RESUME:
 		break;
 	default:
 		return EINVAL;
 	}
 
-	if ((r = arch_qcomscm(m_ptr->QSCM_OP, m_ptr->QSCM_SVC,
-	    m_ptr->QSCM_CMD, &conv, &status, res)) != OK)
-		return r;
-
-	m_ptr->QSCM_CONV = conv;
-	m_ptr->QSCM_STATUS = status;
-	m_ptr->QSCM_RES[0] = res[0];
-	m_ptr->QSCM_RES[1] = res[1];
-	m_ptr->QSCM_RES[2] = res[2];
-	return OK;
+	return arch_qcomscm(caller, m_ptr);
 }
 
 #endif /* USE_QCOMSCM */

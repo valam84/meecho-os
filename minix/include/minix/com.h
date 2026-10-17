@@ -446,6 +446,8 @@
 #define QSCM_CONV	m_lsys_krn_sys_qcomscm.conv
 #define QSCM_STATUS	m_lsys_krn_sys_qcomscm.status
 #define QSCM_RES	m_lsys_krn_sys_qcomscm.res
+#define QSCM_ADDR	m_lsys_krn_sys_qcomscm.addr
+#define QSCM_LEN	m_lsys_krn_sys_qcomscm.len
 
 /* Codes and field names for SYS_DIAGCTL. */
 #define DIAGCTL_CODE_DIAG	1	/* Print diagnostics. */

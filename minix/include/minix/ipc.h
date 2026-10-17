@@ -1221,13 +1221,15 @@ _ASSERT_MSG_SIZE(mess_lsys_krn_sys_cachectl);
 
 typedef struct {
 	int op;			/* QCOMSCM_* from <minix/qcomscm.h> */
-	uint32_t svc;		/* SCM service (QCOMSCM_AVAIL) */
+	uint32_t svc;		/* SCM service (QCOMSCM_AVAIL), or a state */
 	uint32_t cmd;		/* SCM command, or the peripheral id */
 	int conv;		/* out: QCOMSCM_CONV_* */
 	int64_t status;		/* out: the firmware's x0 */
 	uint64_t res[3];	/* out: x1..x3 */
+	vir_bytes addr;		/* memory a PAS call names, in the caller's */
+	size_t len;		/* space, and its length */
 
-	uint8_t padding[72];
+	uint8_t padding[56];
 } mess_lsys_krn_sys_qcomscm;
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_qcomscm);
 

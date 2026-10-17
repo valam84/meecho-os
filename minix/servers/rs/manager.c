@@ -1481,12 +1481,26 @@ struct rproc *rp;
  *     translation added here, once, not in the drivers.
  *   - "interrupts" is read with the GIC's three-cell binding, which every
  *     AArch64 machine this system targets uses; see fdt_gic_intid().
+ *
+ * A device's memory in the tree is not only "reg". "memory-region" - on the
+ * node or on one of its children, as the Adreno's "zap-shader" has it -
+ * names ranges of /reserved-memory set aside for that device alone: the
+ * firmware image the GPU's TrustZone loads goes into one. Those are granted
+ * too, and only those: the reserved-memory nodes the matched subtree names
+ * by phandle, not every pool of the same compatible ("shared-dma-pool"
+ * would grant them all).
  */
+#define DT_MAX_REGIONS 8
+
 struct dt_grant {
   struct rproc *rp;
   const char *compat;
   int matched;
   int r;				/* first error, or OK */
+  int match_depth;			/* inside a matched node: its depth */
+  uint32_t region[DT_MAX_REGIONS];	/* memory-region phandles named */
+  int nregion;
+  int in_reserved;			/* the second walk: under it */
 };
 
 static int dt_add_mem(struct rproc *rp, phys_bytes base, phys_bytes size)
@@ -1536,6 +1550,65 @@ static int dt_add_irq(struct rproc *rp, int irq)
   return OK;
 }
 
+/* Remember the phandles of a node's "memory-region", for dt_grant_region(). */
+static void dt_note_regions(struct dt_grant *g, const struct fdt_node *node)
+{
+  const uint8_t *p;
+  unsigned len, off;
+  uint32_t ph;
+  int i;
+
+  if ((p = fdt_getprop(node, "memory-region", &len)) == NULL) return;
+  for (off = 0; off + 4 <= len; off += 4) {
+      ph = (uint32_t) fdt_read_cells(p + off, 1);
+      for (i = 0; i < g->nregion && g->region[i] != ph; i++)
+          ;
+      if (i < g->nregion) continue;
+      if (g->nregion == DT_MAX_REGIONS) {
+          g->r = E2BIG;
+          return;
+      }
+      g->region[g->nregion++] = ph;
+  }
+}
+
+/* The second walk: the children of /reserved-memory the first one named. */
+static int dt_grant_region(void *cookie, int depth, const char *name,
+  const struct fdt_node *node)
+{
+  struct dt_grant *g = cookie;
+  const void *p;
+  u64_t base, size;
+  uint32_t ph;
+  unsigned i, len;
+  int k, r;
+
+  if (depth == 1) {
+      g->in_reserved = strcmp(name, "reserved-memory") == 0;
+      return 0;
+  }
+  if (depth != 2 || !g->in_reserved) return 0;
+  if ((p = fdt_getprop(node, "phandle", &len)) == NULL &&
+      (p = fdt_getprop(node, "linux,phandle", &len)) == NULL) return 0;
+  if (len != 4) return 0;
+  ph = (uint32_t) fdt_read_cells(p, 1);
+  for (k = 0; k < g->nregion && g->region[k] != ph; k++)
+      ;
+  if (k == g->nregion) return 0;
+
+  for (i = 0; fdt_node_reg(node, i, &base, &size) == 0; i++) {
+      if ((r = dt_add_mem(g->rp, (phys_bytes) base, (phys_bytes) size))
+          != OK) {
+          g->r = r;
+          return 1;
+      }
+      if (rs_verbose)
+          printf("RS: edit_slot: %s (memory-region): memory [%lx..%lx]\n",
+              name, (unsigned long) base, (unsigned long) (base + size - 1));
+  }
+  return 0;
+}
+
 static int dt_grant_node(void *cookie, int depth, const char *name,
   const struct fdt_node *node)
 {
@@ -1544,11 +1617,22 @@ static int dt_grant_node(void *cookie, int depth, const char *name,
   unsigned i, len;
   int r, irq;
 
+  /* Below a matched node: its children's memory-region is its own. */
+  if (g->match_depth >= 0 && depth <= g->match_depth)
+      g->match_depth = -1;
+  if (g->match_depth >= 0) {
+      dt_note_regions(g, node);
+      return g->r != OK;
+  }
+
   /* The root describes the machine, not a device. */
   if (depth == 0 || !fdt_node_is_compatible(node, g->compat))
       return 0;
 
   g->matched++;
+  g->match_depth = depth;
+  dt_note_regions(g, node);
+  if (g->r != OK) return 1;
 
   for (i = 0; fdt_node_reg(node, i, &base, &size) == 0; i++) {
       if ((r = dt_add_mem(g->rp, (phys_bytes) base, (phys_bytes) size))
@@ -1608,10 +1692,13 @@ static int dt_grants(struct rproc *rp, struct rs_start *rs_start)
   for (i = 0; i < rs_start->rss_nr_devicetree; i++) {
       memset(&g, 0, sizeof(g));
       g.rp = rp;
+      g.match_depth = -1;
       rs_start->rss_devicetree[i][RSS_DEVICETREE_LEN - 1] = '\0';
       g.compat = rs_start->rss_devicetree[i];
 
       (void) fdt_walk(dtb, dt_grant_node, &g);
+      if (g.r == OK && g.nregion > 0)
+          (void) fdt_walk(dtb, dt_grant_region, &g);
 
       if (g.r != OK) {
           printf("RS: edit_slot: device-tree grant for \"%s\" failed: %d\n",

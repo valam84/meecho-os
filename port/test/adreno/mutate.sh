@@ -136,6 +136,7 @@ adreno_cp.c@s/^\t\t(void)sys_irqenable(\&cp.hook);$/\t\t(void)0;/@the GPU's line
 adreno_cp.c@s/^\tW(A5XX_RBBM_INT_CLEAR_CMD, st \& ~A5XX_INT_AHB_ERROR);$//@the GPU's interrupt status never cleared
 adreno_smmu.c@s/for (i = 0; i < nglobal; i++)/for (i = 0; i < nglobal \&\& 0; i++)/@a client's table without the service's buffers
 adreno_smmu.c@s/^\tCB_WR(SMMU_CB_FSR, \*fsr);$//@a fault in bank 0 never cleared
+adreno_cp.c@s/return mem_word(MEM_SHADOW) == cp.wptr \&\&/return G(A5XX_CP_RB_RPTR) == cp.wptr \&\&/@the read pointer from the CP's register: the GPU never looks idle (the tablet's first round)
 EOF
 echo "$caught of $n caught"
 exit $rc

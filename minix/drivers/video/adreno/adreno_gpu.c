@@ -78,6 +78,7 @@ static minix_timer_t hang_timer, retry_timer;
 static int hang_armed, retry_armed;
 static uint32_t hang_fence;		/* the fence at the last look */
 static unsigned hang_looks;
+static unsigned quiet_looks;		/* a switch of tables waiting: looks */
 
 static void kick(void);
 
@@ -227,6 +228,9 @@ kick(void)
 			if (!TAILQ_EMPTY(&flight))
 				return;		/* after the other's last job */
 			if (!quiesce(100)) {
+				/* What keeps it from looking idle: once. */
+				if (quiet_looks++ == 0)
+					cp_say("not idle for a switch of tables");
 				if (!retry_armed) {
 					set_timer(&retry_timer, 1, retry_fired,
 					    0);
@@ -234,6 +238,10 @@ kick(void)
 				}
 				return;
 			}
+			if (quiet_looks > 0)
+				log_info(&ad_log, "gpu: idle for a switch of "
+				    "tables after %u looks\n", quiet_looks);
+			quiet_looks = 0;
 			if ((r = smmu_load(&j->vm->pt)) != OK) {
 				log_warn(&ad_log, "gpu: %s's table not loaded: "
 				    "%d\n", j->vm->name, r);
@@ -485,9 +493,11 @@ gpu_vm_gone(struct ad_vm *vm)
 		last_vm = NULL;
 	if (on_ring != vm)
 		return;
-	if (up && !quiesce(100000))
+	if (up && !quiesce(100000)) {
 		log_warn(&ad_log, "gpu: not idle when %s's table goes\n",
 		    vm->name);
+		cp_say("not idle");
+	}
 	(void)smmu_load(NULL);
 	on_ring = NULL;
 	kick();

@@ -489,10 +489,12 @@ cp_lines(const struct scenario *s, const char *pm4, const char *pfp)
 	saw(s, "cp", pfp);
 	saw(s, "cp", "where-am-i; ring 2020000, memptrs 2030000");
 	saw(s, "cp", "Q19 cp: hw_init, 186 writes; cp_protect_cntl 7");
-	saw(s, "cp", "Q20 cp: me_init done, idle in 0 us (read in 0, busy 0): "
-	    "rptr c wptr c shadow "
+	/* The CP busy for a while after its read pointer was read (the
+	 * model's hysteresis, the tablet's 800001c0): idle after it. */
+	saw(s, "cp", "Q20 cp: me_init done, idle in 20 us (read in 0, busy "
+	    "800001c0): rptr c wptr c shadow "
 	    "c, rbbm 00000000 int 00000000");
-	saw(s, "cp", "Q21 cp: set_secure_mode 0, idle in 0 us; secvid "
+	saw(s, "cp", "Q21 cp: set_secure_mode 0, idle in 20 us; secvid "
 	    "00000000");
 	saw(s, "cp", "Q22 line 332 came: int 00100000, fence 1 in memory, "
 	    "scratch2 1, idle");

@@ -701,11 +701,20 @@ uint32_t cp_seq_next(void) { return ++cp.seqno; }
 uint64_t cp_fence_va(void) { return VA_MEM + MEM_FENCE; }
 uint32_t cp_fence(void) { return mem_word(MEM_FENCE); }
 
-/* The CP has read everything and the GPU is idle, now (no waiting). */
+/*
+ * The CP has read everything and the GPU is idle, now (no waiting).  The
+ * read pointer is WHERE_AM_I's shadow in memory, not CP_RB_RPTR: reading
+ * the CP's register over the AHB makes the CP busy for a while itself
+ * (CP_BUSY with its hysteresis), and RBBM_STATUS read just after it said
+ * 800001c1 on the tablet with the ring empty - the GPU never looked idle,
+ * and no job of a second client ever went in (hw-gpu.md, §18).  Linux
+ * reads the shadow too (a5xx_get_rptr()); every job ends with WHERE_AM_I
+ * (cp_kick()).
+ */
 int
 cp_quiet(void)
 {
-	return G(A5XX_CP_RB_RPTR) == cp.wptr &&
+	return mem_word(MEM_SHADOW) == cp.wptr &&
 	    (G(A5XX_RBBM_STATUS) & ~A5XX_RBBM_STATUS_HI_BUSY) == 0;
 }
 

@@ -15,6 +15,9 @@
  *           тогда CP занят, пока не дошёл.  Заголовок с неверной
  *           чётностью, незнакомый пакет, первый пакет не CP_ME_INIT —
  *           провал.  ME_INIT сверяется со значениями Linux для A512.
+ *           Чтение CP_RB_RPTR по AHB само занимает CP: RBBM_STATUS
+ *           после него — CP_BUSY с гистерезисом (800001c0, как на
+ *           планшете) ещё CP_AHB_HYST_US.
  *           WHERE_AM_I пишет rptr по адресу; CP_EVENT_WRITE CACHE_FLUSH_TS
  *           — seqno по адресу, бит 20 RBBM_INT_0_STATUS и, если он в маске,
  *           линию 332.  PKT4 пишет CP_SCRATCH, CP_CONTEXT_SWITCH_SAVE_ADDR
@@ -68,8 +71,15 @@ static struct {
 	size_t pm4_len, pfp_len;
 	int defer, hung, prot;
 	unsigned ibs, invals;
+	unsigned long long ahb_busy_until;	/* a read of CP_RB_RPTR's due */
 	char trail[1024];
 } cp;
+
+/* How long a read of the CP's register over the AHB keeps the CP busy
+ * (CP_BUSY and its hysteresis bits): more than the service's 10 us
+ * between two looks - so that a look which reads it never sees the GPU
+ * idle, as on the tablet (hw-gpu.md, §18). */
+#define CP_AHB_HYST_US	20
 
 void
 cp_expect(const void *pm4, size_t pm4_len, const void *pfp, size_t pfp_len)
@@ -91,6 +101,7 @@ cp_model_reset(const struct scenario *s)
 	cp.defer = cp.hung = 0;
 	cp.prot = 1;
 	cp.ibs = cp.invals = 0;
+	cp.ahb_busy_until = 0;
 	cp.trail[0] = '\0';
 	/* Bits of no meaning in the registers hw_init() changes a bit of:
 	 * what it did not mean to change must still be there after. */
@@ -471,15 +482,23 @@ cp_model_rd(uint32_t dw, uint32_t *v)
 	switch (dw) {
 	case A5XX_CP_RB_RPTR:
 		*v = cp.rptr;
+		if (cp.started)
+			cp.ahb_busy_until = model_now_us() + CP_AHB_HYST_US;
 		return 1;
 	case A5XX_RBBM_INT_0_STATUS:
 		*v = cp.int_status;
 		return 1;
 	case A5XX_RBBM_STATUS:
-		/* Busy (CP_BUSY, bit 31) while words wait or the CP is stuck;
-		 * idle otherwise: the ring runs at once. */
-		*v = cp.started && (cp.hung || cp.rptr != cp.wptr) ?
-		    0x80000000u : 0;
+		/* Busy (GPU_BUSY_IGN_AHB, bit 31) while words wait or the CP
+		 * is stuck; CP_BUSY with its hysteresis bits (the tablet's
+		 * 800001c0) for a while after CP_RB_RPTR was read; idle
+		 * otherwise: the ring runs at once. */
+		if (cp.started && (cp.hung || cp.rptr != cp.wptr))
+			*v = 0x80000000u;
+		else if (cp.started && model_now_us() < cp.ahb_busy_until)
+			*v = 0x800001c0u;
+		else
+			*v = 0;
 		return 1;
 	case A5XX_VBIF_XIN_HALT_CTRL1:
 		*v = model_gpu_reg(A5XX_VBIF_XIN_HALT_CTRL0) & 0xf;

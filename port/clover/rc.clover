@@ -4,10 +4,11 @@
 # this volume and mounted it over the root; init runs this script, and the
 # sessions of /etc/ttys after it.
 #
-# Not the CB2's rc (port/mkroot.sh): this machine has no network, no USB
-# host and no Mali, and on a Snapdragon a driver that probes a block whose
-# clock nobody turned on can stall the bus - so nothing is started here
-# that was not written for this SoC or does not touch hardware at all.
+# Not the CB2's rc (port/mkroot.sh): this machine has no Ethernet, its
+# one USB port is the network or a host by turns, it has no Mali, and on a
+# Snapdragon a driver that probes a block whose clock nobody turned on can
+# stall the bus - so nothing is started here that was not written for this
+# SoC or does not touch hardware at all.
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 export PATH
 
@@ -73,75 +74,95 @@ then
 	/usr/sbin/dev_mkdb || echo "WARNING: dev_mkdb failed"
 fi
 
-# The network: the USB-C port in device mode, a CDC Ethernet adapter to
-# the hub on the cable (dwc3_ecm, port/clover/hw-net.md); netdrv= names
-# another.  The driver takes the port over only as the boot loader left
-# it running - after "fastboot boot" - and otherwise says so and leaves.
+# The USB-C port, and with it the network.  The port is one: a device to
+# the hub on the cable - a CDC Ethernet adapter, dwc3_ecm (hw-net.md);
+# netdrv= names another - or a host to what an OTG adapter carries, a
+# keyboard and a mouse (xhci, usb_hub, usb_kbd, usb_mouse; hw-usbhost.md).
+# usbrole(8) decides from Type-C, which qcom_pmic reads: the hub's cable
+# is a source, so a device, as it always was; an adapter is a sink, so a
+# host, powered from the PMIC's boost.  It brings the role up once here and
+# then follows the port in the background, its lines on the screen.  The
+# drivers take the port over only as the boot loader left it running -
+# after "fastboot boot" - and otherwise say so and leave.  usbrole=device
+# (a boot argument) keeps the port a device and starts nothing to follow it.
 # No DHCP: the other end is a hub with a fixed address, and this end is
-# netaddr= or 10.42.0.2/24.  The interface appears when the stack has
-# heard from the driver, so it is waited for.
-netdrv=dwc3_ecm
-if sysenv netdrv >/dev/null
-then	netdrv="`sysenv netdrv`"
-fi
-netaddr=10.42.0.2/24
-if sysenv netaddr >/dev/null
-then	netaddr="`sysenv netaddr`"
-fi
-netlog=2
-if sysenv netlog >/dev/null
-then	netlog="`sysenv netlog`"
-fi
-netif=
-if [ -x "/service/$netdrv" ] &&
-   minix-service up "/service/$netdrv" -label "${netdrv}_0" \
-    -args "instance=0 log=$netlog" &&
-   minix-service up /service/lwip -dev /dev/bpf
+# netaddr= or 10.42.0.2/24.  lwip and sshd come up whatever the role: a
+# port that becomes a device later brings its interface to them.
+minix-service up /service/lwip -dev /dev/bpf ||
+    echo "WARNING: no network stack"
+ifconfig lo0 inet 127.0.0.1 up 2>/dev/null
+if [ -x /usr/sbin/usbrole ]
 then
-	for t in 1 2 3 4 5
-	do
-		for i in `ifconfig -l 2>/dev/null`
-		do
-			[ "$i" != lo0 ] && netif=$i
-		done
-		[ -n "$netif" ] && break
-		sleep 1
-	done
-	ifconfig lo0 inet 127.0.0.1 up 2>/dev/null
-	if [ -n "$netif" ]
-	then
-		ifconfig "$netif" inet "$netaddr" up &&
-		    ifconfig "$netif" | grep 'inet ' ||
-		    echo "WARNING: $netif has no address"
-	else
-		echo "WARNING: no interface from $netdrv"
-	fi
+	/usr/sbin/usbrole -1
 else
-	echo "No network: no $netdrv, or it found nothing to drive"
+	# A root from before usbrole: the port is a device, as then.
+	netdrv=dwc3_ecm
+	if sysenv netdrv >/dev/null
+	then	netdrv="`sysenv netdrv`"
+	fi
+	netaddr=10.42.0.2/24
+	if sysenv netaddr >/dev/null
+	then	netaddr="`sysenv netaddr`"
+	fi
+	netlog=2
+	if sysenv netlog >/dev/null
+	then	netlog="`sysenv netlog`"
+	fi
+	netif=
+	if [ -x "/service/$netdrv" ] &&
+	   minix-service up "/service/$netdrv" -label "${netdrv}_0" \
+	    -args "instance=0 log=$netlog"
+	then
+		for t in 1 2 3 4 5
+		do
+			for i in `ifconfig -l 2>/dev/null`
+			do
+				[ "$i" != lo0 ] && netif=$i
+			done
+			[ -n "$netif" ] && break
+			sleep 1
+		done
+		if [ -n "$netif" ]
+		then
+			ifconfig "$netif" inet "$netaddr" up ||
+			    echo "WARNING: $netif has no address"
+		else
+			echo "WARNING: no interface from $netdrv"
+		fi
+	else
+		echo "No network: no $netdrv, or it found nothing to drive"
+	fi
 fi
+for i in `ifconfig -l 2>/dev/null`
+do
+	[ "$i" != lo0 ] && ifconfig "$i" | grep 'inet '
+done
 
 # ssh, as on the CB2 (port/mkroot.sh): the host key made here, on the
 # first boot, never put in the image; whether the pool is seeded asked
 # outright, because arc4random(3) would make a weak key without a word.
-if [ -n "$netif" ]
+if ! dd if=/dev/random bs=1 count=1 >/dev/null 2>&1
 then
-	if ! dd if=/dev/random bs=1 count=1 >/dev/null 2>&1
-	then
-		echo "WARNING: /dev/random is not seeded; keys made now are weak"
-	fi
-	if [ -x /usr/bin/ssh-keygen ] &&
-	   [ ! -f /etc/ssh/ssh_host_ed25519_key ]
-	then
-		echo "Generating an SSH host key"
-		/usr/bin/ssh-keygen -q -t ed25519 -N '' \
-		    -f /etc/ssh/ssh_host_ed25519_key ||
-		    echo "WARNING: could not generate a host key"
-	fi
-	if [ -x /usr/sbin/sshd ] && [ -f /etc/ssh/ssh_host_ed25519_key ]
-	then
-		echo "Starting sshd"
-		/usr/sbin/sshd || echo "WARNING: sshd did not start"
-	fi
+	echo "WARNING: /dev/random is not seeded; keys made now are weak"
+fi
+if [ -x /usr/bin/ssh-keygen ] &&
+   [ ! -f /etc/ssh/ssh_host_ed25519_key ]
+then
+	echo "Generating an SSH host key"
+	/usr/bin/ssh-keygen -q -t ed25519 -N '' \
+	    -f /etc/ssh/ssh_host_ed25519_key ||
+	    echo "WARNING: could not generate a host key"
+fi
+if [ -x /usr/sbin/sshd ] && [ -f /etc/ssh/ssh_host_ed25519_key ]
+then
+	echo "Starting sshd"
+	/usr/sbin/sshd || echo "WARNING: sshd did not start"
+fi
+
+# And the port from now on: a cable swapped for an adapter, and back.
+if [ -x /usr/sbin/usbrole ]
+then
+	( trap '' HUP; /usr/sbin/usbrole -d ) </dev/null >/dev/console 2>&1 &
 fi
 
 exit 0

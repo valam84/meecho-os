@@ -1,0 +1,90 @@
+.Dd October 17, 2026
+.Dt USBROLE 8
+.Os
+.Sh NAME
+.Nm usbrole
+.Nd a USB port as a device or a host, as Type-C says
+.Sh SYNOPSIS
+.Nm
+.Nm
+.Fl 1
+.Nm
+.Fl d
+.Nm
+.Op Fl t Ar seconds
+.Cm host | device | auto
+.Sh DESCRIPTION
+A machine whose one USB port is both its network to the computer at the
+other end of the cable and the place a keyboard is plugged in has to
+decide which the port is.
+.Nm
+decides it from what the PMIC's Type-C block says is at the other end
+.Pq Va minix.pmic.typec :
+a sink \(em an OTG adapter, a device \(em makes the port a host; anything
+else, including no answer, leaves it a device.
+.Pp
+The device role is the network driver named by the boot parameter
+.Va netdrv
+(label
+.Ar netdrv Ns _0 )
+with the address
+.Va netaddr ;
+the host role is
+.Nm xhci
+(label
+.Li usbd ) ,
+.Nm usb_hub ,
+.Nm usb_kbd
+and
+.Nm usb_mouse .
+The one is taken down before the other comes up: they drive the same
+controller.
+.Pp
+Without arguments
+.Nm
+prints the role, the policy, the Type-C state and where VBUS comes from.
+.Bl -tag -width indent
+.It Fl 1
+Decide once and bring that role up; the
+.Pa /etc/rc
+of the machine does this before it starts
+.Nm sshd .
+.It Fl d
+Follow Type-C from now on, in the background; a change has to be seen
+twice, a second apart, before anything moves.
+.It Oo Fl t Ar seconds Oc Cm host | device | auto
+Ask the daemon for a role \(em for that many seconds, or until asked
+again.
+.Cm auto
+follows Type-C again.
+.El
+.Pp
+The boot parameter
+.Va usbrole
+is the policy:
+.Cm auto
+(the default),
+.Cm device
+(nothing is done) or
+.Cm host .
+With
+.Cm auto
+the PMIC is told to let the port be a source
+.Pq Va minix.pmic.otg Ns = Ns Cm auto ,
+without which Type-C never sees a sink at all.
+.Sh FILES
+.Bl -tag -width /var/run/usbrole.want -compact
+.It Pa /var/run/usbrole.role
+the role that is up
+.It Pa /var/run/usbrole.want
+the role asked for, and until when
+.It Pa /var/run/usbrole.pid
+the daemon
+.El
+.Sh SEE ALSO
+.Xr minix-service 8 ,
+.Xr sysctl 8
+.Sh BUGS
+Try.SNK is not done: with a dual-role partner at the other end (a
+computer's USB-C port) which end becomes the source is a matter of
+timing.

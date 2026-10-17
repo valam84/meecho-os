@@ -6,6 +6,7 @@ SUBDIR+=	fbdctl
 SUBDIR+=	mkfs.mfs
 SUBDIR+=	mkproto
 SUBDIR+=	sntp
+SUBDIR+=	usbrole
 
 # Only the AArch64 kernel is handed its boot images as one archive, and the
 # format header is only installed there.  fbmode speaks the AArch64 frame

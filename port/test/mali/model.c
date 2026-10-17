@@ -1350,11 +1350,12 @@ ds_retrieve_label_endpt(const char *name, endpoint_t *ep)
 }
 
 /*
- * SYS_UMAP_REMOTE (mali_umap.c на машине): как sys_umap(), но в памяти
- * клиента - у модели память всех одна, арена; только непрерывный диапазон.
+ * SYS_UMAP_REMOTE (drm_umap.c libdrmdriver на машине): как sys_umap(), но
+ * в памяти клиента - у модели память всех одна, арена; только непрерывный
+ * диапазон.
  */
 int
-mali_umap_remote(endpoint_t ep, vir_bytes addr, vir_bytes len,
+drmdrv_umap_remote(endpoint_t ep, vir_bytes addr, vir_bytes len,
 	phys_bytes *phys)
 {
 	size_t off = (unsigned char *)addr - cpu_view, k;

@@ -1,25 +1,13 @@
 /*
- * Buffer objects: memory the GPU and the processor share.
+ * Buffer objects: memory the GPU and the processor share, placed in a GPU
+ * address space.
  *
- * Where the memory comes from, and why so (PORTING-LOG, "Этап 11.6").
- * The service allocates it - anonymous memory of its own, one mmap(2)
- * region per buffer, every page present (MAP_PREALLOC) - and learns the
- * physical address of each page with sys_umap(), so that no buffer, a
- * 128 MiB tiler heap included, needs contiguous RAM: the GPU's MMU puts
- * the pages together.  The client gets the same pages through
- * vm_remap(), the way the compositor gets fb's frames: VM links the
- * client's region to this one page by page, so the client sees exactly
- * this buffer and nothing next to it, and the pages stay the client's
- * for as long as it maps them, even if the buffer is freed here first
- * (and VM no longer panics when such a client forks: mem_shared.c).
- * What a client could reach is what its own handles name, through its
- * own address space on the GPU and its own mapping on the processor.
- *
- * Memory from VM is zeroed - but by the processor, through the kernel's
- * cacheable map of all RAM, and the GPU reads RAM, not the processor's
- * caches.  So every new buffer is cleaned to memory before its first
- * entry goes into a page table: otherwise a job could read what the
- * page's previous owner left in RAM.
+ * The memory is libdrmdriver's (drm_mem.c: the service's own pages, each
+ * one's physical address known, cleaned to RAM before the GPU can read
+ * them; a client's mapping by vm_remap(); the processor's caches around
+ * every job that uses a buffer a processor maps).  What is here is the
+ * placement: an address in one context's GPU address space and the pages
+ * in its tables (mali_mmu.c), and the heap, which is panfrost's own.
  *
  * A heap grows on demand, as under Linux (PORTING-LOG, "Этап 11.6, куча"):
  * Mesa asks for 128 MiB of tiler heap per GL context and a frame uses a
@@ -35,31 +23,13 @@
  * crosses a 16 MiB boundary (the program counter is 24 bits), and never
  * starts or ends on a 4 GiB one.  Checked against what panfrost gave on
  * the board for the same sequence (port/cb2-gpu/ref-api.txt).
- *
- * The processor's caches.  The GPU is not coherent, and the kernel maps
- * all RAM cacheable, so a client's mapping is cacheable too (two mappings
- * of a page with different attributes are undefined behaviour, which is
- * why Linux's write-combining mapping is not an option here).  So a
- * buffer a processor has touched is cleaned before each job that uses it
- * and cleaned and invalidated after: what the client wrote reaches the
- * GPU, what the GPU wrote reaches the client, no line the processor
- * fetched speculatively meanwhile hides it - and what the client wrote
- * while the job ran stays.  An invalidate alone would drop a dirty line,
- * and with it a write the client made to another part of the buffer
- * during the job (a ring it fills, a stream it maps unsynchronized: under
- * Linux the mapping is write-combining, and such writes are simply in
- * memory).  Only a line both wrote during the same job loses one side's
- * bytes - a race in the client wherever it runs.  A buffer no processor maps - a heap,
- * a render target never read back - costs nothing.
  */
 
 #include <minix/drivers.h>
 #include <minix/cachectl.h>
-#include <minix/sef.h>
+#include <minix/drmdriver.h>
 #include <minix/syslib.h>
 #include <minix/sysutil.h>
-
-#include <sys/mman.h>
 
 #include <errno.h>
 #include <stdint.h>
@@ -77,46 +47,20 @@
 /* The tokens MMAP_BO gives: above anything a GPU address can be. */
 #define MMAP_OFFSET_BASE	(1ull << 40)
 
-static size_t limit_total = 768u << 20;
 static size_t limit_vm = 512u << 20;
-static size_t total;
 
+/* All buffers together, and each client's (libdrmdriver counts the first). */
 void
 mali_bo_limits(size_t t, size_t v)
 {
-	limit_total = t;
+	drmdrv_mem_limit(t);
 	limit_vm = v;
 }
 
 size_t
 mali_bo_total(void)
 {
-	return total;
-}
-
-/*
- * In pieces of 128 KiB, as fb does: the kernel does one request whole
- * under its big lock, and a 128 MiB heap in one piece would hold every
- * other core out of the kernel for tens of milliseconds.
- */
-#define CACHE_PIECE	(128 * 1024)
-
-static void
-cache(int op, void *addr, size_t len)
-{
-	size_t n;
-	int r;
-
-	while (len > 0) {
-		n = len < CACHE_PIECE ? len : CACHE_PIECE;
-		if ((r = sys_cachectl(op, addr, n)) != OK) {
-			log_warn(&mali_log, "cache maintenance of a buffer "
-			    "failed: %d\n", r);
-			return;
-		}
-		addr = (char *)addr + n;
-		len -= n;
-	}
+	return drmdrv_mem_total();
 }
 
 /* ---- a place in the GPU address space -------------------------------- */
@@ -232,37 +176,6 @@ va_alloc(struct mali_vm *vm, size_t size, uint32_t flags, uint64_t *va,
 	return ENOSPC;
 }
 
-/* ---- memory ----------------------------------------------------------- */
-
-/* The device's word when a buffer's memory goes (mali_drm.c: its fence). */
-void (*mali_mem_gone)(struct mali_mem *mem);
-
-static void
-mem_destroy(struct mali_mem *mem)
-{
-	if (mali_mem_gone != NULL)
-		mali_mem_gone(mem);
-	if (mem->cpu != NULL && mem->cpu != MAP_FAILED)
-		munmap(mem->cpu, mem->size);
-	if (!(mem->flags & PANFROST_BO_HEAP) && !mem->foreign)
-		total -= mem->size;
-	free(mem->pages);
-	free(mem);
-}
-
-void
-mali_mem_ref(struct mali_mem *mem)
-{
-	mem->refs++;
-}
-
-void
-mali_mem_unref(struct mali_mem *mem)
-{
-	if (--mem->refs == 0)
-		mem_destroy(mem);
-}
-
 /* ---- buffers ---------------------------------------------------------- */
 
 static void
@@ -282,13 +195,13 @@ bo_destroy(struct mali_bo *bo)
 	if (bo->pieces != NULL)
 		for (i = 0; i < bo->size / MALI_HEAP_PIECE; i++)
 			if (bo->pieces[i] != NULL)
-				munmap(bo->pieces[i], MALI_HEAP_PIECE);
+				drmdrv_pages_free(bo->pieces[i], MALI_HEAP_PIECE);
 	bo->vm->mem -= bo->backed;
 	if (bo->flags & PANFROST_BO_HEAP)
-		total -= bo->backed;
+		drmdrv_mem_discharge(bo->backed);
 	free(bo->pieces);
 	if (bo->mem != NULL)
-		mali_mem_unref(bo->mem);
+		drmdrv_mem_unref(bo->mem);
 	free(bo);
 }
 
@@ -322,9 +235,9 @@ place(struct mali_bo *bo)
 	return OK;
 }
 
-/* A placement of mem in vm, not yet placed; mem gains a reference. */
+/* A placement of mem in vm, not yet placed; it takes the reference given. */
 static struct mali_bo *
-bo_alloc(struct mali_vm *vm, struct mali_mem *mem)
+bo_alloc(struct mali_vm *vm, struct drmdrv_mem *mem)
 {
 	struct mali_bo *bo;
 
@@ -332,7 +245,6 @@ bo_alloc(struct mali_vm *vm, struct mali_mem *mem)
 		return NULL;
 	bo->vm = vm;
 	bo->mem = mem;
-	mem->refs++;
 	bo->flags = mem->flags;
 	bo->size = mem->size;
 	bo->refs = 1;
@@ -347,9 +259,8 @@ bo_alloc(struct mali_vm *vm, struct mali_mem *mem)
 struct mali_bo *
 mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
 {
-	struct mali_mem *mem;
+	struct drmdrv_mem *mem;
 	struct mali_bo *bo;
-	size_t npages, k;
 	int r;
 
 	if (flags & PANFROST_BO_HEAP)
@@ -360,22 +271,16 @@ mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
 		*err = EINVAL;
 		return NULL;
 	}
-	if (!(flags & PANFROST_BO_HEAP) && (total + size > limit_total ||
-	    vm->mem + size > limit_vm)) {
+	if (!(flags & PANFROST_BO_HEAP) && vm->mem + size > limit_vm) {
 		*err = ENOMEM;
 		return NULL;
 	}
-	if ((mem = calloc(1, sizeof(*mem))) == NULL) {
-		*err = ENOMEM;
+	mem = (flags & PANFROST_BO_HEAP) ? drmdrv_mem_new_unbacked(size, flags,
+	    err) : drmdrv_mem_new(size, flags, err);
+	if (mem == NULL)
 		return NULL;
-	}
-	mem->flags = flags;
-	mem->size = size;
-	mem->minor = -1;
-	if (!(flags & PANFROST_BO_HEAP))
-		total += size;
 	if ((bo = bo_alloc(vm, mem)) == NULL) {
-		mem_destroy(mem);
+		drmdrv_mem_unref(mem);
 		*err = ENOMEM;
 		return NULL;
 	}
@@ -390,33 +295,6 @@ mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
 	} else {
 		bo->backed = size;
 		vm->mem += size;
-		npages = size / MALI_PAGE;
-		if ((mem->pages = calloc(npages, sizeof(*mem->pages))) ==
-		    NULL) {
-			bo_destroy(bo);
-			*err = ENOMEM;
-			return NULL;
-		}
-		mem->cpu = mmap(NULL, size, PROT_READ | PROT_WRITE,
-		    MAP_ANON | MAP_PRIVATE | MAP_PREALLOC, -1, 0);
-		if (mem->cpu == MAP_FAILED) {
-			mem->cpu = NULL;
-			bo_destroy(bo);
-			*err = ENOMEM;
-			return NULL;
-		}
-		for (k = 0; k < npages; k++) {
-			if ((r = sys_umap(SELF, VM_D, (vir_bytes)mem->cpu +
-			    k * MALI_PAGE, MALI_PAGE, &mem->pages[k])) != OK) {
-				log_warn(&mali_log, "no physical address for "
-				    "page %zu of a buffer: %d\n", k, r);
-				bo_destroy(bo);
-				*err = ENOMEM;
-				return NULL;
-			}
-		}
-		/* VM's zeros to RAM, before the GPU can read the pages. */
-		cache(CACHE_CLEAN_INVALIDATE, mem->cpu, size);
 	}
 
 	if ((r = place(bo)) != OK) {
@@ -431,29 +309,14 @@ mali_bo_new(struct mali_vm *vm, size_t size, uint32_t flags, int *err)
  * A buffer over memory that is not this service's: size bytes of a
  * device's physically contiguous memory from phys (the frame buffer
  * driver's scanout buffers - mali_drm.c checks which), placed in vm like
- * any other.  It is not counted in the limits, which are about what the
- * service gives out, and never freed here - its owner keeps it for as
- * long as it runs.
- *
- * The owner's region of it, src_vir in src_ep, is what a client that maps
- * the buffer (mmap(2) of its dma-buf: Mesa reading a frame back, a
- * screenshot) is mapped from - not this service's view of it, since VM
- * shares a region of the process that has it, not a share of a share.
- * This service maps it too, for the processor's caches around jobs, as
- * for any buffer a processor reads (cpu_access): the region is shared, so
- * its pages are touched once to be in the table that sys_cachectl reads.
- * Without that view the buffer is still the GPU's, only not a client's to
- * map.
+ * any other; libdrmdriver's drmdrv_mem_new_phys() says the rest.
  */
 struct mali_bo *
 mali_bo_new_phys(struct mali_vm *vm, phys_bytes phys, endpoint_t src_ep,
 	vir_bytes src_vir, size_t size, int *err)
 {
-	volatile const char *p;
-	struct mali_mem *mem;
+	struct drmdrv_mem *mem;
 	struct mali_bo *bo;
-	size_t npages, k;
-	void *v;
 	int r;
 
 	if (size == 0 || (size & (MALI_PAGE - 1)) || (phys & (MALI_PAGE - 1)) ||
@@ -461,36 +324,11 @@ mali_bo_new_phys(struct mali_vm *vm, phys_bytes phys, endpoint_t src_ep,
 		*err = EINVAL;
 		return NULL;
 	}
-	if ((mem = calloc(1, sizeof(*mem))) == NULL) {
-		*err = ENOMEM;
+	if ((mem = drmdrv_mem_new_phys(phys, src_ep, src_vir, size,
+	    PANFROST_BO_NOEXEC, err)) == NULL)
 		return NULL;
-	}
-	mem->flags = PANFROST_BO_NOEXEC;
-	mem->size = size;
-	mem->minor = -1;
-	mem->foreign = 1;
-	mem->src_ep = src_ep;
-	mem->src_vir = src_vir;
-	npages = size / MALI_PAGE;
-	if ((mem->pages = calloc(npages, sizeof(*mem->pages))) == NULL) {
-		mem_destroy(mem);
-		*err = ENOMEM;
-		return NULL;
-	}
-	for (k = 0; k < npages; k++)
-		mem->pages[k] = phys + k * MALI_PAGE;
-	/* Both ends by endpoint: SELF is none to VM (mali_mem_map_into()). */
-	v = vm_remap(sef_self(), src_ep, NULL, (void *)src_vir, size);
-	if (v != MAP_FAILED) {
-		for (p = v, k = 0; k < npages; k++)
-			(void)p[k * MALI_PAGE];
-		mem->cpu = v;
-	} else
-		log_warn(&mali_log, "no view of a scanout buffer (%d, 0x%lx): "
-		    "the GPU's, not a client's to map\n", src_ep,
-		    (unsigned long)src_vir);
 	if ((bo = bo_alloc(vm, mem)) == NULL) {
-		mem_destroy(mem);
+		drmdrv_mem_unref(mem);
 		*err = ENOMEM;
 		return NULL;
 	}
@@ -511,7 +349,7 @@ mali_bo_new_phys(struct mali_vm *vm, phys_bytes phys, endpoint_t src_ep,
  * here (it is never exported).
  */
 struct mali_bo *
-mali_bo_import(struct mali_vm *vm, struct mali_mem *mem, int *err)
+mali_bo_import(struct mali_vm *vm, struct drmdrv_mem *mem, int *err)
 {
 	struct mali_bo *bo;
 	int r;
@@ -524,7 +362,9 @@ mali_bo_import(struct mali_vm *vm, struct mali_mem *mem, int *err)
 		*err = ENOMEM;
 		return NULL;
 	}
+	drmdrv_mem_ref(mem);
 	if ((bo = bo_alloc(vm, mem)) == NULL) {
+		drmdrv_mem_unref(mem);
 		*err = ENOMEM;
 		return NULL;
 	}
@@ -576,7 +416,7 @@ int
 mali_bo_grow(struct mali_bo *bo, uint64_t va, uint64_t *piece)
 {
 	static phys_bytes pages[MALI_HEAP_PIECE / MALI_PAGE];
-	size_t i = (size_t)((va - bo->va) / MALI_HEAP_PIECE), k;
+	size_t i = (size_t)((va - bo->va) / MALI_HEAP_PIECE);
 	void *p;
 	int r;
 
@@ -586,106 +426,44 @@ mali_bo_grow(struct mali_bo *bo, uint64_t va, uint64_t *piece)
 	*piece = bo->va + (uint64_t)i * MALI_HEAP_PIECE;
 	if (bo->pieces[i] != NULL)
 		return EEXIST;
-	if (total + MALI_HEAP_PIECE > limit_total ||
+	if (!drmdrv_mem_room(MALI_HEAP_PIECE) ||
 	    bo->vm->mem + MALI_HEAP_PIECE > limit_vm)
 		return ENOMEM;
 
-	p = mmap(NULL, MALI_HEAP_PIECE, PROT_READ | PROT_WRITE,
-	    MAP_ANON | MAP_PRIVATE | MAP_PREALLOC, -1, 0);
-	if (p == MAP_FAILED)
-		return ENOMEM;
-	for (k = 0; k < MALI_HEAP_PIECE / MALI_PAGE; k++) {
-		if ((r = sys_umap(SELF, VM_D, (vir_bytes)p + k * MALI_PAGE,
-		    MALI_PAGE, &pages[k])) != OK) {
-			log_warn(&mali_log, "no physical address for page %zu "
-			    "of a heap piece: %d\n", k, r);
-			munmap(p, MALI_HEAP_PIECE);
-			return ENOMEM;
-		}
-	}
-	/* VM's zeros to RAM, before the GPU can read the pages. */
-	cache(CACHE_CLEAN_INVALIDATE, p, MALI_HEAP_PIECE);
+	/* Memory, its pages' addresses, cleaned to RAM (libdrmdriver). */
+	if ((r = drmdrv_pages_new(MALI_HEAP_PIECE, &p, pages)) != OK)
+		return r;
 
 	/* Never code, as panfrost maps it: read, write, no execute. */
 	if ((r = mali_vm_map(bo->vm, *piece, pages, MALI_HEAP_PIECE / MALI_PAGE,
 	    MALI_PTE_READ | MALI_PTE_WRITE | MALI_PTE_XN)) != OK) {
-		munmap(p, MALI_HEAP_PIECE);
+		drmdrv_pages_free(p, MALI_HEAP_PIECE);
 		return r;
 	}
 	bo->pieces[i] = p;
 	bo->backed += MALI_HEAP_PIECE;
 	bo->vm->mem += MALI_HEAP_PIECE;
-	total += MALI_HEAP_PIECE;
+	drmdrv_mem_charge(MALI_HEAP_PIECE);
 	return OK;
 }
 
-/* Before a job: what a processor wrote, to memory. */
+/* Before a job: what a processor wrote, to memory (libdrmdriver). */
 void
 mali_bo_for_gpu(struct mali_bo *bo)
 {
-	struct mali_mem *mem = bo->mem;
-
-	if (mem->cpu_access)
-		cache(CACHE_CLEAN_INVALIDATE, mem->cpu, mem->size);
+	drmdrv_mem_for_gpu(bo->mem);
 }
 
-/*
- * After a job: what the GPU wrote, to a processor that looks - and what
- * the processor wrote meanwhile, to memory first (see above).
- */
+/* After a job: what the GPU wrote, to a processor that looks. */
 void
 mali_bo_for_cpu(struct mali_bo *bo)
 {
-	struct mali_mem *mem = bo->mem;
-
-	if (mem->cpu_access)
-		cache(CACHE_CLEAN_INVALIDATE, mem->cpu, mem->size); /* not INVALIDATE */
-}
-
-/*
- * Map the memory into process who, at addr if not NULL: VM links who's
- * new region to this service's pages (vm_remap), so who sees the very
- * pages the GPU does.  The whole buffer: VM lends a region whole or not
- * at all.  From now on a processor may touch it.
- */
-int
-mali_mem_map_into(struct mali_mem *mem, endpoint_t who, void *addr,
-	int writable, void **where)
-{
-	endpoint_t src_ep;
-	void *v, *src;
-
-	if (mem->cpu == NULL)
-		return EINVAL;		/* a heap's is nobody's to map */
-	/*
-	 * The source by its own endpoint, not SELF: VM checks both ends with
-	 * vm_isokendpt(), and SELF is no endpoint there - the call fails
-	 * without a word (the board said ENOMEM to the first mmap).  A
-	 * device's memory comes from its owner's region (mali_bo_new_phys()).
-	 */
-	src_ep = mem->foreign ? mem->src_ep : sef_self();
-	src = mem->foreign ? (void *)mem->src_vir : mem->cpu;
-	if (writable)
-		v = vm_remap(who, src_ep, addr, src, mem->size);
-	else
-		v = vm_remap_ro(who, src_ep, addr, src, mem->size);
-	if (v == MAP_FAILED)
-		return ENOMEM;
-	/*
-	 * The GPU may have written the buffer already, and the processor may
-	 * hold lines of it it fetched before; unless a job is about to end
-	 * (which invalidates), drop them now.
-	 */
-	if (!mem->cpu_access && mem->busy == 0)
-		cache(CACHE_INVALIDATE, mem->cpu, mem->size);
-	mem->cpu_access = 1;
-	*where = v;
-	return OK;
+	drmdrv_mem_for_cpu(bo->mem);
 }
 
 int
 mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
 	int writable, void **where)
 {
-	return mali_mem_map_into(bo->mem, who, addr, writable, where);
+	return drmdrv_mem_map_into(bo->mem, who, addr, writable, where);
 }

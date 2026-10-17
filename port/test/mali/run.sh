@@ -12,11 +12,15 @@ HERE=${HERE:-$(cd "$(dirname "$0")" && pwd)}
 PORT=$(cd "$HERE/../.." && pwd)
 TREE=${TREE:-$(cd "$PORT/.." && pwd)}
 SRC=${SRC:-$TREE/minix/drivers/video/mali}
+# libdrmdriver: the render node mali_drm.c stands on, and buffers' memory
+# (minix/lib/libdrmdriver, <minix/drmdriver.h>).
+LIB=${LIB:-$TREE/minix/lib/libdrmdriver}
 OUT=${OUT:-/tmp}
 
 CC=${CC:-gcc}
 $CC -std=gnu99 -Wall -Wextra -Wno-unused-parameter -O1 -g \
-	-I "$HERE/shim" -I "$SRC" -D__unused="__attribute__((unused))" \
+	-I "$HERE/shim" -I "$SRC" -idirafter "$TREE/minix/include" \
+	-D__unused="__attribute__((unused))" \
 	-DREAL_FDT_H="\"$TREE/minix/include/minix/fdt.h\"" \
 	"$HERE/malitest.c" "$SRC/mali_find.c" "$SRC/mali_rk.c" \
 	"$TREE/minix/lib/libsys/fdt.c" -o "$OUT/mali-test"
@@ -27,12 +31,14 @@ MODEL_CFLAGS="-std=gnu99 -Wall -Wextra -Wno-unused-parameter -O1 -g \
 	-I $HERE/shim -I $SRC \
 	-I $TREE/external/mit/libdrm/lib/libdrm/drm \
 	-I $TREE/minix/lib/libgfxcompat \
+	-idirafter $TREE/minix/include \
 	-include $HERE/shim/regs-hook.h \
 	-DREAL_DRM_H=\"$TREE/external/mit/libdrm/dist/include/drm/drm.h\" \
 	-DREAL_IOC_MMAP_H=\"$TREE/minix/include/sys/ioc_mmap.h\" \
 	-DMAP_PREALLOC=0x80000 -Dmmap=model_mmap -Dmunmap=model_munmap \
 	-Dvm_remap=model_vm_remap -Dvm_remap_ro=model_vm_remap_ro"
-CORE="$SRC/mali_mmu.c $SRC/mali_bo.c $SRC/mali_sched.c"
+CORE="$SRC/mali_mmu.c $SRC/mali_bo.c $SRC/mali_sched.c \
+	$LIB/drm_dev.c $LIB/drm_sync.c $LIB/drm_mem.c"
 
 # Самопроверка: MMU ускорителя, цепочка заданий, отказ (jobtest.c).
 $CC $MODEL_CFLAGS "$HERE/jobtest.c" "$HERE/model.c" "$SRC/mali_job.c" \

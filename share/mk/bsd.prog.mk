@@ -223,6 +223,7 @@ LIB${_lib:tu}=	${DESTDIR}/usr/lib/lib${_lib:S/xx/++/:S/atf_c/atf-c/}.a
 	ddekit_usb_client \
 	ddekit_usb_server \
 	devman \
+	drmdriver \
 	elf \
 	exec \
 	fsdriver \

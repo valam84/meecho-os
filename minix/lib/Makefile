@@ -38,6 +38,12 @@ SUBDIR+=	libepoll-shim
 SUBDIR+=	libgfxcompat
 .endif
 
+# The DRM render node of a GPU service, whatever the GPU: mali on the CB2,
+# adreno on the Mi Pad 4 (libdrmdriver's Makefile says what is in it).
+.if (${MACHINE_ARCH} == "aarch64")
+SUBDIR+=	libdrmdriver
+.endif
+
 .if (${HAVE_LIBGCC} == "no")
 SUBDIR+=	libgcc_s_empty
 .endif

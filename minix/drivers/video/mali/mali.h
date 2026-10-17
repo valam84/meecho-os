@@ -2,6 +2,7 @@
 #define _MALI_H
 
 #include <minix/drivers.h>
+#include <minix/drmdriver.h>
 #include <minix/log.h>
 #include <minix/timers.h>
 
@@ -30,10 +31,11 @@
  *                 resets of the RK3568 (the only file that knows the SoC)
  *   mali_mmu.c    the GPU's MMU: its eight address-space windows, page
  *                 tables, and what a fault does
- *   mali_bo.c     buffers: memory, a place in a GPU address space, the
- *                 processor's caches around the GPU, a client's mapping
+ *   mali_bo.c     buffers: a place in a GPU address space for memory of
+ *                 libdrmdriver's (pages, caches, a client's mapping)
  *   mali_sched.c  jobs: the slots, which job runs when, how it ends
- *   mali_drm.c    the clients: the DRM device, its ioctls, sync objects
+ *   mali_drm.c    the clients: Panfrost's calls on libdrmdriver's render
+ *                 node, which has the contexts, sync objects and descriptors
  *   mali_job.c    the self-test at start (a chain of WRITE_VALUE jobs,
  *                 checked by the processor; "faulttest=1" adds a fault)
  *   mali.c        the GPU itself and the service's own life
@@ -185,12 +187,12 @@ void mali_mmu_reset(void);
 /*
  * A buffer: memory the GPU and the processor share, in two parts.
  *
- * The memory (struct mali_mem) is one, whoever has it: the service owns
- * it (anonymous memory of its own, page by page, so that no large buffer
- * needs contiguous RAM), and maps it into a client that asks (vm_remap).
- * A buffer object (struct mali_bo) is that memory placed in one GPU
- * address space, at an address of its own there.  A buffer made by a
- * context has one placement; given to another context as a descriptor
+ * The memory (struct drmdrv_mem, libdrmdriver's) is one, whoever has it:
+ * the service owns it (anonymous memory of its own, page by page, so that
+ * no large buffer needs contiguous RAM), and maps it into a client that
+ * asks (vm_remap).  A buffer object (struct mali_bo) is that memory placed
+ * in one GPU address space, at an address of its own there.  A buffer made
+ * by a context has one placement; given to another context as a descriptor
  * (PRIME, stage 11.6) it gets a second one - the same pages, the
  * importer's own address - as under panfrost, where a GEM object has a
  * mapping per DRM file.  What is the memory's - its pages, the
@@ -205,30 +207,10 @@ void mali_mmu_reset(void);
  */
 #define MALI_HEAP_PIECE	0x200000u	/* what a fault in a heap brings in */
 
-struct fence;
-
-struct mali_mem {
-	uint32_t flags;			/* PANFROST_BO_* it was made with */
-	size_t size;			/* a whole number of pages */
-	void *cpu;			/* this service's mapping; NULL: a heap */
-	phys_bytes *pages;		/* the physical address of each page */
-	unsigned refs;			/* placements, descriptors */
-	unsigned busy;			/* jobs queued or running with it */
-	int cpu_access;			/* written or read by a processor */
-	int foreign;			/* a device's memory, not this service's:
-					   never freed or counted here */
-	endpoint_t src_ep;		/* foreign: whose region it is, and */
-	vir_bytes src_vir;		/* where - what a client is mapped from */
-
-	/* The device's (mali_drm.c): */
-	struct fence *fence;		/* the last job that uses it, or NULL */
-	int minor;			/* as a dma-buf descriptor, or -1 */
-};
-
 struct mali_bo {
 	TAILQ_ENTRY(mali_bo) link;	/* in its address space, by address */
 	struct mali_vm *vm;
-	struct mali_mem *mem;
+	struct drmdrv_mem *mem;
 	uint32_t flags;			/* PANFROST_BO_* */
 	size_t size;			/* a whole number of pages */
 	size_t backed;			/* bytes of memory it counts in vm */
@@ -249,16 +231,11 @@ void mali_bo_unref(struct mali_bo *bo);
 struct mali_bo *mali_bo_new_phys(struct mali_vm *vm, phys_bytes phys,
 	endpoint_t src_ep, vir_bytes src_vir,
 	size_t size, int *err);
-struct mali_bo *mali_bo_import(struct mali_vm *vm, struct mali_mem *mem,
+struct mali_bo *mali_bo_import(struct mali_vm *vm, struct drmdrv_mem *mem,
 	int *err);
-void mali_mem_ref(struct mali_mem *mem);
-void mali_mem_unref(struct mali_mem *mem);
-extern void (*mali_mem_gone)(struct mali_mem *mem);
 void mali_bo_for_gpu(struct mali_bo *bo);
 void mali_bo_for_cpu(struct mali_bo *bo);
 int mali_bo_map_into(struct mali_bo *bo, endpoint_t who, void *addr,
-	int writable, void **where);
-int mali_mem_map_into(struct mali_mem *mem, endpoint_t who, void *addr,
 	int writable, void **where);
 struct mali_bo *mali_bo_at(struct mali_vm *vm, uint64_t va);
 int mali_bo_grow(struct mali_bo *bo, uint64_t va, uint64_t *piece);
@@ -322,9 +299,5 @@ void mali_drm_shutdown(void);
 
 /* mali.c */
 int mali_gpu_recover(void);
-
-/* mali_umap.c */
-int mali_umap_remote(endpoint_t ep, vir_bytes vir, vir_bytes bytes,
-	phys_bytes *phys);
 
 #endif /* _MALI_H */

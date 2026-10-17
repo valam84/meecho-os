@@ -7,16 +7,20 @@
 HERE=$(cd "$(dirname "$0")" && pwd)
 TREE=$(cd "$HERE/../../.." && pwd)
 ORIG=$TREE/minix/drivers/video/mali
+LIBORIG=$TREE/minix/lib/libdrmdriver
 WORK=${WORK:-/tmp/mali-mutate}
 
 # имя@файл@что заменить@на что (для sed: & писать как \&, * как \*,
-# [ как \[; разделитель - %)
+# [ как \[; разделитель - %).  Файл lib/... - libdrmdriver (устройство,
+# заборы, дескрипторы, память буферов ушли туда из mali_drm.c и mali_bo.c);
+# там одна очистка новых страниц на буферы и куски кучи, поэтому мутация
+# «кусок кучи не вычищен» стала мутацией new-bo-dirty.
 MUTATIONS='
 idle-bit@mali_rk.c@#define  PD_GPU_IDLE		(1u << 1)@#define  PD_GPU_IDLE		(1u << 2)
 pwr-bit@mali_rk.c@#define  PD_GPU_PWR		(1u << 0)@#define  PD_GPU_PWR		(1u << 1)
 pvtpll-bit@mali_rk.c@(((x) >> 11) \& 0x1)@(((x) >> 10) \& 0x1)
 div-field@mali_rk.c@(GPU_SRC_GPLL << 6) | (div - 1)@(GPU_SRC_GPLL << 6) | div
-safe-rate@mali_rk.c@#define GPU_CLK_TARGET_KHZ	200000@#define GPU_CLK_TARGET_KHZ	400000
+safe-rate@mali_rk.c@#define GPU_CLK_FALLBACK_KHZ	200000@#define GPU_CLK_FALLBACK_KHZ	400000
 fields-mask@mali_rk.c@#define CLKSEL_GPU_FIELDS	0xfbcfu@#define CLKSEL_GPU_FIELDS	0xffffu
 aclk-ref@mali_rk.c@#define GPU_ACLK_DIV_REF	2@#define GPU_ACLK_DIV_REF	1
 ref-domain@mali_rk.c@{ "PWR_STATUS",   1, PMU_PWR_STATUS, 0x0000007e, PD_GPU_PWR },@{ "PWR_STATUS",   1, PMU_PWR_STATUS, 0x0000007f, PD_GPU_PWR },
@@ -35,8 +39,8 @@ job-index@mali_job.c@JOB_CTL_INDEX(i + 1)@JOB_CTL_INDEX(i)
 next-ptr@mali_job.c@JOB_VA + (i + 1) \* JOB_DESC_SIZE : 0@JOB_VA + i * JOB_DESC_SIZE : 0
 no-clean@mali_sched.c@mali_bo_for_gpu(j->bos\[i\]);@;
 no-inval@mali_sched.c@mali_bo_for_cpu(j->bos\[i\]);@;
-new-bo-dirty@mali_bo.c@cache(CACHE_CLEAN_INVALIDATE, mem->cpu, size);@;
-map-no-cache@mali_bo.c@	mem->cpu_access = 1;@	;
+new-bo-dirty@lib/drm_mem.c@drmdrv_cache(CACHE_CLEAN_INVALIDATE, p, size);@;
+map-no-cache@lib/drm_mem.c@	mem->cpu_access = 1;@	;
 flush-red@mali_sched.c@JS_CONFIG_ENABLE_FLUSH_REDUCTION |@
 no-disable@mali_mmu.c@^	as_disable(as);$@	;
 no-enable@mali_mmu.c@if (as_enable(pick, vm) != OK) {@if (0) {
@@ -54,17 +58,17 @@ lock-width@mali_mmu.c@64 - (unsigned)__builtin_clzll(diff)@63 - (unsigned)__buil
 align-code@mali_bo.c@		align = size;@		align = 0;
 align-2m@mali_bo.c@align = size >= SZ_2M ? SZ_2M : 0;@align = 0;
 fifo@mali_sched.c@continue;	/\* an earlier job of its own is not over \*/@;
-close-frees-early@mali_drm.c@if (c->state == CTX_CLOSING \&\& c->jobs == 0)@if (c->state == CTX_CLOSING)
-close-leaks@mali_drm.c@mali_bo_unref((struct mali_bo \*)c->bo\[i\]);@;
-vircopy-vfs@mali_drm.c@sys_vircopy(c->user, (vir_bytes)ptr@sys_vircopy(c->endpt, (vir_bytes)ptr
-wait-bo-past@mali_drm.c@		return EBUSY;@		return ETIMEDOUT;
-fence-ok@mali_drm.c@p->out->error = j->result == OK ? 0 : j->result == EIO ? EINVAL :@p->out->error = 0 ? 0 : 0 ? 0 :
+close-frees-early@lib/drm_dev.c@if (c->state == DRMDRV_CTX_CLOSING \&\& c->jobs == 0)@if (c->state == DRMDRV_CTX_CLOSING)
+close-leaks@lib/drm_dev.c@drm_drv->bo_unref(c->bo\[i\]);@;
+vircopy-vfs@lib/drm_dev.c@sys_vircopy(c->user, (vir_bytes)ptr@sys_vircopy(c->endpt, (vir_bytes)ptr
+wait-bo-past@mali_drm.c@a->timeout_ns, EBUSY);@a->timeout_ns, ETIMEDOUT);
+fence-ok@mali_drm.c@drmdrv_job_done(\&p->dj, j->result == OK ? 0 : j->result == EIO ? EINVAL :@drmdrv_job_done(\&p->dj, 0 ? 0 : 0 ? 0 :
 fence-error@mali_drm.c@j->result == EIO ? EINVAL :@j->result == EIO ? EIO :
-wait-error@mali_drm.c@return f->error != 0 ? EIO : OK;@return OK;
-no-out-fence@mali_drm.c@		syncobj_set(out, p->out);@		;
-mmap-part@mali_drm.c@if (len != mem->size ||@if (
-version-name@mali_drm.c@"panfrost", \&v->name_len@"mali", \&v->name_len
-remap-self@mali_bo.c@v = vm_remap(who, sef_self(),@v = vm_remap(who, SELF,
+wait-error@lib/drm_sync.c@return f->error != 0 ? EIO : OK;@return OK;
+no-out-fence@mali_drm.c@		drmdrv_syncobj_set(out, p->dj.out);@		;
+mmap-part@lib/drm_dev.c@if (len != mem->size ||@if (
+version-name@mali_drm.c@.name = "panfrost",@.name = "mali",
+remap-self@lib/drm_mem.c@src_ep = mem->foreign ? mem->src_ep : sef_self();@src_ep = mem->foreign ? mem->src_ep : SELF;
 param-rev@mali_drm.c@return mali.gpu_id \& 0xffff;@return mali.gpu_id >> 12;
 heap-prealloc@mali_bo.c@^	if (flags \& PANFROST_BO_HEAP) {$@	if (0) {
 grow-clear-after@mali_mmu.c@	r = mali_bo_grow(bo, addr, \&piece);@	r = mali_bo_grow(bo, addr, \&piece); mali_wr(gpu(), MMU_INT_CLEAR, bits);
@@ -73,41 +77,48 @@ grow-bus-error@mali_mmu.c@if (vm == NULL || bits != MMU_INT_PAGE_FAULT(as) ||@if
 grow-permission@mali_mmu.c@    !MALI_EXC_TRANSLATION(AS_FAULT_EXCEPTION(fs)) ||@    0 ||
 grow-dup-no-flush@mali_mmu.c@		(void)as_flush(as, piece, MALI_HEAP_PIECE, AS_COMMAND_FLUSH_PT);@		;
 grow-await@mali_mmu.c@	mali_sched_mmu_fault(as, bo->vm);@	;
-grow-leak@mali_bo.c@				munmap(bo->pieces\[i\], MALI_HEAP_PIECE);@				;
-grow-no-clean@mali_bo.c@	cache(CACHE_CLEAN_INVALIDATE, p, MALI_HEAP_PIECE);@	;
-grow-no-limit@mali_bo.c@	if (total + MALI_HEAP_PIECE > limit_total ||@	if (0 \&\&
-inval-drops@mali_bo.c@cache(CACHE_CLEAN_INVALIDATE, \(\w*\)->cpu, \(\w*\)->size); /\* not INVALIDATE \*/@cache(CACHE_INVALIDATE, \1->cpu, \2->size);
+grow-leak@mali_bo.c@				drmdrv_pages_free(bo->pieces\[i\], MALI_HEAP_PIECE);@				;
+grow-no-limit@mali_bo.c@	if (!drmdrv_mem_room(MALI_HEAP_PIECE) ||@	if (0 \&\&
+inval-drops@lib/drm_mem.c@drmdrv_cache(CACHE_CLEAN_INVALIDATE, mem->cpu, mem->size); /\* not INVALIDATE \*/@drmdrv_cache(CACHE_INVALIDATE, mem->cpu, mem->size);
 grow-read-only@mali_bo.c@MALI_PTE_READ | MALI_PTE_WRITE | MALI_PTE_XN)) != OK) {@MALI_PTE_READ | MALI_PTE_XN)) != OK) {
-no-open-minor@mali_drm.c@if ((r = chardriver_open_minor(obj_minor(o))) == OK \&\&@if ((r = OK) == OK \&\&
-export-endpt@mali_drm.c@(r = cdevfd_new(c->user, obj_minor(o)@(r = cdevfd_new(c->endpt, obj_minor(o)
-import-endpt@mali_drm.c@if ((minor = cdevfd_get(c->user, fd)) < 0)@if ((minor = cdevfd_get(c->endpt, fd)) < 0)
-obj-kind@mali_drm.c@return o->kind == kind || (kind == OBJ_FREE \&\& o->kind != OBJ_FREE) ?@return o->kind != OBJ_FREE ?
-obj-never-freed@mali_drm.c@if (o->opens > 0 \&\& --o->opens == 0)@if (o->opens > 0 \&\& --o->opens == 99)
-dmabuf-size@mali_drm.c@(uint64_t)bo->mem->size, \&a->fd);@0, \&a->fd);
-dmabuf-cloexec@mali_drm.c@(c, OBJ_DMABUF, bo->mem, (a->flags \& DRM_CLOEXEC) |@(c, OBJ_DMABUF, bo->mem,
-import-new-handle@mali_drm.c@if ((bo = bo_get(c->ctx, i)) != NULL \&\& bo->mem == o->u.mem) {@if (0) {
-no-implicit@mali_drm.c@(void)pjob_wait_for(p, p->bos\[i\]->mem->fence, max);@;
-held-ignored@mali_drm.c@if (!TAILQ_EMPTY(\&c->ctx->held) || !pjob_ready(p))@if (0)
-held-overtaken@mali_drm.c@if (!TAILQ_EMPTY(\&c->ctx->held) || !pjob_ready(p))@if (!pjob_ready(p))
-held-leak@mali_drm.c@^	cancel_held(c);$@	;
-merge-any@mali_drm.c@		if (!f->child\[i\]->signaled)@		if (0)
-no-select-reply@mali_drm.c@			chardriver_reply_select(objs\[i\].sel_endpt,@			if (0) chardriver_reply_select(objs[i].sel_endpt,
-status-sign@mali_drm.c@return e < 0 ? e : -e;@return e < 0 ? -e : e;
-sync-start-no-wait@mali_drm.c@	return wait_mem(c, c->obj->u.mem, INT64_MAX);@	return OK;
-import-fence-lost@mali_drm.c@if ((f = fence_merge(mem->fence, o->u.fence)) == NULL)@if ((f = fence_merge(mem->fence, NULL)) == NULL)
+no-open-minor@lib/drm_sync.c@if ((r = chardriver_open_minor(drm_obj_minor(o))) == OK \&\&@if ((r = OK) == OK \&\&
+export-endpt@lib/drm_sync.c@(r = cdevfd_new(c->user, drm_obj_minor(o)@(r = cdevfd_new(c->endpt, drm_obj_minor(o)
+import-endpt@lib/drm_sync.c@if ((minor = cdevfd_get(c->user, fd)) < 0)@if ((minor = cdevfd_get(c->endpt, fd)) < 0)
+obj-kind@lib/drm_sync.c@return o->kind == kind || (kind == OBJ_FREE \&\& o->kind != OBJ_FREE) ?@return o->kind != OBJ_FREE ?
+obj-never-freed@lib/drm_dev.c@if (o->opens > 0 \&\& --o->opens == 0)@if (o->opens > 0 \&\& --o->opens == 99)
+dmabuf-size@lib/drm_dev.c@(uint64_t)mem->size, \&a->fd);@0, \&a->fd);
+dmabuf-cloexec@lib/drm_dev.c@(c, OBJ_DMABUF, mem, (a->flags \& DRM_CLOEXEC) |@(c, OBJ_DMABUF, mem,
+import-new-handle@lib/drm_dev.c@drm_drv->bo_mem(bo) == o->u.mem) {@drm_drv->bo_mem(bo) == NULL) {
+no-implicit@lib/drm_sync.c@(void)drmdrv_job_wait_for(j, mem->fence);@;
+held-ignored@lib/drm_sync.c@if (!TAILQ_EMPTY(\&c->held) || !job_ready(j))@if (0)
+held-overtaken@lib/drm_sync.c@if (!TAILQ_EMPTY(\&c->held) || !job_ready(j))@if (!job_ready(j))
+held-leak@lib/drm_dev.c@^	drm_cancel_held(c);$@	;
+merge-any@lib/drm_sync.c@		if (!f->child\[i\]->signaled)@		if (0)
+no-select-reply@lib/drm_sync.c@			chardriver_reply_select(drm_objs\[i\].sel_endpt,@			if (0) chardriver_reply_select(drm_objs[i].sel_endpt,
+status-sign@lib/drm_sync.c@return e < 0 ? e : -e;@return e < 0 ? -e : e;
+sync-start-no-wait@lib/drm_sync.c@	return drmdrv_wait_fence(c, c->obj->u.mem->fence, INT64_MAX, EBUSY);@	return OK;
+import-fence-lost@lib/drm_sync.c@if ((f = drm_fence_merge(mem->fence, o->u.fence)) == NULL)@if ((f = drm_fence_merge(mem->fence, NULL)) == NULL)
 place-pages@mali_bo.c@if ((r = mali_vm_map(bo->vm, va, bo->mem->pages,@if ((r = mali_vm_map(bo->vm, va, bo->mem->pages + 1,
 '
 
 echo "$MUTATIONS" | while IFS='@' read -r name file from to; do
 	[ -n "$name" ] || continue
 	rm -rf "$WORK"
-	cp -r "$ORIG" "$WORK"
+	mkdir -p "$WORK"
+	cp -r "$ORIG" "$WORK/mali"
+	cp -r "$LIBORIG" "$WORK/lib"
+	# lib/... - libdrmdriver's file; anything else - the service's.
+	case "$file" in
+	lib/*)	orig=$LIBORIG/${file#lib/} ;;
+	*)	orig=$ORIG/$file; file=mali/$file ;;
+	esac
 	sed -i "s%$from%$to%" "$WORK/$file"
-	if cmp -s "$ORIG/$file" "$WORK/$file"; then
+	if cmp -s "$orig" "$WORK/$file"; then
 		echo "НЕ ПРИМЕНИЛАСЬ  $name"
 		continue
 	fi
-	if SRC=$WORK OUT=$WORK sh "$HERE/run.sh" >"$WORK/out" 2>&1; then
+	if SRC=$WORK/mali LIB=$WORK/lib OUT=$WORK sh "$HERE/run.sh" \
+	    >"$WORK/out" 2>&1; then
 		echo "ПРОПУЩЕНА       $name"
 	else
 		echo "поймана         $name ($(grep -c ОТКАЗ "$WORK/out") отказ.)"

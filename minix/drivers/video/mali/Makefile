@@ -1,7 +1,7 @@
 # Makefile for the Mali GPU service (Bifrost, found in the device tree)
 PROG=	mali
 SRCS=	mali.c mali_find.c mali_rk.c mali_mmu.c mali_bo.c mali_sched.c \
-	mali_drm.c mali_job.c mali_umap.c
+	mali_drm.c mali_job.c
 
 FILES=${PROG}.conf
 FILESNAME=${PROG}
@@ -17,8 +17,10 @@ CPPFLAGS+=	-I${NETBSDSRCDIR}/external/mit/libdrm/dist/include/drm \
 # <linux/sync_file.h>, MEECHO's own, installed in /usr/include/gfxcompat.
 CPPFLAGS+=	-I${NETBSDSRCDIR}/minix/lib/libgfxcompat
 
-DPADD+=	${LIBCHARDRIVER} ${LIBSYS} ${LIBTIMERS}
-LDADD+=	-lchardriver -lsys -ltimers
+# The render node itself - contexts, sync objects, descriptors, buffers'
+# memory - is libdrmdriver's, shared with the adreno service.
+DPADD+=	${LIBDRMDRIVER} ${LIBCHARDRIVER} ${LIBSYS} ${LIBTIMERS}
+LDADD+=	-ldrmdriver -lchardriver -lsys -ltimers
 
 WARNS?=	5
 

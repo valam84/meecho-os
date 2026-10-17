@@ -1792,7 +1792,158 @@ static const struct driconf_device device_384 = {
     .applications = device_384_applications,
 };
 
+
+    
+static const struct driconf_option application_388_options[] = {
+    { .name = "force_gl_renderer", .value = "Adreno (TM) 618" },
+    { .name = "force_gl_vendor", .value = "Qualcomm" },
+};
+
+    
+static const struct driconf_option application_391_options[] = {
+    { .name = "force_gl_renderer", .value = "Adreno (TM) 630" },
+    { .name = "force_gl_vendor", .value = "Qualcomm" },
+};
+
+    
+static const struct driconf_option application_394_options[] = {
+    { .name = "force_gl_renderer", .value = "Adreno (TM) 618" },
+    { .name = "force_gl_vendor", .value = "Qualcomm" },
+};
+
+    
+static const struct driconf_option application_397_options[] = {
+    { .name = "force_gl_renderer", .value = "Adreno (TM) 630" },
+    { .name = "force_gl_vendor", .value = "Qualcomm" },
+};
+
+
+static const struct driconf_application device_387_applications[] = {
+    { .name = "Call of Duty Mobile",
+      .executable = "com.activision.callofduty.shooter",
+      .num_options = 2,
+      .options = application_388_options,
+    },
+    { .name = "Asphalt 8",
+      .executable = "com.gameloft.android.ANMP.GloftA8HM",
+      .num_options = 2,
+      .options = application_391_options,
+    },
+    { .name = "Asphalt 9",
+      .executable = "com.gameloft.android.ANMP.GloftA9HM",
+      .num_options = 2,
+      .options = application_394_options,
+    },
+    { .name = "PUBG Mobile",
+      .executable = "com.tencent.ig",
+      .num_options = 2,
+      .options = application_397_options,
+    },
+};
+
+static const struct driconf_device device_387 = {
+    .driver = "msm",
+    .device = "FD618",
+    .num_engines = 0,
+    .num_applications = 4,
+    .applications = device_387_applications,
+};
+
+
+    
+static const struct driconf_option application_401_options[] = {
+    { .name = "force_gl_vendor", .value = "angleisbroken" },
+};
+
+    
+static const struct driconf_option application_403_options[] = {
+    { .name = "force_gl_vendor", .value = "angleisbroken" },
+};
+
+    
+static const struct driconf_option application_405_options[] = {
+    { .name = "force_gl_vendor", .value = "angleisbroken" },
+};
+
+    
+static const struct driconf_option application_407_options[] = {
+    { .name = "force_gl_vendor", .value = "angleisbroken" },
+};
+
+    
+static const struct driconf_option application_409_options[] = {
+    { .name = "force_gl_vendor", .value = "angleisbroken" },
+};
+
+    
+static const struct driconf_option application_411_options[] = {
+    { .name = "force_gl_vendor", .value = "angleisbroken" },
+};
+
+    
+static const struct driconf_option application_413_options[] = {
+    { .name = "force_gl_vendor", .value = "angleisbroken" },
+};
+
+    
+static const struct driconf_option application_415_options[] = {
+    { .name = "disable_explicit_sync_heuristic", .value = "true" },
+};
+
+
+static const struct driconf_application device_400_applications[] = {
+    { .name = "Chromium",
+      .executable = "chromium",
+      .num_options = 1,
+      .options = application_401_options,
+    },
+    { .name = "Chromium",
+      .executable = "chromium-browser",
+      .num_options = 1,
+      .options = application_403_options,
+    },
+    { .name = "Chromium",
+      .executable = "chrome",
+      .num_options = 1,
+      .options = application_405_options,
+    },
+    { .name = "VS Code",
+      .executable = "code",
+      .num_options = 1,
+      .options = application_407_options,
+    },
+    { .name = "element-desktop",
+      .executable = "element-desktop",
+      .num_options = 1,
+      .options = application_409_options,
+    },
+    { .name = "vivaldi-bin",
+      .executable = "vivaldi-bin",
+      .num_options = 1,
+      .options = application_411_options,
+    },
+    { .name = "code",
+      .executable = "vivaldi-bin",
+      .num_options = 1,
+      .options = application_413_options,
+    },
+    { .name = "Xwayland",
+      .executable = "Xwayland",
+      .num_options = 1,
+      .options = application_415_options,
+    },
+};
+
+static const struct driconf_device device_400 = {
+    .driver = "msm",
+    .num_engines = 0,
+    .num_applications = 8,
+    .applications = device_400_applications,
+};
+
 static const struct driconf_device *driconf[] = {
     &device_1,
     &device_384,
+    &device_387,
+    &device_400,
 };

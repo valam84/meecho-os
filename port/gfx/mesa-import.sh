@@ -34,6 +34,13 @@ DESTDIR=${DESTDIR:-$HOME/dest-evbarm64}
 XCXX=${XCXX:-$HOME/xtools-aarch64-cxx/bin/aarch64-elf64-minix}
 XBIN=${XBIN:-$HOME/xtools-aarch64/bin/aarch64-elf64-minix}
 JOBS=${JOBS:-24}
+# Every Gallium driver MEECHO has a kernel side for, in one libgallium: the
+# CB2's Mali (panfrost, minix/drivers/video/mali) and the Mi Pad 4's Adreno
+# (freedreno, port/clover/hw-gpu.md).  The pipe loader picks one at run time
+# by the name the render node gives (drmGetVersion), so one userland serves
+# both machines.  The reachover keeps only what this build read: a driver
+# left out here is gone from dist/ after the next import.
+GALLIUM_DRIVERS=${GALLIUM_DRIVERS:-panfrost,freedreno}
 
 DIST=$WORK/mesa-mesa-$MESA_VER
 TOOLS=$WORK/host-tools
@@ -105,6 +112,8 @@ for a in "\$@"; do
 	*gallium/drivers/panfrost/*.c) extra+=(-include pthread.h) ;;
 	*util/texcompress_astc_luts*.cpp)
 		extra+=(-include $OUT/lib/libgallium/onethread-mutex.h) ;;
+	*gallium/drivers/freedreno/*|*gallium/winsys/freedreno/*)
+		extra+=(-include $OUT/lib/libgallium/fd-gettid.h) ;;
 	esac
 	args+=("\$a")
 done
@@ -162,7 +171,8 @@ setup() {
 	rm -rf "$ORACLE"
 	meson setup "$ORACLE" "$DIST" --cross-file "$CROSS/minix.ini" \
 	    --buildtype=release --prefix=/usr \
-	    -Dgallium-drivers=panfrost -Dvulkan-drivers= -Dplatforms= \
+	    -Dgallium-drivers="$GALLIUM_DRIVERS" -Dfreedreno-kmds=msm \
+	    -Dvulkan-drivers= -Dplatforms= \
 	    -Degl=enabled -Dgles1=disabled -Dgles2=enabled -Dopengl=false \
 	    -Dglx=disabled -Dgbm=enabled -Dllvm=disabled \
 	    -Dmesa-clc=system -Dprecomp-compiler=system \

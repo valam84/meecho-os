@@ -37,6 +37,12 @@ CPPFLAGS.${_f}+=	-isystem ${DESTDIR}/usr/include/libepoll-shim
 CPPFLAGS.${_f}+=	-include pthread.h
 .endfor
 
+# freedreno's debug lines name their thread by syscall(SYS_gettid), which
+# MINIX's syscall() is not; fd-gettid.h says why and what stands in.
+.for _f in ${SRCS:M*gallium-drivers-freedreno-*} ${SRCS:M*gallium-winsys-freedreno-*}
+CPPFLAGS.${_f}+=	-include ${.CURDIR}/fd-gettid.h
+.endfor
+
 # The ASTC tables take a std::mutex, and MEECHO's libstdc++ is
 # single-threaded: none.  onethread-mutex.h gives one that does nothing,
 # which is exact for libmthread's threads there (see the header).

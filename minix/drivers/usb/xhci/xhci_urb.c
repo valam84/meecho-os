@@ -1301,8 +1301,14 @@ send_urb(message *m)
  * not yet knowing: the dock went, its withdrawal is on the way, and its
  * thread finished a poll first.  That is told quietly and dropped.
  *
- * Every answer to a client of the library is zero - libusb panics on
- * anything else - so a refusal is a line in the log, not an error code.
+ * A refusal is a line in the log and an answer of zero: a client of the
+ * old library (usb_send_info()) panics on anything else.  The one error
+ * answered is to a hub driver that names its hub - it uses
+ * usb_send_dev_info(), which returns the answer - when the device it
+ * reported could not be enumerated: it then resets the port and reports
+ * the device again, as Linux retries a device "not accepting address".
+ * The dock's RTL8152, three hubs down, refused its first Address Device
+ * with a transaction error on every bring-up the board ran.
  */
 static int
 hub_news(message *m)
@@ -1343,6 +1349,8 @@ hub_news(message *m)
 
 	if ((dev = xhci_hub_port(hub, port, news)) != NULL)
 		xhci_urb_announce(dev);
+	else if (news != XHCI_HUB_GONE && id != 0)
+		return EIO;
 	return OK;
 }
 

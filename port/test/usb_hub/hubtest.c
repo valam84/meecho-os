@@ -383,6 +383,7 @@ struct ddekit_usb_dev {
 	int id;
 	int withdrawn;
 	unsigned submits;		/* requests the driver made of it */
+	unsigned refuse[16];		/* news of a device here xhci fails */
 	struct mhub hub;
 };
 
@@ -673,6 +674,17 @@ ddekit_usb_info(struct ddekit_usb_dev *dev, long type, long value)
 		news[nnews].at = now_ms;
 		nnews++;
 	}
+
+	/*
+	 * A device xhci could not address - the dock's RTL8152 on the board,
+	 * Address Device ending in a transaction error - is answered with
+	 * EIO, as xhci_urb.c answers it.
+	 */
+	if (dev != NULL && type != DDEKIT_HUB_PORT_DISCONN && value >= 0 &&
+	    value < 16 && dev->refuse[value] != 0) {
+		dev->refuse[value]--;
+		return EIO;
+	}
 	return 0;
 }
 
@@ -934,6 +946,53 @@ test_at_once(struct ddekit_usb_dev *b1, struct ddekit_usb_dev *b2)
 	    "free (%d in use)", entries_used());
 }
 
+/*
+ * A device the host controller cannot address at first: the dock's RTL8152
+ * on the board.  The port is reset and the device reported again, up to
+ * four times, as Linux does; one that never takes an address has its port
+ * disabled and left powered.
+ */
+static void
+test_not_addressed(struct ddekit_usb_dev *c)
+{
+	struct mport *mp = &c->hub.port[1];
+	unsigned n = nnews, resets;
+
+	section("a device the host controller could not address");
+
+	said_reset();
+	resets = mp->resets;
+	c->refuse[1] = 1;
+	plug(c, 1, HIGH);
+	run_for(4000);
+
+	check(has_news(c->id, DDEKIT_HUB_PORT_HS_CONN, 1) == 2,
+	    "refused once, it is reported twice (%u news)", nnews - n);
+	check(mp->resets == resets + 2, "with a reset before each (%u)",
+	    mp->resets - resets);
+	check(has_said("resetting again"), "and the driver says why");
+
+	said_reset();
+	unplug(c, 1);
+	run_for(2000);
+	n = nnews;
+	resets = mp->resets;
+	c->refuse[1] = 10;
+	plug(c, 1, HIGH);
+	run_for(8000);
+	check(has_news(c->id, DDEKIT_HUB_PORT_HS_CONN, 1) >= 4 &&
+	    mp->resets == resets + 4, "never addressed: four tries, four "
+	    "resets (%u, %u)", nnews - n, mp->resets - resets);
+	check(has_said("given up") && mp->power && !mp->enable,
+	    "then given up on - the port disabled, and powered");
+
+	c->refuse[1] = 0;
+	unplug(c, 1);
+	run_for(2000);
+	check(violations == 0, "the driver kept to xhci's rule: %s",
+	    violations ? last_violation : "yes");
+}
+
 static void
 test_new_dock(struct ddekit_usb_dev *c)
 {
@@ -1142,6 +1201,7 @@ main(int argc, char **argv)
 	test_new_dock(c);
 	test_overcurrent(c);
 	test_refusing_device(c);
+	test_not_addressed(c);
 
 	d = new_hub(14, 4, 0x0001, 50);
 	test_restart(d);

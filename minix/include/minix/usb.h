@@ -170,7 +170,10 @@ int usb_send_info(long, long);
 /*
  * The same, about one device: a hub driver holding several hubs says which
  * one its news is about (USB_INFO_DEV).  usb_send_info() is this with no
- * device named, which the HCD takes to mean the only one there is.
+ * device named, which the HCD takes to mean the only one there is.  This
+ * one returns the HCD's answer instead of panicking on it: a device the
+ * hub reported and the HCD could not address is an error, and the hub
+ * driver resets the port and reports it again.
  */
 int usb_send_dev_info(int dev_id, long info_type, long info_value);
 

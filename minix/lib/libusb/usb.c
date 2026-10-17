@@ -231,7 +231,12 @@ int usb_handle_msg(struct usb_driver *ud, message *msg)
 int
 usb_send_info(long info_type, long info_value)
 {
-	return usb_send_dev_info(0, info_type, info_value);
+	int res = usb_send_dev_info(0, info_type, info_value);
+
+	/* The old contract: anything but success is the HCD gone wrong. */
+	if (res != 0)
+		panic("usb_send_info: got illegal response from HCD: %d", res);
+	return res;
 }
 
 /*****************************************************************************
@@ -241,6 +246,12 @@ usb_send_info(long info_type, long info_value)
  * The message is cleared first.  It was not, and while it carried two
  * fields nobody read the rest; now that the HCD reads a third - which hub
  * the news is about - whatever was on the stack there would name a device.
+ *
+ * And the answer is returned rather than panicked on: news of a device
+ * that the HCD then could not address is answered with an error, and the
+ * hub driver resets the port and tries again, as Linux does (a device "not
+ * accepting address" is retried with a fresh reset, PORT_INIT_TRIES).  An
+ * HCD that knows nothing of this answers zero, as it always did.
  */
 int
 usb_send_dev_info(int dev_id, long info_type, long info_value)
@@ -262,9 +273,6 @@ usb_send_dev_info(int dev_id, long info_type, long info_value)
 		panic("usb_send_info: could not talk to HCD: %d", res);
 
 	if (msg.m_type != USB_REPLY)
-		panic("usb_send_info: got illegal response from HCD: %d", msg.m_type);
-
-	if (msg.USB_RESULT != 0)
 		panic("usb_send_info: got illegal response from HCD: %d", msg.m_type);
 
 	return msg.USB_RESULT;

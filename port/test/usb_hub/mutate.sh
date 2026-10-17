@@ -24,6 +24,8 @@
 #   stay      a withdrawn hub's thread going on polling it
 #   release   the entry of a withdrawn hub never given back
 #   restart   a restart refused, as before
+#   noretry   a device the host controller could not address given up on at
+#             once, as before - the dock's RTL8152 on the board
 #
 #   sh mutate.sh
 
@@ -129,6 +131,12 @@ mut_release() {
 	changed usb_hub.c release
 }
 
+mut_noretry() {
+	perl -0pi -e 's/\t\tif \(attempt >= USB_HUB_ENUM_TRIES\) \{/\t\tif (1) {/' \
+	    "$WORK/src/usb_hub.c"
+	changed usb_hub.c noretry
+}
+
 mut_restart() {
 	perl -0pi -e 's/\t\tcase SEF_INIT_FRESH:\n\t\tcase SEF_INIT_RESTART:\n\t\t\treturn EXIT_SUCCESS;\n/\t\tcase SEF_INIT_FRESH:\n\t\t\treturn EXIT_SUCCESS;\n/' \
 	    "$WORK/src/usb_hub.c"
@@ -137,7 +145,7 @@ mut_restart() {
 
 bad=0
 for m in nolock newslock whose onehub powerdown nooc nogood resync bounds \
-    stay release restart; do
+    stay release restart noretry; do
 	run_one "$m" "mut_$m" || bad=$((bad + 1))
 done
 

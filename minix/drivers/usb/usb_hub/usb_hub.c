@@ -130,6 +130,11 @@ static void hub_thread(void *);
  * enough for a flash drive that dropped off the bus on every reset. */
 #define USB_HUB_RESET_ROUNDS 5
 
+/* How many times a device is reset and reported before the host
+ * controller is believed that it cannot be addressed: Linux's
+ * PORT_INIT_TRIES. */
+#define USB_HUB_ENUM_TRIES 4
+
 /* Hub descriptor type */
 #define USB_HUB_DESCRIPTOR_TYPE 0x29
 
@@ -1254,29 +1259,16 @@ hub_port_debounce(hub_state * s, int port_num, hub_port_status * status)
 	return EXIT_FAILURE;
 }
 
+/*
+ * Reset a port with a settled connection on it, until it is enabled, and
+ * say at what speed: EXIT_SUCCESS, HUB_CONN_GONE or EXIT_FAILURE.
+ */
 static int
-hub_handle_connection(hub_state * s, int port_num, hub_port_status * status)
+hub_port_reset(hub_state * s, int port_num, hub_port_status * status,
+	long * speed)
 {
-	int reset_tries, reset_rounds, r;
+	int reset_tries, reset_rounds;
 	long port_speed;
-
-	HUB_DEBUG_DUMP;
-
-	HUB_PMSG(s, "Device connected to port%d", port_num);
-
-	/* This should never happen if power-off works as intended */
-	if (status->C_PORT_RESET) {
-		HUB_PMSG(s, "Unexpected reset state for port%d", port_num);
-		return EXIT_FAILURE;
-	}
-
-	/* Let the connection settle before resetting it */
-	if ((r = hub_port_debounce(s, port_num, status)) != EXIT_SUCCESS) {
-		if (r == HUB_CONN_GONE)
-			HUB_PMSG(s, "Port%d: device gone before reset",
-				port_num);
-		return r;
-	}
 
 	/*
 	 * The reset, and again if the device moved during it.
@@ -1426,8 +1418,74 @@ hub_handle_connection(hub_state * s, int port_num, hub_port_status * status)
 			port_speed = (long)DDEKIT_HUB_PORT_FS_CONN;
 	}
 
-	/* Signal to HCD that port has device connected at given speed */
-	return hub_news(s, port_speed, port_num);
+	*speed = port_speed;
+	return EXIT_SUCCESS;
+}
+
+/*
+ * A device on a port: let it settle, reset the port, tell the host
+ * controller - and if the controller could not address the device, reset
+ * the port and tell it again.
+ *
+ * The retry is Linux's (hub_port_connect(): PORT_INIT_TRIES, a fresh reset
+ * each time), and it is here because the board needed it: the dock's
+ * RTL8152, three hubs below the root port, answered its first Address
+ * Device with a transaction error on every bring-up, though its port was
+ * enabled at high speed - the hubs, the receiver and the card reader on
+ * the same run took their addresses the first time.  A device that never
+ * takes one is given up on as before: its port is disabled and stays
+ * powered.
+ */
+static int
+hub_handle_connection(hub_state * s, int port_num, hub_port_status * status)
+{
+	int attempt, r;
+	long port_speed;
+
+	HUB_DEBUG_DUMP;
+
+	HUB_PMSG(s, "Device connected to port%d", port_num);
+
+	/* This should never happen if power-off works as intended */
+	if (status->C_PORT_RESET) {
+		HUB_PMSG(s, "Unexpected reset state for port%d", port_num);
+		return EXIT_FAILURE;
+	}
+
+	/* Let the connection settle before resetting it */
+	if ((r = hub_port_debounce(s, port_num, status)) != EXIT_SUCCESS) {
+		if (r == HUB_CONN_GONE)
+			HUB_PMSG(s, "Port%d: device gone before reset",
+				port_num);
+		return r;
+	}
+
+	for (attempt = 1; ; attempt++) {
+		if ((r = hub_port_reset(s, port_num, status, &port_speed)) !=
+				EXIT_SUCCESS)
+			return r;
+
+		/* Signal to HCD that port has device connected at given speed */
+		if ((r = hub_news(s, port_speed, port_num)) == EXIT_SUCCESS)
+			return EXIT_SUCCESS;
+		if (s->gone)
+			return EXIT_FAILURE;
+		if (attempt >= USB_HUB_ENUM_TRIES) {
+			HUB_PMSG(s, "Port%d: the host controller could not "
+				"address its device %d times; given up",
+				port_num, attempt);
+			return EXIT_FAILURE;
+		}
+		HUB_PMSG(s, "Port%d: the host controller could not address "
+			"its device (%d); resetting again", port_num, r);
+		ddekit_thread_msleep(USB_HUB_RESET_DELAY);
+		if (hub_get_port_status(s, port_num, status))
+			return EXIT_FAILURE;
+		if (!status->PORT_CONNECTION) {
+			HUB_PMSG(s, "Port%d: device gone", port_num);
+			return HUB_CONN_GONE;
+		}
+	}
 }
 
 

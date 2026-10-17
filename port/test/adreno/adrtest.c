@@ -1,0 +1,290 @@
+/*
+ * Хостовый стенд службы adreno: настоящие adreno_find.c, adreno_run.c,
+ * adreno_cc.c, adreno_hw.c, adreno_tz.c и qcom_soc.c, настоящая читалка
+ * дерева libsys, настоящее дерево планшета (clover) — и модель SoC вокруг
+ * GPU (model.c) вместо железа.  Служба под стенд не правится.
+ *
+ *	adrtest [-v] CLOVER_DTB OTHER_DTB
+ *
+ * OTHER_DTB — дерево машины без Adreno (CB2): служба должна сказать, что
+ * узла нет, и уйти, ничего не тронув.
+ *
+ * Что проверяется в каждом сценарии:
+ *   - ни одного обращения к блоку без такта или питания (иначе модель
+ *     «вешает шину», и сценарий падает с причиной);
+ *   - стадия probe не пишет ничего;
+ *   - после любой стадии всё, что модель видит, — как было до неё;
+ *   - строки Q, которых ждёт круг на планшете (hw-gpu.md, §12).
+ */
+
+#include "adreno.h"
+#include "model.h"
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct log ad_log = { "adreno", LEVEL_INFO, NULL };
+
+static int failures, checks;
+
+static void
+check(int ok, const char *what, ...)
+{
+	va_list ap;
+
+	checks++;
+	if (ok)
+		return;
+	failures++;
+	printf("  FAIL: ");
+	va_start(ap, what);
+	vprintf(what, ap);
+	va_end(ap);
+	printf("\n");
+}
+
+static void *
+load(const char *path)
+{
+	FILE *f = fopen(path, "rb");
+	long n;
+	void *buf;
+
+	if (f == NULL || fseek(f, 0, SEEK_END) != 0 || (n = ftell(f)) <= 0) {
+		fprintf(stderr, "adrtest: cannot read %s\n", path);
+		exit(2);
+	}
+	rewind(f);
+	buf = malloc((size_t)n);
+	if (buf == NULL || fread(buf, 1, (size_t)n, f) != (size_t)n) {
+		fprintf(stderr, "adrtest: cannot read %s\n", path);
+		exit(2);
+	}
+	fclose(f);
+	return buf;
+}
+
+/* One run of a stage in a scenario: the run's result, or -1000 if hung. */
+static int
+run(const void *dtb, const struct scenario *s, int stage, int tz)
+{
+	volatile int r = -1000;
+
+	model_reset(s);
+	if (setjmp(model_hang) == 0)
+		r = adreno_run(dtb, stage, tz);
+	return r;
+}
+
+static void
+expect_clean(const struct scenario *s, const char *stage, int r, int want)
+{
+	char why[128];
+
+	check(r != -1000, "%s/%s: the bus hung: %s", s->name, stage,
+	    model_violation());
+	if (r == -1000)
+		return;
+	check(r == want, "%s/%s: returned %d, wanted %d", s->name, stage, r,
+	    want);
+	check(model_same_as_start(why, sizeof(why)), "%s/%s: not as found: %s",
+	    s->name, stage, why);
+}
+
+static void
+saw(const struct scenario *s, const char *stage, const char *needle)
+{
+	check(model_saw(needle), "%s/%s: no line with \"%s\"", s->name, stage,
+	    needle);
+}
+
+static void
+not_saw(const struct scenario *s, const char *stage, const char *needle)
+{
+	check(!model_saw(needle), "%s/%s: a line with \"%s\"", s->name, stage,
+	    needle);
+}
+
+int
+main(int argc, char **argv)
+{
+	static const struct scenario boot = { "boot", 1, 0, 0, 0, 0, 0, 0, 1 };
+	static const struct scenario allon = { "all-on", 1, 1, 1, 1, 1, 0, 0,
+	    1 };
+	static const struct scenario cxon = { "cx-on", 1, 0, 1, 0, 0, 0, 0, 0 };
+	static const struct scenario noiface = { "no-iface", 0, 0, 0, 0, 0, 0,
+	    0, 0 };
+	static const struct scenario gxdead = { "gx-dead", 1, 0, 0, 0, 0, 1, 0,
+	    0 };
+	static const struct scenario stuck = { "root-stuck", 1, 0, 0, 0, 0, 0,
+	    1, 0 };
+	static const struct scenario stale = { "stale-clocks", 1, 1, 1, 0, 1,
+	    0, 0, 0 };
+	static const char *const stages[] = { "probe", "cx", "gx", "gpu",
+	    "smmu" };
+	const struct scenario *all[] = { &boot, &allon, &cxon };
+	void *dtb, *other;
+	unsigned i, st;
+	int r, a = 1;
+
+	if (argc > 1 && strcmp(argv[1], "-v") == 0) {
+		model_verbose = 1;
+		a = 2;
+	}
+	if (argc - a != 2) {
+		fprintf(stderr, "usage: adrtest [-v] CLOVER_DTB OTHER_DTB\n");
+		return 2;
+	}
+	dtb = load(argv[a]);
+	other = load(argv[a + 1]);
+
+	/* The tree as the service reads it. */
+	printf("tree\n");
+	r = run(dtb, &boot, AD_PROBE, 0);
+	expect_clean(&boot, "probe", r, OK);
+	check(model_writes() == 0, "probe wrote %u times", model_writes());
+	saw(&boot, "probe", "node gpu@5000000 qcom,adreno-512.0 chip "
+	    "0x05010200 at 0x5000000+0x40000 irq 332");
+	saw(&boot, "probe", "smmu iommu@5040000 sid 0 at 0x5040000+0x10000, "
+	    "10 lines (2 global), domain 1; gpucc 0x5065000+0x9038");
+	saw(&boot, "probe", "zap a512_zap.mdt at 0xf0b00000+0x2000");
+	saw(&boot, "probe", "up to 588 MHz");
+	saw(&boot, "probe", "Q1 gcc iface on");
+	saw(&boot, "probe", " mem off");
+	saw(&boot, "probe", "Q2 gpucc cx off");
+	saw(&boot, "probe", " gx off");
+	saw(&boot, "probe", " cxo on");
+	saw(&boot, "probe", " gfx3d off");
+	saw(&boot, "probe", "pll0 nolock L 29 800.0 MHz");
+	saw(&boot, "probe", " gfx3d pll0/2 400.0");
+	saw(&boot, "probe", "stage probe: nothing written");
+
+	/* The guards themselves: asked to read with nothing powered. */
+	r = run(dtb, &boot, AD_PROBE, 0);
+	if (setjmp(model_hang) == 0) {
+		hw_gpu_report();
+		hw_smmu_report();
+		r = OK;
+	} else
+		r = -1000;
+	check(r == OK, "guards: the bus hung: %s", model_violation());
+	saw(&boot, "guards", "Q5 gpu not read: rbbmtimer is off");
+	saw(&boot, "guards", "Q9 smmu not read: mem is off");
+	/* Every clock reads on, GX does not: the domain alone must stop it. */
+	r = run(dtb, &stale, AD_PROBE, 0);
+	if (setjmp(model_hang) == 0) {
+		hw_gpu_report();
+		hw_smmu_report();
+		r = OK;
+	} else
+		r = -1000;
+	check(r == OK, "guards/stale: the bus hung: %s", model_violation());
+	saw(&stale, "guards", "Q5 gpu not read: its GPUCC power domain is off");
+	saw(&stale, "guards", "Q9 smmu not read: its power domain is off");
+
+	r = run(other, &boot, AD_SMMU, 0);
+	check(r == ENXIO, "other tree: returned %d, wanted ENXIO", r);
+	check(model_writes() == 0, "other tree: wrote %u times",
+	    model_writes());
+	saw(&boot, "other", "no qcom,adreno node");
+
+	/* Every stage in the states the boot loader may leave. */
+	for (i = 0; i < sizeof(all) / sizeof(all[0]); i++) {
+		printf("%s\n", all[i]->name);
+		for (st = AD_PROBE; st <= AD_SMMU; st++) {
+			r = run(dtb, all[i], (int)st, 0);
+			expect_clean(all[i], stages[st], r, OK);
+			if (st == AD_PROBE) {
+				check(model_writes() == 0, "%s/probe: %u "
+				    "writes", all[i]->name, model_writes());
+				continue;
+			}
+			saw(all[i], stages[st], "Q4 power:");
+			saw(all[i], stages[st], "Q11 undone:");
+			saw(all[i], stages[st], "all as found");
+			if (st == AD_CX) {
+				not_saw(all[i], stages[st], "Q4 clocks");
+				not_saw(all[i], stages[st], "gx on in");
+			}
+			if (st >= AD_GX)
+				saw(all[i], stages[st], "Q4 clocks:");
+			if (st >= AD_GPU) {
+				saw(all[i], stages[st], "Q5 gpu hw 50120000 "
+				    "00000000 00000000 vbif 20090000");
+				saw(all[i], stages[st], "secvid 00000001");
+				saw(all[i], stages[st], "Q7 gpu timer 192000 "
+				    "ticks in 10 ms");
+				saw(all[i], stages[st], "Q8 gpu scratch0 "
+				    "12345678, wrote 5ad0c0de read 5ad0c0de, "
+				    "restored 12345678: writes reach");
+			} else
+				not_saw(all[i], stages[st], "Q5");
+			if (st >= AD_SMMU) {
+				saw(all[i], stages[st], "Q9 smmu scr0 00000001"
+				    " id 48000010 20000005 00000511");
+				saw(all[i], stages[st], "5 cb, 16 smr, 4K "
+				    "pages, ias 36 oas 36 ubs 48");
+				saw(all[i], stages[st], "Q10 sid 0: smr 0 "
+				    "s2cr 00000000 (translate cb 0) cbar "
+				    "00010000");
+				saw(all[i], stages[st], "Q10 cb0 +0x8000");
+			} else
+				not_saw(all[i], stages[st], "Q9");
+		}
+	}
+	/* What each start state should make of the domains. */
+	r = run(dtb, &boot, AD_GX, 0);
+	saw(&boot, "gx", "Q4 power: cx on in");
+	saw(&boot, "gx", "gx on in");
+	saw(&boot, "gx", "Q4 clocks: mem on; mem_iface on; rbbmtimer xo on;"
+	    " rbcpr xo on; core xo on;");
+	r = run(dtb, &allon, AD_GX, 0);
+	saw(&allon, "gx", "Q4 power: cx was on; gx was on;");
+	saw(&allon, "gx", "Q4 clocks: all were on");
+	check(model_writes() == 0, "all-on/gx: %u writes, wanted none",
+	    model_writes());
+	r = run(dtb, &cxon, AD_GX, 0);
+	saw(&cxon, "gx", "Q4 power: cx was on; gx on in");
+
+	/* The iface clock off: nothing past the GCC is touched. */
+	printf("%s\n", noiface.name);
+	for (st = AD_PROBE; st <= AD_SMMU; st++) {
+		r = run(dtb, &noiface, (int)st, 0);
+		expect_clean(&noiface, stages[st], r, EIO);
+		check(model_writes() == 0, "no-iface/%s: %u writes",
+		    stages[st], model_writes());
+		saw(&noiface, stages[st], "Q2 gpucc not read");
+	}
+
+	/* No rail for GX: no GPU read, everything back. */
+	printf("%s\n", gxdead.name);
+	r = run(dtb, &gxdead, AD_SMMU, 0);
+	expect_clean(&gxdead, "smmu", r, EIO);
+	saw(&gxdead, "smmu", "gx did not come on");
+	not_saw(&gxdead, "smmu", "Q5");
+	not_saw(&gxdead, "smmu", "Q9");
+	saw(&gxdead, "smmu", "all as found");
+
+	/* gfx3d's root never takes the crystal: stop, undo. */
+	printf("%s\n", stuck.name);
+	r = run(dtb, &stuck, AD_SMMU, 0);
+	expect_clean(&stuck, "smmu", r, EIO);
+	saw(&stuck, "smmu", "core root stuck");
+	not_saw(&stuck, "smmu", "Q5");
+	saw(&stuck, "smmu", "all as found");
+
+	/* TrustZone: answers, or no qcom,scm. */
+	printf("tz\n");
+	r = run(dtb, &boot, AD_PROBE, 1);
+	expect_clean(&boot, "tz", r, OK);
+	check(model_writes() == 0, "tz: %u writes", model_writes());
+	saw(&boot, "tz", "Q12 tz smccc64 avail: init 1 mem 1 auth 1 supp 1 "
+	    "remote 1; pas 13: supported");
+	r = run(dtb, &cxon, AD_PROBE, 1);
+	saw(&cxon, "tz", "Q12 tz: sys_qcomscm: 19 (no qcom,scm in the tree)");
+
+	printf("%d checks, %d failed\n", checks, failures);
+	return failures != 0;
+}

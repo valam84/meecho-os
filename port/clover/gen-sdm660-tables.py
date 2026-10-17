@@ -3,12 +3,14 @@
 
 	gen-sdm660-tables.py LINUX_TREE OUT_DIR
 
-Writes OUT_DIR/sdm660_tlmm.h and OUT_DIR/sdm660_gcc.h: facts about the
-silicon - which TLMM tile each GPIO is in and what its mux functions are,
-and for every GCC branch clock, power domain (GDSC) and block reset (BCR)
-the device tree can name, its registers.
+Writes OUT_DIR/sdm660_tlmm.h, OUT_DIR/sdm660_gcc.h and
+OUT_DIR/sdm660_gpucc.h: facts about the silicon - which TLMM tile each GPIO
+is in and what its mux functions are, and for every GCC and GPUCC branch
+clock, root, PLL, power domain (GDSC) and block reset (BCR) the device tree
+can name, its registers.
 Taken from drivers/pinctrl/qcom/pinctrl-sdm660.c, drivers/clk/qcom/
-gcc-sdm660.c and include/dt-bindings/clock/qcom,gcc-sdm660.h of
+gcc-sdm660.c, gpucc-sdm660.c and include/dt-bindings/clock/
+qcom,gcc-sdm660.h, qcom,gpucc-sdm660.h of
 github.com/sdm660-mainline/linux.  Numbers and names only - no code is
 carried over.  Regenerate rather than edit.
 """
@@ -144,3 +146,159 @@ with open(out + "/sdm660_gcc.h", "w") as f:
     f.write("};\n")
 print("tlmm: %d gpios; gcc: %d branch clocks, %d power domains, %d resets"
       % (npins, len(table), len(pds), len(bcrs)))
+
+# --- GPUCC ----------------------------------------------------------------
+# The GPU's own clock controller (drivers/clk/qcom/gpucc-sdm660.c), for the
+# Adreno driver: its branches, roots, PLLs, power domains and resets, by the
+# numbers of include/dt-bindings/clock/qcom,gpucc-sdm660.h.  The binding
+# numbers clocks, domains and resets separately, so each table is looked up
+# by its own kind of number.
+gp = open(tree + "/drivers/clk/qcom/gpucc-sdm660.c").read()
+gids = {}
+for m in re.finditer(r"#define\s+(\w+)\s+(\d+)", open(
+        tree + "/include/dt-bindings/clock/qcom,gpucc-sdm660.h").read()):
+    gids[m.group(1)] = int(m.group(2))
+
+def body_of(kind):
+    """name -> body of every 'static struct <kind> name = {...};'."""
+    return {m.group(1): m.group(2) for m in re.finditer(
+        r"static struct %s (\w+) = \{(.*?)\n\};" % kind, gp, re.S)}
+
+def hexfield(body, field):
+    m = re.search(r"\.%s\s*=\s*(0x[0-9a-fA-F]+)" % field, body)
+    return int(m.group(1), 16) if m else 0
+
+# Parent maps: source select -> the parent's name, without P_ and its
+# GPU_ prefix (the crystal is "xo", GPLL0's outputs "gpll0", "gpll0_div").
+pmaps = {}
+for m in re.finditer(r"static const struct parent_map (\w+)\[\] = \{(.*?)\};",
+                     gp, re.S):
+    srcs = {}
+    for e in re.finditer(r"\{\s*P_(\w+),\s*(\d+)\s*\}", m.group(2)):
+        nm = e.group(1).lower()
+        nm = re.sub(r"^gpu_", "", nm)
+        nm = re.sub(r"_pll_out_main$", "", nm)
+        nm = nm.replace("_out_main_div", "_div").replace("_out_main", "")
+        srcs[int(e.group(2))] = nm
+    pmaps[m.group(1)] = srcs
+
+rcg_vars = {}
+for kind in ("clk_rcg2", "clk_rcg2_gfx3d"):
+    for var, body in body_of(kind).items():
+        pm = re.search(r"\.parent_map\s*=\s*(\w+)", body)
+        rcg_vars[var] = (hexfield(body, "cmd_rcgr"),
+                         pmaps.get(pm.group(1), {}) if pm else {})
+pll_vars = {var: hexfield(body, "offset")
+            for var, body in body_of("clk_alpha_pll").items()}
+gbranch_vars = {}
+for var, body in body_of("clk_branch").items():
+    par = re.search(r"&(\w+)\.(?:rcg\.)?clkr\.hw", body)
+    hw = re.search(r"\.hwcg_bit\s*=\s*(\d+)", body)
+    assert hexfield(body, "halt_reg") == hexfield(body, "enable_reg"), var
+    assert re.search(r"\.enable_mask\s*=\s*BIT\(0\)", body), var
+    gbranch_vars[var] = (hexfield(body, "halt_reg"),
+                         int(hw.group(1)) if hw else 0,
+                         rcg_vars.get(par.group(1), (0, {}))[0] if par else 0)
+
+g_branch, g_rcg, g_pll = [], [], []
+for m in re.finditer(r"\[(\w+)\]\s*=\s*&(\w+)(?:\.rcg)?\.clkr", gp):
+    name, var = m.group(1), m.group(2)
+    i = gids[name]
+    if var in gbranch_vars:
+        g_branch.append((i, name) + gbranch_vars[var])
+    elif var in rcg_vars:
+        g_rcg.append((i, name) + rcg_vars[var])
+    elif var in pll_vars:
+        g_pll.append((i, name, pll_vars[var]))
+    else:
+        raise SystemExit("gpucc: %s (%s) is of no known kind" % (name, var))
+
+# Power domains: the GDSCR, the register its status is read from when that
+# is not the GDSCR itself (gds_hw_ctrl), the I/O clamp, the core memory's
+# CBCR (cxcs), the block reset pulsed on the way up, the parent domain and
+# the flags gdsc.c acts on.
+gbcr = {}
+for m in re.finditer(r"\[(\w+_BCR)\]\s*=\s*\{\s*(0x[0-9a-fA-F]+)\s*\}", gp):
+    gbcr[m.group(1)] = int(m.group(2), 16)
+gdsc_flags = ["VOTABLE", "CLAMP_IO", "SW_RESET", "AON_RESET",
+              "NO_RET_PERIPH", "HW_CTRL", "RETAIN_FF_ENABLE"]
+gdsc_vars = {}
+for var, body in body_of("gdsc").items():
+    fl = re.search(r"\.flags\s*=\s*([^,]+),", body)
+    names = [f.strip() for f in fl.group(1).split("|")] if fl else []
+    for f in names:
+        assert f in gdsc_flags, (var, f)
+    bits = sum(1 << gdsc_flags.index(f) for f in names)
+    rst = re.search(r"\.resets\s*=\s*\(unsigned int \[\]\)\{\s*(\w+)", body)
+    cxc = re.search(r"\.cxcs\s*=\s*\(unsigned int \[\]\)\{\s*(0x[0-9a-fA-F]+)",
+                    body)
+    par = re.search(r"\.parent\s*=\s*&(\w+)\.pd", body)
+    gdsc_vars[var] = (hexfield(body, "gdscr"), hexfield(body, "gds_hw_ctrl"),
+                      hexfield(body, "clamp_io_ctrl"),
+                      int(cxc.group(1), 16) if cxc else 0,
+                      gbcr[rst.group(1)] if rst else 0, bits,
+                      par.group(1) if par else None)
+g_gdsc = []
+gdsc_id_of = {}
+for m in re.finditer(r"\[(\w+_GDSC)\]\s*=\s*&(\w+),", gp):
+    gdsc_id_of[m.group(2)] = gids[m.group(1)]
+    g_gdsc.append((gids[m.group(1)], m.group(1), m.group(2)))
+g_bcr = sorted((gids[n], n, r) for n, r in gbcr.items())
+
+with open(out + "/sdm660_gpucc.h", "w") as f:
+    f.write("/* Generated by port/clover/gen-sdm660-tables.py from "
+            "gpucc-sdm660.c and qcom,gpucc-sdm660.h. Do not edit. */\n")
+    f.write("/* Flags of a GPUCC power domain, as gdsc.c names them. */\n")
+    for k, fl in enumerate(gdsc_flags):
+        f.write("#define SDM660_GDSC_%s\t0x%02x\n" % (fl, 1 << k))
+    f.write("/*\n * Branch clocks by device tree number: the CBCR (status and"
+            " enable, bit 0),\n * the CBCR bit that hands the gate to the "
+            "hardware (0: none) and the\n * CMD_RCGR of the root it hangs "
+            "off (0: none).\n */\n")
+    f.write("static const struct { unsigned short id; unsigned int cbcr; "
+            "unsigned char hwcg; unsigned int rcg; const char *name; } "
+            "sdm660_gpucc_branch[] = {\n")
+    for (i, name, cbcr, hwcg, rcg) in sorted(g_branch):
+        f.write('\t{ %d, 0x%04x, %d, 0x%04x, "%s" },\n'
+                % (i, cbcr, hwcg, rcg, name))
+    f.write("};\n")
+    f.write("/* Roots (RCG): CMD_RCGR (CFG_RCGR is + 4) and the parent behind"
+            " each source\n * select. */\n")
+    f.write("static const struct { unsigned short id; unsigned int cmd; "
+            "const char *src[8]; const char *name; } sdm660_gpucc_rcg[] = {\n")
+    for (i, name, cmd, srcs) in sorted(g_rcg, key=lambda t: t[0]):
+        s = ", ".join('"%s"' % srcs[k] if k in srcs else "NULL"
+                      for k in range(8))
+        f.write('\t{ %d, 0x%04x, { %s }, "%s" },\n' % (i, cmd, s, name))
+    f.write("};\n")
+    f.write("/* PLLs (alpha PLL, the \"default\" register layout): their "
+            "base. */\n")
+    f.write("static const struct { unsigned short id; unsigned int base; "
+            "const char *name; } sdm660_gpucc_pll[] = {\n")
+    for (i, name, base) in sorted(g_pll):
+        f.write('\t{ %d, 0x%04x, "%s" },\n' % (i, base, name))
+    f.write("};\n")
+    f.write("/*\n * Power domains (\"power-domains\" number): GDSCR; the "
+            "register PWR_ON is read\n * from if not the GDSCR (gds_hw_ctrl,"
+            " 0: the GDSCR); the I/O clamp (0: none);\n * the CBCR whose "
+            "memory is kept on (0: none); the BCR pulsed on the way up\n "
+            "* (0: none); SDM660_GDSC_* flags; the parent domain's number "
+            "(-1: none).\n */\n")
+    f.write("static const struct { unsigned short id; unsigned int gdscr, "
+            "status, clamp, cxc, bcr; unsigned short flags; short parent; "
+            "const char *name; } sdm660_gpucc_gdsc[] = {\n")
+    for (i, name, var) in sorted(g_gdsc):
+        gdscr, hw, clamp, cxc, bcr, bits, par = gdsc_vars[var]
+        f.write('\t{ %d, 0x%04x, 0x%04x, 0x%04x, 0x%04x, 0x%04x, 0x%02x, '
+                '%d, "%s" },\n' % (i, gdscr, hw, clamp, cxc, bcr, bits,
+                                   gdsc_id_of[par] if par else -1, name))
+    f.write("};\n")
+    f.write("/* Block resets (\"resets\" number): the BCR. */\n")
+    f.write("static const struct { unsigned short id; unsigned int bcr; "
+            "const char *name; } sdm660_gpucc_bcr[] = {\n")
+    for (i, name, reg) in g_bcr:
+        f.write('\t{ %d, 0x%04x, "%s" },\n' % (i, reg, name))
+    f.write("};\n")
+print("gpucc: %d branch clocks, %d roots, %d plls, %d power domains, "
+      "%d resets" % (len(g_branch), len(g_rcg), len(g_pll), len(g_gdsc),
+                     len(g_bcr)))

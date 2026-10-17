@@ -49,6 +49,14 @@ int qsoc_bcr_asserted(unsigned id, uint32_t *reg, const char **name);
  */
 int qsoc_clk_root(unsigned id, uint32_t *cmd, uint32_t *cfg);
 
+/*
+ * Where a branch's enable bit is: the register (CBCR or vote) and the bit,
+ * and whether its status may not be checked (*nocheck).  For a driver that
+ * sets and clears the bit itself, through its own mapping - the Adreno
+ * driver, whose host model must see every write it makes.
+ */
+int qsoc_clk_gate(unsigned id, uint32_t *en, unsigned *bit, int *nocheck);
+
 /* The mux value of function "name" on GPIO pin (0 is "gpio"), or -1. */
 int qsoc_func(unsigned pin, const char *name);
 

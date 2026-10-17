@@ -470,6 +470,24 @@ qsoc_bcr_asserted(unsigned id, uint32_t *reg, const char **name)
 }
 
 int
+qsoc_clk_gate(unsigned id, uint32_t *en, unsigned *bit, int *nocheck)
+{
+	unsigned i;
+
+	for (i = 0; i < (sizeof(sdm660_gcc) / sizeof(sdm660_gcc[0])); i++)
+		if (sdm660_gcc[i].id == id)
+			break;
+	if (i == (sizeof(sdm660_gcc) / sizeof(sdm660_gcc[0])))
+		return ENOENT;
+	if (gcc == NULL || sdm660_gcc[i].en + 4 > gcc_size)
+		return EINVAL;
+	*en = sdm660_gcc[i].en;
+	*bit = sdm660_gcc[i].bit;
+	*nocheck = sdm660_gcc[i].nocheck || sdm660_gcc[i].halt == 0;
+	return OK;
+}
+
+int
 qsoc_clk_root(unsigned id, uint32_t *cmd, uint32_t *cfg)
 {
 	unsigned i;

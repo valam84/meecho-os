@@ -1519,3 +1519,46 @@ terminated; job 3 fails`; после `down` — Q23, Q17, Q11 «all as found»,
 
 `gpu/adreno` комплекта и `/service/adreno` на планшете — исправленная
 служба; в образе корня — прежняя.
+
+## 19. `glcube` на планшете: куб от Adreno через Mesa freedreno [T] (2026-10-17, 23:13–23:20)
+
+Шаг 9 плана — раньше шага 8 и с двумя обходами (ниже). Mesa в DESTDIR
+та же, что на CB2 (`6f6631ad8`: один `libgallium` с panfrost и
+freedreno); `glcube` собран `port/test/gles/build.sh`, проверка
+рендерера теперь принимает и Adreno (`FD512`). Служба — `afffa144…`
+(§18), образ — `meecho-clover-emmcnet-1h.img` (тот же, что `emmcnet`,
+сторож 3600 с), через очередь хранителя. Прогон —
+`D:\minix\clover-flash\gpu\cube.sh` (служба, `glcube` в фоне, копия
+`/dev/fb0` на 30-й секунде, служба вниз); журналы — `cube-1.txt` …
+`cube-3.txt`, кадр — `cube-adreno.png` там же.
+
+```
+GL_VENDOR   freedreno
+GL_RENDERER FD512
+GL_VERSION  OpenGL ES 3.1 Mesa 26.2.4
+ok   the middle of the first frame is the cube: 0xd5432d
+ok   its corner is the clear colour: 0x101828
+ok   frames 0 and 20 differ: it turns
+GLCUBE 300 frames 512x512 in 120.91 s: 2.5 frames/s
+GLCUBE 15 checks, 0 failed
+```
+
+Кадры/с — от GPU на кварце (19,2 МГц, шаг 10) и копии каждого кадра
+процессором (`glReadPixels`, `/dev/fb0` — `simple-framebuffer`).
+
+**Два обхода, оба — в окружении прогона, не в коде:**
+
+- **`IR3_SHADER_DEBUG=nocache`.** Без него `glcube` падает в
+  `ir3_disk_cache_init()`: ключ кэша шейдеров Mesa берёт из заметки
+  build-id своего же образа (`build_id_find_nhdr_for_addr()`), у
+  статической программы MEECHO её нет — NULL, `assert` в сборке выключен,
+  чтение по адресу 4. Panfrost этим путём не ходит. Правка — компоновать
+  программы с Mesa с `--build-id` (или кэш выключить в сборке Mesa).
+- **`FD_MESA_DEBUG=serialc`.** Без него — переполнение стека в
+  `handle_copies()` (`ir3_lower_parallelcopy.c`: `struct copy_ctx` — три
+  массива по `RA_MAX_FILE_SIZE` на стеке) в потоке очереди компиляции.
+  Mesa создаёт его `pthread_create(..., NULL, ...)`, а это
+  `mthread_create` с умолчанием `libmthread` — `MTHREAD_STACK_MIN`,
+  8 КиБ. `serialc` компилирует в главном потоке. Правка — у
+  `pthread_create` без атрибутов стек как у POSIX-систем, а не как у
+  служб.

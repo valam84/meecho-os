@@ -365,9 +365,15 @@ main(int argc, char **argv)
 	printf("GL_VENDOR   %s\nGL_RENDERER %s\nGL_VERSION  %s\nGLSL        "
 	    "%s\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER),
 	    glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
-	check(strstr((const char *)glGetString(GL_RENDERER), "Mali") != NULL,
-	    "the renderer is the Mali (not software)",
-	    (const char *)glGetString(GL_RENDERER));
+	/* The CB2's Mali (Panfrost) or the Mi Pad 4's Adreno (freedreno:
+	 * "FD512"); a software renderer is neither. */
+	{
+		const char *r = (const char *)glGetString(GL_RENDERER);
+
+		check(r != NULL && (strstr(r, "Mali") != NULL ||
+		    strncmp(r, "FD", 2) == 0 || strstr(r, "Adreno") != NULL),
+		    "the renderer is the GPU (not software)", r);
+	}
 
 	/* Program. */
 	prog = glCreateProgram();

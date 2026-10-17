@@ -80,6 +80,13 @@ uint32_t model_slot_word(unsigned slot, unsigned word);
 unsigned model_ep0_max_packet(unsigned slot);
 
 /*
+ * Whether the controller has an endpoint context enabled, and where it
+ * reads that endpoint's ring next - what SET_INTERFACE changes.
+ */
+int model_ep_valid(unsigned slot, unsigned dci);
+phys_bytes model_ep_ring(unsigned slot, unsigned dci);
+
+/*
  * What a device answers to a control request.  The callback is given the
  * eight bytes of the setup packet and fills in the answer; returning zero
  * means the device stalls.

@@ -315,7 +315,9 @@
  *    USB itself: the few requests enumeration needs                         *
  *===========================================================================*/
 #define USB_REQ_DIR_IN		0x80
+#define USB_REQ_RECIP_IFACE	0x01	/* standard, to an interface, out */
 #define USB_REQ_GET_DESCRIPTOR	6
+#define USB_REQ_SET_INTERFACE	11
 #define USB_DESC_DEVICE		1
 #define USB_DESC_CONFIG		2
 #define USB_DESC_STRING		3

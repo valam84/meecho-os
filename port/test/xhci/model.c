@@ -663,10 +663,50 @@ put_output_context(unsigned slot, phys_bytes in_ctx, int address)
  * with a command leaves the model reading the old one, and its transfers
  * stop - the same way they would on the board, and with the same silence.
  */
+/*
+ * A Configure Endpoint's drops, before its adds (4.6.6): a dropped
+ * endpoint is disabled and its ring forgotten.  Two things a controller
+ * holds against the driver here, and which it does quietly - so the
+ * model says them instead: adding an endpoint that is enabled without
+ * dropping it in the same command, and adding one beyond the slot's
+ * context entries, which the controller does not read at all.  Dropping
+ * one that is not enabled is the third.
+ */
 static void
-take_input_context(unsigned slot, phys_bytes in_ctx)
+take_drops(unsigned slot, phys_bytes in_ctx)
+{
+	uint32_t drop = ctx_word(in_ctx, 0, 0), add = ctx_word(in_ctx, 0, 1);
+	uint32_t w0 = (add & XHCI_INPUT_ADD_SLOT) ? ctx_word(in_ctx, 1, 0) :
+	    slots[slot].slot_ctx[0];
+	unsigned dci, entries = w0 >> 27;
+
+	if (drop & 0x3)
+		complain("a Configure Endpoint drops the slot or the control "
+		    "endpoint (0x%08x)", drop);
+
+	for (dci = 2; dci < MODEL_MAX_DCI; dci++) {
+		struct mep *ep = &slots[slot].ep[dci];
+
+		if (drop & (1u << dci)) {
+			if (!ep->valid)
+				complain("context %u is dropped and was not "
+				    "enabled", dci);
+			memset(ep, 0, sizeof(*ep));
+		} else if ((add & (1u << dci)) && ep->valid)
+			complain("context %u is added while enabled, without "
+			    "a drop", dci);
+		if ((add & (1u << dci)) && dci > entries)
+			complain("context %u is added beyond the slot's %u "
+			    "context entries", dci, entries);
+	}
+}
+
+static void
+take_input_context(unsigned slot, phys_bytes in_ctx, int configure)
 {
 	uint32_t add = ctx_word(in_ctx, 0, 1);
+	uint32_t w0 = (add & XHCI_INPUT_ADD_SLOT) ? ctx_word(in_ctx, 1, 0) :
+	    slots[slot].slot_ctx[0];
 	unsigned dci;
 
 	for (dci = 1; dci < MODEL_MAX_DCI; dci++) {
@@ -674,6 +714,9 @@ take_input_context(unsigned slot, phys_bytes in_ctx)
 		uint32_t w2, w3;
 
 		if (!(add & (1u << dci)))
+			continue;
+		/* Beyond the context entries the controller reads nothing. */
+		if (configure && dci >= 2 && dci > (w0 >> 27))
 			continue;
 
 		ep = &slots[slot].ep[dci];
@@ -776,7 +819,10 @@ command_run(void)
 			}
 			slots[slot].out_ctx = out_ctx;
 
-			take_input_context(slot, trb.p0);
+			if (type == XHCI_TRB_CONFIGURE_EP)
+				take_drops(slot, trb.p0);
+			take_input_context(slot, trb.p0,
+			    type == XHCI_TRB_CONFIGURE_EP);
 			put_output_context(slot, trb.p0,
 			    type == XHCI_TRB_ADDRESS_DEVICE);
 			if (ctx_word(trb.p0, 0, 1) & XHCI_INPUT_ADD_SLOT) {
@@ -1250,6 +1296,23 @@ model_ep0_max_packet(unsigned slot)
 	if (slot >= MODEL_MAX_SLOTS)
 		return 0;
 	return slots[slot].ep0_mps;
+}
+
+int
+model_ep_valid(unsigned slot, unsigned dci)
+{
+	if (slot >= MODEL_MAX_SLOTS || dci >= MODEL_MAX_DCI)
+		return 0;
+	return slots[slot].ep[dci].valid;
+}
+
+phys_bytes
+model_ep_ring(unsigned slot, unsigned dci)
+{
+	if (slot >= MODEL_MAX_SLOTS || dci >= MODEL_MAX_DCI ||
+	    !slots[slot].ep[dci].valid)
+		return 0;
+	return slots[slot].ep[dci].ptr;
 }
 
 int

@@ -382,25 +382,42 @@ xhci_control(struct xhci_device *dev, uint8_t request_type, uint8_t request,
  * Only bulk and interrupt endpoints are taken.  Isochronous ones need a
  * schedule this driver does not keep, and saying so here is better than
  * configuring one and failing at the first transfer.
+ *
+ * The entry is the first free one - an alternate setting that went away
+ * gives its entries back in place (xhci_set_interface()) - or the next.
  */
-static void
-add_endpoint(struct xhci_device *dev, const uint8_t *d)
+static struct xhci_ep *
+add_endpoint(struct xhci_device *dev, const uint8_t *d, unsigned iface,
+	unsigned alt)
 {
 	unsigned num = d[2] & 0x0f;
 	int dir_in = (d[2] & 0x80) != 0;
 	unsigned attr = d[3] & 0x3;
-	struct xhci_ep *ep;
+	struct xhci_ep *ep = NULL;
+	unsigned i;
 
-	if (dev->neps >= XHCI_MAX_EPS || num == 0)
-		return;
+	if (num == 0)
+		return NULL;
 
 	if (attr == 1) {
 		log_info(&xhci_log, "port %u: endpoint %u is isochronous and "
 		    "is left alone\n", dev->port + 1, num);
-		return;
+		return NULL;
 	}
 
-	ep = &dev->ep[dev->neps];
+	for (i = 0; i < dev->neps; i++)
+		if (dev->ep[i].dci == 0) {
+			ep = &dev->ep[i];
+			break;
+		}
+	if (ep == NULL) {
+		if (dev->neps >= XHCI_MAX_EPS) {
+			log_warn(&xhci_log, "port %u: no room for endpoint %u "
+			    "%s\n", dev->port + 1, num, dir_in ? "in" : "out");
+			return NULL;
+		}
+		ep = &dev->ep[dev->neps];
+	}
 	memset(ep, 0, sizeof(*ep));
 
 	ep->num = num;
@@ -420,15 +437,22 @@ add_endpoint(struct xhci_device *dev, const uint8_t *d)
 		ep->type = dir_in ? XHCI_EP_TYPE_BULK_IN : XHCI_EP_TYPE_BULK_OUT;
 	else
 		ep->type = dir_in ? XHCI_EP_TYPE_INTR_IN : XHCI_EP_TYPE_INTR_OUT;
+	ep->iface = iface;
+	ep->alt = alt;
 
-	if (xhci_ring_setup(&ep->ring, "a transfer ring") != OK)
-		return;
+	if (xhci_ring_setup(&ep->ring, "a transfer ring") != OK) {
+		memset(ep, 0, sizeof(*ep));
+		return NULL;
+	}
 
-	dev->neps++;
+	if (ep == &dev->ep[dev->neps])
+		dev->neps++;
 
 	log_info(&xhci_log, "port %u: endpoint %u %s, %s, %u bytes "
-	    "(context %u)\n", dev->port + 1, num, dir_in ? "in" : "out",
-	    attr == 2 ? "bulk" : "interrupt", ep->max_packet, ep->dci);
+	    "(context %u, interface %u alt %u)\n", dev->port + 1, num,
+	    dir_in ? "in" : "out", attr == 2 ? "bulk" : "interrupt",
+	    ep->max_packet, ep->dci, iface, alt);
+	return ep;
 }
 
 /*
@@ -468,6 +492,57 @@ ep_interval(const struct xhci_device *dev, const struct xhci_ep *ep)
 }
 
 /*
+ * An endpoint's context, into the input context: its type, its packet
+ * size and where its ring starts - with the cycle bit the fresh ring
+ * begins with.
+ */
+static void
+ep_context(struct xhci_device *dev, const struct xhci_ep *ep)
+{
+	uint32_t *w = ctx_word(dev->in_ctx, ep->dci + 1, 0);
+
+	w[1] = XHCI_EP_CERR(3) | XHCI_EP_TYPE(ep->type) |
+	    XHCI_EP_MAXPACKET(ep->max_packet);
+	w[2] = (uint32_t)ep->ring.p | XHCI_EP_DCS;
+	w[3] = 0;
+	w[4] = XHCI_EP_AVG_TRB(ep->max_packet);
+
+	/*
+	 * A periodic endpoint is also told how often to be served and how
+	 * much it moves each time.  The second number is the bus time the
+	 * controller sets aside for it; a zero there is a reservation of
+	 * nothing.  At high speed the extra packets per microframe are its
+	 * burst.
+	 */
+	if (ep->type == XHCI_EP_TYPE_INTR_IN ||
+	    ep->type == XHCI_EP_TYPE_INTR_OUT) {
+		unsigned burst = (dev->speed == 3) ? ep->mult : 0;
+
+		w[0] = XHCI_EP_INTERVAL(ep_interval(dev, ep));
+		w[1] |= XHCI_EP_MAXBURST(burst);
+		w[4] |= XHCI_EP_MAX_ESIT_LO(ep->max_packet * (burst + 1));
+
+		log_info(&xhci_log, "port %u: endpoint %u %s polled every %u "
+		    "us (bInterval %u)\n", dev->port + 1, ep->num,
+		    ep->dir_in ? "in" : "out", 125u << ep_interval(dev, ep),
+		    ep->interval);
+	} else
+		w[0] = 0;
+}
+
+/* The highest context in use, which the slot context has to name. */
+static unsigned
+last_dci(const struct xhci_device *dev)
+{
+	unsigned i, last = 1;
+
+	for (i = 0; i < dev->neps; i++)
+		if (dev->ep[i].dci > last)
+			last = dev->ep[i].dci;
+	return last;
+}
+
+/*
  * Tell the controller about all of them at once.
  *
  * One Configure Endpoint command carries an input context with a bit set
@@ -479,7 +554,7 @@ ep_interval(const struct xhci_device *dev, const struct xhci_ep *ep)
 static int
 configure_endpoints(struct xhci_device *dev)
 {
-	unsigned i, add = XHCI_INPUT_ADD_SLOT, last = 1;
+	unsigned i, add = XHCI_INPUT_ADD_SLOT, last = last_dci(dev);
 	uint32_t *w;
 	int r;
 
@@ -488,39 +563,10 @@ configure_endpoints(struct xhci_device *dev)
 	for (i = 0; i < dev->neps; i++) {
 		struct xhci_ep *ep = &dev->ep[i];
 
+		if (ep->dci == 0)
+			continue;
 		add |= 1U << ep->dci;
-		if (ep->dci > last)
-			last = ep->dci;
-
-		w = ctx_word(dev->in_ctx, ep->dci + 1, 0);
-		w[1] = XHCI_EP_CERR(3) | XHCI_EP_TYPE(ep->type) |
-		    XHCI_EP_MAXPACKET(ep->max_packet);
-		w[2] = (uint32_t)ep->ring.p | XHCI_EP_DCS;
-		w[3] = 0;
-		w[4] = XHCI_EP_AVG_TRB(ep->max_packet);
-
-		/*
-		 * A periodic endpoint is also told how often to be served
-		 * and how much it moves each time.  The second number is
-		 * the bus time the controller sets aside for it; a zero
-		 * there is a reservation of nothing.  At high speed the
-		 * extra packets per microframe are its burst.
-		 */
-		if (ep->type == XHCI_EP_TYPE_INTR_IN ||
-		    ep->type == XHCI_EP_TYPE_INTR_OUT) {
-			unsigned burst = (dev->speed == 3) ? ep->mult : 0;
-
-			w[0] = XHCI_EP_INTERVAL(ep_interval(dev, ep));
-			w[1] |= XHCI_EP_MAXBURST(burst);
-			w[4] |= XHCI_EP_MAX_ESIT_LO(ep->max_packet *
-			    (burst + 1));
-
-			log_info(&xhci_log, "port %u: endpoint %u %s polled "
-			    "every %u us (bInterval %u)\n", dev->port + 1,
-			    ep->num, ep->dir_in ? "in" : "out",
-			    125u << ep_interval(dev, ep), ep->interval);
-		} else
-			w[0] = 0;
+		ep_context(dev, ep);
 	}
 
 	*ctx_word(dev->in_ctx, IN_CTRL, 0) = 0;
@@ -557,9 +603,132 @@ xhci_device_ep(struct xhci_device *dev, unsigned num, int dir_in)
 	unsigned i;
 
 	for (i = 0; i < dev->neps; i++)
-		if (dev->ep[i].num == num && dev->ep[i].dir_in == !!dir_in)
+		if (dev->ep[i].dci != 0 && dev->ep[i].num == num &&
+		    dev->ep[i].dir_in == !!dir_in)
 			return &dev->ep[i];
 	return NULL;
+}
+
+/*
+ * SET_INTERFACE, as far as the controller is concerned: the endpoints of
+ * the alternate setting the interface had are dropped, those of the one it
+ * gets are added, in one Configure Endpoint command (4.6.6) - before the
+ * request goes to the device, as Linux does it (usb_set_interface() and
+ * usb_hcd_alloc_bandwidth()).
+ *
+ * Until now the controller knew alternate 0 of every interface and
+ * nothing else, which was all that a hub, a flash drive, a keyboard and a
+ * mouse have.  CDC Ethernet is the first device whose data interface has
+ * no endpoints in alternate 0 - choosing alternate 1 is how its host opens
+ * the link - and a transfer on an endpoint the controller was never told
+ * about is never fetched: no event, no error, the deadline.
+ *
+ * An endpoint that is dropped and added again (the same alternate setting
+ * chosen twice, as a driver that starts again does) gets a new ring, and
+ * the controller begins it in the state a configured endpoint begins in:
+ * the data toggle at DATA0, which is what the device does on its side for
+ * SET_INTERFACE (USB 2.0, 9.4.10).  Reusing the old ring with its old
+ * dequeue position would have the controller read from the start of a
+ * page the driver writes in the middle of.
+ *
+ * Anybody waiting on a dropped endpoint has been told before this runs;
+ * that is the URB layer's business (xhci_urb.c), since it is the one that
+ * holds the waits.
+ */
+int
+xhci_set_interface(struct xhci_device *dev, unsigned iface, unsigned alt)
+{
+	const uint8_t *eps[XHCI_MAX_EPS];
+	const uint8_t *cfg = dev->cfg;
+	struct xhci_ep *added[XHCI_MAX_EPS];
+	unsigned off, i, n = 0, nadded = 0, ndropped = 0, len = dev->cfg_len;
+	uint32_t drop = 0, add = XHCI_INPUT_ADD_SLOT, *in, *out;
+	int found = 0, in_it = 0, r;
+
+	if (cfg == NULL) {
+		log_warn(&xhci_log, "slot %u: no configuration descriptor kept; "
+		    "interface %u cannot be set\n", dev->slot, iface);
+		return EINVAL;
+	}
+
+	for (off = 0; off + 2 <= len && cfg[off] >= 2; off += cfg[off]) {
+		if (cfg[off + 1] == 4 && off + 9 <= len) {	/* interface */
+			in_it = cfg[off + 2] == iface && cfg[off + 3] == alt;
+			found |= in_it;
+		} else if (in_it && cfg[off + 1] == 5 && off + 7 <= len &&
+		    n < XHCI_MAX_EPS)
+			eps[n++] = cfg + off;
+	}
+	if (!found) {
+		log_warn(&xhci_log, "slot %u: interface %u has no alternate "
+		    "setting %u\n", dev->slot, iface, alt);
+		return EINVAL;
+	}
+
+	/* Out with what the interface had. */
+	for (i = 0; i < dev->neps; i++) {
+		struct xhci_ep *ep = &dev->ep[i];
+
+		if (ep->dci == 0 || ep->iface != iface)
+			continue;
+		drop |= 1U << ep->dci;
+		ndropped++;
+		xhci_ring_free(&ep->ring);
+		memset(ep, 0, sizeof(*ep));
+	}
+
+	/* In with what it gets, each on a fresh ring. */
+	memset((void *)dev->in_ctx, 0, XHCI_PAGE);
+	for (i = 0; i < n; i++) {
+		struct xhci_ep *ep = add_endpoint(dev, eps[i], iface, alt);
+
+		if (ep == NULL)
+			continue;
+		added[nadded++] = ep;
+		add |= 1U << ep->dci;
+		ep_context(dev, ep);
+	}
+
+	/*
+	 * The slot context as the controller has it - route, speed, a hub's
+	 * fields - with the number of contexts it now uses.  Words 0 to 2;
+	 * word 3 is the controller's own.
+	 */
+	xhci_cache(CACHE_INVALIDATE, (void *)dev->dev_ctx, XHCI_PAGE,
+	    "a device context");
+	out = ctx_word(dev->dev_ctx, 0, 0);
+	in = ctx_word(dev->in_ctx, IN_SLOT, 0);
+	in[0] = (out[0] & ~XHCI_SLOT_ENTRIES(0x1f)) |
+	    XHCI_SLOT_ENTRIES(last_dci(dev));
+	in[1] = out[1];
+	in[2] = out[2];
+
+	*ctx_word(dev->in_ctx, IN_CTRL, 0) = drop;
+	*ctx_word(dev->in_ctx, IN_CTRL, 1) = add;
+
+	xhci_cache(CACHE_CLEAN, (void *)dev->in_ctx, XHCI_PAGE,
+	    "an input context");
+
+	if ((r = xhci_cmd((uint32_t)dev->in_ctx_phys, 0, 0,
+	    XHCI_TRB_TYPE(XHCI_TRB_CONFIGURE_EP) |
+	    XHCI_TRB_SLOT_ID(dev->slot), NULL)) != OK) {
+		log_warn(&xhci_log, "slot %u: the controller would not take "
+		    "interface %u alternate %u (%d); it has no endpoints now\n",
+		    dev->slot, iface, alt, r);
+		for (i = 0; i < nadded; i++) {
+			xhci_ring_free(&added[i]->ring);
+			memset(added[i], 0, sizeof(*added[i]));
+		}
+		return r;
+	}
+
+	if (iface < sizeof(dev->alt))
+		dev->alt[iface] = (uint8_t)alt;
+
+	log_info(&xhci_log, "slot %u: interface %u alternate %u: %u endpoint(s) "
+	    "dropped, %u added, contexts up to %u\n", dev->slot, iface, alt,
+	    ndropped, nadded, last_dci(dev));
+	return OK;
 }
 
 /*
@@ -936,33 +1105,101 @@ hub_slot_update(struct xhci_device *dev)
 	    in[0], in[1], in[2]);
 }
 
+/*
+ * A whole configuration descriptor, by index, into the device's buffer.
+ * Nine bytes first, because the descriptor's own first field says how long
+ * the whole thing is - interfaces, endpoints and all - and asking for a
+ * fixed guess would either truncate it or ask a device for more than it
+ * has.
+ */
 static int
-configure(struct xhci_device *dev)
+read_config(struct xhci_device *dev, unsigned index, unsigned *actual)
 {
 	uint8_t *cfg;
-	unsigned total, off, actual, alt = 0;
+	unsigned total;
 	int r;
 
-	/*
-	 * Nine bytes first, because the configuration descriptor's own
-	 * first field says how long the whole thing is - interfaces,
-	 * endpoints and all - and asking for a fixed guess would either
-	 * truncate it or ask a device for more than it has.
-	 */
 	if ((r = xhci_control(dev, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
-	    USB_DESC_CONFIG << 8, 0, 9, &actual)) != OK)
+	    (USB_DESC_CONFIG << 8) | index, 0, 9, actual)) != OK)
 		return r;
 
 	cfg = (uint8_t *)dev->buf;
-	if (actual < 9 || cfg[1] != USB_DESC_CONFIG)
+	if (*actual < 9 || cfg[1] != USB_DESC_CONFIG)
 		return EIO;
 
 	total = cfg[2] | ((unsigned)cfg[3] << 8);
 	if (total > XHCI_PAGE)
 		total = XHCI_PAGE;
+	if (total < 9)
+		return EIO;
 
-	if ((r = xhci_control(dev, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
-	    USB_DESC_CONFIG << 8, 0, (uint16_t)total, &actual)) != OK)
+	return xhci_control(dev, USB_REQ_DIR_IN, USB_REQ_GET_DESCRIPTOR,
+	    (USB_DESC_CONFIG << 8) | index, 0, (uint16_t)total, actual);
+}
+
+/*
+ * Which configuration to set when a device has more than one.  Every
+ * device so far had one; a USB Ethernet adapter often has two - a Realtek
+ * RTL8153 its vendor protocol in the first and CDC Ethernet in the
+ * second, Linux's Ethernet gadget RNDIS first and CDC Ethernet second -
+ * and they were made for Linux's rule, so that is the rule here
+ * (usb_choose_configuration(), drivers/usb/core/generic.c): the first
+ * configuration whose first interface is not vendor-specific, on a device
+ * that is not vendor-specific itself; a first configuration that opens
+ * with RNDIS or ActiveSync is passed over, since this system has no driver
+ * for either; if nothing qualifies, the first that is left.  Linux also
+ * passes over a configuration that wants more power than the port gives;
+ * this driver does not know the budget, and does not.
+ */
+static unsigned
+choose_config(struct xhci_device *dev, unsigned nconfigs)
+{
+	unsigned i, off, actual;
+	int best = -1;
+
+	if (nconfigs <= 1)
+		return 0;
+
+	for (i = 0; i < nconfigs && i < 8; i++) {
+		const uint8_t *cfg = (const uint8_t *)dev->buf, *intf = NULL;
+
+		if (read_config(dev, i, &actual) != OK)
+			continue;
+		for (off = 0; off + 2 <= actual && cfg[off] >= 2;
+		    off += cfg[off])
+			if (cfg[off + 1] == 4 && off + 9 <= actual) {
+				intf = cfg + off;
+				break;
+			}
+
+		log_info(&xhci_log, "port %u: configuration %u (index %u) "
+		    "begins with interface class %u/%u/%u\n", dev->port + 1,
+		    cfg[5], i, intf != NULL ? intf[5] : 0,
+		    intf != NULL ? intf[6] : 0, intf != NULL ? intf[7] : 0);
+
+		if (i == 0 && intf != NULL &&
+		    ((intf[5] == 2 && intf[6] == 2 && intf[7] == 0xff) ||
+		    (intf[5] == 0xef && intf[6] == 1 && intf[7] == 1)))
+			continue;		/* RNDIS, ActiveSync */
+		if (dev->class != 0xff && intf != NULL && intf[5] != 0xff) {
+			best = (int)i;
+			break;
+		}
+		if (best < 0)
+			best = (int)i;
+	}
+	return best < 0 ? 0 : (unsigned)best;
+}
+
+static int
+configure(struct xhci_device *dev, unsigned nconfigs)
+{
+	uint8_t *cfg;
+	unsigned off, actual, alt = 0, iface = 0, index;
+	int r;
+
+	index = choose_config(dev, nconfigs);
+	if ((r = read_config(dev, index, &actual)) != OK)
 		return r;
 
 	cfg = (uint8_t *)dev->buf;
@@ -970,6 +1207,15 @@ configure(struct xhci_device *dev)
 	dev->interfaces = 0;
 	dev->niface = 0;
 	dev->neps = 0;
+
+	/* Kept for SET_INTERFACE, which needs the other alternates. */
+	free(dev->cfg);
+	dev->cfg_len = 0;
+	if ((dev->cfg = malloc(actual)) != NULL) {
+		memcpy(dev->cfg, cfg, actual);
+		dev->cfg_len = actual;
+	}
+	memset(dev->alt, 0, sizeof(dev->alt));
 
 	/*
 	 * Walk the descriptors that follow, which are a chain of
@@ -985,6 +1231,7 @@ configure(struct xhci_device *dev)
 	 */
 	for (off = 0; off + 2 <= actual && cfg[off] != 0; off += cfg[off]) {
 		if (cfg[off + 1] == 4 && off + 6 <= actual) {	/* interface */
+			iface = cfg[off + 2];
 			alt = cfg[off + 3];
 			if (alt != 0)
 				continue;
@@ -1020,7 +1267,7 @@ configure(struct xhci_device *dev)
 
 		if (cfg[off + 1] == 5 && off + 7 <= actual &&	/* endpoint */
 		    alt == 0)
-			add_endpoint(dev, cfg + off);
+			(void)add_endpoint(dev, cfg + off, iface, 0);
 	}
 
 	if (dev->neps != 0 && (r = configure_endpoints(dev)) != OK)
@@ -1255,7 +1502,7 @@ device_attach(struct xhci_device *dev, unsigned port, unsigned speed,
 	dev->class = desc->bDeviceClass;
 
 	/* And the configuration, without which class requests are refused. */
-	if ((r = configure(dev)) != OK)
+	if ((r = configure(dev, desc->bNumConfigurations)) != OK)
 		return r;
 
 	return OK;
@@ -1288,6 +1535,7 @@ xhci_device_free(struct xhci_device *dev)
 	xhci_ring_free(&dev->ep0);
 	for (i = 0; i < dev->neps; i++)
 		xhci_ring_free(&dev->ep[i].ring);
+	free(dev->cfg);
 	memset(dev, 0, sizeof(*dev));
 }
 

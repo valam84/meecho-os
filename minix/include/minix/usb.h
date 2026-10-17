@@ -60,6 +60,18 @@ struct usb_iso_packet_desc {
 #define USB_IN  0
 #define USB_OUT 1
 
+/*
+ * transfer_flags, as this system's host controller reads them.
+ *
+ * USB_URB_WAITS: a bulk IN transfer that ends when the device has
+ * something to send - a frame on a network device - which may be never.
+ * The controller keeps it on its endpoint without a deadline, beside every
+ * other transfer, and posts its completion, as it does for an interrupt
+ * IN transfer (minix/drivers/usb/xhci/xhci_urb.c, "intr").  The bit is one
+ * no client of the old stack sets.
+ */
+#define USB_URB_WAITS	0x40000000UL
+
 #define USB_INVALID_URB_ID 0
 
 struct usb_urb {

@@ -225,9 +225,20 @@ static char urbmem[sizeof(struct usb_urb) + XHCI_DEV_BUF]
  *   completion it took for an answer.  A posted message with AMF_NOREPLY
  *   is never delivered as a reply (proc.c), so it waits for the client's
  *   next receive, which is where it belongs.
+ *
+ * A bulk IN transfer waits the same way when its client says so
+ * (USB_URB_WAITS): a frame from a network device arrives when somebody on
+ * the far side sends one, which is a keyboard's case exactly - and a frame
+ * waiting as the one transfer at a time held the hub, the keyboard and the
+ * flash drive behind it, then failed on the five-second deadline.  Without
+ * the flag a bulk IN is what it was: a mass storage driver asks for data
+ * the device has and is owed an answer in time.  2048 bytes is a frame of
+ * CDC Ethernet (1514, 1518 with a VLAN tag) rounded up to the high-speed
+ * packet; eight waits are a keyboard, a mouse, and a network device's
+ * notifications and frames, twice over.
  */
-#define MAX_INTR	4
-#define INTR_BUF	1024		/* the most one of them carries */
+#define MAX_INTR	8
+#define INTR_BUF	2048		/* the most one of them carries */
 
 static struct intr {
 	int busy;
@@ -347,18 +358,25 @@ client_add(endpoint_t ep, const char *name)
  * its own interface, and transfers from the two are kept apart by the
  * endpoint, which is the controller's business.  A hub or a flash drive
  * wants exactly one.
+ *
+ * CDC Ethernet is an interface too: class 2 (communications), subclass 6
+ * (Ethernet networking), protocol 0, the one Linux's cdc_ether binds.  The
+ * device's own class is 2 on Linux's gadget and on the Mi Pad 4's
+ * function, 0 on adapters.
  */
 static const char *const drivers[] = {
-	"usb_hub", "usb_storage", "usb_kbd", "usb_mouse"
+	"usb_hub", "usb_storage", "usb_kbd", "usb_mouse", "usb_ecm"
 };
 
 static int
-has_hid(const struct xhci_device *dev, unsigned protocol)
+has_iface(const struct xhci_device *dev, unsigned class, unsigned subclass,
+	unsigned protocol)
 {
 	unsigned i;
 
 	for (i = 0; i < dev->niface; i++)
-		if (dev->iface[i].class == 3 && dev->iface[i].subclass == 1 &&
+		if (dev->iface[i].class == class &&
+		    dev->iface[i].subclass == subclass &&
 		    dev->iface[i].protocol == protocol)
 			return 1;
 	return 0;
@@ -372,9 +390,11 @@ wants(const struct xhci_device *dev, const char *driver)
 	if (dev->class == 8 || dev->iface_class == 8)
 		return strcmp(driver, "usb_storage") == 0;
 	if (strcmp(driver, "usb_kbd") == 0)
-		return has_hid(dev, 1);
+		return has_iface(dev, 3, 1, 1);
 	if (strcmp(driver, "usb_mouse") == 0)
-		return has_hid(dev, 2);
+		return has_iface(dev, 3, 1, 2);
+	if (strcmp(driver, "usb_ecm") == 0)
+		return has_iface(dev, 2, 6, 0);
 	return 0;
 }
 
@@ -683,7 +703,7 @@ intr_finish(struct intr *it, unsigned actual, unsigned cc)
 			it->ep->halted = 1;
 		status = EIO;
 		actual = 0;
-		log_info(&xhci_log, "slot %u: interrupt endpoint %u completed "
+		log_info(&xhci_log, "slot %u: waiting endpoint %u in completed "
 		    "with %u%s\n", it->dev->slot, it->ep->num, cc,
 		    it->ep->halted ? "; it is halted" : "");
 	} else if (actual != 0) {
@@ -709,8 +729,9 @@ intr_finish(struct intr *it, unsigned actual, unsigned cc)
 }
 
 /*
- * An interrupt IN transfer: on the ring, answered, left to the controller.
- * The request block is in urbmem and the device has been found.
+ * An interrupt IN transfer, or a bulk IN one that waits: on the ring,
+ * answered, left to the controller.  The request block is in urbmem and
+ * the device has been found.
  */
 static void
 intr_start(endpoint_t client, cp_grant_id_t gid, size_t size,
@@ -720,12 +741,15 @@ intr_start(endpoint_t client, cp_grant_id_t gid, size_t size,
 	struct xhci_ep *ep;
 	struct intr *it = NULL;
 	unsigned i, id, length = (unsigned)urb->size;
+	unsigned want = urb->type == USB_TRANSFER_INT ? XHCI_EP_TYPE_INTR_IN :
+	    XHCI_EP_TYPE_BULK_IN;
 	int r;
 
 	ep = xhci_device_ep(dev, (unsigned)urb->endpoint, 1);
-	if (ep == NULL || ep->type != XHCI_EP_TYPE_INTR_IN) {
-		log_warn(&xhci_log, "device %d has no interrupt endpoint %d "
-		    "in\n", urb->dev_id, urb->endpoint);
+	if (ep == NULL || ep->type != want) {
+		log_warn(&xhci_log, "device %d has no %s endpoint %d in\n",
+		    urb->dev_id, want == XHCI_EP_TYPE_INTR_IN ? "interrupt" :
+		    "bulk", urb->endpoint);
 		reply(client, EINVAL, 0);
 		return;
 	}
@@ -863,6 +887,31 @@ xhci_urb_device_gone(struct xhci_device *dev)
 		if (it->client != NONE)
 			complete_posted(it->client, it->gid, it->gsize,
 			    it->block, it->id, ENODEV, 0);
+	}
+}
+
+/*
+ * An interface is about to change its alternate setting, and its
+ * endpoints go with the old one: a transfer waiting on one of them would
+ * wait on an entry that no longer exists.  Told ECANCELED - the device is
+ * still there, which is what ENODEV would deny - or dropped quietly when
+ * its client has left: that is what a driver that starts again finds, the
+ * frame its previous instance was waiting for still on the ring.
+ */
+static void
+waits_cancel(struct xhci_device *dev, unsigned iface)
+{
+	unsigned i;
+
+	for (i = 0; i < MAX_INTR; i++) {
+		struct intr *it = &intr[i];
+
+		if (!it->busy || it->dev != dev || it->ep->iface != iface)
+			continue;
+		it->busy = 0;
+		if (it->client != NONE)
+			complete_posted(it->client, it->gid, it->gsize,
+			    it->block, it->id, ECANCELED, 0);
 	}
 }
 
@@ -1063,8 +1112,13 @@ send_urb(message *m)
 		return;
 	}
 
-	/* An interrupt IN transfer waits on its own; see "intr". */
-	if (urb->type == USB_TRANSFER_INT && urb_dir_in(urb)) {
+	/*
+	 * An interrupt IN transfer waits on its own, and so does a bulk IN
+	 * one whose client says it may; see "intr".
+	 */
+	if (urb_dir_in(urb) && (urb->type == USB_TRANSFER_INT ||
+	    (urb->type == USB_TRANSFER_BLK &&
+	    (urb->transfer_flags & USB_URB_WAITS)))) {
 		intr_start(m->m_source, gid, size, dev);
 		return;
 	}
@@ -1080,6 +1134,32 @@ send_urb(message *m)
 	} else if ((ep = xhci_device_ep(dev, (unsigned)urb->endpoint,
 	    urb_dir_in(urb))) != NULL && ep->halted)
 		(void)xhci_ep_reset(dev, ep);
+
+	/*
+	 * SET_INTERFACE changes which endpoints the device has, and the
+	 * controller is told before the request goes (xhci_set_interface())
+	 * - here, for the same reason as the resets above.  Refused, the
+	 * request fails without reaching the device: a device in an
+	 * alternate setting whose endpoints the controller does not have
+	 * would take frames nobody can fetch.
+	 */
+	if (urb->type == USB_TRANSFER_CTL) {
+		req = (struct usb_ctrlrequest *)urb->setup_packet;
+		if (req->bRequestType == USB_REQ_RECIP_IFACE &&
+		    req->bRequest == USB_REQ_SET_INTERFACE) {
+			waits_cancel(dev, req->wIndex & 0xff);
+			if (xhci_set_interface(dev, req->wIndex & 0xff,
+			    req->wValue & 0xff) != OK) {
+				id = next_urb_id++;
+				if (next_urb_id == 0)
+					next_urb_id = 1;
+				accept(m->m_source, id);
+				complete_posted(m->m_source, gid, size, urbmem,
+				    id, EIO, 0);
+				return;
+			}
+		}
+	}
 
 	id = next_urb_id++;
 	if (next_urb_id == 0)

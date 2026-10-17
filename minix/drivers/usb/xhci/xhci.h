@@ -103,6 +103,8 @@ struct xhci_ep {
 	unsigned mult;			/* extra packets per microframe, HS */
 	unsigned interval;		/* bInterval, as the descriptor says */
 	int halted;			/* stopped on an error; reset first */
+	unsigned iface;			/* the interface it belongs to */
+	unsigned alt;			/* and in which alternate setting */
 	struct xhci_ring ring;
 };
 
@@ -175,8 +177,26 @@ struct xhci_device {
 	unsigned parent_slot;		/* the hub, for a slow device */
 	unsigned parent_port;
 
+	/*
+	 * The endpoints, by entry; an entry whose dci is 0 is free.  neps
+	 * is how far the table has ever been used, not how many are in it:
+	 * an alternate setting that goes away frees its entries in place,
+	 * because a transfer waiting on another interface's endpoint holds
+	 * a pointer to its entry.
+	 */
 	struct xhci_ep ep[XHCI_MAX_EPS];
 	unsigned neps;
+
+	/*
+	 * The configuration descriptor as it was read, for SET_INTERFACE:
+	 * the endpoints of an alternate setting are told to the controller
+	 * when a driver chooses it (xhci_set_interface()).  A CDC Ethernet
+	 * device's data interface has none in alternate 0 and its bulk pair
+	 * in alternate 1.
+	 */
+	uint8_t *cfg;
+	unsigned cfg_len;
+	uint8_t alt[32];		/* each interface's current setting */
 };
 
 /* Everything the device tree said about this controller. */
@@ -330,6 +350,8 @@ int xhci_device_attach_hub(struct xhci_device *hub, unsigned hubport,
 	unsigned speed, struct xhci_device *dev);
 struct xhci_ep *xhci_device_ep(struct xhci_device *dev, unsigned num,
 	int dir_in);
+int xhci_set_interface(struct xhci_device *dev, unsigned iface,
+	unsigned alt);
 int xhci_transfer(struct xhci_device *dev, struct xhci_ep *ep, size_t length,
 	unsigned *actual);
 /*

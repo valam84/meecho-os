@@ -714,6 +714,7 @@ test_doorbell(void)
 
 #include "async.inc"
 #include "kbd.inc"
+#include "ecm.inc"
 
 /*===========================================================================*
  *    main                                                                   *
@@ -738,6 +739,9 @@ main(int argc, char **argv)
 	test_interrupt_after_poll();
 	test_keyboard();
 	test_hub_slot();
+	test_ecm_alternates();
+	test_ecm_adapter();
+	test_config_choice();
 
 	printf("\n%u checks, %u failure(s)\n", checks, failures);
 	return failures != 0 ? 1 : 0;

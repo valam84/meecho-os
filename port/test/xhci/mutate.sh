@@ -224,9 +224,78 @@ mut_hubslot() {
 	changed xhci_dev.c hubslot
 }
 
+#
+# The next six came with CDC Ethernet (2026-10-17): a data interface whose
+# bulk pair exists only in alternate 1, and adapters with two
+# configurations.  None of them has been seen on the board; each is a way
+# xhci_set_interface() or choose_config() would be wrong, and each is
+# silent there - a transfer the controller never fetches.
+#
+# nodrop:  the old alternate's endpoints not dropped in the command - the
+#          controller keeps contexts the driver has forgotten, and an
+#          endpoint added again while enabled is undefined.
+#
+mut_nodrop() {
+	perl -0pi -e 's/\*ctx_word\(dev->in_ctx, IN_CTRL, 0\) = drop;/*ctx_word(dev->in_ctx, IN_CTRL, 0) = 0;/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c nodrop
+}
+
+#
+# entries: the slot context handed back with the number of contexts it
+#          had - the adapter's bulk pair (contexts 5 and 6) lies beyond
+#          alternate 0's three, and the controller reads no further.
+#
+mut_entries() {
+	perl -0pi -e 's/in\[0\] = \(out\[0\] & ~XHCI_SLOT_ENTRIES\(0x1f\)\) \|\n\t    XHCI_SLOT_ENTRIES\(last_dci\(dev\)\);/in[0] = out[0];/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c entries
+}
+
+#
+# stale:   the old alternate's entries left in the driver's table - the
+#          next transfer goes on the ring the controller has just dropped.
+#
+mut_stale() {
+	perl -0pi -e 's/\t\tndropped\+\+;\n\t\txhci_ring_free\(&ep->ring\);\n\t\tmemset\(ep, 0, sizeof\(\*ep\)\);\n/\t\tndropped++;\n/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c stale
+}
+
+#
+# choice:  the first configuration whatever it is - an RTL8153 adapter
+#          then speaks its vendor protocol and offers no CDC Ethernet.
+#
+mut_choice() {
+	perl -0pi -e 's/index = choose_config\(dev, nconfigs\);/index = 0;/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c choice
+}
+
+#
+# rndis:   a first configuration of RNDIS taken, for which there is no
+#          driver here.
+#
+mut_rndis() {
+	perl -0pi -e 's/\t\t\tcontinue;\t\t\/\* RNDIS, ActiveSync \*\//\t\t\t;\t\t\/* RNDIS, ActiveSync *\//' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c rndis
+}
+
+#
+# vendor:  "the first configuration with an interface" instead of "the
+#          first that is not vendor-specific".
+#
+mut_vendor() {
+	perl -0pi -e 's/if \(dev->class != 0xff && intf != NULL && intf\[5\] != 0xff\) \{/if (intf != NULL) {/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c vendor
+}
+
 bad=0
 for m in link first isp doorbell ack wake td ehb tdsize \
-    interval trdeq ownbuf ep0mps hubslot; do
+    interval trdeq ownbuf ep0mps hubslot \
+    nodrop entries stale choice rndis vendor; do
 	run_one "$m" "mut_$m" || bad=$((bad + 1))
 done
 

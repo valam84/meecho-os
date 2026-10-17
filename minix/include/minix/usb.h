@@ -167,4 +167,11 @@ int usb_handle_msg(struct usb_driver *ubd, message *msg);
 /** Lets device driver send HCD various information */
 int usb_send_info(long, long);
 
+/*
+ * The same, about one device: a hub driver holding several hubs says which
+ * one its news is about (USB_INFO_DEV).  usb_send_info() is this with no
+ * device named, which the HCD takes to mean the only one there is.
+ */
+int usb_send_dev_info(int dev_id, long info_type, long info_value);
+
 #endif /* _MINIX_USB_H */

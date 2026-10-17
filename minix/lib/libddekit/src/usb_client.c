@@ -73,7 +73,19 @@ static void _ddekit_usb_completion(struct usb_urb *mx_urb)
  ****************************************************************************/
 static void _ddekit_usb_connect(unsigned int dev_id, unsigned int interfaces)
 {
-	struct ddekit_usb_dev *d_dev = (struct ddekit_usb_dev *)
+	struct ddekit_usb_dev *d_dev, *it;
+
+	/*
+	 * A device this driver already has is not a second device.  The HCD
+	 * announces everything it has to a driver that says hello, and a
+	 * driver that held one hub and was told about it twice would drive
+	 * it twice, from two threads.
+	 */
+	for (it = dev_list_head.next; it != &dev_list_head; it = it->next)
+		if (it->id == (int)dev_id)
+			return;
+
+	d_dev = (struct ddekit_usb_dev *)
 		ddekit_simple_malloc(sizeof(struct ddekit_usb_dev));
 
 	d_dev->data       = NULL;
@@ -110,6 +122,15 @@ void _ddekit_usb_disconnect(unsigned dev_id)
 	if (d_dev == NULL) {
 		return;
 	}
+
+	/*
+	 * Off the list, so that the device is not found by its id again;
+	 * not freed, because the driver may still hold it - a request of its
+	 * own in flight names it, and will come back with ENODEV.
+	 */
+	d_dev->prev->next = d_dev->next;
+	d_dev->next->prev = d_dev->prev;
+	d_dev->next = d_dev->prev = d_dev;
 
 	d_usb_driver->disconnect(d_dev);
 }
@@ -191,9 +212,13 @@ int ddekit_usb_cancle_urb(struct ddekit_usb_urb *d_urb)
  *         ddekit_usb_info                                                   *
  *****************************************************************************/
 long
-ddekit_usb_info(struct ddekit_usb_dev * UNUSED(dev), long type, long value)
+ddekit_usb_info(struct ddekit_usb_dev * dev, long type, long value)
 {
-	return usb_send_info(type, value);
+	/*
+	 * Which device the news is about goes with it: a hub driver holding
+	 * more than one hub cannot be told apart by who is talking.
+	 */
+	return usb_send_dev_info(dev != NULL ? dev->id : 0, type, value);
 }
 
 

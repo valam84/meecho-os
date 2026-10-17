@@ -890,6 +890,8 @@
 
 #   define USB_INFO_TYPE    m4_l1
 #   define USB_INFO_VALUE   m4_l2
+/* Which device the information is about, by its USB_DEV_ID; 0: not said. */
+#   define USB_INFO_DEV     m4_l3
 
 /*===========================================================================*
  *              Messages for DeviceManager (s/t like SysFS)                  *

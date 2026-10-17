@@ -231,13 +231,29 @@ int usb_handle_msg(struct usb_driver *ud, message *msg)
 int
 usb_send_info(long info_type, long info_value)
 {
+	return usb_send_dev_info(0, info_type, info_value);
+}
+
+/*****************************************************************************
+ *         usb_send_dev_info                                                 *
+ *****************************************************************************/
+/*
+ * The message is cleared first.  It was not, and while it carried two
+ * fields nobody read the rest; now that the HCD reads a third - which hub
+ * the news is about - whatever was on the stack there would name a device.
+ */
+int
+usb_send_dev_info(int dev_id, long info_type, long info_value)
+{
 	int res;
 	message msg;
 
 	/* Prepare message */
+	memset(&msg, 0, sizeof(msg));
 	msg.m_type		= USB_RQ_SEND_INFO;
 	msg.USB_INFO_TYPE	= info_type;
 	msg.USB_INFO_VALUE	= info_value;
+	msg.USB_INFO_DEV	= dev_id;
 
 	/* Send/receive message */
 	res = ipc_sendrec(hcd_ep, &msg);

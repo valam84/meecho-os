@@ -31,8 +31,13 @@ CFLAGS="-O1 -g -Wall -Wno-unused-parameter -Wno-unused-but-set-variable"
 CFLAGS="$CFLAGS -I$HERE/shim -I$HERE -I$SRC -D_GNU_SOURCE"
 
 rm -f "$OBJ"/*.o
-for f in "$SRC/xhci_ring.c" "$SRC/xhci_dev.c" "$SRC/xhci_tree.c" \
-    "$HERE/model.c" "$HERE/ringtest.c"; do
+# The driver's register writes reach the model as they are made
+# (mmiohook.h); the model and the checks keep plain stores.
+for f in "$SRC/xhci_ring.c" "$SRC/xhci_dev.c" "$SRC/xhci_tree.c"; do
+	o="$OBJ/$(basename "$f" .c).o"
+	$CC $CFLAGS -include "$HERE/mmiohook.h" -c "$f" -o "$o"
+done
+for f in "$HERE/model.c" "$HERE/ringtest.c"; do
 	o="$OBJ/$(basename "$f" .c).o"
 	$CC $CFLAGS -c "$f" -o "$o"
 done

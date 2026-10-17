@@ -892,6 +892,15 @@ xhci_events_drain(unsigned usec, struct xhci_trb *want, unsigned want_type)
 				    "(completion %u)\n",
 				    XHCI_EVENT_PORT_ID(ev.p0),
 				    XHCI_CC_OF(ev.status));
+				/*
+				 * Noted, not acted on: this may be the middle
+				 * of a client's transfer, and enumerating
+				 * from here is how a ring gets two writers.
+				 */
+				if (XHCI_EVENT_PORT_ID(ev.p0) >= 1 &&
+				    XHCI_EVENT_PORT_ID(ev.p0) <= XHCI_MAX_PORTS)
+					xhci.port_news |= 1u <<
+					    (XHCI_EVENT_PORT_ID(ev.p0) - 1);
 				break;
 			case XHCI_TRB_CMD_COMPLETION:
 				log_debug(&xhci_log, "event: command at "

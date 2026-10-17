@@ -1480,6 +1480,51 @@ doorbells(void)
 	}
 }
 
+/*
+ * What a write w to a port's PORTSC does: the change bits and PED are
+ * write-one-to-clear, PP is written, PR starts a reset if something is
+ * attached.  A write that clears a change bit stores the very value that
+ * was read - so a model that looked only for a register differing from
+ * its shadow would never see it (a disconnected port's CSC being
+ * acknowledged, with PED already clear).  The driver's writes are
+ * therefore handed to the model as they are made (model_mmio_wr()), and
+ * the comparison below is kept only for a write that went round it.
+ */
+static void port_news(unsigned port, uint32_t changes_before);
+
+static void
+port_write(unsigned p, uint32_t w)
+{
+	unsigned off = OPR + XHCI_PORTSC(p);
+	uint32_t s = portsc_shadow[p], u = s;
+
+	u &= ~(w & XHCI_PORTSC_CHANGES);
+	if (w & XHCI_PORTSC_PED_W1C)
+		u &= ~(uint32_t)XHCI_PORTSC_PED;
+	u = (u & ~(uint32_t)XHCI_PORTSC_PP) | (w & XHCI_PORTSC_PP);
+
+	if ((w & XHCI_PORTSC_PR) && (s & XHCI_PORTSC_CCS)) {
+		u |= XHCI_PORTSC_PR;
+		port_reset_left[p] = 3;
+	}
+
+	portsc_shadow[p] = u;
+	wr(off, u);
+}
+
+void
+model_mmio_wr(vir_bytes block, unsigned off, uint32_t v)
+{
+	unsigned p;
+
+	*(volatile uint32_t *)(block + off) = v;
+	if (regs == NULL || block != (vir_bytes)regs)
+		return;
+	for (p = 0; p < nports && p < MODEL_MAX_SLOTS; p++)
+		if (off == OPR + XHCI_PORTSC(p))
+			port_write(p, v);
+}
+
 static void
 ports(void)
 {
@@ -1489,26 +1534,11 @@ ports(void)
 		unsigned off = OPR + XHCI_PORTSC(p);
 		uint32_t w = rd(off), s = portsc_shadow[p];
 
-		if (w != s) {
-			uint32_t u = s;
-
-			u &= ~(w & XHCI_PORTSC_CHANGES);
-			if (w & XHCI_PORTSC_PED_W1C)
-				u &= ~(uint32_t)XHCI_PORTSC_PED;
-			u = (u & ~(uint32_t)XHCI_PORTSC_PP) |
-			    (w & XHCI_PORTSC_PP);
-
-			if ((w & XHCI_PORTSC_PR) && (s & XHCI_PORTSC_CCS)) {
-				u |= XHCI_PORTSC_PR;
-				port_reset_left[p] = 3;
-			}
-
-			portsc_shadow[p] = u;
-			wr(off, u);
-		}
+		if (w != s)
+			port_write(p, w);
 
 		if (port_reset_left[p] != 0 && --port_reset_left[p] == 0) {
-			uint32_t u = portsc_shadow[p];
+			uint32_t u = portsc_shadow[p], before = u;
 
 			u &= ~(uint32_t)XHCI_PORTSC_PR;
 			u |= XHCI_PORTSC_PED | XHCI_PORTSC_PRC;
@@ -1519,53 +1549,61 @@ ports(void)
 			portsc_shadow[p] = u;
 			wr(off, u);
 
-			event_push(((p + 1) & 0xff) << 24, 0,
-			    XHCI_CC_SUCCESS << 24,
-			    XHCI_TRB_TYPE(XHCI_TRB_PORT_STATUS));
+			port_news(p, before);
 		}
 	}
+}
+
+/*
+ * A Port Status Change event is generated when a change bit is set and
+ * none was set before (xHCI 1.1, 4.19.2, the PSCEG flag): a driver that
+ * leaves one set hears nothing about the next change of that port.  The
+ * Mi Pad 4's keyboard arrives on a root port after the start, and that is
+ * the only way it is ever noticed - so the model keeps the rule.
+ */
+static void
+port_news(unsigned port, uint32_t changes_before)
+{
+	if (event_base != 0 && (changes_before & XHCI_PORTSC_CHANGES) == 0)
+		event_push(((port + 1) & 0xff) << 24, 0,
+		    XHCI_CC_SUCCESS << 24,
+		    XHCI_TRB_TYPE(XHCI_TRB_PORT_STATUS));
 }
 
 void
 model_attach(unsigned port, unsigned speed)
 {
-	uint32_t v;
+	uint32_t v, before;
 
 	if (port >= nports || port >= MODEL_MAX_SLOTS)
 		return;
 
 	port_speed[port] = speed;
-	v = portsc_shadow[port] | XHCI_PORTSC_CCS | XHCI_PORTSC_CSC |
-	    XHCI_PORTSC_PP;
+	before = portsc_shadow[port];
+	v = before | XHCI_PORTSC_CCS | XHCI_PORTSC_CSC | XHCI_PORTSC_PP;
 	v &= ~(0xfu << 5);
 	v |= (uint32_t)XHCI_PLS_POLLING << 5;
 	portsc_shadow[port] = v;
 	wr(OPR + XHCI_PORTSC(port), v);
 
-	if (event_base != 0)
-		event_push(((port + 1) & 0xff) << 24, 0,
-		    XHCI_CC_SUCCESS << 24,
-		    XHCI_TRB_TYPE(XHCI_TRB_PORT_STATUS));
+	port_news(port, before);
 }
 
 void
 model_detach(unsigned port)
 {
-	uint32_t v;
+	uint32_t v, before;
 
 	if (port >= nports || port >= MODEL_MAX_SLOTS)
 		return;
 
-	v = portsc_shadow[port];
+	before = v = portsc_shadow[port];
 	v &= ~(uint32_t)(XHCI_PORTSC_CCS | XHCI_PORTSC_PED);
 	v |= XHCI_PORTSC_CSC;
 	portsc_shadow[port] = v;
 	wr(OPR + XHCI_PORTSC(port), v);
 
-	if (event_base != 0)
-		event_push(((port + 1) & 0xff) << 24, 0,
-		    XHCI_CC_SUCCESS << 24,
-		    XHCI_TRB_TYPE(XHCI_TRB_PORT_STATUS));
+	port_news(port, before);
 }
 
 void

@@ -86,6 +86,13 @@ run_deferred(void)
 	unsigned i;
 
 	/*
+	 * Root ports first: what a Port Status Change event said is done
+	 * here, between transfers, never from inside one.
+	 */
+	if (xhci.port_news != 0 && !xhci_urb_busy())
+		xhci_root_ports();
+
+	/*
 	 * Taken one at a time from the front, and the queue is re-read
 	 * every time round: answering one of these can put another aside.
 	 */
@@ -549,6 +556,13 @@ xhci_init(int type, sef_init_info_t *info)
 
 	/* And what is on the ports that came up. */
 	devices = attach_devices();
+
+	/*
+	 * And what arrived while the ports were looked at: on a port whose
+	 * VBUS has just come up the device connects a little after the
+	 * controller does (the Mi Pad 4's OTG adapter).
+	 */
+	xhci_root_ports();
 
 	log_info(&xhci_log, "up; %u device(s) enumerated, waiting for "
 	    "drivers\n", devices);

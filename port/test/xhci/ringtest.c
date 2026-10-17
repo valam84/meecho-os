@@ -716,6 +716,7 @@ test_doorbell(void)
 #include "kbd.inc"
 #include "ecm.inc"
 #include "tree.inc"
+#include "rootport.inc"
 
 /*===========================================================================*
  *    main                                                                   *
@@ -747,6 +748,7 @@ main(int argc, char **argv)
 	test_tree_fullspeed_hub();
 	test_tree_stale_port();
 	test_tree_depth();
+	test_root_port_hotplug();
 
 	printf("\n%u checks, %u failure(s)\n", checks, failures);
 	return failures != 0 ? 1 : 0;

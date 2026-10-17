@@ -378,6 +378,36 @@ mut_depth() {
 	changed xhci_dev.c depth
 }
 
+# rootnews: a root port's change event ignored, as before the Mi Pad 4 -
+#           a keyboard plugged in after the start is never enumerated.
+mut_rootnews() {
+	perl -0pi -e 's/\t\t\t\t\txhci.port_news \|= 1u <</\t\t\t\t\txhci.port_news |= 0u <</' \
+	    "$WORK/src/xhci_ring.c"
+	changed xhci_ring.c rootnews
+}
+
+# rootack:  the port's change bits left set - the next arrival is silent.
+mut_rootack() {
+	perl -0pi -e 's/\t\tif \(v & XHCI_PORTSC_CHANGES\)\n\t\t\txhci_wr/\t\tif (0)\n\t\t\txhci_wr/' \
+	    "$WORK/src/xhci_tree.c"
+	changed xhci_tree.c rootack
+}
+
+# rootstale: a device unplugged and replaced between two looks taken for
+#           the one still there - its successor never enumerated.
+mut_rootstale() {
+	perl -0pi -e 's/\(v & XHCI_PORTSC_CCS\) && !\(v & XHCI_PORTSC_CSC\)\)/(v \& XHCI_PORTSC_CCS))/' \
+	    "$WORK/src/xhci_tree.c"
+	changed xhci_tree.c rootstale
+}
+
+# rootusb3: a USB 3 port driven on a controller that has no PHY for it.
+mut_rootusb3() {
+	perl -0pi -e 's/\t\tif \(xhci.port_major\[p\] != 2\)\n\t\t\tcontinue;\n\n\t\tdev = /\t\tdev = /' \
+	    "$WORK/src/xhci_tree.c"
+	changed xhci_tree.c rootusb3
+}
+
 #
 # choice:  the first configuration whatever it is - an RTL8153 adapter
 #          then speaks its vendor protocol and offers no CDC Ethernet.
@@ -412,7 +442,8 @@ bad=0
 for m in link first isp doorbell ack wake td ehb tdsize \
     interval trdeq ownbuf ep0mps hubslot \
     nodrop entries stale choice rndis vendor early \
-    route tt newsid rename shallow order noslot staleport depth; do
+    route tt newsid rename shallow order noslot staleport depth \
+    rootnews rootack rootstale rootusb3; do
 	run_one "$m" "mut_$m" || bad=$((bad + 1))
 done
 

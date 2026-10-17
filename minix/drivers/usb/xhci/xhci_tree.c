@@ -205,6 +205,81 @@ xhci_device_remove(struct xhci_device *dev)
 	xhci_device_free(dev);
 }
 
+/*
+ * The root ports the controller said changed: a device arrived, left, or
+ * left and another arrived between two looks.
+ *
+ * On the CB2 this never mattered - a hub sits on the root port for good
+ * and everything else is that hub's news - but a Mi Pad 4 with an OTG
+ * adapter has the keyboard on the root port itself, and it arrives after
+ * the controller is up: VBUS comes from the PMIC's boost, which comes
+ * from Type-C, which is what made this a host to begin with.
+ *
+ * Only ports whose protocol the extended capabilities named USB 2 are
+ * driven, as at start-up (xhci.c, reset_ports()).  The change bits are
+ * acknowledged first, whatever is done next: a controller signals a port
+ * again only when a change bit goes from clear to set, and one left set
+ * would make the next arrival silent.  A device gets 100 ms of a stable
+ * connection before its port is reset (USB 2.0, 7.1.7.3, tATTDB).
+ */
+void
+xhci_root_ports(void)
+{
+	unsigned p, news, reg;
+	uint32_t v;
+	struct xhci_device *dev;
+
+	news = xhci.port_news;
+	xhci.port_news = 0;
+
+	for (p = 0; p < xhci.nports && p < XHCI_MAX_PORTS; p++) {
+		if (!(news & (1u << p)))
+			continue;
+		reg = xhci.caplength + XHCI_PORTSC(p);
+		v = xhci_rd(xhci.regs, reg);
+		if (v & XHCI_PORTSC_CHANGES)
+			xhci_wr(xhci.regs, reg, XHCI_PORTSC_KEEP(v) |
+			    (v & XHCI_PORTSC_CHANGES));
+		if (xhci.port_major[p] != 2)
+			continue;
+
+		dev = &xhci.dev[p];
+		if (dev->slot != 0) {
+			/*
+			 * Still connected, and never disconnected since it was
+			 * enumerated: whatever changed (a reset completing, a
+			 * link state) is not news about who is there.
+			 */
+			if ((v & XHCI_PORTSC_CCS) && !(v & XHCI_PORTSC_CSC))
+				continue;
+			log_info(&xhci_log, "port %u: device %u %s\n", p + 1,
+			    dev->id, (v & XHCI_PORTSC_CCS) ? "replaced by "
+			    "another" : "unplugged");
+			xhci_device_remove(dev);
+		}
+		if (!(v & XHCI_PORTSC_CCS))
+			continue;
+
+		micro_delay(100000);
+		v = xhci_rd(xhci.regs, reg);
+		if (!(v & XHCI_PORTSC_CCS)) {
+			log_info(&xhci_log, "port %u: a device came and went\n",
+			    p + 1);
+			continue;
+		}
+		log_info(&xhci_log, "port %u: a device arrived\n", p + 1);
+		if (xhci_port_reset(p) != OK)
+			continue;
+		if (xhci_device_attach(p, dev) != OK) {
+			log_warn(&xhci_log, "port %u: could not be enumerated\n",
+			    p + 1);
+			xhci_device_free(dev);
+			continue;
+		}
+		xhci_urb_announce(dev);
+	}
+}
+
 /* What hangs off this port of this hub now, if anything. */
 static struct xhci_device *
 child_on(const struct xhci_device *hub, unsigned port)

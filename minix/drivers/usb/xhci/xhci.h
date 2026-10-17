@@ -398,6 +398,15 @@ struct xhci {
 
 	struct xhci_device dev[XHCI_MAX_DEVS];
 	unsigned last_id;		/* the last device name given out */
+
+	/*
+	 * Root ports the controller said changed (Port Status Change
+	 * events), a bit each, not yet looked at.  The events are taken off
+	 * the ring wherever it is drained - often inside somebody's transfer
+	 * - and what they mean is done later, from the main loop, when no
+	 * transfer is running (xhci_root_ports()).
+	 */
+	unsigned port_news;
 };
 
 extern struct xhci xhci;
@@ -495,6 +504,7 @@ struct xhci_device *xhci_hub_by_id(unsigned id);
 int xhci_wants(const struct xhci_device *dev, const char *driver);
 int xhci_wanted(const struct xhci_device *dev);
 void xhci_device_remove(struct xhci_device *dev);
+void xhci_root_ports(void);
 
 /* What a hub driver says about one of its ports (USB_INFO_TYPE). */
 #define XHCI_HUB_LOW		0

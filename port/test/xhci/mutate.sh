@@ -257,9 +257,125 @@ mut_entries() {
 #          next transfer goes on the ring the controller has just dropped.
 #
 mut_stale() {
-	perl -0pi -e 's/\t\tndropped\+\+;\n\t\txhci_ring_free\(&ep->ring\);\n\t\tmemset\(ep, 0, sizeof\(\*ep\)\);\n/\t\tndropped++;\n/' \
+	perl -0pi -e 's/\t\tdropped\[ndropped\+\+\] = ep->ring;\n\t\tmemset\(ep, 0, sizeof\(\*ep\)\);\n/\t\tdropped[ndropped++] = ep->ring;\n/' \
 	    "$WORK/src/xhci_dev.c"
 	changed xhci_dev.c stale
+}
+
+#
+# early:   the old alternate's rings freed before the command that drops
+#          their endpoints, as the first version did - for the length of
+#          the command the controller reads memory the driver has given
+#          back, and the new setting's rings are allocated from it.  Found
+#          by the model's watch on memory under an enabled slot, which came
+#          with the dock below.
+#
+mut_early() {
+	perl -0pi -e 's/\t\tdropped\[ndropped\+\+\] = ep->ring;\n/\t\txhci_ring_free(&ep->ring);\n\t\tndropped++;\n/' \
+	    "$WORK/src/xhci_dev.c"
+	perl -0pi -e 's/\tfor \(i = 0; i < ndropped; i\+\+\)\n\t\txhci_ring_free\(&dropped\[i\]\);\n//' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c early
+}
+
+#
+# The next nine came with the dock (2026-10-17): a hub behind the board's
+# hub, with an Ethernet chip, a card reader and a keyboard behind it.
+# None has been on the board yet; each is the way the tree would be wrong,
+# and each is silent there - a slot context that names a place where no
+# device is gets "transaction error" and nothing more.
+#
+# route:   the dock's port number put in the bottom nibble of the route
+#          string whatever the tier - right for one hub, and for the
+#          devices behind the dock a route to the board's hub's port 1.
+#
+mut_route() {
+	perl -0pi -e 's/dev->route = hub->route \| \(\(hubport & 0xf\) << \(4 \* hub->tier\)\);/dev->route = hub->route | (hubport \& 0xf);/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c route
+}
+
+#
+# tt:      the translator taken from the hub a device hangs off, whatever
+#          its speed - the rule that was enough for one tier.  Behind a
+#          full-speed hub there is no translator to be had.
+#
+mut_tt() {
+	perl -0pi -e 's/\t\tif \(hub->speed == 3\) \{\n/\t\tif (1) {\n/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c tt
+}
+
+#
+# newsid:  hub news taken to be about "the hub", the last of class 9 in the
+#          table, whatever it names - the old xhci_urb.c.
+#
+mut_newsid() {
+	perl -0pi -e 's/\tif \(id != 0\) \{\n\t\td = xhci_device_by_id\(id\);\n\t\treturn d != NULL && d->class == 9 \? d : NULL;\n\t\}\n/\tonly = NULL;\n/' \
+	    "$WORK/src/xhci_tree.c"
+	perl -0pi -e 's/\treturn n == 1 \? only : NULL;/\treturn only;/' \
+	    "$WORK/src/xhci_tree.c"
+	changed xhci_tree.c newsid
+}
+
+#
+# rename:  a name given again once its device is gone, the way the
+#          controller gives a slot again - the old dock's thread then
+#          speaks for the new dock.
+#
+mut_rename() {
+	perl -0pi -e 's/\tdo \{\n\t\tif \(\+\+xhci\.last_id == 0\)\n\t\t\txhci\.last_id = 1;\n/\txhci.last_id = 0;\n\tdo {\n\t\t++xhci.last_id;\n/' \
+	    "$WORK/src/xhci_tree.c"
+	changed xhci_tree.c rename
+}
+
+#
+# shallow: a device that leaves takes only itself, as before the dock -
+#          the devices behind a hub keep their slots for ever.
+#
+mut_shallow() {
+	perl -0pi -e 's/\tfor \(i = 0; i < XHCI_MAX_DEVS; i\+\+\)\n\t\tif \(xhci\.dev\[i\]\.slot != 0 && &xhci\.dev\[i\] != dev &&\n\t\t    xhci\.dev\[i\]\.hub_id == dev->id\)\n\t\t\txhci_device_remove\(&xhci\.dev\[i\]\);\n//' \
+	    "$WORK/src/xhci_tree.c"
+	changed xhci_tree.c shallow
+}
+
+#
+# order:   the hub let go before the devices behind it.
+#
+mut_order() {
+	perl -0pi -e 's/(\tfor \(i = 0; i < XHCI_MAX_DEVS; i\+\+\)\n\t\tif \(xhci\.dev\[i\]\.slot != 0 && &xhci\.dev\[i\] != dev &&\n\t\t    xhci\.dev\[i\]\.hub_id == dev->id\)\n\t\t\txhci_device_remove\(&xhci\.dev\[i\]\);\n)(.*?)(\txhci_urb_device_gone\(dev\);\n\txhci_device_free\(dev\);\n)/{ unsigned self = dev->id;\n\txhci_urb_device_gone(dev);\n\txhci_device_free(dev);\n\tfor (i = 0; i < XHCI_MAX_DEVS; i++)\n\t\tif (xhci.dev[i].slot != 0 \&\& xhci.dev[i].hub_id == self)\n\t\t\txhci_device_remove(\&xhci.dev[i]);\n\treturn; }\n$2$3/s' \
+	    "$WORK/src/xhci_tree.c"
+	changed xhci_tree.c order
+}
+
+#
+# noslot:  no Disable Slot when a device goes, as before the dock: the
+#          controller keeps the slot and its contexts in freed memory, and
+#          after a few rounds of a dock out and in has none to give.
+#
+mut_noslot() {
+	perl -0pi -e 's/\t\tif \(xhci_cmd\(0, 0, 0, XHCI_TRB_TYPE\(XHCI_TRB_DISABLE_SLOT\) \|\n\t\t    XHCI_TRB_SLOT_ID\(dev->slot\), NULL\) != OK\)\n/\t\tif (0)\n/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c noslot
+}
+
+#
+# staleport: news of a device on a port that has one adds the new beside
+#          the old - two entries for one port, and a slot kept for ever.
+#
+mut_staleport() {
+	perl -0pi -e 's/\tif \(\(old = child_on\(hub, port\)\) != NULL\) \{/\tif ((old = child_on(hub, port)) != NULL \&\& speed == 0) {/' \
+	    "$WORK/src/xhci_tree.c"
+	changed xhci_tree.c staleport
+}
+
+#
+# depth:   a sixth tier allowed - the route string has no nibble for it.
+#
+mut_depth() {
+	perl -0pi -e 's/\tif \(hub->tier >= 5\) \{/\tif (hub->tier >= 6) {/' \
+	    "$WORK/src/xhci_dev.c"
+	changed xhci_dev.c depth
 }
 
 #
@@ -295,7 +411,8 @@ mut_vendor() {
 bad=0
 for m in link first isp doorbell ack wake td ehb tdsize \
     interval trdeq ownbuf ep0mps hubslot \
-    nodrop entries stale choice rndis vendor; do
+    nodrop entries stale choice rndis vendor early \
+    route tt newsid rename shallow order noslot staleport depth; do
 	run_one "$m" "mut_$m" || bad=$((bad + 1))
 done
 

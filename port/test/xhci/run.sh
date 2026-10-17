@@ -2,8 +2,8 @@
 #
 # Build and run the xHCI host stand.
 #
-# It compiles the driver's own ring and device files - not copies of them -
-# against the shim headers here and the model of the controller.  Nothing
+# It compiles the driver's own ring, device and tree files - not copies of
+# them - against the shim headers here and the model of the controller.  Nothing
 # in the driver is changed for this: if a check fails, the driver is what
 # is wrong.
 #
@@ -30,8 +30,9 @@ CC=${CC:-gcc}
 CFLAGS="-O1 -g -Wall -Wno-unused-parameter -Wno-unused-but-set-variable"
 CFLAGS="$CFLAGS -I$HERE/shim -I$HERE -I$SRC -D_GNU_SOURCE"
 
-for f in "$SRC/xhci_ring.c" "$SRC/xhci_dev.c" "$HERE/model.c" \
-    "$HERE/ringtest.c"; do
+rm -f "$OBJ"/*.o
+for f in "$SRC/xhci_ring.c" "$SRC/xhci_dev.c" "$SRC/xhci_tree.c" \
+    "$HERE/model.c" "$HERE/ringtest.c"; do
 	o="$OBJ/$(basename "$f" .c).o"
 	$CC $CFLAGS -c "$f" -o "$o"
 done

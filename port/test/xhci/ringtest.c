@@ -715,6 +715,7 @@ test_doorbell(void)
 #include "async.inc"
 #include "kbd.inc"
 #include "ecm.inc"
+#include "tree.inc"
 
 /*===========================================================================*
  *    main                                                                   *
@@ -742,6 +743,10 @@ main(int argc, char **argv)
 	test_ecm_alternates();
 	test_ecm_adapter();
 	test_config_choice();
+	test_tree_dock();
+	test_tree_fullspeed_hub();
+	test_tree_stale_port();
+	test_tree_depth();
 
 	printf("\n%u checks, %u failure(s)\n", checks, failures);
 	return failures != 0 ? 1 : 0;

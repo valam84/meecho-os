@@ -123,6 +123,8 @@ model_mem_alloc(size_t size, phys_bytes *phys)
 	return r->drv;
 }
 
+static void freed_under_slots(phys_bytes phys, size_t size);
+
 void
 model_mem_free(void *v, size_t size)
 {
@@ -130,6 +132,7 @@ model_mem_free(void *v, size_t size)
 
 	for (i = 0; i < NREGIONS; i++)
 		if (regions[i].used && regions[i].drv == v) {
+			freed_under_slots(regions[i].phys, regions[i].size);
 			free(regions[i].drv);
 			free(regions[i].dev);
 			memset(&regions[i], 0, sizeof(regions[i]));
@@ -258,6 +261,7 @@ struct mep {
 
 struct mslot {
 	int used;
+	int node;			/* the tree's device, or -1 */
 	phys_bytes out_ctx;
 	unsigned address;
 	uint32_t slot_ctx[3];		/* the slot context, as last given */
@@ -284,6 +288,22 @@ static unsigned port_speed[MODEL_MAX_SLOTS];
 static struct mslot slots[MODEL_MAX_SLOTS + 1];
 static model_control_fn control_fn;
 static unsigned ctx_size = 64;
+
+/*
+ * The tree behind the root ports (model_tree_add()).  A device is where it
+ * is: a root port, counting from 0 as the model's port arrays do, and the
+ * route string below it.
+ */
+#define MODEL_MAX_NODES	16
+
+static struct mnode {
+	int used;			/* registered and plugged in */
+	unsigned root;
+	unsigned route;
+	unsigned speed;
+	int hub;
+	unsigned slot;			/* addressed to it; 0: none */
+} nodes[MODEL_MAX_NODES];
 
 static uint32_t
 rd(unsigned off)
@@ -422,6 +442,7 @@ model_reset(unsigned ports, unsigned nsl)
 	memset(regs, 0, MODEL_REGS_SIZE);
 	memset(&model_stats, 0, sizeof(model_stats));
 	memset(slots, 0, sizeof(slots));
+	memset(nodes, 0, sizeof(nodes));
 	memset(portsc_shadow, 0, sizeof(portsc_shadow));
 	memset(port_reset_left, 0, sizeof(port_reset_left));
 	memset(port_speed, 0, sizeof(port_speed));
@@ -735,6 +756,221 @@ take_input_context(unsigned slot, phys_bytes in_ctx, int configure)
 }
 
 /*---------------------------------------------------------------------------*
+ *    the tree behind the root ports                                          *
+ *---------------------------------------------------------------------------*/
+/* How many hubs down a route string goes: its nibbles, up to the first 0. */
+static unsigned
+route_tier(unsigned route)
+{
+	unsigned t = 0;
+
+	while (t < 5 && ((route >> (4 * t)) & 0xf) != 0)
+		t++;
+	return t;
+}
+
+static int
+node_at(unsigned root, unsigned route)
+{
+	unsigned i;
+
+	for (i = 0; i < MODEL_MAX_NODES; i++)
+		if (nodes[i].used && nodes[i].root == root &&
+		    nodes[i].route == route)
+			return (int)i;
+	return -1;
+}
+
+static int
+tree_on(unsigned root)
+{
+	unsigned i;
+
+	for (i = 0; i < MODEL_MAX_NODES; i++)
+		if (nodes[i].used && nodes[i].root == root)
+			return 1;
+	return 0;
+}
+
+/* Whether node b hangs somewhere below node a. */
+static int
+node_below(unsigned a, unsigned b)
+{
+	unsigned ta = route_tier(nodes[a].route);
+	unsigned mask = ta == 0 ? 0 : (1u << (4 * ta)) - 1;
+
+	return nodes[a].root == nodes[b].root &&
+	    route_tier(nodes[b].route) > ta &&
+	    (nodes[b].route & mask) == nodes[a].route;
+}
+
+/*
+ * The translator a low- or full-speed device is reached through: walking
+ * up from its parent, the first hub that is high speed, and the port of
+ * that hub the way down goes through.  None when there is no such hub - a
+ * slow device on a root port, or behind only slow hubs on one.
+ */
+static void
+expected_tt(unsigned n, unsigned *tt_slot, unsigned *tt_port)
+{
+	unsigned r = nodes[n].route, t = route_tier(r), k;
+
+	*tt_slot = *tt_port = 0;
+	if (nodes[n].speed != 1 && nodes[n].speed != 2)
+		return;
+
+	for (k = t; k >= 1; k--) {
+		unsigned up = r & ((1u << (4 * (k - 1))) - 1);
+		int a = node_at(nodes[n].root, up);
+
+		if (a >= 0 && nodes[a].hub && nodes[a].speed == 3) {
+			*tt_slot = nodes[a].slot;
+			*tt_port = (r >> (4 * (k - 1))) & 0xf;
+			return;
+		}
+	}
+}
+
+/*
+ * Does the slot context in this input context reach a device of the tree?
+ * Answers the node, or -1 with the reason given as a complaint.  A root
+ * port the tree has nothing on answers -2: not checked.
+ */
+static int
+tree_reach(unsigned slot, phys_bytes in_ctx)
+{
+	uint32_t w0 = ctx_word(in_ctx, 1, 0), w1 = ctx_word(in_ctx, 1, 1);
+	uint32_t w2 = ctx_word(in_ctx, 1, 2);
+	unsigned rp = (w1 >> 16) & 0xff, route = w0 & 0xfffff;
+	unsigned speed = (w0 >> 20) & 0xf, tt_slot, tt_port;
+	int n;
+
+	if (rp == 0 || !tree_on(rp - 1))
+		return -2;
+
+	if ((n = node_at(rp - 1, route)) < 0) {
+		complain("slot %u is addressed to root port %u route 0x%05x, "
+		    "where nothing is", slot, rp, route);
+		return -1;
+	}
+	if (nodes[n].speed != speed) {
+		complain("slot %u: the device at route 0x%05x is speed %u, "
+		    "not %u", slot, route, nodes[n].speed, speed);
+		return -1;
+	}
+	if (w0 & XHCI_SLOT_MTT) {
+		complain("slot %u: multi-TT set, and no hub here has it on",
+		    slot);
+		return -1;
+	}
+
+	expected_tt((unsigned)n, &tt_slot, &tt_port);
+	if ((w2 & 0xff) != tt_slot || ((w2 >> 8) & 0xff) != tt_port) {
+		complain("slot %u: the device at route 0x%05x is reached through "
+		    "slot %u port %u, not slot %u port %u", slot, route,
+		    tt_slot, tt_port, w2 & 0xff, (w2 >> 8) & 0xff);
+		return -1;
+	}
+	return n;
+}
+
+int
+model_tree_add(unsigned root_port, unsigned route, unsigned speed, int hub)
+{
+	unsigned i;
+
+	for (i = 0; i < MODEL_MAX_NODES; i++)
+		if (!nodes[i].used) {
+			memset(&nodes[i], 0, sizeof(nodes[i]));
+			nodes[i].used = 1;
+			nodes[i].root = root_port;
+			nodes[i].route = route;
+			nodes[i].speed = speed;
+			nodes[i].hub = hub;
+			return (int)i;
+		}
+	complain("the model ran out of tree nodes");
+	return -1;
+}
+
+void
+model_tree_unplug(int node)
+{
+	unsigned i;
+
+	if (node < 0 || node >= MODEL_MAX_NODES || !nodes[node].used)
+		return;
+	for (i = 0; i < MODEL_MAX_NODES; i++)
+		if (nodes[i].used && (int)i != node &&
+		    node_below((unsigned)node, i))
+			nodes[i].used = 0;
+	nodes[node].used = 0;
+}
+
+int
+model_slot_node(unsigned slot)
+{
+	if (slot == 0 || slot >= MODEL_MAX_SLOTS || !slots[slot].used)
+		return -1;
+	return slots[slot].node;
+}
+
+unsigned
+model_node_slot(int node)
+{
+	if (node < 0 || node >= MODEL_MAX_NODES)
+		return 0;
+	return nodes[node].slot;
+}
+
+unsigned
+model_slots_used(void)
+{
+	unsigned s, n = 0;
+
+	for (s = 1; s < MODEL_MAX_SLOTS; s++)
+		if (slots[s].used)
+			n++;
+	return n;
+}
+
+/* A slot the device has gone from: it no longer answers anything. */
+static int
+slot_gone(unsigned slot)
+{
+	int n = slots[slot].node;
+
+	return n >= 0 && (!nodes[n].used || nodes[n].slot != slot);
+}
+
+/*
+ * Memory the driver gives back while the controller still holds a slot
+ * whose context or rings are in it.  A controller does not notice; it
+ * writes the device's state into whatever the memory has become - the
+ * next device's transfer buffer, say.  Disable Slot is how the driver
+ * says the slot is over.
+ */
+static void
+freed_under_slots(phys_bytes phys, size_t size)
+{
+	unsigned s, d;
+
+	for (s = 1; s < MODEL_MAX_SLOTS; s++) {
+		if (!slots[s].used)
+			continue;
+		if (slots[s].out_ctx >= phys && slots[s].out_ctx < phys + size)
+			complain("the driver freed slot %u's device context, and "
+			    "the slot is still enabled", s);
+		for (d = 1; d < MODEL_MAX_DCI; d++)
+			if (slots[s].ep[d].valid && slots[s].ep[d].ptr >= phys &&
+			    slots[s].ep[d].ptr < phys + size)
+				complain("the driver freed the ring of slot %u "
+				    "context %u, and the slot is still enabled",
+				    s, d);
+	}
+}
+
+/*---------------------------------------------------------------------------*
  *    commands                                                                *
  *---------------------------------------------------------------------------*/
 static void
@@ -788,8 +1024,42 @@ command_run(void)
 				memset(&slots[ev_slot], 0,
 				    sizeof(slots[ev_slot]));
 				slots[ev_slot].used = 1;
+				slots[ev_slot].node = -1;
 			}
 			break;
+
+		/*
+		 * The slot back: its endpoints stop and its contexts are
+		 * no longer the controller's.  A hub's slot is not given
+		 * back before those of the devices behind it - their slot
+		 * contexts name its slot as their translator, and a device
+		 * whose hub has no slot any more is a state the
+		 * specification does not describe.
+		 */
+		case XHCI_TRB_DISABLE_SLOT: {
+			unsigned s;
+			int n;
+
+			if (slot == 0 || slot >= MODEL_MAX_SLOTS ||
+			    !slots[slot].used) {
+				cc = 11;	/* slot not enabled */
+				break;
+			}
+			n = slots[slot].node;
+			for (s = 1; n >= 0 && s < MODEL_MAX_SLOTS; s++)
+				if (s != slot && slots[s].used &&
+				    slots[s].node >= 0 &&
+				    node_below((unsigned)n,
+				    (unsigned)slots[s].node))
+					complain("slot %u is given back while "
+					    "slot %u, behind it, is still "
+					    "enabled", slot, s);
+			if (n >= 0 && nodes[n].slot == slot)
+				nodes[n].slot = 0;
+			memset(&slots[slot], 0, sizeof(slots[slot]));
+			ev_slot = slot;
+			break;
+		}
 
 		case XHCI_TRB_ADDRESS_DEVICE:
 		case XHCI_TRB_CONFIGURE_EP: {
@@ -800,6 +1070,37 @@ command_run(void)
 			    !slots[slot].used) {
 				cc = XHCI_CC_PARAMETER_ERROR;
 				break;
+			}
+
+			/*
+			 * Where the slot context says the device is, and
+			 * whether anything answers there.  A Configure
+			 * Endpoint that carries the slot context is held to
+			 * the same: it rewrites the fields the controller
+			 * routes by.
+			 */
+			if (ctx_word(trb.p0, 0, 1) & XHCI_INPUT_ADD_SLOT) {
+				int n = tree_reach(slot, trb.p0);
+
+				if (n == -1) {
+					cc = XHCI_CC_TRANSACTION;
+					break;
+				}
+				if (type == XHCI_TRB_ADDRESS_DEVICE) {
+					if (n >= 0 && nodes[n].slot != 0 &&
+					    nodes[n].slot != slot)
+						complain("slot %u is addressed "
+						    "to the device slot %u "
+						    "already has", slot,
+						    nodes[n].slot);
+					slots[slot].node = n >= 0 ? n : -1;
+					if (n >= 0)
+						nodes[n].slot = slot;
+				} else if (slots[slot].node != n &&
+				    n != -2) {
+					complain("a Configure Endpoint moves "
+					    "slot %u to another device", slot);
+				}
 			}
 
 			/*
@@ -988,6 +1289,20 @@ endpoint_run(unsigned slot, unsigned dci)
 
 	if (ep->busy != 0) {
 		ep->busy--;
+		return;
+	}
+
+	/*
+	 * A device that has been unplugged answers nothing: the first entry
+	 * the controller tries ends in a transaction error, and the endpoint
+	 * stops there, as a halted one does.
+	 */
+	if (slot_gone(slot)) {
+		if (trb_fetch(ep->ptr, ep->ccs, &trb) &&
+		    XHCI_TRB_TYPE_OF(trb.control) != XHCI_TRB_LINK)
+			trb_event(ep, slot, dci, ep->ptr, XHCI_CC_TRANSACTION,
+			    trb.status & 0x1ffff);
+		ep->active = 0;
 		return;
 	}
 

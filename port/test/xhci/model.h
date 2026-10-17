@@ -63,6 +63,34 @@ void model_attach(unsigned port, unsigned speed);
 void model_detach(unsigned port);
 
 /*
+ * The tree behind a root port: hubs and what hangs off them, each named by
+ * where it is - the root port and the route string, a nibble per hub on
+ * the way down - with its speed and whether it is a hub.
+ *
+ * A root port with anything registered here is checked the way a
+ * controller checks it, which is by trying: Address Device reaches the
+ * device the slot context's root port and route string name, at the speed
+ * it gives, through the translator it gives for a low- or full-speed one -
+ * which has to be the nearest HIGH-speed hub above it and the port of that
+ * hub the way goes through.  A controller told anything else gets no
+ * answer from the wire and says USB Transaction Error; so does the model,
+ * and it also says which field was wrong, which the controller would not.
+ * A device unplugged here stops answering: Address Device fails the same
+ * way, and every transfer to it ends in a transaction error.
+ *
+ * Disable Slot is checked against the tree too: a hub's slot given back
+ * while a device behind it still has one is a complaint.  Root ports with
+ * nothing registered are not checked, which is how every test from before
+ * the tree runs.
+ */
+int model_tree_add(unsigned root_port, unsigned route, unsigned speed,
+	int hub);
+void model_tree_unplug(int node);	/* it, and everything behind it */
+int model_slot_node(unsigned slot);	/* -1: not a device of the tree */
+unsigned model_node_slot(int node);	/* 0: no slot addressed to it */
+unsigned model_slots_used(void);
+
+/*
  * What a device answers.  Bytes queued here are what an IN transfer on
  * that endpoint returns, in order; a transfer that asks for more than is
  * queued is short, which is the case that cost this driver the ISP bit.

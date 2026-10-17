@@ -7,6 +7,7 @@
 
 #include <string.h>				/* memset */
 #include <assert.h>
+#include <errno.h>
 
 #include "common.h"
 #include "urb_helper.h"
@@ -84,6 +85,14 @@ blocking_urb_submit(struct ddekit_usb_urb * urb, ddekit_sem_t * sem,
 	assert((check_len == URB_SUBMIT_CHECK_LEN) ||
 		(check_len == URB_SUBMIT_ALLOW_MISMATCH));
 
+	/*
+	 * The completion is told whose request it was: the semaphore to
+	 * raise travels in the URB.  With one hub there was one semaphore
+	 * and the completion raised it whoever had asked; with a thread per
+	 * hub that would wake the wrong one.
+	 */
+	urb->priv = sem;
+
 	/* Submit and block until semaphore gets up */
 	if (ddekit_usb_submit_urb(urb)) {
 		HUB_MSG("Submitting DDEKit URB failed");
@@ -92,9 +101,14 @@ blocking_urb_submit(struct ddekit_usb_urb * urb, ddekit_sem_t * sem,
 		/* Submitting succeeded so block and wait for reply */
 		ddekit_sem_down(sem);
 
-		/* Check for DDEKit status first */
+		/*
+		 * Check for DDEKit status first.  ENODEV is the hub having
+		 * gone, which its thread learns from the withdrawal as well
+		 * and does not need shouted.
+		 */
 		if (urb->status) {
-			HUB_MSG("Invalid DDEKit URB status");
+			if (urb->status != ENODEV)
+				HUB_MSG("URB status %d", urb->status);
 			return EXIT_FAILURE;
 		} else {
 			if (URB_SUBMIT_CHECK_LEN == check_len) {

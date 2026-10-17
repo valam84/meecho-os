@@ -1,10 +1,51 @@
 /*
  * Minix3 USB hub driver implementation
+ *
+ * Every hub the host controller has, in one instance of this driver.
+ *
+ * It drove one hub, and a second was worse than ignored: "HUB device
+ * driver can be connected only once!", and RS restarting a driver that the
+ * host controller would offer the second hub to again, for ever.  The
+ * CB2's root port carries a Terminus hub, and a USB-C dock plugged into it
+ * is a hub of its own with an Ethernet chip and a card reader behind it;
+ * so the question was how to drive more than one, and the answer here is
+ * one instance holding all of them, a thread each, rather than one
+ * instance per hub with a label each.  Three reasons, written down because
+ * the other way looks tidier:
+ *
+ *   Nothing here can start a driver when a device arrives.  The system
+ *   this stack came from had devman for that; this one has RS starting
+ *   what rc says.  An instance per hub means rc starting some number of
+ *   them in advance and xhci dealing hubs out among them - and a dock
+ *   plugged into a board whose instances are all taken finds none.
+ *
+ *   Hubs are a tree, and a hub's devices go when it goes: a crash of the
+ *   driver of the board's hub resets everything behind it however many
+ *   processes the hubs below were in.  Separate processes would isolate
+ *   nothing that is not lost anyway.
+ *
+ *   What one instance costs is one rule, and it is kept in one place.
+ *   xhci finishes a control transfer with a synchronous send, and a
+ *   client in a sendrec takes ANY message from xhci for its reply -
+ *   libusb then panics.  A single-threaded client never has a request
+ *   out while it is in a sendrec; two threads of one process can.  So
+ *   everything this driver says to xhci - requests and news - goes
+ *   through one lock, "bus": one conversation with xhci at a time from
+ *   the whole process, which is all xhci serves anyway (one transfer at
+ *   a time, see xhci_urb.c).
+ *
+ * Linux does the same for the same reasons: one hub_wq for every hub.
+ *
+ * Each hub's news names it (ddekit_usb_info() passes its device), and xhci
+ * believes news about a hub only from the driver it gave the hub to.  A hub
+ * that goes is withdrawn (USB_WITHDRAW_DEV); its thread stops at its next
+ * step and its entry is free for the next hub.  The thread itself stays,
+ * waiting for one: a DDEKit thread cannot end without leaving its stack
+ * behind.
  */
 
 #include <string.h>			/* memset */
 #include <stdint.h>
-#include <time.h>			/* nanosleep */
 
 #include <ddekit/thread.h>
 #include <minix/sef.h>
@@ -34,8 +75,8 @@ static void usb_driver_completion(void *);
 static void usb_driver_connect(struct ddekit_usb_dev *, unsigned int);
 static void usb_driver_disconnect(struct ddekit_usb_dev *);
 
-/* Hub driver main task */
-static void hub_task(void *);
+/* A hub's own thread */
+static void hub_thread(void *);
 
 
 /*---------------------------*
@@ -46,20 +87,39 @@ static void hub_task(void *);
 /* How often to check for changes */
 #define USB_HUB_POLLING_INTERVAL 1000
 
-/* Max number of hub ports */
-#define USB_HUB_PORT_LIMIT 8
+/*
+ * Max number of hub ports.  Fifteen is what the host controller can reach:
+ * the route string that says which port to take at each hub has four bits
+ * per hub (xHCI 1.1, 8.9).  It was eight, and the array below was sized to
+ * eight and indexed from one, so a hub of eight ports wrote one past it.
+ */
+#define USB_HUB_PORT_LIMIT 15
+
+/* How many hubs one instance holds at once: the board's, a dock's, and
+ * room for what is plugged into those. */
+#define USB_HUB_MAX 8
 
 /* Limits number of communication retries (when needed) */
 #define USB_HUB_MAX_TRIES 3
 
-/* How long to wait between retries, in case of reset error (in nanoseconds) */
-#define USB_HUB_RESET_DELAY 200000000 /* 200ms */
+/* How long to wait between retries, in case of reset error (ms) */
+#define USB_HUB_RESET_DELAY 200
 
 /* How long a connection must hold still before it is reset (USB 2.0,
  * 7.1.7.3: TATTDB), in what steps it is watched, and when to give up. */
 #define USB_HUB_DEBOUNCE_STEP 25	/* ms */
 #define USB_HUB_DEBOUNCE_STABLE 100	/* ms */
 #define USB_HUB_DEBOUNCE_LIMIT 1500	/* ms */
+
+/*
+ * How long after the ports are powered before anything on them is looked
+ * at: the hub's own bPwrOn2PwrGood (in units of 2 ms), and never less than
+ * 100 ms - the floor Linux keeps too (hub_power_on_good_delay()), because
+ * hubs that say 0 exist.  And how long a port is left off after an
+ * over-current before it is powered again (Linux: 100 ms as well).
+ */
+#define USB_HUB_POWER_GOOD_MIN 100	/* ms */
+#define USB_HUB_OVERCURRENT_REST 100	/* ms */
 
 /* A third answer from hub_handle_connection(): the device is no longer
  * there, which is a disconnection and not a bad port. */
@@ -85,6 +145,17 @@ typedef struct HUB_PACKED hub_descriptor {
 	/* Remaining variable length fields are ignored for now */
 }
 hub_descriptor;
+
+/*
+ * wHubCharacteristics (USB 2.0, 11.23.2.1): how the hub switches the power
+ * of its ports, and how it guards against over-current.  Bit 1 set means
+ * no switching at all - the ports are powered whenever the hub is.
+ */
+#define HUB_CHAR_POWER(c)	((c) & 0x3)
+#define HUB_CHAR_POWER_GANGED	0
+#define HUB_CHAR_POWER_PORT	1
+#define HUB_CHAR_OC(c)		(((c) >> 3) & 0x3)
+#define HUB_CHAR_TTT(c)		(((c) >> 5) & 0x3)
 
 /* Hub port status structure, as defined in USB 2.0 document */
 typedef struct HUB_PACKED hub_port_status {
@@ -172,40 +243,30 @@ typedef enum {
 }
 port_change;
 
-/* Hub get class specific descriptor call */
-static int hub_get_descriptor(hub_descriptor *);
-
-/* Hub Set/ClearPortFeature call */
-static int hub_port_feature(int, class_code, class_feature);
-
-/* Hub GetPortStatus call */
-static int hub_get_port_status(int, hub_port_status *);
-
-/* Handle port status change */
-static port_change hub_handle_change(int, hub_port_status *);
-
-/* Handle port connection */
-static int hub_handle_connection(int, hub_port_status *);
-
-/* Handle port disconnection */
-static int hub_handle_disconnection(int);
-
 
 /*---------------------------*
  *    defined variables      *
  *---------------------------*/
-/* USB hub driver state */
+/* One hub's state */
 typedef struct hub_state {
 
-	hub_descriptor descriptor;		/* Class specific descriptor */
-	struct ddekit_usb_dev * dev;		/* DDEKit device */
-	int num_ports;				/* Number of hub ports */
-	port_conn conn[USB_HUB_PORT_LIMIT];	/* Map of connected ports */
+	int used;			/* given a hub and not yet done with it */
+	int gone;			/* withdrawn: stop at the next step */
+	unsigned num;			/* for the log: hub 1, hub 2... */
+	struct ddekit_usb_dev * dev;	/* DDEKit device */
+	ddekit_sem_t * done;		/* this hub's request has completed */
+	ddekit_sem_t * given;		/* a hub was given to this entry */
+	ddekit_thread_t * thread;	/* created with the first hub */
+	hub_descriptor descriptor;	/* Class specific descriptor */
+	int num_ports;			/* Number of hub ports */
+	port_conn conn[USB_HUB_PORT_LIMIT + 1];	/* by port number, from 1 */
 }
 hub_state;
 
-/* Current hub driver state */
-static hub_state driver_state;
+static hub_state hubs[USB_HUB_MAX];
+
+/* One conversation with the host controller at a time; see the top. */
+static ddekit_sem_t * bus = NULL;
 
 /* USB callback structure */
 static struct ddekit_usb_driver usb_driver = {
@@ -214,15 +275,29 @@ static struct ddekit_usb_driver usb_driver = {
 	.disconnect	= usb_driver_disconnect
 };
 
-/* Semaphore used to block hub thread to
- * allow DDE dispatcher operation */
-static ddekit_sem_t * hub_sem = NULL;
-
-/* USB hub thread */
-ddekit_thread_t * hub_thread = NULL;
-
 /* DDEKit USB message handling thread */
 ddekit_thread_t * ddekit_usb_thread = NULL;
+
+#define HUB_PMSG(s, fmt, ...) \
+	HUB_MSG("hub %u: " fmt, (s)->num, ##__VA_ARGS__)
+
+/* Hub get class specific descriptor call */
+static int hub_get_descriptor(hub_state *, hub_descriptor *);
+
+/* Hub Set/ClearPortFeature call */
+static int hub_port_feature(hub_state *, int, class_code, class_feature);
+
+/* Hub GetPortStatus call */
+static int hub_get_port_status(hub_state *, int, hub_port_status *);
+
+/* Handle port status change */
+static port_change hub_handle_change(hub_state *, int, hub_port_status *);
+
+/* Handle port connection */
+static int hub_handle_connection(hub_state *, int, hub_port_status *);
+
+/* Handle port disconnection */
+static int hub_handle_disconnection(hub_state *, int);
 
 
 /*---------------------------*
@@ -234,13 +309,17 @@ ddekit_thread_t * ddekit_usb_thread = NULL;
 int
 main(int argc, char * argv[])
 {
+	unsigned i;
+
 	HUB_MSG("Starting driver... (built: %s %s)", __DATE__, __TIME__);
 
 	/* Store arguments for future parsing */
 	env_setargs(argc, argv);
 
 	/* Clear current state */
-	memset(&driver_state, 0, sizeof(driver_state));
+	memset(hubs, 0, sizeof(hubs));
+	for (i = 0; i < USB_HUB_MAX; i++)
+		hubs[i].num = i + 1;
 
 	/* Initialize SEF related callbacks */
 	sef_setcb_init_fresh(hub_sef_hdlr);
@@ -252,17 +331,10 @@ main(int argc, char * argv[])
 	ddekit_init();
 	HUB_DEBUG_MSG("DDEkit ready...");
 
-	/* Semaphore initialization */
-	hub_sem = ddekit_sem_init(0);
-	if (NULL == hub_sem)
+	/* The lock on talking to the host controller: free to begin with */
+	bus = ddekit_sem_init(1);
+	if (NULL == bus)
 		panic("Initializing USB hub semaphore, failed!");
-
-	/* Starting hub thread */
-	hub_thread = ddekit_thread_create(hub_task, NULL, "hub_task");
-	if (NULL == hub_thread)
-		panic("Initializing USB hub thread failed!");
-
-	HUB_DEBUG_MSG("USB HUB task ready...");
 
 	/* Run USB IPC task to collect messages */
 	ddekit_usb_thread = ddekit_thread_create(ddekit_usb_task, NULL,
@@ -278,8 +350,10 @@ main(int argc, char * argv[])
 
 	/* Release objects that were explicitly allocated above */
 	ddekit_thread_terminate(ddekit_usb_thread);
-	ddekit_thread_terminate(hub_thread);
-	ddekit_sem_deinit(hub_sem);
+	for (i = 0; i < USB_HUB_MAX; i++)
+		if (NULL != hubs[i].thread)
+			ddekit_thread_terminate(hubs[i].thread);
+	ddekit_sem_deinit(bus);
 
 	/* TODO: No ddekit_deinit for proper cleanup? */
 
@@ -292,6 +366,15 @@ main(int argc, char * argv[])
 /*===========================================================================*
  *    hub_sef_hdlr                                                           *
  *===========================================================================*/
+/*
+ * A restart is a fresh start.  The driver keeps nothing the hubs do not
+ * tell it again: xhci gives a restarted driver every hub it has (it says
+ * hello under the same label), the driver finds devices on ports it knows
+ * nothing about and reports them as found, and xhci takes that as the
+ * device having been reset - which it then is, by hub_handle_connection().
+ * Refusing the restart, as this did, left RS restarting a driver that
+ * could not start.
+ */
 static int
 hub_sef_hdlr(int type, sef_init_info_t * UNUSED(info))
 {
@@ -299,10 +382,10 @@ hub_sef_hdlr(int type, sef_init_info_t * UNUSED(info))
 
 	switch (type) {
 		case SEF_INIT_FRESH:
+		case SEF_INIT_RESTART:
 			return EXIT_SUCCESS;
 		case SEF_INIT_LU:
-		case SEF_INIT_RESTART:
-			HUB_MSG("Only 'fresh' SEF initialization supported");
+			HUB_MSG("Live update is not supported");
 			break;
 		default:
 			HUB_MSG("Illegal SEF type");
@@ -350,13 +433,13 @@ ddekit_usb_task(void * UNUSED(arg))
  *    usb_driver_completion                                                  *
  *===========================================================================*/
 static void
-usb_driver_completion(void * UNUSED(priv))
+usb_driver_completion(void * priv)
 {
 	HUB_DEBUG_DUMP;
 
-	/* Last request was completed so allow continuing
-	 * execution from place where semaphore was downed */
-	ddekit_sem_up(hub_sem);
+	/* The request of whichever hub's thread asked (blocking_urb_submit()
+	 * put its semaphore in the URB) has completed */
+	ddekit_sem_up((ddekit_sem_t *)priv);
 }
 
 
@@ -364,21 +447,52 @@ usb_driver_completion(void * UNUSED(priv))
  *    usb_driver_connect                                                     *
  *===========================================================================*/
 static void
-usb_driver_connect(struct ddekit_usb_dev * dev, unsigned int interfaces)
+usb_driver_connect(struct ddekit_usb_dev * dev, unsigned int UNUSED(interfaces))
 {
+	hub_state * s = NULL;
+	unsigned i;
+
 	HUB_DEBUG_DUMP;
 
-	if (NULL != driver_state.dev)
-		panic("HUB device driver can be connected only once!");
+	for (i = 0; i < USB_HUB_MAX; i++)
+		if (!hubs[i].used) {
+			s = &hubs[i];
+			break;
+		}
 
-	/* Clear current state */
-	memset(&driver_state, 0, sizeof(driver_state));
+	if (NULL == s) {
+		HUB_MSG("A hub was given and %d are held already; it is not "
+			"driven", USB_HUB_MAX);
+		return;
+	}
 
-	/* Hold host information for future use */
-	driver_state.dev = dev;
+	/* Clear what an earlier hub left */
+	memset(&s->descriptor, 0, sizeof(s->descriptor));
+	memset(s->conn, 0, sizeof(s->conn));
+	s->num_ports = 0;
+	s->gone = 0;
+	s->dev = dev;
+	s->used = 1;
+
+	/* Its thread, the first time this entry is used */
+	if (NULL == s->thread) {
+		char name[16];
+
+		s->done = ddekit_sem_init(0);
+		s->given = ddekit_sem_init(0);
+		if (NULL == s->done || NULL == s->given)
+			panic("Initializing USB hub semaphores failed!");
+
+		snprintf(name, sizeof(name), "hub_%u", s->num);
+		s->thread = ddekit_thread_create(hub_thread, s, name);
+		if (NULL == s->thread)
+			panic("Initializing USB hub thread failed!");
+	}
+
+	HUB_PMSG(s, "given a hub");
 
 	/* Let driver logic work */
-	ddekit_sem_up(hub_sem);
+	ddekit_sem_up(s->given);
 }
 
 
@@ -386,67 +500,215 @@ usb_driver_connect(struct ddekit_usb_dev * dev, unsigned int interfaces)
  *    usb_driver_disconnect                                                  *
  *===========================================================================*/
 static void
-usb_driver_disconnect(struct ddekit_usb_dev * UNUSED(dev))
+usb_driver_disconnect(struct ddekit_usb_dev * dev)
 {
+	unsigned i;
+
 	HUB_DEBUG_DUMP;
 
-	if (NULL == driver_state.dev)
-		panic("HUB device driver was never connected!");
+	for (i = 0; i < USB_HUB_MAX; i++)
+		if (hubs[i].used && hubs[i].dev == dev) {
+			HUB_PMSG(&hubs[i], "withdrawn");
+			hubs[i].gone = 1;
+			return;
+		}
 
-	/* Discard connected device information */
-	driver_state.dev = NULL;
+	HUB_MSG("A device that is not one of the hubs was withdrawn");
 }
 
 
 /*===========================================================================*
- *    hub_task                                                               *
+ *    hub_submit                                                             *
  *===========================================================================*/
+/* One request of one hub, under the lock on talking to xhci */
+static int
+hub_submit(hub_state * s, struct ddekit_usb_urb * urb)
+{
+	int r;
+
+	ddekit_sem_down(bus);
+	r = blocking_urb_submit(urb, s->done, URB_SUBMIT_CHECK_LEN);
+	ddekit_sem_up(bus);
+
+	return r;
+}
+
+
+/*===========================================================================*
+ *    hub_news                                                               *
+ *===========================================================================*/
+/* News about a port, naming this hub, under the same lock */
+static int
+hub_news(hub_state * s, long type, int port_num)
+{
+	int r;
+
+	/* A hub that has gone has no ports; xhci let go of what was behind
+	 * it before it said so */
+	if (s->gone)
+		return EXIT_SUCCESS;
+
+	ddekit_sem_down(bus);
+	r = ddekit_usb_info(s->dev, type, (long)port_num);
+	ddekit_sem_up(bus);
+
+	return r;
+}
+
+
+/*===========================================================================*
+ *    hub_power_on                                                           *
+ *===========================================================================*/
+/*
+ * Power on every port and wait for the power to be good.
+ *
+ * A hub that switches power - ganged or per port - comes out of being
+ * configured with its ports off, and nothing on them can be seen until the
+ * host turns them on (USB 2.0, 11.11); one that does not switch has them on
+ * already and takes the request as a no-op.  So the request goes to every
+ * port either way, as Linux sends it (hub_power_on()), and the wait is the
+ * hub's own figure.  This is also what keeps a dock's USB-A ports giving
+ * current to a phone that is only charging: a port is powered whatever is
+ * or is not enumerated on it, and nothing below turns it off.
+ */
+static int
+hub_power_on(hub_state * s)
+{
+	hub_descriptor * d = &s->descriptor;
+	unsigned wait;
+	int port;
+
+	for (port = 1; port <= s->num_ports; port++) {
+		if (hub_port_feature(s, port, SET_FEATURE, PORT_POWER)) {
+			HUB_PMSG(s, "Powering port%d failed", port);
+			return EXIT_FAILURE;
+		}
+	}
+
+	wait = 2 * (unsigned)d->bPwrOn2PwrGood;
+	if (wait < USB_HUB_POWER_GOOD_MIN)
+		wait = USB_HUB_POWER_GOOD_MIN;
+	ddekit_thread_msleep(wait);
+
+	return EXIT_SUCCESS;
+}
+
+
+/*===========================================================================*
+ *    hub_other_changes                                                      *
+ *===========================================================================*/
+/*
+ * The changes on a port that are not about connection: over-current, the
+ * hub disabling the port, and a reset or suspend nobody asked for.  Each is
+ * acknowledged - a change bit left standing stands for ever - and two are
+ * acted on.
+ *
+ * Over-current is the one a phone on a dock's port causes.  The hub takes
+ * the power off by itself and says so; when the condition clears it says
+ * so again, and the port is powered once more after a rest.  This driver
+ * used to read none of it, and a port that once drew too much stayed off.
+ *
+ * A port the hub disabled under a device that is still there (babble,
+ * interference) is taken as the device having left and come back, which is
+ * what Linux does ("disabled by hub (EMI?), re-enabling..."): its device
+ * is reported gone and the connection handled anew.
+ */
+static int
+hub_other_changes(hub_state * s, int port, hub_port_status * status)
+{
+	if (status->C_PORT_OVER_CURRENT) {
+		if (hub_port_feature(s, port, CLEAR_FEATURE,
+				C_PORT_OVER_CURRENT))
+			return EXIT_FAILURE;
+		HUB_PMSG(s, "Port%d over-current %s, power %s", port,
+			status->PORT_OVER_CURRENT ? "now" : "cleared",
+			status->PORT_POWER ? "on" : "off");
+		if (!status->PORT_OVER_CURRENT && !status->PORT_POWER) {
+			ddekit_thread_msleep(USB_HUB_OVERCURRENT_REST);
+			if (hub_port_feature(s, port, SET_FEATURE, PORT_POWER))
+				return EXIT_FAILURE;
+			HUB_PMSG(s, "Port%d powered again", port);
+		}
+	}
+
+	if (status->C_PORT_ENABLE) {
+		if (hub_port_feature(s, port, CLEAR_FEATURE, C_PORT_ENABLE))
+			return EXIT_FAILURE;
+		if (HUB_PORT_CONN == s->conn[port] &&
+				status->PORT_CONNECTION && !status->PORT_ENABLE &&
+				!status->C_PORT_CONNECTION) {
+			HUB_PMSG(s, "Port%d disabled by the hub; its device "
+				"is taken to have reconnected", port);
+			status->C_PORT_CONNECTION = 1;
+		}
+	}
+
+	if (status->C_PORT_SUSPEND &&
+			hub_port_feature(s, port, CLEAR_FEATURE, C_PORT_SUSPEND))
+		return EXIT_FAILURE;
+
+	if (status->C_PORT_RESET) {
+		if (hub_port_feature(s, port, CLEAR_FEATURE, C_PORT_RESET))
+			return EXIT_FAILURE;
+		status->C_PORT_RESET = 0;
+	}
+
+	return EXIT_SUCCESS;
+}
+
+
+/*===========================================================================*
+ *    hub_serve                                                              *
+ *===========================================================================*/
+/*
+ * One hub, from being given it to its going.  Returns when the hub has been
+ * withdrawn, or on an error this driver cannot get past - in which case the
+ * hub is left alone until it is withdrawn.
+ */
 static void
-hub_task(void * UNUSED(arg))
+hub_serve(hub_state * s)
 {
 	hub_port_status port_status;
-	hub_state * s;
 	hub_descriptor * d;
 	int port;
 
 	HUB_DEBUG_DUMP;
 
-	/* For short */
-	s = &(driver_state);
 	d = &(s->descriptor);
 
-	/* Wait for connection */
-	ddekit_sem_down(hub_sem);
-
-	if (hub_get_descriptor(d)) {
-		HUB_MSG("Getting hub descriptor failed");
-		goto HUB_ERROR;
+	if (hub_get_descriptor(s, d)) {
+		if (!s->gone)
+			HUB_PMSG(s, "Getting hub descriptor failed");
+		return;
 	}
-
-	/* Output hub descriptor in debug mode */
-	HUB_DEBUG_MSG("bDescLength         %4X", d->bDescLength);
-	HUB_DEBUG_MSG("bDescriptorType     %4X", d->bDescriptorType);
-	HUB_DEBUG_MSG("bNbrPorts           %4X", d->bNbrPorts);
-	HUB_DEBUG_MSG("wHubCharacteristics %4X", d->wHubCharacteristics);
-	HUB_DEBUG_MSG("bPwrOn2PwrGood      %4X", d->bPwrOn2PwrGood);
-	HUB_DEBUG_MSG("bHubContrCurrent    %4X", d->bHubContrCurrent);
 
 	/* Check for sane number of ports... */
 	if (d->bNbrPorts > USB_HUB_PORT_LIMIT) {
-		HUB_MSG("Too many hub ports declared: %d", d->bNbrPorts);
-		goto HUB_ERROR;
+		HUB_PMSG(s, "Too many hub ports declared: %d", d->bNbrPorts);
+		return;
 	}
 
 	/* ...and reassign */
 	s->num_ports = (int)d->bNbrPorts;
 
+	HUB_PMSG(s, "%d port(s), %s power switching, %s over-current "
+		"protection, think time %u, power good in %u ms",
+		s->num_ports,
+		HUB_CHAR_POWER(d->wHubCharacteristics) == HUB_CHAR_POWER_GANGED ?
+		"ganged" :
+		HUB_CHAR_POWER(d->wHubCharacteristics) == HUB_CHAR_POWER_PORT ?
+		"per-port" : "no",
+		HUB_CHAR_OC(d->wHubCharacteristics) == 0 ? "global" :
+		HUB_CHAR_OC(d->wHubCharacteristics) == 1 ? "per-port" : "no",
+		HUB_CHAR_TTT(d->wHubCharacteristics),
+		2 * (unsigned)d->bPwrOn2PwrGood);
+
 	/* Initialize all available ports starting
 	 * from 1, as defined by USB 2.0 document */
-	for (port = 1; port <= s->num_ports; port++) {
-		if (hub_port_feature(port, SET_FEATURE, PORT_POWER)) {
-			HUB_MSG("Powering port%d failed", port);
-			goto HUB_ERROR;
-		}
+	if (hub_power_on(s)) {
+		if (!s->gone)
+			HUB_PMSG(s, "Powering the ports failed");
+		return;
 	}
 
 	/*
@@ -455,20 +717,45 @@ hub_task(void * UNUSED(arg))
 	for (;;) {
 		for (port = 1; port <= s->num_ports; port++) {
 
-			/* Ignore previously blocked ports */
+			if (s->gone)
+				return;
+
+			/* Get port status */
+			if (hub_get_port_status(s, port, &port_status)) {
+				if (!s->gone)
+					HUB_PMSG(s, "Reading port%d status "
+						"failed", port);
+				return;
+			}
+
+			if (hub_other_changes(s, port, &port_status)) {
+				if (!s->gone)
+					HUB_PMSG(s, "Port%d: acknowledging a "
+						"change failed", port);
+				return;
+			}
+
+			/*
+			 * A port given up on is watched for its device
+			 * leaving, and is usable again when it has.  It
+			 * stays powered meanwhile.
+			 */
 			if (HUB_PORT_ERROR == s->conn[port]) {
-				HUB_DEBUG_MSG("Blocked hub port ignored");
+				if (!port_status.C_PORT_CONNECTION)
+					continue;
+				if (hub_port_feature(s, port, CLEAR_FEATURE,
+						C_PORT_CONNECTION))
+					return;
+				if (!port_status.PORT_CONNECTION) {
+					HUB_PMSG(s, "Port%d: its device is gone; "
+						"the port is in use again", port);
+					s->conn[port] = HUB_PORT_DISCONN;
+				}
 				continue;
 			}
 
-			/* Get port status */
-			if (hub_get_port_status(port, &port_status)) {
-				HUB_MSG("Reading port%d status failed", port);
-				goto HUB_ERROR;
-			}
-
 			/* Resolve port changes */
-			switch (hub_handle_change(port, &port_status)) {
+			switch (hub_handle_change(s, port, &port_status)) {
 
 				case HUB_CHANGE_NONE:
 					break;
@@ -482,42 +769,79 @@ hub_task(void * UNUSED(arg))
 					break;
 
 				case HUB_CHANGE_STATUS_ERR:
-					/* Turn off port */
-					if (hub_port_feature(port,
+					if (s->gone)
+						return;
+					/*
+					 * Disable the port and leave it be
+					 * until its device goes.  Not power
+					 * it off, as this did: on a dock's
+					 * port that is a phone that stops
+					 * charging because it would not
+					 * enumerate, and the port then dead
+					 * until the hub is unplugged.  Linux
+					 * disables (hub_port_disable()).
+					 */
+					if (hub_port_feature(s, port,
 							CLEAR_FEATURE,
-							PORT_POWER)) {
-						HUB_MSG("Halting port%d "
+							PORT_ENABLE)) {
+						HUB_PMSG(s, "Disabling port%d "
 							"failed", port);
-						goto HUB_ERROR;
+						return;
 					}
-					/* Block this port forever */
 					s->conn[port] = HUB_PORT_ERROR;
 
-					HUB_MSG("Port%d status ERROR", port);
-					HUB_MSG("Port%d will be blocked, until "
-						"hub is detached", port);
+					HUB_PMSG(s, "Port%d status ERROR; "
+						"disabled until its device is "
+						"unplugged (it stays powered)",
+						port);
 
 					break;
 
 				case HUB_CHANGE_COM_ERR:
+					if (s->gone)
+						return;
 					/* Serious error, hang */
-					HUB_MSG("Handling port%d "
-						"change failed", port);
-					goto HUB_ERROR;
+					HUB_PMSG(s, "Handling port%d change "
+						"failed", port);
+					return;
 			}
 		}
 
 		ddekit_thread_msleep(USB_HUB_POLLING_INTERVAL);
 		HUB_DEBUG_MSG("Polling USB hub for status change");
 	}
+}
 
-	return;
 
-	HUB_ERROR:
+/*===========================================================================*
+ *    hub_thread                                                             *
+ *===========================================================================*/
+static void
+hub_thread(void * arg)
+{
+	hub_state * s = (hub_state *)arg;
+
+	HUB_DEBUG_DUMP;
+
 	for (;;) {
-		/* Hang till removed by devmand */
-		HUB_MSG("Hub driver error occurred, hanging up");
-		ddekit_sem_down(hub_sem);
+		/* Wait for a hub */
+		ddekit_sem_down(s->given);
+
+		hub_serve(s);
+
+		/*
+		 * The entry is another hub's only once this one has been
+		 * withdrawn: until then it is the hub's, working or not.
+		 */
+		if (!s->gone)
+			HUB_PMSG(s, "Hub driver error occurred; the hub is "
+				"left alone until it is unplugged");
+		while (!s->gone)
+			ddekit_thread_msleep(USB_HUB_POLLING_INTERVAL);
+
+		HUB_PMSG(s, "released");
+		s->dev = NULL;
+		s->used = 0;
 	}
 }
 
@@ -526,7 +850,7 @@ hub_task(void * UNUSED(arg))
  *    hub_get_descriptor                                                     *
  *===========================================================================*/
 static int
-hub_get_descriptor(hub_descriptor * descriptor)
+hub_get_descriptor(hub_state * s, hub_descriptor * descriptor)
 {
 	/* URB to be send */
 	struct ddekit_usb_urb urb;
@@ -547,7 +871,7 @@ hub_get_descriptor(hub_descriptor * descriptor)
 	ep_conf.interval = 0;
 
 	/* Reset URB and assign given values */
-	init_urb(&urb, driver_state.dev, &ep_conf);
+	init_urb(&urb, s->dev, &ep_conf);
 
 	/* Clear setup data */
 	memset(&setup_buf, 0, sizeof(setup_buf));
@@ -566,8 +890,9 @@ hub_get_descriptor(hub_descriptor * descriptor)
 			descriptor, sizeof(*descriptor));
 
 	/* Send and wait for response */
-	if (blocking_urb_submit(&urb, hub_sem, URB_SUBMIT_CHECK_LEN)) {
-		HUB_MSG("Submitting HUB URB failed");
+	if (hub_submit(s, &urb)) {
+		if (!s->gone)
+			HUB_PMSG(s, "Submitting HUB URB failed");
 		return EXIT_FAILURE;
 	} else {
 		HUB_DEBUG_MSG("HUB descriptor received");
@@ -580,7 +905,8 @@ hub_get_descriptor(hub_descriptor * descriptor)
  *    hub_port_feature                                                       *
  *===========================================================================*/
 static int
-hub_port_feature(int port_num, class_code code, class_feature feature)
+hub_port_feature(hub_state * s, int port_num, class_code code,
+	class_feature feature)
 {
 	/* URB to be send */
 	struct ddekit_usb_urb urb;
@@ -594,14 +920,17 @@ hub_port_feature(int port_num, class_code code, class_feature feature)
 	HUB_DEBUG_DUMP;
 
 	/* TODO: Add more checks when needed */
-	if (!((port_num <= driver_state.num_ports) && (port_num > 0)))
+	if (!((port_num <= s->num_ports) && (port_num > 0)))
 		return EXIT_FAILURE;
 
 	if (!((code == SET_FEATURE) || (code == CLEAR_FEATURE)))
 		return EXIT_FAILURE;
 
 	if (!((feature == PORT_RESET) || (feature == PORT_POWER) ||
-		(feature == C_PORT_CONNECTION) || (feature == C_PORT_RESET)))
+		(feature == PORT_ENABLE) ||
+		(feature == C_PORT_CONNECTION) || (feature == C_PORT_RESET) ||
+		(feature == C_PORT_ENABLE) || (feature == C_PORT_SUSPEND) ||
+		(feature == C_PORT_OVER_CURRENT)))
 		return EXIT_FAILURE;
 
 	/* Initialize EP configuration */
@@ -612,7 +941,7 @@ hub_port_feature(int port_num, class_code code, class_feature feature)
 	ep_conf.interval = 0;
 
 	/* Reset URB and assign given values */
-	init_urb(&urb, driver_state.dev, &ep_conf);
+	init_urb(&urb, s->dev, &ep_conf);
 
 	/* Clear setup data */
 	memset(&setup_buf, 0, sizeof(setup_buf));
@@ -629,8 +958,9 @@ hub_port_feature(int port_num, class_code code, class_feature feature)
 			&setup_buf, sizeof(setup_buf));
 
 	/* Send and wait for response */
-	if (blocking_urb_submit(&urb, hub_sem, URB_SUBMIT_CHECK_LEN)) {
-		HUB_MSG("Submitting HUB URB failed");
+	if (hub_submit(s, &urb)) {
+		if (!s->gone)
+			HUB_PMSG(s, "Submitting HUB URB failed");
 		return EXIT_FAILURE;
 	} else {
 		HUB_DEBUG_MSG("PortFeature operation completed");
@@ -643,7 +973,7 @@ hub_port_feature(int port_num, class_code code, class_feature feature)
  *    hub_get_port_status                                                    *
  *===========================================================================*/
 static int
-hub_get_port_status(int port_num, hub_port_status * p)
+hub_get_port_status(hub_state * s, int port_num, hub_port_status * p)
 {
 	/* URB to be send */
 	struct ddekit_usb_urb urb;
@@ -656,7 +986,7 @@ hub_get_port_status(int port_num, hub_port_status * p)
 
 	HUB_DEBUG_DUMP;
 
-	if (!((port_num <= driver_state.num_ports) && (port_num > 0)))
+	if (!((port_num <= s->num_ports) && (port_num > 0)))
 		return EXIT_FAILURE;
 
 	/* Initialize EP configuration */
@@ -667,7 +997,7 @@ hub_get_port_status(int port_num, hub_port_status * p)
 	ep_conf.interval = 0;
 
 	/* Reset URB and assign given values */
-	init_urb(&urb, driver_state.dev, &ep_conf);
+	init_urb(&urb, s->dev, &ep_conf);
 
 	/* Clear setup data */
 	memset(&setup_buf, 0, sizeof(setup_buf));
@@ -686,8 +1016,9 @@ hub_get_port_status(int port_num, hub_port_status * p)
 			p, sizeof(*p));
 
 	/* Send and wait for response */
-	if (blocking_urb_submit(&urb, hub_sem, URB_SUBMIT_CHECK_LEN)) {
-		HUB_MSG("Submitting HUB URB failed");
+	if (hub_submit(s, &urb)) {
+		if (!s->gone)
+			HUB_PMSG(s, "Submitting HUB URB failed");
 		return EXIT_FAILURE;
 	} else {
 		HUB_DEBUG_MSG("Port%d status:      ", port_num);
@@ -705,7 +1036,7 @@ hub_get_port_status(int port_num, hub_port_status * p)
  *    hub_handle_change                                                      *
  *===========================================================================*/
 static port_change
-hub_handle_change(int port_num, hub_port_status * status)
+hub_handle_change(hub_state * s, int port_num, hub_port_status * status)
 {
 	port_conn * c;
 
@@ -713,7 +1044,7 @@ hub_handle_change(int port_num, hub_port_status * status)
 
 	/* Possible combinations: */
 	/* Change = status->C_PORT_CONNECTION	(hub connection change bit)
-	 * Local = driver_state.conn[port_num]	(local connection status)
+	 * Local = s->conn[port_num]		(local connection status)
 	 * Remote = status->PORT_CONNECTION	(hub connection status) */
 	/*
 	Case	Change	Local	Remote	Description
@@ -722,22 +1053,33 @@ hub_handle_change(int port_num, hub_port_status * status)
 	3.	1	0	1	Just connected
 	4.	1	0	0	Polling mismatch (quick conn-disconn)
 	5.	0	1	1	Still connected
-	6.	0	1	0	Serious ERROR
-	7.	0	0	1	Serious ERROR
+	6.	0	1	0	Gone, and the hub did not say so
+	7.	0	0	1	There, and nobody was told
 	8.	0	0	0	Still disconnected
 	*/
+	/*
+	 * Cases 6 and 7 were "serious ERROR", and 7 then powered the port
+	 * off for good.  But 7 is exactly what a driver that starts while
+	 * devices are plugged in sees, when its predecessor had already
+	 * acknowledged their connection - a restarted hub driver, or a hub
+	 * given to this driver again - and 6 is the mirror of it.  What the
+	 * hub says is the truth, and the driver follows it: 7 is handled as
+	 * a connection, 6 as a disconnection.
+	 */
 
 	/* Reassign for code cleanliness */
-	c = driver_state.conn;
+	c = s->conn;
 
 	/* Resolve combination */
 	if (status->C_PORT_CONNECTION) {
 
 		/* C_PORT_CONNECTION was set, so clear change bit
 		 * to allow further polling */
-		if (hub_port_feature(port_num, CLEAR_FEATURE,
+		if (hub_port_feature(s, port_num, CLEAR_FEATURE,
 					C_PORT_CONNECTION)) {
-			HUB_MSG("Clearing port%d change bit failed", port_num);
+			if (!s->gone)
+				HUB_PMSG(s, "Clearing port%d change bit "
+					"failed", port_num);
 			return HUB_CHANGE_COM_ERR;
 		}
 
@@ -748,9 +1090,10 @@ hub_handle_change(int port_num, hub_port_status * status)
 				 * 1
 				 */
 				/* Make hub disconnect and connect again */
-				if (hub_handle_disconnection(port_num))
+				if (hub_handle_disconnection(s, port_num))
 					return HUB_CHANGE_STATUS_ERR;
-				switch (hub_handle_connection(port_num, status)) {
+				switch (hub_handle_connection(s, port_num,
+						status)) {
 				case EXIT_SUCCESS:	return HUB_CHANGE_CONN;
 				case HUB_CONN_GONE:	return HUB_CHANGE_DISCONN;
 				default:		return HUB_CHANGE_STATUS_ERR;
@@ -762,7 +1105,7 @@ hub_handle_change(int port_num, hub_port_status * status)
 				 * 2
 				 */
 				/* Handle disconnection */
-				if (hub_handle_disconnection(port_num))
+				if (hub_handle_disconnection(s, port_num))
 					return HUB_CHANGE_STATUS_ERR;
 				else
 					return HUB_CHANGE_DISCONN;
@@ -775,7 +1118,8 @@ hub_handle_change(int port_num, hub_port_status * status)
 				 * 3
 				 */
 				/* Handle connection */
-				switch (hub_handle_connection(port_num, status)) {
+				switch (hub_handle_connection(s, port_num,
+						status)) {
 				case EXIT_SUCCESS:	return HUB_CHANGE_CONN;
 				case HUB_CONN_GONE:	return HUB_CHANGE_DISCONN;
 				default:		return HUB_CHANGE_STATUS_ERR;
@@ -808,8 +1152,11 @@ hub_handle_change(int port_num, hub_port_status * status)
 				/*
 				 * 6
 				 */
-				/* Serious status error */
-				return HUB_CHANGE_STATUS_ERR;
+				HUB_PMSG(s, "Port%d: its device is gone with no "
+					"change reported", port_num);
+				if (hub_handle_disconnection(s, port_num))
+					return HUB_CHANGE_STATUS_ERR;
+				return HUB_CHANGE_DISCONN;
 
 			}
 		} else if (HUB_PORT_DISCONN == c[port_num]) {
@@ -818,8 +1165,14 @@ hub_handle_change(int port_num, hub_port_status * status)
 				/*
 				 * 7
 				 */
-				/* Serious status error */
-				return HUB_CHANGE_STATUS_ERR;
+				HUB_PMSG(s, "Port%d: a device that nobody was "
+					"told about", port_num);
+				switch (hub_handle_connection(s, port_num,
+						status)) {
+				case EXIT_SUCCESS:	return HUB_CHANGE_CONN;
+				case HUB_CONN_GONE:	return HUB_CHANGE_DISCONN;
+				default:		return HUB_CHANGE_STATUS_ERR;
+				}
 
 			} else {
 
@@ -856,34 +1209,36 @@ hub_handle_change(int port_num, hub_port_status * status)
  * Every connection change seen here is cleared, so that the reset that
  * follows starts from a quiet port; if the device is not there any more
  * at the end, that is not an error but a disconnection.
+ *
+ * The waits here and below are the thread's own (ddekit_thread_msleep()),
+ * not the process's: they were nanosleep(), which puts every hub's thread
+ * to sleep along with the one that is waiting.
  */
 static int
-hub_port_debounce(int port_num, hub_port_status * status)
+hub_port_debounce(hub_state * s, int port_num, hub_port_status * status)
 {
-	struct timespec step;
 	int stable = 0, waited = 0;
 
-	step.tv_sec = 0;
-	step.tv_nsec = USB_HUB_DEBOUNCE_STEP * 1000000L;
-
 	while (waited < USB_HUB_DEBOUNCE_LIMIT) {
-		if (nanosleep(&step, NULL))
-			HUB_MSG("Calling nanosleep() failed");
+		ddekit_thread_msleep(USB_HUB_DEBOUNCE_STEP);
 		waited += USB_HUB_DEBOUNCE_STEP;
 
-		if (hub_get_port_status(port_num, status)) {
-			HUB_MSG("Reading port%d status failed", port_num);
+		if (hub_get_port_status(s, port_num, status)) {
+			if (!s->gone)
+				HUB_PMSG(s, "Reading port%d status failed",
+					port_num);
 			return EXIT_FAILURE;
 		}
 
 		if (status->C_PORT_CONNECTION) {
-			if (hub_port_feature(port_num, CLEAR_FEATURE,
+			if (hub_port_feature(s, port_num, CLEAR_FEATURE,
 						C_PORT_CONNECTION)) {
-				HUB_MSG("Clearing port%d change bit failed",
-					port_num);
+				if (!s->gone)
+					HUB_PMSG(s, "Clearing port%d change "
+						"bit failed", port_num);
 				return EXIT_FAILURE;
 			}
-			HUB_MSG("Port%d connection changed while settling "
+			HUB_PMSG(s, "Port%d connection changed while settling "
 				"(status %08X)", port_num, *(uint32_t *)status);
 			stable = 0;
 			continue;
@@ -895,36 +1250,33 @@ hub_port_debounce(int port_num, hub_port_status * status)
 				HUB_CONN_GONE;
 	}
 
-	HUB_MSG("Port%d connection did not settle", port_num);
+	HUB_PMSG(s, "Port%d connection did not settle", port_num);
 	return EXIT_FAILURE;
 }
 
 static int
-hub_handle_connection(int port_num, hub_port_status * status)
+hub_handle_connection(hub_state * s, int port_num, hub_port_status * status)
 {
-	struct timespec wait_time;
 	int reset_tries, reset_rounds, r;
 	long port_speed;
 
 	HUB_DEBUG_DUMP;
 
-	HUB_MSG("Device connected to port%d", port_num);
+	HUB_PMSG(s, "Device connected to port%d", port_num);
 
 	/* This should never happen if power-off works as intended */
 	if (status->C_PORT_RESET) {
-		HUB_MSG("Unexpected reset state for port%d", port_num);
+		HUB_PMSG(s, "Unexpected reset state for port%d", port_num);
 		return EXIT_FAILURE;
 	}
 
 	/* Let the connection settle before resetting it */
-	if ((r = hub_port_debounce(port_num, status)) != EXIT_SUCCESS) {
+	if ((r = hub_port_debounce(s, port_num, status)) != EXIT_SUCCESS) {
 		if (r == HUB_CONN_GONE)
-			HUB_MSG("Port%d: device gone before reset", port_num);
+			HUB_PMSG(s, "Port%d: device gone before reset",
+				port_num);
 		return r;
 	}
-
-	wait_time.tv_sec = 0;
-	wait_time.tv_nsec = USB_HUB_RESET_DELAY;
 
 	/*
 	 * The reset, and again if the device moved during it.
@@ -938,8 +1290,8 @@ hub_handle_connection(int port_num, hub_port_status * status)
 	for (reset_rounds = 0; ; reset_rounds++) {
 
 	/* Start reset signaling for this port */
-	if (hub_port_feature(port_num, SET_FEATURE, PORT_RESET)) {
-		HUB_MSG("Resetting port%d failed", port_num);
+	if (hub_port_feature(s, port_num, SET_FEATURE, PORT_RESET)) {
+		HUB_PMSG(s, "Resetting port%d failed", port_num);
 		return EXIT_FAILURE;
 	}
 
@@ -950,22 +1302,19 @@ hub_handle_connection(int port_num, hub_port_status * status)
 	while (!status->C_PORT_RESET) {
 		/* To avoid endless loop */
 		if (reset_tries >= USB_HUB_MAX_TRIES) {
-			HUB_MSG("Port%d reset took too long", port_num);
+			HUB_PMSG(s, "Port%d reset took too long", port_num);
 			return EXIT_FAILURE;
 		}
 
 		/* Get port status again */
-		if (hub_get_port_status(port_num, status)) {
-			HUB_MSG("Reading port%d status failed", port_num);
+		if (hub_get_port_status(s, port_num, status)) {
+			HUB_PMSG(s, "Reading port%d status failed", port_num);
 			return EXIT_FAILURE;
 		}
 
 		reset_tries++;
 
-		/* Ignore potential signal interruption (no return value check),
-		 * since it causes driver termination anyway */
-		if (nanosleep(&wait_time, NULL))
-			HUB_MSG("Calling nanosleep() failed");
+		ddekit_thread_msleep(USB_HUB_RESET_DELAY);
 	}
 
 	/* Reset completed */
@@ -989,8 +1338,8 @@ hub_handle_connection(int port_num, hub_port_status * status)
 	HUB_DEBUG_MSG("PORT_TEST           %1X", status->PORT_TEST          );
 
 	/* Clear reset change bit for further devices */
-	if (hub_port_feature(port_num, CLEAR_FEATURE, C_PORT_RESET)) {
-		HUB_MSG("Clearing port%d reset bit failed", port_num);
+	if (hub_port_feature(s, port_num, CLEAR_FEATURE, C_PORT_RESET)) {
+		HUB_PMSG(s, "Clearing port%d reset bit failed", port_num);
 		return EXIT_FAILURE;
 	}
 
@@ -1004,23 +1353,22 @@ hub_handle_connection(int port_num, hub_port_status * status)
 	 * changed, port not enabled.  Clear the change and try again, or
 	 * give up if it keeps happening or the device is gone.
 	 */
-	if (hub_port_feature(port_num, CLEAR_FEATURE, C_PORT_CONNECTION)) {
-		HUB_MSG("Clearing port%d change bit failed", port_num);
+	if (hub_port_feature(s, port_num, CLEAR_FEATURE, C_PORT_CONNECTION)) {
+		HUB_PMSG(s, "Clearing port%d change bit failed", port_num);
 		return EXIT_FAILURE;
 	}
 	if (!status->PORT_CONNECTION) {
-		HUB_MSG("Port%d: device gone during reset", port_num);
+		HUB_PMSG(s, "Port%d: device gone during reset", port_num);
 		return HUB_CONN_GONE;
 	}
 	if (reset_rounds + 1 >= USB_HUB_RESET_ROUNDS) {
-		HUB_MSG("Port%d: connection kept changing during reset",
+		HUB_PMSG(s, "Port%d: connection kept changing during reset",
 			port_num);
 		return EXIT_FAILURE;
 	}
-	HUB_MSG("Port%d: connection changed during reset (status %08X); "
+	HUB_PMSG(s, "Port%d: connection changed during reset (status %08X); "
 		"resetting again", port_num, *(uint32_t *)status);
-	if (nanosleep(&wait_time, NULL))
-		HUB_MSG("Calling nanosleep() failed");
+	ddekit_thread_msleep(USB_HUB_RESET_DELAY);
 
 	}	/* for (reset_rounds) */
 
@@ -1042,15 +1390,15 @@ hub_handle_connection(int port_num, hub_port_status * status)
 	reset_tries = 0;
 	while (status->PORT_CONNECTION && !status->PORT_ENABLE) {
 		if (reset_tries >= USB_HUB_MAX_TRIES) {
-			HUB_MSG("Port%d did not enable after reset", port_num);
+			HUB_PMSG(s, "Port%d did not enable after reset",
+				port_num);
 			return EXIT_FAILURE;
 		}
 
-		if (nanosleep(&wait_time, NULL))
-			HUB_MSG("Calling nanosleep() failed");
+		ddekit_thread_msleep(USB_HUB_RESET_DELAY);
 
-		if (hub_get_port_status(port_num, status)) {
-			HUB_MSG("Reading port%d status failed", port_num);
+		if (hub_get_port_status(s, port_num, status)) {
+			HUB_PMSG(s, "Reading port%d status failed", port_num);
 			return EXIT_FAILURE;
 		}
 
@@ -1059,14 +1407,15 @@ hub_handle_connection(int port_num, hub_port_status * status)
 
 	/* Should never happen */
 	if (!status->PORT_CONNECTION || !status->PORT_ENABLE) {
-		HUB_MSG("Port%d unexpectedly unavailable", port_num);
+		HUB_PMSG(s, "Port%d unexpectedly unavailable", port_num);
 		return EXIT_FAILURE;
 	}
 
 	/* Determine port speed from status bits */
 	if (status->PORT_LOW_SPEED) {
 		if (status->PORT_HIGH_SPEED) {
-			HUB_MSG("Port%d has invalid speed flags", port_num);
+			HUB_PMSG(s, "Port%d has invalid speed flags",
+				port_num);
 			return EXIT_FAILURE;
 		} else
 			port_speed = (long)DDEKIT_HUB_PORT_LS_CONN;
@@ -1078,7 +1427,7 @@ hub_handle_connection(int port_num, hub_port_status * status)
 	}
 
 	/* Signal to HCD that port has device connected at given speed */
-	return ddekit_usb_info(driver_state.dev, port_speed, (long)port_num);
+	return hub_news(s, port_speed, port_num);
 }
 
 
@@ -1086,12 +1435,11 @@ hub_handle_connection(int port_num, hub_port_status * status)
  *    hub_handle_disconnection                                               *
  *===========================================================================*/
 static int
-hub_handle_disconnection(int port_num)
+hub_handle_disconnection(hub_state * s, int port_num)
 {
 	HUB_DEBUG_DUMP;
 
-	HUB_MSG("Device disconnected from port%d", port_num);
+	HUB_PMSG(s, "Device disconnected from port%d", port_num);
 
-	return ddekit_usb_info(driver_state.dev, (long)DDEKIT_HUB_PORT_DISCONN,
-				(long)port_num);
+	return hub_news(s, (long)DDEKIT_HUB_PORT_DISCONN, port_num);
 }

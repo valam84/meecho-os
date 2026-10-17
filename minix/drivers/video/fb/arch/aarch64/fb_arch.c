@@ -203,9 +203,11 @@ static uint32_t virtual_plug = FB_VPLUG_WIDE, virtual_read = FB_VPLUG_WIDE;
  * 16 bytes a store where the alignment allows.
  *
  * Wider stores did not make the device memory faster (~23 MB/s either
- * way: the mapping is Device-nGnRnE, each store waits for its answer), so
- * the driver keeps a copy of the screen in ordinary memory (shadow) and
- * stores only the 16-byte pieces that differ from it.  A row is compared
+ * way: the mapping was Device-nGnRnE, each store waiting for its answer),
+ * so the driver keeps a copy of the screen in ordinary memory (shadow) and
+ * stores only the 16-byte pieces that differ from it.  And the frame is
+ * now mapped write-combining (simple_bring_up()), as Linux's simplefb maps
+ * it.  A row is compared
  * once it has been written whole once (shadow_ok); before that, all of it
  * goes out.
  */
@@ -1092,6 +1094,9 @@ simple_copy(int b, size_t off, size_t len)
 			shadow_ok[line] = 1;
 		off = (line + 1) * fb_stride;
 	}
+	/* What gathered in the write buffer, out to the memory the display
+	 * reads (the mapping is write-combining). */
+	__asm__ volatile("dsb st" : : : "memory");
 	/* The screen changed there: every other buffer may differ from it. */
 	if (first != (size_t)-1)
 		for (c = 0; c < FB_MAX_BUFFERS; c++)
@@ -1801,7 +1806,14 @@ simple_bring_up(void)
 	void *v;
 	int r;
 
-	if ((v = vm_map_phys(SELF, (void *)sfb.pa, sfb.size)) == MAP_FAILED) {
+	/*
+	 * Write-combining (VM_MAP_PHYS_WC): it is memory the driver only
+	 * writes and the display reads, and as a device every store waited
+	 * for its answer - ~23 MB/s, a full frame 400 ms (hw-gpu.md, §20).
+	 * A VM that does not know the flag maps it as a device, as before.
+	 */
+	if ((v = vm_map_phys_wc(SELF, (void *)sfb.pa, sfb.size)) ==
+	    MAP_FAILED) {
 		log_warn(&fb_log, "cannot map the simple-framebuffer at 0x%lx; "
 		    "not granted by RS?\n", (unsigned long)sfb.pa);
 		return EPERM;

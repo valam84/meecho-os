@@ -77,6 +77,7 @@ typedef struct vir_region {
 #define VR_ANON		0x100	/* Memory to be cleared and allocated */
 #define VR_DIRECT	0x200	/* Mapped, but not managed by VM */
 #define VR_PREALLOC_MAP	0x400   /* Preallocated map. */
+#define VR_WC		0x800	/* Direct: write-combining (VM_MAP_PHYS_WC) */
 
 /* map_page_region_flags */
 #define MF_PREALLOC    0x01

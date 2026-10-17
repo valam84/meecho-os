@@ -5,8 +5,8 @@
 #include <stdarg.h>
 #include <string.h>
 
-void *
-vm_map_phys(endpoint_t who, void *phaddr, size_t len)
+static void *
+map_phys(endpoint_t who, void *phaddr, size_t len, int flags)
 {
 	message m;
 	int r;
@@ -15,6 +15,7 @@ vm_map_phys(endpoint_t who, void *phaddr, size_t len)
 	m.m_lsys_vm_map_phys.ep = who;
 	m.m_lsys_vm_map_phys.phaddr = (phys_bytes)phaddr;
 	m.m_lsys_vm_map_phys.len = len;
+	m.m_lsys_vm_map_phys.flags = flags;
 
 	r = _taskcall(VM_PROC_NR, VM_MAP_PHYS, &m);
 
@@ -27,6 +28,20 @@ vm_map_phys(endpoint_t who, void *phaddr, size_t len)
 	}
 
 	return m.m_lsys_vm_map_phys.reply;
+}
+
+void *
+vm_map_phys(endpoint_t who, void *phaddr, size_t len)
+{
+	return map_phys(who, phaddr, len, 0);
+}
+
+/* The same, write-combining: memory only written, such as a frame being
+ * scanned out (VM_MAP_PHYS_WC). */
+void *
+vm_map_phys_wc(endpoint_t who, void *phaddr, size_t len)
+{
+	return map_phys(who, phaddr, len, VM_MAP_PHYS_WC);
 }
 
 int

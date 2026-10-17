@@ -720,6 +720,11 @@
 #	define VMGD_SIZEP		m2_l2
 
 #define VM_MAP_PHYS		(VM_RQ_BASE+15)
+/* m_lsys_vm_map_phys.flags: write-combining - memory, not a device's
+ * registers, that the caller only writes (a frame being scanned out).
+ * Normal non-cacheable on aarch64; a VM that does not know it maps as
+ * before. */
+#  define VM_MAP_PHYS_WC	0x1
 
 #define VM_UNMAP_PHYS		(VM_RQ_BASE+16)
 

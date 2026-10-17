@@ -38,6 +38,12 @@ static int phys_pt_flags(struct vir_region *vr){
 #if defined(__arm__)
 	return ARM_VM_PTE_DEVICE;
 #elif defined(__aarch64__)
+	/* Memory only written, scanned out by a display (VM_MAP_PHYS_WC):
+	 * stores gather in the write buffer instead of each waiting for its
+	 * answer - the Mi Pad 4's screen took 400 ms a frame as a device
+	 * (port/clover/hw-gpu.md, §20). */
+	if (vr->flags & VR_WC)
+		return PTF_WC;
 	return AARCH64_VM_PTE_DEVICE;
 #else
 	return 0;

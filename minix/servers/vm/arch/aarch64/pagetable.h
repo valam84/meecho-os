@@ -150,10 +150,18 @@ typedef u64_t pt_entry_t;
  */
 #define PTF_CACHEWT	AARCH64_VM_PTE_CACHED
 #define PTF_SHARE	AARCH64_VM_SH_INNER
+/*
+ * Write-combining, normal non-cacheable: a direct mapping of memory only
+ * written (VR_WC, mem_directphys.c).  It must be among the flags below:
+ * pt_writemap() asserts every flag is, and MAIR index 3 has a bit index
+ * 2 does not - without it the first such mapping stopped VM (the Mi Pad
+ * 4's screen, 2026-10-18).
+ */
+#define PTF_WC		AARCH64_VM_PTE_UNCACHED
 
 #define PTF_ALLFLAGS	(PTF_READ | PTF_WRITE | PTF_PRESENT | PTF_SUPER | \
 			 PTF_USER | PTF_NOCACHE | PTF_CACHEWB | \
-			 PTF_CACHEWT | PTF_SHARE)
+			 PTF_CACHEWT | PTF_SHARE | PTF_WC)
 
 /*
  * The same values under the names pagetable.c uses when it is writing an

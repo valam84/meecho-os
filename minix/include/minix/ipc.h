@@ -1624,7 +1624,8 @@ typedef struct {
 	phys_bytes	phaddr;
 	size_t		len;
 	void		*reply;
-	uint8_t padding[88];
+	int		flags;		/* VM_MAP_PHYS_* */
+	uint8_t padding[84];
 } mess_lsys_vm_map_phys;
 _ASSERT_MSG_SIZE(mess_lsys_vm_map_phys);
 

@@ -14,6 +14,7 @@ int vm_adddma(endpoint_t proc_e, phys_bytes start, phys_bytes size);
 int vm_deldma(endpoint_t proc_e, phys_bytes start, phys_bytes size);
 int vm_getdma(endpoint_t *procp, phys_bytes *basep, phys_bytes *sizep);
 void *vm_map_phys(endpoint_t who, void *physaddr, size_t len);
+void *vm_map_phys_wc(endpoint_t who, void *physaddr, size_t len);
 int vm_unmap_phys(endpoint_t who, void *vaddr, size_t len);
 
 int vm_set_priv(endpoint_t ep, void *buf, int sys_proc);

@@ -373,7 +373,9 @@ int do_map_phys(message *m)
 		len += VM_PAGE_SIZE - (len % VM_PAGE_SIZE);
 
 	if(!(vr = map_page_region(vmp, VM_MMAPBASE, VM_MMAPTOP, len,
-		VR_DIRECT | VR_WRITABLE, 0, &mem_type_directphys))) {
+		VR_DIRECT | VR_WRITABLE |
+		((m->m_lsys_vm_map_phys.flags & VM_MAP_PHYS_WC) ? VR_WC : 0),
+		0, &mem_type_directphys))) {
 		return ENOMEM;
 	}
 

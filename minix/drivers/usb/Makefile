@@ -28,5 +28,13 @@ SUBDIR+=	usb_kbd
 SUBDIR+=	usb_mouse
 .endif
 
+# CDC Ethernet, a network interface on USB: an adapter, or the Mi Pad 4 on
+# a cable.  aarch64 only, for xhci's reason: it is the only controller
+# that waits a bulk IN transfer for a frame (USB_URB_WAITS) and tells its
+# endpoints about an alternate setting.
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+=	usb_ecm
+.endif
+
 
 .include <bsd.subdir.mk>

@@ -191,8 +191,29 @@ static uint32_t virtual_plug = FB_VPLUG_WIDE, virtual_read = FB_VPLUG_WIDE;
  * scanout, which is mapped as a device and never read.  One mode, the one
  * the tree gives.  The kernel draws into the same memory until this driver
  * takes it over (sys_diagctl_screen(), see below).
+ *
+ * The copy is the price of every frame: a store to device memory goes out
+ * one by one, and the whole 1200x1920 frame of the Mi Pad 4 took ~400 ms -
+ * glcube ran at 2.5 frames/s on the screen and at 286 without it
+ * (port/clover/hw-gpu.md, §20).  So show() copies only the rows that may
+ * differ: what the flip says was drawn (y0..y1), and the rows where the
+ * frame on the screen has changed since this buffer was last on it - a span
+ * per buffer, grown by every copy from another one (simple_copy()).  A new
+ * owner starts with every row of every buffer to copy.  And it copies
+ * 16 bytes a store where the alignment allows.
+ *
+ * Wider stores did not make the device memory faster (~23 MB/s either
+ * way: the mapping is Device-nGnRnE, each store waits for its answer), so
+ * the driver keeps a copy of the screen in ordinary memory (shadow) and
+ * stores only the 16-byte pieces that differ from it.  A row is compared
+ * once it has been written whole once (shadow_ok); before that, all of it
+ * goes out.
  */
 static int simple_mode;
+static struct { unsigned lo, hi; } sdirty[FB_MAX_BUFFERS];	/* [lo, hi) */
+static uint32_t *shadow;		/* what the screen shows, by fb_stride */
+static uint8_t *shadow_ok;		/* per row: shadow is the screen */
+static int shadow_failed;
 static struct {
 	phys_bytes pa;
 	size_t size;
@@ -966,16 +987,62 @@ alloc_frame_buffer(void)
  * console, which drew on this memory before, writes 0xff too.
  */
 static void
+span_add(int c, unsigned lo, unsigned hi)
+{
+	if (lo >= hi)
+		return;
+	if (sdirty[c].lo >= sdirty[c].hi) {
+		sdirty[c].lo = lo;
+		sdirty[c].hi = hi;
+		return;
+	}
+	if (lo < sdirty[c].lo)
+		sdirty[c].lo = lo;
+	if (hi > sdirty[c].hi)
+		sdirty[c].hi = hi;
+}
+
+/* Every row of every buffer to copy (a new owner, the start). */
+static void
+simple_all_dirty(void)
+{
+	int c;
+
+	for (c = 0; c < FB_MAX_BUFFERS; c++) {
+		sdirty[c].lo = 0;
+		sdirty[c].hi = sfb.height;
+	}
+}
+
+static void
 simple_copy(int b, size_t off, size_t len)
 {
 	const uint32_t *src;
 	volatile uint32_t *dst;
 	uint32_t set = sfb.alpha ? 0xff000000u : 0;
+	uint64_t set2 = (uint64_t)set << 32 | set, p0, p1;
 	size_t end = off + len, line, x0, x1, x;
+	size_t first = (size_t)-1, last = 0;
+	uint32_t *sh;
+	void *m;
+	int c, cmp, wide = sfb.stride % 16 == 0 && fb_stride % 16 == 0 &&
+	    ((uintptr_t)sfb.v & 15) == 0;
 
 	if (end > fb_size)
 		end = fb_size;
 	off &= ~(size_t)(BYTES_PER_PIXEL - 1);
+	if (shadow == NULL && !shadow_failed) {
+		/* The screen's copy, once the stride is known. */
+		m = mmap(NULL, (size_t)sfb.height * fb_stride, PROT_READ |
+		    PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+		shadow_ok = calloc(sfb.height, 1);
+		if (m == MAP_FAILED || shadow_ok == NULL) {
+			shadow_failed = 1;
+			log_warn(&fb_log, "no memory for the screen's copy: "
+			    "every store goes to the screen\n");
+		} else
+			shadow = m;
+	}
 	while (off < end) {
 		line = off / fb_stride;
 		x0 = (off % fb_stride) / BYTES_PER_PIXEL;
@@ -983,13 +1050,53 @@ simple_copy(int b, size_t off, size_t len)
 		    (end - line * fb_stride) : fb_stride) / BYTES_PER_PIXEL;
 		if (x1 > sfb.width)
 			x1 = sfb.width;
+		if (line >= sfb.height)
+			break;
+		if (first == (size_t)-1)
+			first = line;
+		last = line;
 		src = (const uint32_t *)(buf_vir[b] + line * fb_stride);
 		dst = (volatile uint32_t *)((volatile uint8_t *)sfb.v +
 		    line * sfb.stride);
-		for (x = x0; x < x1; x++)
+		x = x0;
+		sh = shadow != NULL ? shadow + line * (fb_stride / 4) : NULL;
+		cmp = sh != NULL && shadow_ok[line] && wide;
+		/* Single pixels up to a 16-byte boundary, then four at a
+		 * store: device memory takes each store as it comes. */
+		while (x < x1 && (!wide || (x & 3) != 0)) {
 			dst[x] = src[x] | set;
+			if (sh != NULL)
+				sh[x] = src[x] | set;
+			x++;
+		}
+		for (; x + 4 <= x1; x += 4) {
+			p0 = *(const uint64_t *)(const void *)&src[x] | set2;
+			p1 = *(const uint64_t *)(const void *)&src[x + 2] |
+			    set2;
+			if (cmp && *(uint64_t *)(void *)&sh[x] == p0 &&
+			    *(uint64_t *)(void *)&sh[x + 2] == p1)
+				continue;	/* the screen has it already */
+			__asm__ volatile("stp %1, %2, [%0]" : :
+			    "r"(&dst[x]), "r"(p0), "r"(p1) : "memory");
+			if (sh != NULL) {
+				*(uint64_t *)(void *)&sh[x] = p0;
+				*(uint64_t *)(void *)&sh[x + 2] = p1;
+			}
+		}
+		for (; x < x1; x++) {
+			dst[x] = src[x] | set;
+			if (sh != NULL)
+				sh[x] = src[x] | set;
+		}
+		if (sh != NULL && x0 == 0 && x1 >= sfb.width)
+			shadow_ok[line] = 1;
 		off = (line + 1) * fb_stride;
 	}
+	/* The screen changed there: every other buffer may differ from it. */
+	if (first != (size_t)-1)
+		for (c = 0; c < FB_MAX_BUFFERS; c++)
+			if (c != b)
+				span_add(c, (unsigned)first, (unsigned)last + 1);
 }
 
 /* Clean rows y0..y1-1 of a buffer out of the cache, in pieces. */
@@ -1066,12 +1173,20 @@ publish_buffers(void)
  * fewer it returns when b is there.
  */
 static int
-show(int b)
+show_rows(int b, unsigned y0, unsigned y1)
 {
 	int r = OK;
 
 	if (simple_mode) {
-		simple_copy(b, 0, fb_size);
+		if (y1 <= y0 || y1 > sfb.height) {
+			y0 = 0;
+			y1 = sfb.height;
+		}
+		span_add(b, y0, y1);
+		if (sdirty[b].hi > sdirty[b].lo)
+			simple_copy(b, (size_t)sdirty[b].lo * fb_stride,
+			    (size_t)(sdirty[b].hi - sdirty[b].lo) * fb_stride);
+		sdirty[b].lo = sdirty[b].hi = 0;	/* the screen is b now */
 		shown = b;
 		return OK;
 	}
@@ -1082,6 +1197,12 @@ show(int b)
 	if (r == OK)
 		shown = b;
 	return r;
+}
+
+static int
+show(int b)
+{
+	return show_rows(b, 0, 0);
 }
 
 /*
@@ -1132,6 +1253,8 @@ do_map(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 	}
 	publish_buffers();
 	owner = user_ep;
+	if (simple_mode)
+		simple_all_dirty();	/* what is in them is not known */
 	log_info(&fb_log, "%d scanout buffer(s) mapped into %d\n", nbuf,
 	    user_ep);
 	return sys_safecopyto(ep, gid, 0, (vir_bytes)&m, sizeof(m));
@@ -1156,7 +1279,7 @@ do_flip(endpoint_t ep, cp_grant_id_t gid, endpoint_t user_ep)
 		flush_rows((int)f.buf, f.y0, f.y1);
 	else
 		flush_rows((int)f.buf, 0, mode.vdisplay);
-	return show((int)f.buf);
+	return show_rows((int)f.buf, f.y0, f.y1);
 }
 
 /*
@@ -1589,6 +1712,50 @@ report_window(void)
 		    a, pending ? " (commit pending)" : "");
 }
 
+/*
+ * What is on the screen against the buffer shown and against the screen's
+ * copy, row by row (simple_mode; fblog).  The proof that copying only the
+ * rows and pieces that changed leaves nothing behind: read from the
+ * device memory itself, not from a buffer.  Slow - the whole frame is read
+ * through the device mapping - and asked for only by fblog.
+ */
+static void
+simple_check(void)
+{
+	uint32_t set = sfb.alpha ? 0xff000000u : 0, v;
+	unsigned x, y, bad = 0, sbad = 0, first = ~0u;
+	const uint32_t *src, *sh;
+	volatile const uint32_t *scr;
+	int rb, rs;
+
+	for (y = 0; y < sfb.height; y++) {
+		src = (const uint32_t *)(buf_vir[shown] + (size_t)y * fb_stride);
+		scr = (volatile const uint32_t *)((volatile uint8_t *)sfb.v +
+		    (size_t)y * sfb.stride);
+		sh = shadow != NULL && shadow_ok[y] ?
+		    shadow + (size_t)y * (fb_stride / 4) : NULL;
+		rb = rs = 0;
+		for (x = 0; x < sfb.width; x++) {
+			v = scr[x];
+			if (v != (src[x] | set))
+				rb = 1;
+			if (sh != NULL && v != sh[x])
+				rs = 1;
+		}
+		if (rb && first == ~0u)
+			first = y;
+		bad += rb;
+		sbad += rs;
+	}
+	if (first == ~0u)
+		log_info(&fb_log, "screen: every row as buffer %d; %u differ "
+		    "from the screen's copy\n", shown, sbad);
+	else
+		log_info(&fb_log, "screen: %u of %u rows NOT as buffer %d (the "
+		    "first %u); %u differ from the screen's copy\n", bad,
+		    sfb.height, shown, first, sbad);
+}
+
 static void
 report_state(void)
 {
@@ -1604,6 +1771,8 @@ report_state(void)
 		report_cursor();
 		fbcon_stats(stats, sizeof(stats));
 		log_info(&fb_log, "%s\n", stats);
+		if (simple_mode)
+			simple_check();
 		return;
 	}
 	log_info(&fb_log, "state: monitor %s, PHY %s, mode %dx%d@%u, buffer %d "
@@ -1650,6 +1819,7 @@ simple_bring_up(void)
 
 	simple_mode = 1;
 	virtual_mode = 1;		/* no controller: the buffers only */
+	simple_all_dirty();
 	mode = preferred = simple_vm;
 	hpd_known = hpd_line();
 

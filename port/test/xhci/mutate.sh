@@ -279,8 +279,9 @@ mut_early() {
 }
 
 #
-# The next nine came with the dock (2026-10-17): a hub behind the board's
-# hub, with an Ethernet chip, a card reader and a keyboard behind it.
+# The next nine came with the dock (2026-10-17): two hubs in a chain behind
+# the board's hub, an Ethernet chip under the second and a card reader
+# under the first (port/cb2-usb/dock-reference.txt).
 # None has been on the board yet; each is the way the tree would be wrong,
 # and each is silent there - a slot context that names a place where no
 # device is gets "transaction error" and nothing more.

@@ -1,23 +1,27 @@
 /*
- * A hub behind a hub, and what hangs behind that: a USB-C dock behind the
- * CB2's Terminus hub.  The board's hub is described as the board's own
- * Linux read it (port/cb2-usb/reference.txt); the dock's hub, Ethernet
- * chip and card reader are shaped like such things are and NOT yet taken
- * from the user's dock, which had not been read when this was written.
+ * A hub behind a hub, and what hangs behind that: the user's USB-C dock in
+ * the CB2's Terminus hub, as the board's own Linux read it
+ * (port/cb2-usb/dock-reference.txt, and the Terminus from reference.txt).
+ *
+ * The dock turned out to be deeper than its box says: TWO WCH hubs in a
+ * chain, A on port 1 of the board's hub and B on port 3 of A, with the
+ * RTL8152 on port 3 of B and the card reader on port 4 of A.  So the
+ * Ethernet chip is three hubs below the root port - route 0x331, tier 3 -
+ * and every descriptor below is the one the dock answered, byte for byte.
  *
  * What the controller is asked to do for it that nothing before asked: a
- * route string two nibbles deep, a translator that belongs to the dock and
- * not to the hub the device hangs off when there is a full-speed hub in
- * between, news from two hubs told apart by name, and a whole subtree
- * leaving at once - farthest first, every slot given back - and coming
- * back on the same slots with new names.  The model knows where every
- * device is (model_tree_add()) and answers only a slot context that
+ * route string three nibbles deep, a translator that belongs to the hub
+ * nearest the device when that hub is high speed and to the one above
+ * when it is not, news from three hubs told apart by name, and a whole
+ * subtree leaving at once - farthest first, every slot given back - and
+ * coming back on the same slots with new names.  The model knows where
+ * every device is (model_tree_add()) and answers only a slot context that
  * reaches it; every check here is silent on the board when wrong, because
  * a controller asked for a device where none is says nothing but
  * "transaction error".
  *
- * Included by ringtest.c after ecm.inc, whose RTL8153-shaped adapter it
- * borrows until the dock's own chip is described.
+ * Included by ringtest.c after ecm.inc, whose struct ecm_mdev and
+ * ecm_control() answer for the RTL8152.
  */
 
 /*
@@ -53,16 +57,17 @@ static const uint8_t term_hub_desc[9] = {
 };
 
 /*
- * The dock's hub: four ports, individual power, think time 1 - a WCH part
- * by its vendor number, the rest a choice (the dock has not been read).
+ * Both of the dock's hubs, which answer alike: WCH 1a86:8095 1310, single
+ * TT, four ports, wHubCharacteristics 0x0020 - ganged power, ganged
+ * over-current protection, think time 1 - and power good in 96 ms.
  */
 static const uint8_t dock_device_desc[18] = {
 	18, USB_DESC_DEVICE, 0x00, 0x02, 0x09, 0x00, 0x01, 64,
-	0x86, 0x1a, 0x95, 0x80, 0x00, 0x01, 0, 1, 0, 1
+	0x86, 0x1a, 0x95, 0x80, 0x10, 0x13, 0, 2, 0, 1
 };
 
 static const uint8_t dock_hub_desc[9] = {
-	9, 0x29, 4, 0x21, 0x00, 50, 100, 0x00, 0xff
+	9, 0x29, 4, 0x20, 0x00, 48, 100, 0x00, 0xff
 };
 
 /* A full-speed hub, for the translator that is not the parent's. */
@@ -75,17 +80,70 @@ static const uint8_t fshub_hub_desc[9] = {
 	9, 0x29, 4, 0x00, 0x00, 50, 100, 0x00, 0xff
 };
 
-/* Every hub's configuration: one interface, one interrupt endpoint. */
+/*
+ * Every hub's configuration: one interface, one interrupt endpoint of a
+ * byte every 12 (2^11 microframes).  The Terminus and both WCH hubs answer
+ * exactly this.
+ */
 static const uint8_t anyhub_config_desc[25] = {
 	9, USB_DESC_CONFIG, 25, 0, 1, 1, 0, 0xe0, 50,
 	9, 4, 0, 0, 1, 9, 0, 0, 0,
 	7, 5, 0x81, 3, 1, 0, 12
 };
 
-/* The dock's card reader: a bulk-only mass storage device. */
+/*
+ * The dock's card reader, 349c:0418 301: bulk-only SCSI, its pair on
+ * endpoint 1 both ways.
+ */
 static const uint8_t reader_device_desc[18] = {
 	18, USB_DESC_DEVICE, 0x00, 0x02, 0x00, 0x00, 0x00, 64,
-	0xe3, 0x05, 0x51, 0x07, 0x00, 0x01, 1, 2, 3, 1
+	0x9c, 0x34, 0x18, 0x04, 0x01, 0x03, 1, 2, 3, 1
+};
+
+static const uint8_t reader_config_desc[32] = {
+	9, USB_DESC_CONFIG, 32, 0, 1, 1, 0, 0x80, 25,
+	9, 4, 0, 0, 2, 8, 6, 0x50, 0,
+	7, 5, 0x81, 2, 0x00, 0x02, 1,
+	7, 5, 0x01, 2, 0x00, 0x02, 1
+};
+
+/*
+ * The dock's Ethernet chip, 0bda:8152 2000, usb 2.10: Realtek's own
+ * protocol in configuration 1 (Linux's r8152 picks that one with its
+ * cfgselector), CDC Ethernet in configuration 2 - the notifications on 3
+ * in, 16 bytes every 2^7 microframes, and the bulk pair in alternate 1 of
+ * interface 1 on 1 in and 2 out.  The pair's contexts (3 and 4) lie BELOW
+ * alternate 0's last (7), the other way round from ecm.inc's RTL8153.
+ */
+static const uint8_t rtl8152_device_desc[18] = {
+	18, USB_DESC_DEVICE, 0x10, 0x02, 0x00, 0x00, 0x00, 64,
+	0xda, 0x0b, 0x52, 0x81, 0x00, 0x20, 1, 2, 3, 2
+};
+
+static const uint8_t rtl8152_config1[39] = {
+	9, USB_DESC_CONFIG, 39, 0, 1, 1, 0, 0xa0, 50,
+	9, 4, 0, 0, 3, 0xff, 0xff, 0x00, 0,
+	7, 5, 0x81, 2, 0x00, 0x02, 0,
+	7, 5, 0x02, 2, 0x00, 0x02, 0,
+	7, 5, 0x83, 3, 0x02, 0x00, 8
+};
+
+static const uint8_t rtl8152_config2[80] = {
+	9, USB_DESC_CONFIG, 80, 0, 2, 2, 0, 0xa0, 50,
+	9, 4, 0, 0, 1, 0x02, 0x06, 0x00, 5,
+	5, 0x24, 0x00, 0x10, 0x01,
+	5, 0x24, 0x06, 0, 1,
+	13, 0x24, 0x0f, 3, 0, 0, 0, 0, 0xea, 0x05, 0, 0, 0,
+	7, 5, 0x83, 3, 0x10, 0x00, 8,
+	9, 4, 1, 0, 0, 0x0a, 0, 0, 0,
+	9, 4, 1, 1, 2, 0x0a, 0, 0, 4,
+	7, 5, 0x81, 2, 0x00, 0x02, 0,
+	7, 5, 0x02, 2, 0x00, 0x02, 0
+};
+
+static const struct ecm_mdev ecm_rtl8152 = {
+	rtl8152_device_desc, { rtl8152_config1, rtl8152_config2 },
+	{ sizeof(rtl8152_config1), sizeof(rtl8152_config2) }
 };
 
 enum kind { K_NONE, K_TERM, K_DOCK, K_FSHUB, K_RTL, K_READER, K_KBD };
@@ -132,7 +190,7 @@ tree_control(unsigned slot, const uint8_t setup[8], uint8_t *out, size_t max)
 		return hub_answer(fshub_device_desc, fshub_hub_desc, setup,
 		    out);
 	case K_RTL:
-		ecm_dev = &ecm_rtl;
+		ecm_dev = &ecm_rtl8152;
 		return ecm_control(slot, setup, out, max);
 	case K_READER:
 		if (setup[1] == USB_REQ_GET_DESCRIPTOR &&
@@ -142,8 +200,9 @@ tree_control(unsigned slot, const uint8_t setup[8], uint8_t *out, size_t max)
 		}
 		if (setup[1] == USB_REQ_GET_DESCRIPTOR &&
 		    (value >> 8) == USB_DESC_CONFIG) {
-			memcpy(out, config_desc, sizeof(config_desc));
-			return sizeof(config_desc);
+			memcpy(out, reader_config_desc,
+			    sizeof(reader_config_desc));
+			return sizeof(reader_config_desc);
 		}
 		return 0;
 	case K_KBD:
@@ -191,14 +250,33 @@ board_hub(void)
 	return term;
 }
 
+/* A hub's slot as the controller has it: hub, ports, think time. */
+static int
+slot_is_hub(const struct xhci_device *d, unsigned ports, unsigned ttt)
+{
+	uint32_t w0 = model_slot_word(d->slot, 0);
+	uint32_t w1 = model_slot_word(d->slot, 1);
+	uint32_t w2 = model_slot_word(d->slot, 2);
+
+	return (w0 & XHCI_SLOT_HUB) != 0 && (w1 >> 24) == ports &&
+	    ((w2 >> 16) & 3) == ttt;
+}
+
+/*
+ * The dock as it is: the board's hub on the root port with the keyboard
+ * and mouse receiver on its port 3; hub A on its port 1; hub B on A's port
+ * 3, the card reader on A's port 4; the RTL8152 on B's port 3; and, for
+ * the dock's own translator, a full-speed keyboard put into B's port 1.
+ */
 static void
 test_tree_dock(void)
 {
-	struct xhci_device *term, *dock, *rtl, *reader, *kbd, *dock2, *rtl2;
-	unsigned dock_id, rtl_id, reader_id, kbd_id, dock_slot, ids_before;
-	int n_dock, i;
+	struct xhci_device *term, *recv, *a, *b, *rtl, *reader, *kbd;
+	struct xhci_device *a2, *b2, *rtl2;
+	unsigned a_id, b_id, rtl_id, reader_id, kbd_id, a_slot, ids_before;
+	int n_a, i;
 
-	section("a dock behind the board's hub: a hub behind a hub");
+	section("the dock in the board's hub: three hubs, the RTL8152 under them");
 
 	check(bring_up(2) == OK, "the controller starts");
 	term = board_hub();
@@ -207,58 +285,70 @@ test_tree_dock(void)
 		return;
 	check(xhci_wants(term, "usb_hub"), "and is for the hub driver");
 
-	n_dock = plug(0x3, 3, K_DOCK);
-	dock = xhci_hub_port(term, 3, XHCI_HUB_HIGH);
-	check(dock != NULL, "the dock enumerates behind port 3");
-	if (dock == NULL)
-		return;
-	check(dock->route == 0x3 && dock->tier == 1,
-	    "at route 0x%x, tier %u", dock->route, dock->tier);
-	check(dock->hub_id == term->id && dock->hub_port == 3,
-	    "hanging off the board's hub, port %u", dock->hub_port);
-	check(dock >= &xhci.dev[XHCI_MAX_PORTS],
-	    "in an entry above the root ports' own (%d)",
-	    (int)(dock - xhci.dev));
-	check(dock->class == 9 && xhci_wants(dock, "usb_hub"),
-	    "a hub, for the hub driver too");
-	check((model_slot_word(dock->slot, 0) & XHCI_SLOT_HUB) != 0 &&
-	    (model_slot_word(dock->slot, 1) >> 24) == 4 &&
-	    ((model_slot_word(dock->slot, 2) >> 16) & 3) == 1,
-	    "its slot says hub, 4 ports, think time 1 (%08x %08x %08x)",
-	    model_slot_word(dock->slot, 0), model_slot_word(dock->slot, 1),
-	    model_slot_word(dock->slot, 2));
-	check(dock->id != term->id, "with a name of its own (%u, %u)",
-	    dock->id, term->id);
+	plug(0x3, 1, K_KBD);
+	recv = xhci_hub_port(term, 3, XHCI_HUB_FULL);
+	check(recv != NULL && recv->tt_slot == term->slot && recv->tt_port == 3,
+	    "the receiver on its port 3, through its translator");
 
-	plug(0x13, 3, K_RTL);
-	rtl = xhci_hub_port(dock, 1, XHCI_HUB_HIGH);
-	check(rtl != NULL, "the Ethernet chip enumerates behind the dock's "
-	    "port 1");
+	n_a = plug(0x1, 3, K_DOCK);
+	a = xhci_hub_port(term, 1, XHCI_HUB_HIGH);
+	check(a != NULL, "the dock's first hub enumerates behind port 1");
+	if (a == NULL)
+		return;
+	check(a->route == 0x1 && a->tier == 1 && a->hub_id == term->id &&
+	    a->hub_port == 1, "at route 0x%x, tier %u, off the board's hub",
+	    a->route, a->tier);
+	check(a >= &xhci.dev[XHCI_MAX_PORTS],
+	    "in an entry above the root ports' own (%d)",
+	    (int)(a - xhci.dev));
+	check(a->class == 9 && xhci_wants(a, "usb_hub"),
+	    "a hub, for the hub driver too");
+	check(slot_is_hub(a, 4, 1), "its slot says hub, 4 ports, think time 1 "
+	    "(%08x %08x %08x)", model_slot_word(a->slot, 0),
+	    model_slot_word(a->slot, 1), model_slot_word(a->slot, 2));
+	check(a->id != term->id, "with a name of its own (%u, %u)", a->id,
+	    term->id);
+
+	plug(0x31, 3, K_DOCK);
+	b = xhci_hub_port(a, 3, XHCI_HUB_HIGH);
+	check(b != NULL && b->route == 0x31 && b->tier == 2 &&
+	    b->hub_id == a->id && slot_is_hub(b, 4, 1),
+	    "its second hub behind A's port 3, at route 0x%x, tier %u",
+	    b != NULL ? b->route : 0, b != NULL ? b->tier : 0);
+	if (b == NULL)
+		return;
+
+	plug(0x331, 3, K_RTL);
+	rtl = xhci_hub_port(b, 3, XHCI_HUB_HIGH);
+	check(rtl != NULL, "the RTL8152 enumerates behind B's port 3");
 	if (rtl == NULL)
 		return;
-	check(rtl->route == 0x13 && rtl->tier == 2,
-	    "at route 0x%x - port 1 of the dock, behind port 3 - tier %u",
-	    rtl->route, rtl->tier);
+	check(rtl->route == 0x331 && rtl->tier == 3,
+	    "at route 0x%x - B's port 3, A's port 3, the board's port 1 - "
+	    "tier %u", rtl->route, rtl->tier);
 	check(rtl->config == 2 && xhci_wants(rtl, "usb_ecm") &&
 	    !xhci_wants(rtl, "usb_hub"),
-	    "in configuration %u, for usb_ecm", rtl->config);
+	    "in configuration %u - CDC Ethernet, not Realtek's own - for "
+	    "usb_ecm", rtl->config);
+	check(xhci_set_interface(rtl, 1, 1) == OK &&
+	    model_ep_valid(rtl->slot, 3) && model_ep_valid(rtl->slot, 4),
+	    "and its bulk pair comes with alternate 1, three hubs down");
 
-	plug(0x23, 3, K_READER);
-	reader = xhci_hub_port(dock, 2, XHCI_HUB_HIGH);
-	check(reader != NULL && reader->route == 0x23 &&
+	plug(0x41, 3, K_READER);
+	reader = xhci_hub_port(a, 4, XHCI_HUB_HIGH);
+	check(reader != NULL && reader->route == 0x41 &&
 	    xhci_wants(reader, "usb_storage"),
-	    "the card reader, at route 0x%x, for usb_storage",
+	    "the card reader on A's port 4, at route 0x%x, for usb_storage",
 	    reader != NULL ? reader->route : 0);
 
-	plug(0x33, 1, K_KBD);
-	kbd = xhci_hub_port(dock, 3, XHCI_HUB_FULL);
-	check(kbd != NULL, "a full-speed keyboard in the dock's port 3");
+	plug(0x131, 1, K_KBD);
+	kbd = xhci_hub_port(b, 1, XHCI_HUB_FULL);
+	check(kbd != NULL, "a full-speed keyboard in B's port 1");
 	if (reader == NULL || kbd == NULL)
 		return;
-	check(kbd->tt_slot == dock->slot && kbd->tt_port == 3 &&
-	    (model_slot_word(kbd->slot, 2) & 0xffff) ==
-	    (dock->slot | (3u << 8)),
-	    "reached through the dock's translator, slot %u port %u",
+	check(kbd->tt_slot == b->slot && kbd->tt_port == 1 &&
+	    (model_slot_word(kbd->slot, 2) & 0xffff) == (b->slot | (1u << 8)),
+	    "reached through B's translator, slot %u port %u",
 	    model_slot_word(kbd->slot, 2) & 0xff,
 	    (model_slot_word(kbd->slot, 2) >> 8) & 0xff);
 	check(xhci_wants(kbd, "usb_kbd"), "and for usb_kbd");
@@ -268,43 +358,47 @@ test_tree_dock(void)
 
 	/*
 	 * News by name.  The old rule - the last hub in the table - finds
-	 * the dock for news from the board's hub, or the other way round,
+	 * B for news from the board's hub, or the other way round,
 	 * depending on nothing but the order of the entries.
 	 */
 	check(xhci_hub_by_id(term->id) == term, "news naming the board's hub "
 	    "is about the board's hub");
-	check(xhci_hub_by_id(dock->id) == dock, "news naming the dock is about "
-	    "the dock");
+	check(xhci_hub_by_id(a->id) == a && xhci_hub_by_id(b->id) == b,
+	    "news naming either of the dock's hubs is about that one");
 	check(xhci_hub_by_id(rtl->id) == NULL, "news naming the Ethernet chip "
 	    "is about no hub");
-	check(xhci_hub_by_id(0) == NULL, "and news naming nothing, with two "
+	check(xhci_hub_by_id(0) == NULL, "and news naming nothing, with three "
 	    "hubs, is about none of them");
 
 	/* The dock pulled out: the news comes from the board's hub. */
-	dock_id = dock->id;
+	a_id = a->id;
+	b_id = b->id;
 	rtl_id = rtl->id;
 	reader_id = reader->id;
 	kbd_id = kbd->id;
-	dock_slot = dock->slot;
+	a_slot = a->slot;
 	ids_before = xhci.last_id;
 
-	model_tree_unplug(n_dock);
+	model_tree_unplug(n_a);
 	ngone = 0;
-	check(xhci_hub_port(term, 3, XHCI_HUB_GONE) == NULL,
+	check(xhci_hub_port(term, 1, XHCI_HUB_GONE) == NULL,
 	    "the dock's port says gone");
 
-	check(ngone == 4, "four devices went (%u)", ngone);
-	check(was_gone(dock_id) == 3 && was_gone(rtl_id) >= 0 &&
-	    was_gone(reader_id) >= 0 && was_gone(kbd_id) >= 0,
-	    "the three behind the dock first, the dock last (at %d)",
-	    was_gone(dock_id));
-	check(model_slots_used() == 1, "the controller holds one slot - the "
-	    "board's hub's (%u)", model_slots_used());
-	check(xhci_device_by_id(dock_id) == NULL &&
+	check(ngone == 5, "five devices went (%u)", ngone);
+	check(was_gone(a_id) == 4 && was_gone(b_id) >= 0 &&
+	    was_gone(rtl_id) >= 0 && was_gone(reader_id) >= 0 &&
+	    was_gone(kbd_id) >= 0, "A last (at %d)", was_gone(a_id));
+	check(was_gone(rtl_id) < was_gone(b_id) &&
+	    was_gone(kbd_id) < was_gone(b_id),
+	    "and B after the two behind it (%d, %d, then %d)",
+	    was_gone(rtl_id), was_gone(kbd_id), was_gone(b_id));
+	check(model_slots_used() == 2, "the controller holds two slots - the "
+	    "board's hub's and the receiver's (%u)", model_slots_used());
+	check(xhci_device_by_id(a_id) == NULL &&
 	    xhci_device_by_id(rtl_id) == NULL, "and the driver knows none of "
-	    "the four");
-	check(xhci_hub_by_id(dock_id) == NULL, "news naming the dock now is "
-	    "about no hub");
+	    "the five");
+	check(xhci_hub_by_id(a_id) == NULL && xhci_hub_by_id(b_id) == NULL,
+	    "news naming either of the dock's hubs now is about no hub");
 	check(xhci_hub_by_id(0) == term, "news naming nothing, with one hub, "
 	    "is about that one");
 	check(model_complaint() == NULL, "the model saw every slot given back "
@@ -312,34 +406,37 @@ test_tree_dock(void)
 	    model_complaint() ? model_complaint() : "yes");
 
 	/* And plugged in again, on the slots the controller gives back. */
-	n_dock = plug(0x3, 3, K_DOCK);
-	plug(0x13, 3, K_RTL);
-	dock2 = xhci_hub_port(term, 3, XHCI_HUB_HIGH);
-	check(dock2 != NULL && dock2->slot == dock_slot,
-	    "the dock comes back, on slot %u again",
-	    dock2 != NULL ? dock2->slot : 0);
-	if (dock2 == NULL)
+	n_a = plug(0x1, 3, K_DOCK);
+	plug(0x31, 3, K_DOCK);
+	plug(0x331, 3, K_RTL);
+	a2 = xhci_hub_port(term, 1, XHCI_HUB_HIGH);
+	check(a2 != NULL && a2->slot == a_slot,
+	    "the dock comes back, its first hub on slot %u again",
+	    a2 != NULL ? a2->slot : 0);
+	if (a2 == NULL)
 		return;
-	check(dock2->id != dock_id && dock2->id > ids_before,
-	    "with a new name (%u, was %u)", dock2->id, dock_id);
-	check(xhci_hub_by_id(dock_id) == NULL, "so news from the old dock's "
+	check(a2->id != a_id && a2->id > ids_before,
+	    "with a new name (%u, was %u)", a2->id, a_id);
+	check(xhci_hub_by_id(a_id) == NULL, "so news from the old hub's "
 	    "thread, naming the old name, finds nothing on the old slot");
-	rtl2 = xhci_hub_port(dock2, 1, XHCI_HUB_HIGH);
-	check(rtl2 != NULL && rtl2->route == 0x13 && rtl2->id != rtl_id,
-	    "and the Ethernet chip with it");
+	b2 = xhci_hub_port(a2, 3, XHCI_HUB_HIGH);
+	rtl2 = b2 != NULL ? xhci_hub_port(b2, 3, XHCI_HUB_HIGH) : NULL;
+	check(rtl2 != NULL && rtl2->route == 0x331 && rtl2->id != rtl_id,
+	    "and the second hub and the Ethernet chip with it");
 
 	for (i = 0; i < 3; i++) {
-		model_tree_unplug(n_dock);
-		xhci_hub_port(term, 3, XHCI_HUB_GONE);
-		n_dock = plug(0x3, 3, K_DOCK);
-		plug(0x13, 3, K_RTL);
-		dock2 = xhci_hub_port(term, 3, XHCI_HUB_HIGH);
-		if (dock2 == NULL ||
-		    xhci_hub_port(dock2, 1, XHCI_HUB_HIGH) == NULL)
+		model_tree_unplug(n_a);
+		xhci_hub_port(term, 1, XHCI_HUB_GONE);
+		n_a = plug(0x1, 3, K_DOCK);
+		plug(0x31, 3, K_DOCK);
+		plug(0x331, 3, K_RTL);
+		if ((a2 = xhci_hub_port(term, 1, XHCI_HUB_HIGH)) == NULL ||
+		    (b2 = xhci_hub_port(a2, 3, XHCI_HUB_HIGH)) == NULL ||
+		    xhci_hub_port(b2, 3, XHCI_HUB_HIGH) == NULL)
 			break;
 	}
 	check(i == 3, "three more rounds of out and in, %d of them whole", i);
-	check(model_slots_used() == 3, "and the controller holds three slots "
+	check(model_slots_used() == 5, "and the controller holds five slots "
 	    "at the end (%u)", model_slots_used());
 
 	check(model_complaint() == NULL, "the model saw nothing wrong: %s",

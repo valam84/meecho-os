@@ -164,6 +164,33 @@ static const uint8_t rtl_cfg1[80] = {
 	7, 5, 0x02, 2, 0x00, 0x02, 0
 };
 
+/*
+ * The user's dock's RTL8152 (0bda:8152 2000), byte for byte as it answered
+ * the board's Linux (port/cb2-usb/dock-reference.txt): Realtek's own first,
+ * CDC Ethernet second - notifications on 3 in, sixteen bytes in a packet,
+ * the station address in string 3 and in capitals.
+ */
+static const uint8_t rtl8152_cfg0[39] = {
+	9, 2, 39, 0, 1, 1, 0, 0xa0, 50,
+	9, 4, 0, 0, 3, 0xff, 0xff, 0x00, 0,
+	7, 5, 0x81, 2, 0x00, 0x02, 0,
+	7, 5, 0x02, 2, 0x00, 0x02, 0,
+	7, 5, 0x83, 3, 0x02, 0x00, 8
+};
+
+static const uint8_t rtl8152_cfg1[80] = {
+	9, 2, 80, 0, 2, 2, 0, 0xa0, 50,
+	9, 4, 0, 0, 1, 0x02, 0x06, 0x00, 5,
+	5, 0x24, 0x00, 0x10, 0x01,
+	5, 0x24, 0x06, 0, 1,
+	13, 0x24, 0x0f, 3, 0, 0, 0, 0, 0xea, 0x05, 0, 0, 0,
+	7, 5, 0x83, 3, 0x10, 0x00, 8,
+	9, 4, 1, 0, 0, 0x0a, 0, 0, 0,
+	9, 4, 1, 1, 2, 0x0a, 0, 0, 4,
+	7, 5, 0x81, 2, 0x00, 0x02, 0,
+	7, 5, 0x02, 2, 0x00, 0x02, 0
+};
+
 struct mdev {
 	const char *name;
 	const uint8_t *cfg[2];
@@ -192,6 +219,12 @@ static const struct mdev rtl = {
 	"an RTL8153", { rtl_cfg0, rtl_cfg1 },
 	{ sizeof(rtl_cfg0), sizeof(rtl_cfg1) }, 2, 2,
 	"00e04c36a1b2", 6, 0, 1, 1, 1, 2, 3, 8, 512, 0
+};
+
+static const struct mdev rtl8152 = {
+	"the dock's RTL8152", { rtl8152_cfg0, rtl8152_cfg1 },
+	{ sizeof(rtl8152_cfg0), sizeof(rtl8152_cfg1) }, 2, 2,
+	"00E04C367012", 3, 0, 1, 1, 1, 2, 3, 16, 512, 0
 };
 
 #define MAX_FRAMES	64
@@ -1250,6 +1283,57 @@ test_adapter(void)
 	check(n_warn == 0, "the driver warned about nothing: %s", last_warn);
 }
 
+/*
+ * The user's dock: its RTL8152 three hubs down, which the driver does not
+ * see - a device is a device - and which answers in its own ways: string
+ * 3, capitals, sixteen-byte notifications whole, 100 Mbit/s.
+ */
+static void
+test_dock_rtl8152(void)
+{
+	static const uint8_t mac[6] = { 0x00, 0xe0, 0x4c, 0x36, 0x70, 0x12 };
+	static uint8_t f[1514], g[60];
+	struct usb_urb *note;
+
+	section("the dock's RTL8152, as it answered the board's Linux");
+	driver_fresh();
+	dev_arrive(&rtl8152, 9);
+
+	check(dv.nreq >= 3 && strcmp(dv.req[2], "80 06 0201 0 1024") == 0,
+	    "configuration index 1, CDC Ethernet, is read");
+	check(dv.nreq >= 5 && strcmp(dv.req[4], "80 06 0303 1033 255") == 0,
+	    "the station address is string 3 (%s)",
+	    dv.nreq >= 5 ? dv.req[4] : "-");
+	check(lw.announced == 1 && memcmp(lw.hwaddr, mac, 6) == 0,
+	    "cdce0 is 00:e0:4c:36:70:12, its digits in capitals");
+	check(dv.alt == 1, "the data interface is in alternate %u", dv.alt);
+	note = wait_of(USB_TRANSFER_INT);
+	check(note != NULL && note->endpoint == 3 && note->size == 16,
+	    "notifications on endpoint 3, sixteen bytes at a time (%d)",
+	    note != NULL ? (int)note->size : -1);
+
+	note_connection(1);
+	note_speed(100000000, 100000000, 16);
+	run(10);
+	check(lw.link_state == NDEV_LINK_UP &&
+	    lw.media == (IFM_ETHER | IFM_FDX | IFM_100_TX),
+	    "a cable at 100 Mbit/s, SPEED_CHANGE in one packet (media 0x%x)",
+	    lw.media);
+
+	pattern(f, sizeof(f), 7);
+	pattern(g, sizeof(g), 8);
+	lw_want(1);
+	dev_send(f, sizeof(f));
+	lw_send(g, sizeof(g));
+	run(10);
+	check(lw.rx_n == 1 && lw.rx[0].len == 1514, "a full frame in on "
+	    "endpoint 1");
+	check(dv.out_n == 1 && dv.out[0].len == 60, "a short one out on "
+	    "endpoint 2");
+	no_violations("the dock's RTL8152");
+	check(n_warn == 0, "the driver warned about nothing: %s", last_warn);
+}
+
 /* Remove the descriptor at off from a copy of a configuration. */
 static size_t
 cfg_cut(uint8_t *out, const uint8_t *cfg, size_t len, size_t off)
@@ -1437,6 +1521,7 @@ main(int argc, char **argv)
 	test_notifications();
 	test_gone();
 	test_adapter();
+	test_dock_rtl8152();
 	test_parsing();
 	test_refusals();
 	test_stop();

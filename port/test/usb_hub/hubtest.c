@@ -799,67 +799,96 @@ boot(void)
 /*===========================================================================*
  *    the checks                                                             *
  *===========================================================================*/
+/*
+ * The dock as the board's Linux saw it (port/cb2-usb/dock-reference.txt):
+ * the board's hub with the keyboard and mouse receiver on port 3 and the
+ * dock's hub A on port 1; A with hub B on its port 3 and the card reader
+ * on its port 4; B with the RTL8152 on its port 3 - and here a low-speed
+ * keyboard on B's port 1 as well.  The hubs arrive as xhci would give
+ * them: each once its parent has reported it.
+ */
 static void
-test_two_hubs(struct ddekit_usb_dev *a, struct ddekit_usb_dev *b)
+test_dock(struct ddekit_usb_dev *a, struct ddekit_usb_dev *b1,
+	struct ddekit_usb_dev *b2)
 {
 	unsigned th;
 
-	section("two hubs, one driver: the board's and a dock's");
+	section("the dock: the board's hub, and two of the dock's below it");
 
-	plug(a, 3, HIGH);
-	plug(b, 1, HIGH);
-	plug(b, 2, LOW);
+	plug(a, 1, HIGH);		/* the dock's hub A */
+	plug(a, 3, FULL);		/* the receiver */
+	plug(b1, 3, HIGH);		/* hub B */
+	plug(b1, 4, HIGH);		/* the card reader */
+	plug(b2, 3, HIGH);		/* the RTL8152 */
+	plug(b2, 1, LOW);
 
 	th = nthreads;
 	driver->connect(a, 1);
-	driver->connect(b, 1);
-	run_for(4000);
+	run_for(2000);
+	check(has_news(a->id, DDEKIT_HUB_PORT_HS_CONN, 1) == 1 &&
+	    has_news(a->id, DDEKIT_HUB_PORT_FS_CONN, 3) == 1,
+	    "the board's hub reports the dock's hub and the receiver");
 
-	check(nthreads == th + 2, "a thread for each hub (%u)",
+	driver->connect(b1, 1);
+	run_for(2000);
+	check(has_news(b1->id, DDEKIT_HUB_PORT_HS_CONN, 3) == 1 &&
+	    has_news(b1->id, DDEKIT_HUB_PORT_HS_CONN, 4) == 1,
+	    "hub A reports hub B and the card reader, naming hub A");
+
+	driver->connect(b2, 1);
+	run_for(2000);
+	check(has_news(b2->id, DDEKIT_HUB_PORT_HS_CONN, 3) == 1,
+	    "hub B reports the RTL8152, naming hub B");
+	check(has_news(b2->id, DDEKIT_HUB_PORT_LS_CONN, 1) == 1,
+	    "and the low-speed keyboard, too");
+
+	check(nthreads == th + 3, "a thread for each hub (%u)",
 	    nthreads - th);
-	check(has_news(a->id, DDEKIT_HUB_PORT_HS_CONN, 3) == 1,
-	    "news of the device on the board's hub's port 3 names that hub");
-	check(has_news(b->id, DDEKIT_HUB_PORT_HS_CONN, 1) == 1,
-	    "news of the Ethernet chip on the dock's port 1 names the dock");
-	check(has_news(b->id, DDEKIT_HUB_PORT_LS_CONN, 2) == 1,
-	    "and the low-speed device on its port 2, too");
-	check(nnews == 3, "and nothing else was said (%u)", nnews);
-	check(all_powered(a) && all_powered(b),
-	    "every port of both hubs is powered - a phone on the dock "
+	check(nnews == 6, "and nothing else was said (%u)", nnews);
+	check(all_powered(a) && all_powered(b1) && all_powered(b2),
+	    "every port of the three hubs is powered - a phone on the dock "
 	    "charges whatever is on the other ports");
 	check(a->hub.first_read_after_power >= 100 &&
-	    b->hub.first_read_after_power >= 100,
-	    "and no port was looked at before its power was good (%ld and "
-	    "%ld ms; the hubs say 100)", a->hub.first_read_after_power,
-	    b->hub.first_read_after_power);
-	check(b->hub.port[1].resets == 1 && b->hub.port[2].resets == 1 &&
-	    a->hub.port[3].resets == 1, "each device was reset once");
+	    b1->hub.first_read_after_power >= 100 &&
+	    b2->hub.first_read_after_power >= 100,
+	    "and no port was looked at before its power was good (%ld, %ld, "
+	    "%ld ms; the dock's hubs say 96, the floor is 100)",
+	    a->hub.first_read_after_power, b1->hub.first_read_after_power,
+	    b2->hub.first_read_after_power);
+	check(b2->hub.port[3].resets == 1 && b1->hub.port[3].resets == 1 &&
+	    a->hub.port[1].resets == 1, "each device was reset once");
 	check(violations == 0, "the driver kept to xhci's rule: %s",
 	    violations ? last_violation : "one conversation at a time");
-	check(has_said("per-port power switching") &&
-	    has_said("ganged power switching"),
-	    "and said how each hub switches its power");
+	check(has_said("hub 2: 4 port(s), ganged power switching, global "
+	    "over-current protection, think time 1, power good in 96 ms"),
+	    "and said how the dock's hubs switch their power");
 }
 
+/* xhci withdraws the farthest first: hub B, then hub A. */
 static void
-test_withdrawn(struct ddekit_usb_dev *a, struct ddekit_usb_dev *b)
+test_withdrawn(struct ddekit_usb_dev *a, struct ddekit_usb_dev *b1,
+	struct ddekit_usb_dev *b2)
 {
 	unsigned long t;
-	unsigned a_before, b_before;
+	unsigned a_before, b1_before, b2_before;
 
 	section("the dock pulled out");
 
-	b->withdrawn = 1;
+	b1->withdrawn = b2->withdrawn = 1;
 	t = now_ms;
 	a_before = a->hub.requests;
-	b_before = b->submits;
-	driver->disconnect(b);
+	b1_before = b1->submits;
+	b2_before = b2->submits;
+	driver->disconnect(b2);
+	driver->disconnect(b1);
 	run_for(3000);
 
-	check(news_from(b->id, t) == 0, "nothing more is said about the dock");
-	check(b->submits == b_before, "nothing more is asked of it (%u)",
-	    b->submits - b_before);
-	check(entries_used() == 1, "its entry is free again (%d in use)",
+	check(news_from(b1->id, t) == 0 && news_from(b2->id, t) == 0,
+	    "nothing more is said about either of the dock's hubs");
+	check(b1->submits == b1_before && b2->submits == b2_before,
+	    "nothing more is asked of them (%u, %u)",
+	    b1->submits - b1_before, b2->submits - b2_before);
+	check(entries_used() == 1, "their entries are free again (%d in use)",
 	    entries_used());
 	check(a->hub.requests > a_before, "and the board's hub is still "
 	    "polled (%u requests)", a->hub.requests - a_before);
@@ -867,12 +896,50 @@ test_withdrawn(struct ddekit_usb_dev *a, struct ddekit_usb_dev *b)
 	    violations ? last_violation : "yes");
 }
 
+/*
+ * The dock's hubs given at once, each with its device - which is what xhci
+ * does for a driver that starts again: every hub it has, one announcement
+ * after another.  Their threads then work side by side from the first
+ * poll, and this is where the lock on news earns its keep: one thread
+ * reporting while the other's request is out.
+ */
+static void
+test_at_once(struct ddekit_usb_dev *b1, struct ddekit_usb_dev *b2)
+{
+	section("both of the dock's hubs given at once");
+
+	b1->withdrawn = b2->withdrawn = 0;
+	memset(&b1->hub.port, 0, sizeof(b1->hub.port));
+	memset(&b2->hub.port, 0, sizeof(b2->hub.port));
+	b1->hub.powered = b2->hub.powered = 0;
+	plug(b1, 3, HIGH);
+	plug(b2, 3, HIGH);
+	nnews = 0;
+
+	driver->connect(b1, 1);
+	driver->connect(b2, 1);
+	run_for(3000);
+
+	check(has_news(b1->id, DDEKIT_HUB_PORT_HS_CONN, 3) == 1 &&
+	    has_news(b2->id, DDEKIT_HUB_PORT_HS_CONN, 3) == 1 && nnews == 2,
+	    "each hub's news names that hub (%u in all)", nnews);
+	check(violations == 0, "the driver kept to xhci's rule: %s",
+	    violations ? last_violation : "yes");
+
+	b1->withdrawn = b2->withdrawn = 1;
+	driver->disconnect(b2);
+	driver->disconnect(b1);
+	run_for(2000);
+	check(entries_used() == 1, "and withdrawn again, their entries are "
+	    "free (%d in use)", entries_used());
+}
+
 static void
 test_new_dock(struct ddekit_usb_dev *c)
 {
 	unsigned th = nthreads;
 
-	section("a dock plugged in again: a new hub, the free entry");
+	section("another hub plugged in: a new name, a free entry");
 
 	plug(c, 4, FULL);
 	driver->connect(c, 1);
@@ -1043,7 +1110,7 @@ test_too_many(void)
 int
 main(int argc, char **argv)
 {
-	struct ddekit_usb_dev *a, *b, *c, *d;
+	struct ddekit_usb_dev *a, *b1, *b2, *c, *d;
 
 	if (argc > 1 && strcmp(argv[1], "-v") == 0)
 		verbose = 1;
@@ -1056,15 +1123,21 @@ main(int argc, char **argv)
 
 	/*
 	 * The board's hub as port/cb2-usb/reference.txt has it: four
-	 * ports, ganged power, power good in 100 ms.  The dock's hub with
-	 * power switched per port - the other kind - until the dock itself
-	 * has been read.
+	 * ports, ganged power, power good in 100 ms.  The dock's two hubs
+	 * as dock-reference.txt has them: WCH, four ports, ganged power and
+	 * think time 1 (0x0020), power good in 96 ms.
 	 */
 	a = new_hub(11, 4, 0x0000, 50);
-	b = new_hub(12, 4, 0x0001, 50);
-	test_two_hubs(a, b);
-	test_withdrawn(a, b);
+	b1 = new_hub(12, 4, 0x0020, 48);
+	b2 = new_hub(15, 4, 0x0020, 48);
+	test_dock(a, b1, b2);
+	test_withdrawn(a, b1, b2);
+	test_at_once(b1, b2);
 
+	/*
+	 * A hub of the other kind, power switched per port - none of the
+	 * board's or the dock's is one - for what a port alone can do.
+	 */
 	c = new_hub(13, 4, 0x0001, 50);
 	test_new_dock(c);
 	test_overcurrent(c);

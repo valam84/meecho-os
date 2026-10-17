@@ -24,6 +24,13 @@
  *                      minix.pmic.nextboot=... - so that whoever reaches
  *                      the machine over the network can bring it back to
  *                      fastboot without anyone at its buttons.
+ *   Type-C             who is at the other end of the USB-C cable and where
+ *                      VBUS comes from (typec.c), five times a second, as
+ *                      sysctl minix.pmic.typec and minix.pmic.vbus and a
+ *                      line when either changes - what decides whether the
+ *                      port is a device or a host (port/clover/
+ *                      hw-usbhost.md).  The registers that govern a role
+ *                      and VBUS are printed as the boot loader left them.
  *
  * It writes as little as it can: the volume-up pin's input configuration
  * once, the backlight's module enable, the charger watchdog's pet, and the
@@ -53,6 +60,7 @@
 #include <string.h>
 
 #include "spmi.h"
+#include "typec.h"
 
 static struct log pmic_log = {
 	.name = "pmic",
@@ -103,6 +111,7 @@ static struct log pmic_log = {
 #define BATT_REPORT_EVERY	10	/* minutes between plain reports */
 #define WD_PET_EVERY		(10 * POLL_TICKS_HZ)
 #define LDO_REPORT_AGAIN	(10 * POLL_TICKS_HZ)	/* after qcom_rpm */
+#define TYPEC_EVERY		4	/* polls between Type-C reads */
 
 static void ldo_report(void);
 
@@ -419,6 +428,129 @@ battery_poll(int force)
 }
 
 /*===========================================================================*
+ *    the USB-C port                                                          *
+ *===========================================================================*/
+static struct typec_chg tchg;
+static int have_typec;
+static struct typec_state tstate;
+static enum typec_partner tpartner = TC_UNKNOWN;
+static enum typec_vbus tvbus = TV_NONE;
+
+static int
+tc_rd(void *UNUSED(ctx), unsigned off, uint8_t *buf, unsigned n)
+{
+	return spmi_read(&spmi, tchg.sid, tchg.base + off, buf, n);
+}
+
+static int
+tc_wr(void *UNUSED(ctx), unsigned off, uint8_t v)
+{
+	return wr8(tchg.sid, tchg.base + off, v);
+}
+
+static int
+tc_writable(void *UNUSED(ctx), unsigned off)
+{
+	return spmi_writable(&spmi, tchg.sid, tchg.base + off);
+}
+
+static void
+tc_delay(void *UNUSED(ctx), unsigned us)
+{
+	delay_us(us);
+}
+
+static struct typec_io tio = {
+	.rd		= tc_rd,
+	.wr		= tc_wr,
+	.writable	= tc_writable,
+	.delay_us	= tc_delay,
+};
+
+/*
+ * The charger node, and what the registers that decide a role and VBUS
+ * hold as the boot loader left them - the record the first run on the
+ * machine is for (hw-usbhost.md, step 1).  Nothing is written.
+ */
+static void
+typec_init(void)
+{
+	char line[512];
+	void *dtb;
+	int r;
+
+	if ((dtb = fdt_fetch()) == NULL)
+		return;
+	r = typec_find(dtb, &tchg);
+	free(dtb);
+	if (r != OK) {
+		log_info(&pmic_log, "no SMB2 charger in the tree: no type-c\n");
+		return;
+	}
+	tio.base = tchg.base;
+	if (typec_read(&tio, &tstate) != OK_SPMI) {
+		log_warn(&pmic_log, "%s at SID %u 0x%04x: type-c status "
+		    "unreadable\n", tchg.compat, tchg.sid, tchg.base);
+		return;
+	}
+	have_typec = 1;
+	tpartner = typec_partner(&tstate);
+	tvbus = typec_vbus(&tstate);
+	(void)typec_config_text(&tio, line, sizeof(line));
+	log_info(&pmic_log, "%s at SID %u 0x%04x: %s\n", tchg.compat,
+	    tchg.sid, tchg.base, line);
+	(void)typec_dump(&tio, line, sizeof(line));
+	log_info(&pmic_log, "type-c registers: %s\n", line);
+	(void)typec_describe(&tstate, line, sizeof(line));
+	log_info(&pmic_log, "%s\n", line);
+}
+
+static void
+typec_poll(void)
+{
+	char line[160];
+	enum typec_partner p;
+	enum typec_vbus v;
+
+	if (!have_typec || typec_read(&tio, &tstate) != OK_SPMI)
+		return;
+	p = typec_partner(&tstate);
+	v = typec_vbus(&tstate);
+	if (p == tpartner && v == tvbus)
+		return;
+	tpartner = p;
+	tvbus = v;
+	(void)typec_describe(&tstate, line, sizeof(line));
+	log_info(&pmic_log, "%s\n", line);
+}
+
+/* sysctl minix.pmic.typec and minix.pmic.vbus: the last state read. */
+static char typec_str[16], vbus_str[16];
+
+static struct rmib_node typec_data = RMIB_STRING(RMIB_RO, typec_str,
+	"typec", "What is at the other end of the USB-C cable");
+static struct rmib_node vbus_data = RMIB_STRING(RMIB_RO, vbus_str,
+	"vbus", "Where VBUS comes from");
+
+static ssize_t
+typec_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
+	struct rmib_oldp *oldp, struct rmib_newp *newp)
+{
+	strlcpy(typec_str, have_typec ? typec_partner_name(tpartner) :
+	    "unknown", sizeof(typec_str));
+	return rmib_readwrite(call, &typec_data, oldp, newp);
+}
+
+static ssize_t
+vbus_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
+	struct rmib_oldp *oldp, struct rmib_newp *newp)
+{
+	strlcpy(vbus_str, have_typec ? typec_vbus_name(tvbus) : "unknown",
+	    sizeof(vbus_str));
+	return rmib_readwrite(call, &vbus_data, oldp, newp);
+}
+
+/*===========================================================================*
  *    where the next reset goes                                               *
  *===========================================================================*/
 /*
@@ -545,6 +677,12 @@ static struct rmib_node pmic_table[] = {
 /* 0*/	[0]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RW, sizeof(nextboot_str),
 		    nextboot_func, "nextboot", "Where the boot loader goes "
 		    "after the next reset: normal, recovery or bootloader"),
+/* 1*/	[1]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RO, sizeof(typec_str),
+		    typec_func, "typec", "What is at the other end of the "
+		    "USB-C cable: none, source, sink, audio, debug or unknown"),
+/* 2*/	[2]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RO, sizeof(vbus_str),
+		    vbus_func, "vbus", "Where VBUS comes from: none, external "
+		    "or boost"),
 };
 
 static struct rmib_node pmic_node = RMIB_NODE(RMIB_RO, pmic_table, "pmic",
@@ -605,6 +743,8 @@ pmic_alarm(clock_t UNUSED(stamp))
 		(void)wr8(SID_PM660, CHG_WD_PET, 0x01);
 	if (polls % BATT_EVERY == 0)
 		battery_poll(0);
+	if (polls % TYPEC_EVERY == 0)
+		typec_poll();
 	if (polls == LDO_REPORT_AGAIN)
 		ldo_report();
 	arm();
@@ -702,6 +842,7 @@ pmic_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	ldo_report();
 	battery_init();
 	battery_poll(1);
+	typec_init();
 	inputdriver_announce(INPUT_DEV_KBD);
 	arm();
 	return OK;

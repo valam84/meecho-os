@@ -97,6 +97,15 @@ void inputdriver_send_event(int m, unsigned short p, unsigned short c,
 void inputdriver_announce(unsigned int t) { (void)t; }
 void inputdriver_terminate(void) { }
 void inputdriver_task(struct inputdriver *t) { (void)t; }
+int env_get_param(const char *k, char *v, int n)
+	{ (void)k; (void)v; (void)n; return -1; }
+int rmib_register(const int *name, unsigned int len, struct rmib_node *n)
+	{ (void)name; (void)len; (void)n; return 0; }
+int rmib_deregister(struct rmib_node *n) { (void)n; return 0; }
+void rmib_process(const message *m, int s) { (void)m; (void)s; }
+ssize_t rmib_readwrite(struct rmib_call *c, struct rmib_node *n,
+	struct rmib_oldp *o, struct rmib_newp *w)
+	{ (void)c; (void)n; (void)o; (void)w; return 0; }
 
 static int
 untouched(unsigned i, size_t skip_off)

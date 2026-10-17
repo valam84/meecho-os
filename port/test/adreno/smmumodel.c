@@ -313,13 +313,17 @@ translate(uint32_t op, uint64_t va)
 	if (f == 0 && ((unpriv && !(desc & (1ull << 6))) ||
 	    (write && (desc & (1ull << 7)))))
 		f = FSR_PF;
+	/* As the tablet: an operation leaves FSR.FORMAT (2, AArch64) behind,
+	 * and PAR.ATTR is the outer half of the MAIR byte only. */
+	if (sc->smmu_tablet)
+		*r32(CB0 + SMMU_CB_FSR) |= 0x400;
 	if (f != 0)
 		return 1ull | f;
 	attr = (unsigned)(desc >> 2) & 7;
 	mair = *r32(CB0 + SMMU_CB_MAIR0) |
 	    (uint64_t)*r32(CB0 + SMMU_CB_MAIR1) << 32;
-	return (pa & ~0xfffull) | (((mair >> (8 * attr)) & 0xff) << 56) |
-	    (((desc >> 8) & 3) << 7);
+	mair = (mair >> (8 * attr)) & (sc->smmu_tablet ? 0xf0 : 0xff);
+	return (pa & ~0xfffull) | (mair << 56) | (((desc >> 8) & 3) << 7);
 }
 
 /*===========================================================================*

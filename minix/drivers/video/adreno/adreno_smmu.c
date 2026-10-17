@@ -59,7 +59,6 @@
  * back (0xff), 2 device (0x04), 3 inner non-cacheable, outer write-back
  * (0xf4).  The GPU's buffers are index 0. */
 #define MAIR0_LINUX	0xf404ff44u
-#define ATTR_NC		0x44u
 
 #define GPU_ASID	0		/* bank 0's, as Linux gives it */
 #define VA_A		0x0000000001000000ull	/* 16 MiB, where Linux starts */
@@ -288,8 +287,12 @@ expect(uint32_t op, const char *name, uint64_t va, int which,
 		return 0;
 	}
 	if (which >= 0) {
-		ok = !(par & PAR_F) && PAR_PA(par) == u.page_pa[which] &&
-		    PAR_ATTR(par) == ATTR_NC;
+		/*
+		 * The page decides, not PAR.ATTR: for MAIR 0x44 the tablet's
+		 * SMMU reports 0x40 - the outer half; the inner it leaves out
+		 * (2026-10-17, hw-gpu.md, §15).  Printed, not judged.
+		 */
+		ok = !(par & PAR_F) && PAR_PA(par) == u.page_pa[which];
 		log_info(&ad_log, "Q14 ats %s %llx: pa %llx attr %02x - %s\n",
 		    name, (unsigned long long)va,
 		    (unsigned long long)PAR_PA(par), PAR_ATTR(par),
@@ -376,7 +379,8 @@ fault_line(void)
 	    "far %llx fsynr0 %x\n", irq, before == 0 ? "quiet" : "NOT quiet",
 	    got == 1 ? "it came" : "NOTHING came", fsr,
 	    (unsigned long long)far, fsynr0);
-	if (before == 0 && got == 1 && (fsr & FSR_TF) && fsr2 == 0 &&
+	if (before == 0 && got == 1 && (fsr & FSR_TF) &&
+	    (fsr2 & FSR_FAULT) == 0 &&
 	    after == 0) {
 		log_info(&ad_log, "Q16 cleared (fsr %08x), quiet after: the "
 		    "line works\n", fsr2);
@@ -657,7 +661,7 @@ smmu_undo(void)
 		    ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR1) != u.ttbr1 ||
 		    ad_rd(&ad.smmu, g.gr1 + SMMU_CBAR(0)) != u.cbar ||
 		    ad_rd(&ad.smmu, g.gr1 + SMMU_CBA2R(0)) != u.cba2r ||
-		    CB(SMMU_CB_FSR) != 0) {
+		    (CB(SMMU_CB_FSR) & FSR_FAULT) != 0) {
 			strlcat(line, " cb0 differs", sizeof(line));
 			differs++;
 		} else

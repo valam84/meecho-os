@@ -392,6 +392,64 @@ fault_line(void)
 	return EIO;
 }
 
+/*
+ * Stage cp: the GPU's own buffers in bank 0's tables, and its stream sent
+ * there for as long as the command processor runs.  Both only after stage
+ * cb0 has set the bank up and found it working; smmu_undo() takes the
+ * route back as it takes back the test's.
+ */
+int
+smmu_gpu_map(uint64_t va, phys_bytes pa, size_t len, int prot)
+{
+	size_t off;
+	int r;
+
+	if (!u.cb_touched || !(CB(SMMU_CB_SCTLR) & SCTLR_M))
+		return EINVAL;
+	for (off = 0; off < len; off += 4096)
+		if ((r = pt_map(&u.pt, va + off, pa + off, prot)) != OK)
+			return r;
+	return tlbi();
+}
+
+int
+smmu_attach(void)
+{
+	uint32_t smr, s2cr;
+	int i;
+
+	if (!u.cb_touched || !(CB(SMMU_CB_SCTLR) & SCTLR_M))
+		return EINVAL;
+	if (u.smr < 0) {
+		if ((i = free_smr()) < 0)
+			return EBUSY;
+		u.smr = i;
+		u.smr_v = GR0(SMMU_SMR(i));
+		u.s2cr_v = GR0(SMMU_S2CR(i));
+	}
+	i = u.smr;
+	u.sme_touched = 1;
+	/* As route(): where to, then what - from real registers. */
+	ad_wr(&ad.smmu, SMMU_S2CR(i), S2CR_ROUTE_CB0);
+	ad_wr(&ad.smmu, SMMU_SMR(i), SMR_VALID | (ad.dt.sid & 0x7fff));
+	smr = GR0(SMMU_SMR(i));
+	s2cr = GR0(SMMU_S2CR(i));
+	if (smr != (SMR_VALID | (ad.dt.sid & 0x7fff)) ||
+	    (s2cr & S2CR_FIELDS) != 0) {
+		log_warn(&ad_log, "Q19 sid %u by smr %d: smr %08x s2cr %08x - "
+		    "not as written\n", ad.dt.sid, i, smr, s2cr);
+		return EIO;
+	}
+	return OK;
+}
+
+/* The bank's fault state, for a line after the command processor ran. */
+uint32_t
+smmu_fsr(void)
+{
+	return g.ready ? CB(SMMU_CB_FSR) : 0;
+}
+
 /* Q15: the GPU's stream routed to bank 0 for 10 ms, and back. */
 static int
 route(void)

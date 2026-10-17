@@ -2,9 +2,12 @@
  * The stages (adreno.h), in order, each one only if the one before it
  * answered: what the tree says; the clock blocks as found (Q1-Q3); then,
  * from stage cx on, domains and clocks brought up (Q4), the GPU (Q5-Q8) and
- * the SMMU (Q9, Q10) read; from stage smr on, the SMMU written (Q13-Q16)
- * and put back (Q17); everything undone (Q11); TrustZone (Q12) when asked.
- * The questions are port/clover/hw-gpu.md, §12 and §14.
+ * the SMMU (Q9, Q10) read; from stage smr on, the SMMU written (Q13-Q16);
+ * at stage zap, the zap shader to TrustZone while the GPU is powered (Q18);
+ * at stage cp, the command processor started, the zap shader, secure mode
+ * left, a first command (Q19-Q22) and the CP stopped (Q23); the SMMU put
+ * back (Q17); everything undone (Q11); TrustZone (Q12) when asked.  The
+ * questions are port/clover/hw-gpu.md, §12, §14 and §17.
  */
 
 #include "adreno.h"
@@ -97,7 +100,14 @@ adreno_run(const void *dtb, int stage, int tz)
 		r = smmu_smr_test();
 	if (r == OK && stage >= AD_CB0)
 		r = smmu_cb0(stage >= AD_FAULT);
+	/* Stage cp has the zap shader at Linux's point: after CP_ME_INIT. */
+	if (r == OK && stage == AD_ZAP)
+		r = zap_load();
+	if (r == OK && stage >= AD_CP)
+		r = cp_run();
+	cp_stop();		/* while the GPU is powered and routed */
 	smmu_undo();		/* while the SMMU is still powered */
 	cc_power_down();
+	cp_free();		/* no table points at it any more */
 	return r;
 }

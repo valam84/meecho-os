@@ -75,6 +75,30 @@ adreno_smmu.c@s/^\t\tCB_WR(SMMU_CB_SCTLR, u.sctlr);//@bank 0 left enabled
 adreno_smmu.c@s/	ad_wr(\&ad.smmu, SMMU_S2CR(i), S2CR_ROUTE_CB0);/	ad_wr(\&ad.smmu, SMMU_S2CR(i), S2CR_ROUTE_CB0 | 1);/@the stream routed to a bank that is not set up
 adreno_smmu.c@s/	if (u.cb_touched \&\& keep_bank) {/	if (0 \&\& keep_bank) {/@bank 0 made stage 2 under an S2CR that names it
 adreno_smmu.c@s/	test_s2 = (uint32_t)S2CR_TYPE_FAULT << 16;/	test_s2 = (uint32_t)S2CR_TYPE_TRANS << 16;/@the S2CR test translates (the tablet stopped)
+adreno_zap.c@s/^\t(void)vm_unmap_phys(SELF, reg, (size_t)ad.dt.zap_sz);$//@the zap region still mapped at auth_and_reset
+adreno_zap.c@s/^\t\tdev_put(reg + off + m.ph\[i\].filesz, NULL,$/\t\tif (0) dev_put(reg + off + m.ph[i].filesz, NULL,/@a segment's tail not zeroed
+adreno_zap.c@s/^\tif (m.relocatable) {$/\tif (0) {/@no mem_setup for a relocatable image
+adreno_zap.c@s/^\tmemcpy(meta + m.ehdr_size, m.hash_in_file/\tif (0) memcpy(meta + m.ehdr_size, m.hash_in_file/@the metadata without the hash segment
+adreno_zap.c@s/if (a.res\[0\] == QCOMSCM_PAS_AUTHED)$/if (0)/@an authenticated image loaded again, not resumed
+adreno_zap.c@s/if (a.res\[0\] == QCOMSCM_PAS_GIVEN) {/if (0) {/@TrustZone's region touched after a failed load
+adreno_zap.c@s/off = m.relocatable ? m.ph\[i\].paddr - m.min_addr :/off = 0 ? 0 :/@a relocatable segment placed by its paddr
+adreno_zap.c@s/^\t\tdev_put(reg + off, seg\[i\], m.ph\[i\].filesz);/\t\tdev_put(reg + off, seg[i], m.ph[i].filesz \& ~3u);/@a segment's unaligned end not copied
+adreno_mdt.c@s/end = ((uint64_t)p->paddr + p->memsz + 0xfff) \& ~0xfffULL;/end = (uint64_t)p->paddr + p->memsz;/@the image's end not rounded to 4 KiB
+adreno_mdt.c@s/m->split = 1;/(void)0;/@a split image read from the .mdt
+adreno_cp.c@s/^\t(void)sys_cachectl(CACHE_CLEAN, cp.ring.cpu, cp.ring.size);$//@the ring not cleaned before the write pointer
+adreno_cp.c@s/^\treturn sys_cachectl(CACHE_CLEAN, b->cpu, b->size);$/\treturn OK;/@the microcode not cleaned to memory
+adreno_cp.c@s/return (0x9669u >> (v \& 0xf)) \& 1;/return 0;/@PM4 headers without their parity
+adreno_cp.c@s/^\tif ((r = zap_load()) != OK)$/\tif ((r = OK) != OK)/@out of secure mode without the zap shader
+adreno_cp.c@s/^\tW(A5XX_VBIF_XIN_HALT_CTRL0, 0xf);$//@GX collapsed with the VBIF's ports not halted
+adreno_cp.c@s/^\tW(A5XX_RBBM_INT_0_MASK, 0);$//@the GPU's interrupts left unmasked
+adreno_cp.c@s/^\tif ((r = smmu_attach()) != OK)$/\tif ((r = OK) != OK)/@the CP started with its stream routed nowhere
+adreno_cp.c@s/^\t(void)sys_cachectl(CACHE_INVALIDATE, cp.mem.cpu, 4096);$//@the fence read from the cache, not memory
+adreno_cp.c@s/out(0x0000002f);/out(0x0000002e);/@CP_ME_INIT not as Linux's
+adreno_cp.c@s/{ 0x0080, 0x07444044 },/{ 0x0080, 0x07444004 },/@a clock-gating value mistyped
+adreno_cp.c@s/((uint32_t)__builtin_ctz(len) << 24)/((uint32_t)(__builtin_ctz(len) + 1) << 24)/@CP_PROTECT lengths one power too long
+adreno_cp.c@s/rmw(A5XX_RB_DBG_ECO_CNTL, 0, 1u << 9);/w(A5XX_RB_DBG_ECO_CNTL, 1u << 9);/@a read-modify-write that loses the other bits
+adreno_cp.c@s/^\tW(A5XX_CP_RB_CNTL, A5XX_CP_RB_CNTL_VALUE);$//@the CP started without its ring's size
+adreno_run.c@s/^\tcp_stop();.*$//@the CP never stopped before the power goes
 EOF
 echo "$caught of $n caught"
 exit $rc

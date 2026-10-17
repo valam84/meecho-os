@@ -70,12 +70,16 @@ static struct mreg {
 	uint64_t pa;
 	size_t len;
 	int live;
+	int seen;		/* the SMMU walked it, or translated into it */
 } mem[64];
 static uint64_t next_pa;
 
+/* Interrupt hooks: bank 0's line (361) and the GPU's (332, cpmodel.c). */
+#define NHOOK		2
+#define HOOK_ID0	77
 static struct {
 	int used, vec, bit, enabled;
-} hook;
+} hooks[NHOOK];
 static int alarm_set;
 static unsigned long long alarm_tick;
 
@@ -128,6 +132,7 @@ alloc_contig(size_t len, int flags, phys_bytes *phys)
 	mem[i].pa = next_pa;
 	mem[i].len = len;
 	mem[i].live = 1;
+	mem[i].seen = 0;
 	next_pa += len + 0x3000;	/* never one piece with the next */
 	*phys = (phys_bytes)mem[i].pa;
 	return mem[i].cpu;
@@ -144,7 +149,7 @@ free_contig(void *addr, size_t len)
 			break;
 	if (i == sizeof(mem) / sizeof(mem[0]))
 		model_fail("free_contig of %p+0x%zx, never given", addr, len);
-	if (*r32(CB0 + SMMU_CB_SCTLR) & SCTLR_M)
+	if ((*r32(CB0 + SMMU_CB_SCTLR) & SCTLR_M) && mem[i].seen)
 		model_fail("memory freed while bank 0 still translates");
 	free(mem[i].cpu);
 	free(mem[i].ram);
@@ -186,14 +191,17 @@ ram64(uint64_t pa)
 
 	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
 		if (mem[i].live && pa >= mem[i].pa &&
-		    pa + 8 <= mem[i].pa + mem[i].len)
+		    pa + 8 <= mem[i].pa + mem[i].len) {
+			mem[i].seen = 1;
 			return *(uint64_t *)(void *)(mem[i].ram + (pa -
 			    mem[i].pa));
+		}
 	model_fail("the SMMU walked to 0x%llx, memory nobody gave it",
 	    (unsigned long long)pa);
 	return 0;
 }
 
+/* Memory the tables lead to; it is the SMMU's from then on (seen). */
 static int
 known_pa(uint64_t pa)
 {
@@ -201,9 +209,28 @@ known_pa(uint64_t pa)
 
 	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
 		if (mem[i].live && pa >= mem[i].pa && pa < mem[i].pa +
-		    mem[i].len)
+		    mem[i].len) {
+			mem[i].seen = 1;
 			return 1;
+		}
 	return 0;
+}
+
+/* What memory holds - not the processor's caches - of [cpu, cpu + len), if
+ * that lies in one piece alloc_contig() gave; its physical start in *pa. */
+const uint8_t *
+model_ram_of(const void *cpu, size_t len, uint64_t *pa)
+{
+	const uint8_t *a = cpu;
+	unsigned i;
+
+	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
+		if (mem[i].live && a >= mem[i].cpu &&
+		    a + len <= mem[i].cpu + mem[i].len) {
+			*pa = mem[i].pa + (uint64_t)(a - mem[i].cpu);
+			return mem[i].ram + (a - mem[i].cpu);
+		}
+	return NULL;
 }
 
 unsigned
@@ -332,9 +359,95 @@ translate(uint32_t op, uint64_t va)
 static int
 line_up(int vec)
 {
-	return vec == LINE_CB0 && !sc->no_line &&
+	if (vec != LINE_CB0)
+		return cp_model_line_up(vec);
+	return !sc->no_line &&
 	    (*r32(CB0 + SMMU_CB_SCTLR) & SCTLR_CFIE) &&
 	    (*r32(CB0 + SMMU_CB_FSR) & FSR_FAULT);
+}
+
+/* Stream 0 (the GPU) goes to bank 0: a valid SMR matches it and its S2CR
+ * translates there. */
+static int
+route_ok(void)
+{
+	uint32_t smr, s2;
+	unsigned i;
+
+	for (i = 0; i < nsmr; i++) {
+		smr = *r32(SMMU_SMR(i));
+		s2 = *r32(SMMU_S2CR(i));
+		if ((smr & SMR_VALID) && (SMR_ID(smr) & ~SMR_MASK(smr)) == 0)
+			return S2CR_TYPE(s2) == 0 && S2CR_CBNDX(s2) == 0;
+	}
+	return 0;
+}
+
+/*
+ * An access of the GPU's to va, as the SMMU would make it: the route, bank
+ * 0, the TLB, then the tables; a fault lands in FSR and FAR.  0 and the
+ * physical address, or -1.
+ */
+int
+smmu_gpu_pa(uint64_t va, int write, uint64_t *pa)
+{
+	uint64_t desc = 0, p = 0;
+	unsigned asid = asid_now(), i;
+	uint32_t f = 0;
+
+	if (!route_ok())
+		model_fail("the GPU reached for %llx with its stream routed "
+		    "nowhere (an unmatched stream faults)",
+		    (unsigned long long)va);
+	if (!(*r32(CB0 + SMMU_CB_SCTLR) & SCTLR_M))
+		model_fail("the GPU reached for %llx through bank 0 while it "
+		    "is off", (unsigned long long)va);
+	for (i = 0; i < 16; i++)
+		if (tlb[i].valid && tlb[i].asid == asid &&
+		    tlb[i].vpage == (va >> 12)) {
+			desc = tlb[i].desc;
+			p = tlb[i].pa;
+			break;
+		}
+	if (i == 16) {
+		if ((f = walk(va, &desc, &p)) == 0) {
+			for (i = 0; i < 16 && tlb[i].valid; i++)
+				;
+			if (i == 16)
+				i = 0;
+			tlb[i].valid = 1;
+			tlb[i].asid = asid;
+			tlb[i].vpage = va >> 12;
+			tlb[i].pa = p & ~0xfffull;
+			tlb[i].desc = desc;
+		}
+	}
+	if (f == 0 && !(desc & (1ull << 10)))
+		f = 1u << 2;
+	if (f == 0 && write && (desc & (1ull << 7)))
+		f = FSR_PF;
+	if (f != 0) {
+		*r32(CB0 + SMMU_CB_FSR) |= f;
+		*r64(CB0 + SMMU_CB_FAR) = va;
+		return -1;
+	}
+	*pa = (p & ~0xfffull) | (va & 0xfff);
+	return 0;
+}
+
+/* Memory at a physical address, as the GPU sees it (never the caches). */
+uint8_t *
+model_ram_pa(uint64_t pa, size_t n)
+{
+	unsigned i;
+
+	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
+		if (mem[i].live && pa >= mem[i].pa &&
+		    pa + n <= mem[i].pa + mem[i].len) {
+			mem[i].seen = 1;
+			return mem[i].ram + (pa - mem[i].pa);
+		}
+	return NULL;
 }
 
 static void
@@ -423,6 +536,9 @@ smmu_wr(uint32_t off, uint32_t v)
 				*r32(off) = (v & SMR_VALID) |
 				    (((v >> 16) & idmask) << 16) | (v & idmask);
 				check_routes(i);
+				if (cp_model_busy() && !route_ok())
+					model_fail("the GPU's stream taken "
+					    "back under a running CP");
 				return;
 			}
 			if (off == SMMU_S2CR(i)) {
@@ -446,6 +562,9 @@ smmu_wr(uint32_t off, uint32_t v)
 					    *r32(GR1 + SMMU_CBAR(0)));
 				*r32(off) = v;
 				check_routes(i);
+				if (cp_model_busy() && !route_ok())
+					model_fail("the GPU's stream taken "
+					    "back under a running CP");
 				return;
 			}
 		}
@@ -526,26 +645,38 @@ smmu_wr64(uint32_t off, uint64_t v)
 int
 sys_irqctl(int request, int irq_vec, int policy, int *irq_hook_id)
 {
+	int k;
+
 	(void)policy;
 	switch (request) {
 	case IRQ_SETPOLICY:
-		if (hook.used)
-			model_fail("a second interrupt hook");
-		hook.used = 1;
-		hook.vec = irq_vec;
-		hook.bit = *irq_hook_id;
-		hook.enabled = 1;
-		*irq_hook_id = 77;
+		for (k = 0; k < NHOOK; k++) {
+			if (hooks[k].used && hooks[k].vec == irq_vec)
+				model_fail("line %d hooked twice", irq_vec);
+			if (hooks[k].used && hooks[k].bit == *irq_hook_id)
+				model_fail("two hooks with notify bit %d",
+				    *irq_hook_id);
+		}
+		for (k = 0; k < NHOOK && hooks[k].used; k++)
+			;
+		if (k == NHOOK)
+			model_fail("more interrupt hooks than the model has");
+		hooks[k].used = 1;
+		hooks[k].vec = irq_vec;
+		hooks[k].bit = *irq_hook_id;
+		hooks[k].enabled = 1;
+		*irq_hook_id = HOOK_ID0 + k;
 		return 0;
 	case IRQ_ENABLE:
 	case IRQ_DISABLE:
 	case IRQ_RMPOLICY:
-		if (!hook.used || *irq_hook_id != 77)
+		k = *irq_hook_id - HOOK_ID0;
+		if (k < 0 || k >= NHOOK || !hooks[k].used)
 			model_fail("irqctl %d on a hook never set", request);
 		if (request == IRQ_RMPOLICY)
-			hook.used = 0;
+			hooks[k].used = 0;
 		else
-			hook.enabled = request == IRQ_ENABLE;
+			hooks[k].enabled = request == IRQ_ENABLE;
 		return 0;
 	}
 	return EINVAL;
@@ -576,16 +707,19 @@ sys_hz(void)
 int
 ipc_receive(endpoint_t src, message *m, int *status)
 {
+	int k;
+
 	(void)src;
 	memset(m, 0, sizeof(*m));
 	*status = STUB_NOTIFY_STATUS;
 	m->m_type = NOTIFY_MESSAGE;
-	if (hook.used && hook.enabled && line_up(hook.vec)) {
-		hook.enabled = 0;
-		m->m_source = HARDWARE;
-		m->m_notify.interrupts = 1ull << hook.bit;
-		return 0;
-	}
+	for (k = 0; k < NHOOK; k++)
+		if (hooks[k].used && hooks[k].enabled && line_up(hooks[k].vec)) {
+			hooks[k].enabled = 0;
+			m->m_source = HARDWARE;
+			m->m_notify.interrupts = 1ull << hooks[k].bit;
+			return 0;
+		}
 	if (alarm_set) {
 		unsigned long long at = alarm_tick * 10000;
 
@@ -627,7 +761,7 @@ smmu_model_reset(const struct scenario *s)
 	atsr_busy = tlb_busy = 0;
 	memset(smmu, 0, sizeof(smmu));
 	memset(tlb, 0, sizeof(tlb));
-	memset(&hook, 0, sizeof(hook));
+	memset(hooks, 0, sizeof(hooks));
 	alarm_set = 0;
 	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
 		if (mem[i].live) {
@@ -693,11 +827,12 @@ smmu_model_same(char *why, size_t size)
 	uint32_t gr0[0x1000 / 4], gr1[2], cb[0x100 / 4];
 	unsigned i;
 
-	if (hook.used) {
-		snprintf(why, size, "interrupt hook on line %d left set",
-		    hook.vec);
-		return 0;
-	}
+	for (i = 0; i < NHOOK; i++)
+		if (hooks[i].used) {
+			snprintf(why, size, "interrupt hook on line %d left set",
+			    hooks[i].vec);
+			return 0;
+		}
 	if ((i = model_contig_live()) != 0) {
 		snprintf(why, size, "%u pieces of memory never freed", i);
 		return 0;

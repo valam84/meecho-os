@@ -6,12 +6,15 @@
  *
  *	minix-service up /service/adreno -args "stage=probe tz=1"
  *
- *   stage=   probe (default), cx, gx, gpu, smmu, smr, cb0, fault - each
- *            one also does the ones before it; the last three write the
- *            SMMU and put it back (adreno_smmu.c)
+ *   stage=   probe (default), cx, gx, gpu, smmu, smr, cb0, fault, zap, cp -
+ *            each one also does the ones before it; smr, cb0 and fault
+ *            write the SMMU and put it back (adreno_smmu.c); zap has
+ *            TrustZone load the zap shader, or resume it (adreno_zap.c);
+ *            cp starts the command processor (adreno_cp.c)
  *   tz=1     ask TrustZone about the zap shader's calls (Q12)
- *   route=0  stages cb0 and fault without routing the GPU's stream:
- *            on the tablet the route stops the machine (hw-gpu.md, §15)
+ *   route=0  stages cb0 and fault without routing the GPU's stream
+ *            (hw-gpu.md, §15, §16)
+ *   fwdir=   where the firmware files are (adreno_fw.c)
  *   hold=N   stay N seconds before leaving - to see where it runs
  *            (ps -o cpuid): the stand cannot check "cpu 1", only a machine
  *   log=     log level, as other services
@@ -44,10 +47,12 @@ static int
 parse_stage(void)
 {
 	static const char *const names[] = { "probe", "cx", "gx", "gpu",
-	    "smmu", "smr", "cb0", "fault" };
+	    "smmu", "smr", "cb0", "fault", "zap", "cp" };
 	char value[16];
 	unsigned i;
 
+	if (env_get_param("fwdir", ad_fwdir, sizeof(ad_fwdir)) != OK)
+		strlcpy(ad_fwdir, "/libdata/firmware/qcom", sizeof(ad_fwdir));
 	if (env_get_param("stage", value, sizeof(value)) != OK)
 		return OK;
 	for (i = 0; i < sizeof(names) / sizeof(names[0]); i++)
@@ -56,7 +61,7 @@ parse_stage(void)
 			return OK;
 		}
 	log_warn(&ad_log, "stage=%s is none of probe, cx, gx, gpu, smmu, smr, "
-	    "cb0, fault\n", value);
+	    "cb0, fault, zap, cp\n", value);
 	return EINVAL;
 }
 

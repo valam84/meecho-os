@@ -18,6 +18,11 @@
  *                  bank's fault line - and all of it put back
  *   adreno_pt.c    the GPU's page tables (LPAE stage 1, 4 KiB pages)
  *   adreno_tz.c    TrustZone: is the way to the zap shader there
+ *   adreno_fw.c    firmware files, read from the root (fwdir=)
+ *   adreno_mdt.c   a Qualcomm MDT image understood (plain C, the stand's too)
+ *   adreno_zap.c   the zap shader loaded by TrustZone, or resumed
+ *   adreno_cp.c    the command processor: hw_init, the ring, its first
+ *                  command
  */
 #ifndef _ADRENO_H
 #define _ADRENO_H
@@ -158,6 +163,9 @@ extern struct adreno ad;
 #define AD_CB0		6	/* + context bank 0 with tables, translations by
 				 * the SMMU itself, SID 0 routed to it a while */
 #define AD_FAULT	7	/* + a fault raised in the bank: its line */
+#define AD_ZAP		8	/* + the zap shader to TrustZone (or resumed) */
+#define AD_CP		9	/* + the command processor started, out of
+				 * secure mode, its first command */
 
 /* adreno_find.c */
 int adreno_find(const void *dtb, struct adreno_dt *dt);
@@ -182,11 +190,30 @@ void hw_smmu_report(void);		/* Q9, Q10 */
 /* adreno_tz.c */
 void tz_report(void);			/* Q12 */
 
+/* adreno_fw.c */
+extern char ad_fwdir[64];		/* fwdir= (adreno.c) */
+int fw_read(const char *name, void **buf, size_t *len, size_t max);
+#define FW_SUM0		2166136261u
+uint32_t fw_sum(const void *p, size_t n, uint32_t h);
+
+/* adreno_zap.c */
+int zap_load(void);			/* Q18 */
+
+/* adreno_cp.c */
+int cp_run(void);			/* Q19..Q22 */
+void cp_stop(void);			/* Q23 */
+void cp_free(void);
+uint32_t pm4_pkt7(uint32_t op, uint32_t cnt);
+uint32_t pm4_pkt4(uint32_t reg, uint32_t cnt);
+
 /* adreno_smmu.c */
 int smmu_smr_test(void);		/* Q13 */
 int smmu_cb0(int fault);		/* Q14..Q16 */
 extern int ad_route;			/* route=0: no stream routed (adreno.c) */
 void smmu_undo(void);			/* Q17 */
+int smmu_gpu_map(uint64_t va, phys_bytes pa, size_t len, int prot);
+int smmu_attach(void);			/* SID 0 to bank 0 until smmu_undo() */
+uint32_t smmu_fsr(void);
 
 /* adreno_pt.c: one address space of the GPU. */
 #define AD_PT_READ	1

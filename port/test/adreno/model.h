@@ -30,6 +30,9 @@ struct scenario {
 	int stale_tlb;		/* a stale TLB entry for ASID 0, 16 MiB */
 	int bypass_free;	/* SMR 0 busy, the free SMR 1 bypasses */
 	int s2cr_ro;		/* S2CR writes dropped, SMR ones kept: the tablet */
+	/* TrustZone and the zap shader (tzmodel.c) */
+	int zap_state;		/* QCOMSCM_PAS_* of peripheral 13 at the start */
+	int zap_auth_fail;	/* the image's signature is not accepted */
 };
 
 extern jmp_buf model_hang;
@@ -56,5 +59,34 @@ void smmu_wr64(uint32_t off, uint64_t v);
 void smmu_model_reset(const struct scenario *s);
 int smmu_model_same(char *why, size_t size);
 unsigned model_contig_live(void);
+const uint8_t *model_ram_of(const void *cpu, size_t len, uint64_t *pa);
+uint8_t *model_ram_pa(uint64_t pa, size_t n);
+int smmu_gpu_pa(uint64_t va, int write, uint64_t *pa);
+int model_gpu_powered(void);		/* model.c */
+uint32_t model_gpu_reg(uint32_t dw);
+void model_gpu_set(uint32_t dw, uint32_t v);
+
+/* cpmodel.c */
+void cp_model_reset(const struct scenario *s);
+void cp_expect(const void *pm4, size_t pm4_len, const void *pfp,
+	size_t pfp_len);
+int cp_model_rd(uint32_t dw, uint32_t *v);
+void cp_model_wr(uint32_t dw, uint32_t v);
+void cp_model_gx_off(void);
+int cp_model_busy(void);
+int cp_model_started(void);
+unsigned cp_model_packets(void);
+int cp_model_line_up(int vec);
+
+/* tzmodel.c */
+void tz_model_reset(const struct scenario *s);
+int tz_model_same(char *why, size_t size);
+void *tz_map(unsigned long pa, size_t len);
+void tz_expect(const void *meta, size_t meta_len, const void *image,
+	size_t image_len, uint32_t span);
+unsigned tz_calls(void);
+const char *tz_trail(void);
+const char *tz_refusal(void);
+int tz_state(void);
 
 #endif

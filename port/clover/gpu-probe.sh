@@ -14,7 +14,16 @@
 #		them, in that order); "smr", "cb0", "fault" write the SMMU and
 #		put it back (hw-gpu.md, §14) - only when asked for by name;
 #		"cb0-noroute", "fault-noroute": the same without routing the
-#		GPU's stream (route=0; the route stopped the tablet, §15)
+#		GPU's stream (route=0; the route stopped the tablet, §15);
+#		"zap": TrustZone loads the zap shader, or resumes it (§17);
+#		"cp": the command processor and its first command (§17)
+#
+# Firmware: whatever is in DIR/fw/qcom goes to /libdata/firmware/qcom on
+# the tablet, where the service reads it (adreno_fw.c) - the zap shader
+# copied off the tablet's own vendor partition (a512_zap.mdt, .b00-.b02),
+# linux-firmware's microcode with LICENSE.qcom and NOTICE.qcom
+# (fetch-gpu-fw.sh).  None of it may live in the tree; the directory is
+# the local kit's.
 #
 # The tablet must be up under MEECHO with its root on eMMC and sshd -
 # after port/clover/cycle.sh, whose image also carries the kernel with
@@ -69,11 +78,18 @@ scp -q "${TAB_O[@]}" "$DIR/adreno" "$DIR/adreno.conf" "$DIR/minix-service" \
 sums=$(tab 'cd /root/adreno && chmod 755 adreno minix-service &&
     md5 adreno adreno.conf minix-service' | tr -d '\r')
 say "$sums"
+if ls "$DIR"/fw/qcom/* > /dev/null 2>&1; then
+	tab 'mkdir -p /libdata/firmware/qcom' || exit 3
+	scp -q "${TAB_O[@]}" "$DIR"/fw/qcom/* "$CLOVER:/libdata/firmware/qcom/" ||
+	    { say "FAIL: firmware upload"; exit 3; }
+	say "$(tab 'cd /libdata/firmware/qcom && chmod 644 * && md5 *' |
+	    tr -d '\r')"
+fi
 
 for s in "$@"; do
 	case $s in
 	probe+tz) args="stage=probe tz=1" ;;
-	probe|cx|gx|gpu|smmu|smr|cb0|fault) args="stage=$s" ;;
+	probe|cx|gx|gpu|smmu|smr|cb0|fault|zap|cp) args="stage=$s" ;;
 	cb0-noroute|fault-noroute) args="stage=${s%-noroute} route=0" ;;
 	*) say "FAIL: no stage $s"; exit 2 ;;
 	esac

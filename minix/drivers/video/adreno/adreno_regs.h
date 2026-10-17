@@ -23,6 +23,101 @@
 #define A5XX_CP_SCRATCH_REG(n)		(0x0b78 + (n))
 #define A5XX_VBIF_VERSION		0x3000
 
+/* What a5xx_hw_init() writes, and the command processor's own (stage cp,
+ * adreno_cp.c).  The 64-bit ones are a LO/HI pair, LO first. */
+#define A5XX_RBBM_INTERFACE_HANG_INT_CNTL 0x002f
+#define A5XX_RBBM_INT_CLEAR_CMD		0x0037
+#define A5XX_RBBM_INT_0_MASK		0x0038
+#define A5XX_RBBM_SW_RESET_CMD		0x0043
+#define A5XX_RBBM_CLOCK_CNTL		0x0067
+#define A5XX_RBBM_AHB_CNTL0		0x0093
+#define A5XX_RBBM_AHB_CNTL1		0x0094
+#define A5XX_RBBM_AHB_CNTL2		0x0095
+#define A5XX_RBBM_AHB_CMD		0x0096
+#define A5XX_RBBM_PERFCTR_CNTL		0x0464
+#define A5XX_RBBM_PERFCTR_RBBM_SEL_0	0x046b
+#define A5XX_RBBM_PERFCTR_GPU_BUSY_MASKED 0x046f
+#define A5XX_RBBM_AHB_ERROR_STATUS	0x04f4
+#define A5XX_RBBM_STATUS3		0x0530
+#define A5XX_RBBM_ISDB_CNT		0x0533
+#define A5XX_CP_RB_BASE			0x0800	/* and _HI 0x0801 */
+#define A5XX_CP_RB_CNTL			0x0802
+#define A5XX_CP_RB_RPTR_ADDR		0x0804	/* and _HI 0x0805 */
+#define A5XX_CP_RB_RPTR			0x0806
+#define A5XX_CP_RB_WPTR			0x0807
+#define A5XX_CP_ROQ_THRESHOLDS_1	0x081f
+#define A5XX_CP_ROQ_THRESHOLDS_2	0x0820
+#define A5XX_CP_MEQ_THRESHOLDS		0x0825
+#define A5XX_CP_MERCIU_SIZE		0x0826
+#define A5XX_CP_CHICKEN_DBG		0x0833
+#define A5XX_CP_PFP_INSTR_BASE		0x0835	/* and _HI 0x0836 */
+#define A5XX_CP_ME_INSTR_BASE		0x0838	/* and _HI 0x0839 */
+#define A5XX_CP_ADDR_MODE_CNTL		0x0860
+#define A5XX_CP_PROTECT(n)		(0x0880 + (n))
+#define A5XX_CP_PROTECT_CNTL		0x08a0
+#define A5XX_CP_INTERRUPT_STATUS	0x0b18
+#define A5XX_CP_HW_FAULT		0x0b1a
+#define A5XX_CP_PROTECT_STATUS		0x0b1c
+#define A5XX_CP_PERFCTR_CP_SEL_0	0x0bb0
+#define A5XX_VSC_ADDR_MODE_CNTL		0x0bc1
+#define A5XX_GRAS_ADDR_MODE_CNTL	0x0c81
+#define A5XX_RB_DBG_ECO_CNTL		0x0cc4
+#define A5XX_RB_ADDR_MODE_CNTL		0x0cc5
+#define A5XX_RB_MODE_CNTL		0x0cc6
+#define A5XX_PC_DBG_ECO_CNTL		0x0d00
+#define A5XX_PC_ADDR_MODE_CNTL		0x0d01
+#define A5XX_HLSQ_DBG_ECO_CNTL		0x0e04
+#define A5XX_HLSQ_ADDR_MODE_CNTL	0x0e05
+#define A5XX_VFD_ADDR_MODE_CNTL		0x0e41
+#define A5XX_VPC_DBG_ECO_CNTL		0x0e60
+#define A5XX_VPC_ADDR_MODE_CNTL		0x0e61
+#define A5XX_UCHE_ADDR_MODE_CNTL	0x0e80
+#define A5XX_UCHE_MODE_CNTL		0x0e81
+#define A5XX_UCHE_WRITE_THRU_BASE	0x0e87	/* 64 */
+#define A5XX_UCHE_TRAP_BASE		0x0e89	/* 64 */
+#define A5XX_UCHE_GMEM_RANGE_MIN	0x0e8b	/* 64 */
+#define A5XX_UCHE_GMEM_RANGE_MAX	0x0e8d	/* 64 */
+#define A5XX_UCHE_DBG_ECO_CNTL_2	0x0e8f
+#define A5XX_UCHE_CACHE_WAYS		0x0e96
+#define A5XX_SP_ADDR_MODE_CNTL		0x0ec1
+#define A5XX_TPL1_ADDR_MODE_CNTL	0x0f01
+#define A5XX_TPL1_MODE_CNTL		0x0f02
+#define A5XX_VBIF_GATE_OFF_WRREQ_EN	0x302a
+#define A5XX_VBIF_ROUND_ROBIN_QOS_ARB	0x3049
+#define A5XX_VBIF_XIN_HALT_CTRL0	0x3080
+#define A5XX_VBIF_XIN_HALT_CTRL1	0x3081
+#define A5XX_RBBM_SECVID_TSB_TRUSTED_BASE 0xf800	/* 64 */
+#define A5XX_RBBM_SECVID_TSB_TRUSTED_SIZE 0xf802
+#define A5XX_RBBM_SECVID_TSB_CNTL	0xf803
+#define A5XX_RBBM_SECVID_TSB_ADDR_MODE_CNTL 0xf810
+
+/* RBBM_STATUS: busy, but for the AHB master (HI_BUSY, bit 0). */
+#define A5XX_RBBM_STATUS_HI_BUSY	(1u << 0)
+/* RBBM_INT_0: the bits A5XX_INT_MASK enables (a5xx_gpu.c). */
+#define A5XX_INT_AHB_ERROR		(1u << 1)
+#define A5XX_INT_CP_SW			(1u << 8)
+#define A5XX_INT_CP_HW_ERROR		(1u << 9)
+#define A5XX_INT_CP_CACHE_FLUSH_TS	(1u << 20)
+#define A5XX_INT_MISC_HANG_DETECT	(1u << 23)
+#define A5XX_INT_MASK			0x1190037eu
+
+/* CP_RB_CNTL: 32 KiB (BUFSZ log2(size/8)), 32-byte blocks, and the
+ * processor never writes the read pointer back on its own (NO_UPDATE). */
+#define A5XX_CP_RB_CNTL_VALUE		0x0800020cu
+#define A5XX_RING_SIZE			(32 * 1024)
+
+/* PM4 (adreno_pm4.xml, MIT): type 4 writes registers, type 7 is an
+ * opcode; each header carries the parity of its fields. */
+#define PM4_TYPE4			0x40000000u
+#define PM4_TYPE7			0x70000000u
+#define CP_EVENT_WRITE			0x46
+#define CP_ME_INIT			0x48
+#define CP_SET_PROTECTED_MODE		0x5f
+#define CP_WHERE_AM_I			0x62
+#define CP_SET_SECURE_MODE		0x66
+#define CACHE_FLUSH_TS			0x04
+#define CP_EVENT_WRITE_IRQ		(1u << 31)
+
 /* ARM SMMU v2, global space 0 (bytes). */
 #define SMMU_SCR0			0x000
 #define SMMU_ID0			0x020

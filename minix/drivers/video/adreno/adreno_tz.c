@@ -6,15 +6,13 @@
  * The calls the zap shader needs: PAS_INIT_IMAGE, MEM_SETUP and
  * AUTH_AND_RESET of the peripheral authentication service, and
  * SET_REMOTE_STATE of the boot service on every start after the first;
- * and whether the service knows peripheral 13, the GPU's.
+ * and whether the service knows peripheral 13, the GPU's.  The calls
+ * themselves are adreno_zap.c's.
  */
 
 #include "adreno.h"
 
 #include <minix/qcomscm.h>
-
-#define QCOMSCM_SVC_BOOT		0x01
-#define QCOMSCM_BOOT_SET_REMOTE_STATE	0x0a
 
 static const struct {
 	unsigned svc, cmd;

@@ -6,6 +6,11 @@ leaving every other byte as it was.
     mba-swap.py ARCHIVE NAME NEWFILE OUT    OUT: ARCHIVE with the file
                                             called NAME (one, anywhere)
                                             holding NEWFILE's bytes
+    mba-swap.py ARCHIVE -m IMAGE NEWFILE OUT
+                                            OUT: ARCHIVE with the boot
+                                            image IMAGE (rs, vm, ...)
+                                            holding NEWFILE's bytes, in its
+                                            place
 
 Why: the ramdisk is the image the memory driver carries, and a rebuilt one
 takes every program of the shared object tree - whatever other work has
@@ -15,6 +20,12 @@ written over, in the blocks it already has: the archive, its images and the
 ramdisk keep their sizes, offsets and every other byte.  A file that would
 need more blocks than it has is refused.  The result is checked by reading
 it back: every other file's md5 the same, NAME's that of NEWFILE.
+
+The same for a boot image with -m (a server that changed, RS for the
+zap shader's region): written over where it is, its size in the table
+updated, the rest of its old bytes zeroed.  Images start on a page each,
+so a new one fits when it ends before the next one starts; one that would
+not is refused.  Checked by reading back: every other image the same.
 
 The formats: <machine/bootarchive.h> (a header, then entries of offset,
 size and a 32-byte name, little-endian) and MFS V3 (minix/fs/mfs/ondisk.h:
@@ -118,8 +129,41 @@ def listing(fs):
             for i, path in fs.walk()}
 
 
+def swap_image(a, name, new, out):
+    """-m: the boot image NAME holding NEW, where it is."""
+    ents = entries(a)
+    assert name in ents, "no boot image called %s" % name
+    off, size = ents[name]
+    _m, _v, count, _r, total = struct.unpack_from("<IIIIQ", a, 0)
+    room = min([o for o, _s in ents.values() if o > off] + [total]) - off
+    if len(new) > room:
+        sys.exit("%s: %d bytes of room, %d wanted - refused" %
+                 (name, room, len(new)))
+    before = {n: hashlib.md5(a[o:o + s]).hexdigest()
+              for n, (o, s) in ents.items() if n != name}
+    a[off:off + max(size, len(new))] = new + bytes(max(size, len(new)) -
+                                                   len(new))
+    for i in range(count):
+        o, _s, nm = struct.unpack_from("<QQ32s", a, 24 + i * 48)
+        if nm.split(b"\0")[0].decode() == name:
+            struct.pack_into("<Q", a, 24 + i * 48 + 8, len(new))
+    after = entries(a)
+    o, s = after[name]
+    assert (o, s) == (off, len(new)) and a[o:o + s] == new, "read back"
+    for n, md5 in before.items():
+        o, s = after[n]
+        assert hashlib.md5(a[o:o + s]).hexdigest() == md5, "%s changed" % n
+    open(out, "wb").write(a)
+    print("%s: %d -> %d bytes at 0x%x (room %d); %d other images as they "
+          "were" % (name, size, len(new), off, room, len(before)))
+
+
 def main():
     a = bytearray(open(sys.argv[1], "rb").read())
+    if len(sys.argv) == 6 and sys.argv[2] == "-m":
+        swap_image(a, sys.argv[3], open(sys.argv[4], "rb").read(),
+                   sys.argv[5])
+        return
     off, size = entries(a)["memory"]
     bases = find_mfs(a, off, off + size)
     assert len(bases) == 1, "%d ramdisk images in memory" % len(bases)

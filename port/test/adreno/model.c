@@ -251,6 +251,7 @@ gpucc_write(uint32_t off, uint32_t v)
 				    20);
 		} else if (!(old & GDSC_SW_COLLAPSE) &&
 		    (v & GDSC_SW_COLLAPSE)) {
+			cp_model_gx_off();
 			later(gpucc, P_GX, GDSC_PWR_ON, 0, 20);
 			bcr_pulsed = 0;
 		}
@@ -313,7 +314,10 @@ static uint32_t
 gpu_read(uint32_t off)
 {
 	unsigned long long ticks = now_us * 192 / 10;
+	uint32_t v;
 
+	if (cp_model_rd(off / 4, &v))
+		return v;
 	if (off == A5XX(A5XX_RBBM_ALWAYSON_COUNTER_LO))
 		return (uint32_t)ticks;
 	if (off == A5XX(A5XX_RBBM_ALWAYSON_COUNTER_HI))
@@ -403,6 +407,7 @@ model_wr(const struct ad_region *r, uint32_t off, uint32_t v)
 		if ((off_one = bus_off(2)) != NULL)
 			hang("write of gpu +0x%x with %s off", off, off_one);
 		*w32(gpu, off) = v;
+		cp_model_wr(off / 4, v);
 		return;
 	}
 	if (r->base == smmu) {
@@ -428,21 +433,29 @@ vm_map_phys(int who, void *phys, size_t len)
 		return gpu;
 	if (pa == SMMU_PA && len <= SMMU_SZ)
 		return smmu;
-	return MAP_FAILED;
+	return tz_map(pa, len);		/* the zap shader's region, or none */
 }
 
-int
-sys_qcomscm(int op, uint32_t svc, uint32_t cmd, struct qcomscm_answer *a)
+/* The GPU's registers by dword, for cpmodel.c and the stand's checks. */
+uint32_t
+model_gpu_reg(uint32_t dw)
 {
-	(void)svc;
-	(void)cmd;
-	if (sc->tz == 0)
-		return ENODEV;
-	a->status = 0;
-	a->res[0] = 1;
-	a->res[1] = a->res[2] = 0;
-	a->conv = QCOMSCM_CONV_ARM64;
-	return op == QCOMSCM_AVAIL || op == QCOMSCM_PAS_SUPPORTED ? 0 : EINVAL;
+	return *w32(gpu, A5XX(dw));
+}
+
+void
+model_gpu_set(uint32_t dw, uint32_t v)
+{
+	*w32(gpu, A5XX(dw)) = v;
+}
+
+/* Whether the GPU could be reached now: TrustZone's calls about it want
+ * that (tzmodel.c). */
+int
+model_gpu_powered(void)
+{
+	apply_pending();
+	return bus_off(2) == NULL;
 }
 
 void
@@ -550,7 +563,7 @@ model_same_as_start(char *why, size_t size)
 			    rcgs[i], cfg[i], start.cfg[i]);
 			return 0;
 		}
-	return smmu_model_same(why, size);
+	return tz_model_same(why, size) && smmu_model_same(why, size);
 }
 
 void
@@ -602,8 +615,10 @@ model_reset(const struct scenario *s)
 	*w32(gpu, A5XX(A5XX_RBBM_SECVID_TRUST_CNTL)) = 0x1;
 	*w32(gpu, A5XX(A5XX_CP_SCRATCH_REG(0))) = 0x12345678;
 
-	/* SMMU: smmumodel.c, by the scenario. */
+	/* SMMU: smmumodel.c, by the scenario; TrustZone: tzmodel.c. */
 	smmu_model_reset(s);
+	tz_model_reset(s);
+	cp_model_reset(s);
 
 	model_log_reset();
 	snapshot(start.gcc_bits, start.p_bits, start.cfg);

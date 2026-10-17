@@ -1166,6 +1166,10 @@ mass_storage_open(devminor_t minor, int UNUSED(access))
 	if (NULL == (mass_storage_part(minor)))
 		return ENXIO;
 
+	/* No device (yet, or any more): nothing to open */
+	if (NULL == driver_state.cur_periph->dev)
+		return ENXIO;
+
 	/* Copy evaluated current drive for simplified dereference */
 	d = driver_state.cur_drive;
 
@@ -1281,6 +1285,10 @@ mass_storage_transfer(devminor_t minor,		/* device minor number */
 	/* Decode minor into drive device information */
 	if (NULL == (mass_storage_part(minor)))
 		return ENXIO;
+
+	/* Unplugged under an open device: an error, not an assertion */
+	if (NULL == driver_state.cur_periph->dev)
+		return EIO;
 
 	bytes = 0;
 
@@ -1551,8 +1559,19 @@ usb_driver_connect(struct ddekit_usb_dev * dev,
 	 * Some sort of more complex peripheral assignment should be here */
 	driver_state.cur_periph = &driver_state.periph[0];
 
-	if (NULL != driver_state.cur_periph->dev)
-		panic("Only one peripheral can be connected!");
+	/*
+	 * One device is all this driver serves.  A second used to be a
+	 * panic - and the host controller offers every device it has to a
+	 * driver that starts again, so the panic came back on every restart.
+	 * A USB-C dock has a card reader of its own, and a flash drive in
+	 * the board's hub beside it is two.  The second is told about and
+	 * left alone; the first stays served.
+	 */
+	if (NULL != driver_state.cur_periph->dev) {
+		MASS_MSG("A second mass storage device is not served; "
+			"the first one stays");
+		return;
+	}
 
 	/* Hold host information for future use */
 	driver_state.cur_periph->dev = dev;
@@ -1566,7 +1585,7 @@ usb_driver_connect(struct ddekit_usb_dev * dev,
  *    usb_driver_disconnect                                                  *
  *===========================================================================*/
 static void
-usb_driver_disconnect(struct ddekit_usb_dev * UNUSED(dev))
+usb_driver_disconnect(struct ddekit_usb_dev * dev)
 {
 	MASS_DEBUG_DUMP;
 
@@ -1574,7 +1593,19 @@ usb_driver_disconnect(struct ddekit_usb_dev * UNUSED(dev))
 	 * Some sort of peripheral discard should be here */
 	driver_state.cur_periph = &driver_state.periph[0];
 
-	assert(NULL != driver_state.cur_periph->dev);
+	/*
+	 * The host controller says when a device has gone (it did not until
+	 * it had to: a hub's driver must stop the thread of a hub that went).
+	 * Only the device this driver serves is let go - a second one it
+	 * never took is withdrawn too, and clearing the first for it would
+	 * lose a device that is still there.  Requests after this fail
+	 * (mass_storage_open(), mass_storage_transfer()) rather than reach
+	 * init_urb()'s assertion with no device.
+	 */
+	if (dev != driver_state.cur_periph->dev)
+		return;
+
+	MASS_MSG("The mass storage device was unplugged");
 
 	/* Clear */
 	driver_state.cur_periph->dev = NULL;

@@ -59,12 +59,18 @@ int sdmmc_ring_ioctl(endpoint_t UNUSED(e), cp_grant_id_t UNUSED(g))
 	{ return ENOTTY; }
 
 /* Таблицу разделов стенд не разбирает: интересен не MBR, а нарезка. */
+static struct device part[DEV_PER_DRIVE];	/* sdmmc.c, below */
 static int partition_calls;
+static int partition_p3;	/* 1: таблица окна заняла p3 */
 void
 partition(struct blockdriver *UNUSED(b), int UNUSED(d), int UNUSED(s),
 	int UNUSED(a))
 {
 	partition_calls++;
+	if (partition_p3) {
+		part[4].dv_base = 5000ULL * SDMMC_SECTOR_SIZE;
+		part[4].dv_size = 8ULL * SDMMC_SECTOR_SIZE;
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -800,6 +806,79 @@ test_gpt_window(void)
 	    "заголовок шире карты — отказ");
 }
 
+
+/*
+ * Окно только на чтение (gptroN=): ещё один раздел — минор 4 (c0d0p3),
+ * читается, не пишется никогда, каким бы минором ни пришла запись; окно
+ * чтения-записи при этом остаётся каким было.
+ */
+static void
+test_ro_window(void)
+{
+	static uint8_t buf[8 * SDMMC_SECTOR_SIZE];
+	iovec_t iov;
+	int before;
+
+	printf("Окно только на чтение: abl как минор 4\n");
+	setup(0, CARD_SECTORS);
+	win_lo = 1024ULL * SDMMC_SECTOR_SIZE;
+	win_hi = (G_LAST + 1ULL) * SDMMC_SECTOR_SIZE;
+	ro_lo = 100ULL * SDMMC_SECTOR_SIZE;
+	ro_hi = 200ULL * SDMMC_SECTOR_SIZE;
+	open_count = 0;
+	check_i64(sdmmc_open(4, 0), OK, "открытие минора 4");
+	check_i64((long long)part[4].dv_base, (long long)ro_lo,
+	    "минор 4 начинается с abl");
+	check_i64((long long)part[4].dv_size, 100LL * SDMMC_SECTOR_SIZE,
+	    "и равен ему");
+	check_i64((long long)part[0].dv_base, (long long)win_lo,
+	    "минор 0 по-прежнему окно");
+
+	iov.iov_addr = grant_make(0, buf, sizeof(buf));
+	iov.iov_size = sizeof(buf);
+	check_i64(sdmmc_transfer(4, 0, 4 * SDMMC_SECTOR_SIZE, 42, &iov, 1, 0),
+	    sizeof(buf), "чтение abl");
+	check(memcmp(buf, medium + 104 * SDMMC_SECTOR_SIZE, sizeof(buf)) == 0,
+	    "читается сектор 104", NULL);
+	check_i64(sdmmc_transfer(4, 0, 96 * SDMMC_SECTOR_SIZE, 42, &iov, 1, 0),
+	    4 * SDMMC_SECTOR_SIZE, "у правого края — только до края");
+
+	before = nops;
+	check_i64(sdmmc_transfer(4, 1, 0, 42, &iov, 1, 0), EROFS,
+	    "запись в минор 4 — EROFS");
+	check_i64(nops, before, "до карты не дошла");
+	/* Подраздел окна, который таблица вывела бы на abl. */
+	part[1].dv_base = 150ULL * SDMMC_SECTOR_SIZE;
+	part[1].dv_size = 64ULL * SDMMC_SECTOR_SIZE;
+	check_i64(sdmmc_transfer(1, 1, 0, 42, &iov, 1, 0), EROFS,
+	    "запись в abl другим минором — тоже EROFS");
+	check_i64(nops, before, "и тоже не дошла");
+	part[1].dv_base = 90ULL * SDMMC_SECTOR_SIZE;	/* xbl и abl */
+	check_i64(sdmmc_transfer(1, 0, 0, 42, &iov, 1, 0), EIO,
+	    "чтение через левый край abl — отказ");
+	check_i64(nops, before, "ни одной операции");
+	part[1].dv_base = 196ULL * SDMMC_SECTOR_SIZE;	/* abl и за ним */
+	check_i64(sdmmc_transfer(1, 0, 0, 42, &iov, 1, 0), EIO,
+	    "чтение через правый край abl — отказ");
+	check_i64(nops, before, "и здесь ни одной");
+	memset(buf, 0x77, sizeof(buf));
+	check_i64(sdmmc_transfer(0, 1, 0, 42, &iov, 1, 0), sizeof(buf),
+	    "запись в окно чтения-записи — как была");
+	check(medium[1024 * SDMMC_SECTOR_SIZE] == 0x77, "легла в сектор 1024",
+	    NULL);
+	(void)sdmmc_close(4);
+
+	/* p3 окна — свой раздел: окно только на чтение не отдаётся. */
+	partition_p3 = 1;
+	open_count = 0;
+	check_i64(sdmmc_open(4, 0), OK, "открытие при занятом p3");
+	check_i64((long long)part[4].dv_base, 5000LL * SDMMC_SECTOR_SIZE,
+	    "p3 — раздел окна, не abl");
+	(void)sdmmc_close(4);
+	partition_p3 = 0;
+	win_lo = win_hi = ro_lo = ro_hi = 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -817,6 +896,7 @@ main(int argc, char **argv)
 	test_flush_and_open();
 	test_phys_address();
 	test_gpt_window();
+	test_ro_window();
 
 	printf("\n%d проверок, %d отказов\n", checks, failures);
 	return failures != 0;

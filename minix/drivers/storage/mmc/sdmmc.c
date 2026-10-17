@@ -83,6 +83,16 @@ static int open_count;
  */
 static u64_t win_lo, win_hi;
 
+/*
+ * The read-only window, with gptroN=NAME: one more partition, served as
+ * minor RO_MINOR (/dev/c0d0p3) and only ever read - to take a copy of
+ * something the machine's own system keeps there (the Mi Pad 4's vendor
+ * partition and the GPU's zap shader in it, port/clover/hw-gpu.md, §14).
+ * ro_hi == 0: none.  It is never written, whatever minor a write comes by.
+ */
+#define RO_MINOR	4
+static u64_t ro_lo, ro_hi;
+
 /* One drive, its four partitions and their sub-partitions. */
 static struct device part[DEV_PER_DRIVE];
 static struct device subpart[SUB_PER_DRIVE];
@@ -96,7 +106,7 @@ static int sdmmc_ioctl(devminor_t minor, unsigned long request,
 static struct device *sdmmc_part(devminor_t minor);
 static void sdmmc_geometry(devminor_t minor, struct part_geom *entry);
 static int sdmmc_flush(devminor_t minor);
-static void window_identify(const char *name);
+static void window_identify(const char *name, u64_t lo);
 
 static struct blockdriver sdmmc_dtab = {
 	.bdr_type	= BLOCKDRIVER_TYPE_DISK,
@@ -151,6 +161,13 @@ sdmmc_open(devminor_t minor, int access)
 		} else
 			part[0].dv_size = card.sectors * SDMMC_SECTOR_SIZE;
 		partition(&sdmmc_dtab, 0, P_PRIMARY, 0 /* ATAPI */);
+		if (ro_hi != 0 && part[RO_MINOR].dv_size != 0)
+			log_warn(&sdmmc_log, "p3 of the window is a partition "
+			    "of its own; the read-only window is not served\n");
+		else if (ro_hi != 0) {
+			part[RO_MINOR].dv_base = ro_lo;
+			part[RO_MINOR].dv_size = ro_hi - ro_lo;
+		}
 	}
 
 	open_count++;
@@ -268,8 +285,17 @@ sdmmc_transfer(devminor_t minor, int write, u64_t position, endpoint_t endpt,
 			 * table inside the window is the user's, and nothing
 			 * it says may reach past the window's edges.
 			 */
+			if (write && ro_hi != 0 && pos < ro_hi &&
+			    pos + bytes > ro_lo) {
+				log_warn(&sdmmc_log, "refused: write of %u "
+				    "sectors at %llu reaches the read-only "
+				    "window\n", count, (unsigned long long)
+				    (pos / SDMMC_SECTOR_SIZE));
+				return (done > 0) ? (ssize_t)done : EROFS;
+			}
 			if (win_hi != 0 && (pos < win_lo ||
-			    pos + bytes > win_hi)) {
+			    pos + bytes > win_hi) && (write || ro_hi == 0 ||
+			    pos < ro_lo || pos + bytes > ro_hi)) {
 				log_warn(&sdmmc_log, "refused: %s of %u sectors "
 				    "at %llu is outside the gptpart window\n",
 				    write ? "write" : "read", count,
@@ -462,13 +488,42 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 			}
 			win_lo = first * SDMMC_SECTOR_SIZE;
 			win_hi = (first + count) * SDMMC_SECTOR_SIZE;
-			window_identify(name);
+			window_identify(name, win_lo);
 		} else if (host.protect) {
 			log_info(&sdmmc_log, "%s holds the boot loaders: "
 			    "read-only without %s=\n", host.name, key);
 			/* What there is to choose from: read only. */
 			(void)sdmmc_gpt_find(NULL, card.sectors, chunk,
 			    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count);
+		}
+
+		/*
+		 * gptroN=NAME: one more partition, read only (ro_lo).  Unlike
+		 * the window, a name that is not there costs only itself: the
+		 * machine's root may be in the window, and a copy wanted from
+		 * elsewhere is no reason not to boot.
+		 */
+		snprintf(key, sizeof(key), "gptro%ld", inst);
+		if (env_get_param(key, name, sizeof(name)) == OK) {
+			if (sdmmc_gpt_find(name, card.sectors, chunk,
+			    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count) !=
+			    OK)
+				log_warn(&sdmmc_log, "%s=%s: no such partition; "
+				    "no read-only window\n", key, name);
+			else if (win_hi != 0 && first * SDMMC_SECTOR_SIZE <
+			    win_hi && (first + count) * SDMMC_SECTOR_SIZE >
+			    win_lo)
+				log_warn(&sdmmc_log, "%s=%s overlaps the window; "
+				    "no read-only window\n", key, name);
+			else {
+				ro_lo = first * SDMMC_SECTOR_SIZE;
+				ro_hi = (first + count) * SDMMC_SECTOR_SIZE;
+				log_info(&sdmmc_log, "%s: %llu sectors from %llu, "
+				    "read only, as minor %d\n", name,
+				    (unsigned long long)count,
+				    (unsigned long long)first, RO_MINOR);
+				window_identify(name, ro_lo);
+			}
 		}
 	}
 
@@ -486,14 +541,14 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
  * (minix/fs/mfs/ondisk.h), f2fs 0xf2f52010 at 1024, ext4 0xef53 at 1080.
  */
 static void
-window_identify(const char *name)
+window_identify(const char *name, u64_t lo)
 {
 	const uint8_t *b = chunk;
 	const char *what;
 	unsigned i;
 
 	if (SDMMC_CHUNK_BYTES < 4096 ||
-	    sdmmc_card_read(win_lo / SDMMC_SECTOR_SIZE, 8, chunk,
+	    sdmmc_card_read(lo / SDMMC_SECTOR_SIZE, 8, chunk,
 	    chunk_phys) != OK) {
 		log_warn(&sdmmc_log, "%s: cannot read its first sectors\n",
 		    name);

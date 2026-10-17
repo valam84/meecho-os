@@ -3,7 +3,8 @@
 PROG=	adreno
 SRCS=	adreno.c adreno_find.c adreno_run.c adreno_cc.c adreno_hw.c \
 	adreno_smmu.c adreno_pt.c adreno_tz.c adreno_fw.c adreno_mdt.c \
-	adreno_zap.c adreno_cp.c adreno_gpu.c adreno_drm.c qcom_soc.c
+	adreno_zap.c adreno_cp.c adreno_gpu.c adreno_drm.c adreno_rpm.c \
+	qcom_soc.c
 
 FILES=${PROG}.conf
 FILESNAME=${PROG}

@@ -14,10 +14,11 @@
  *     GPUCC's domains are powered (cc_gpu_clocked(), cc_smmu_clocked()).
  *
  * Bringing things up is Linux's gdsc.c and clk-branch.c order, at the
- * crystal's 19.2 MHz only: no PLL is programmed, no voltage asked for.
- * Every write is remembered and undone by cc_power_down(), which then
- * checks that what it can see is as it was found.  All writes go through
- * ad_wr(), so a host model sees each one as the hardware would.
+ * crystal's 19.2 MHz; cc_gfx3d_set() then moves the core's clock onto a
+ * GPU PLL (step 10).  Every write is remembered and undone by
+ * cc_power_down(), which then checks that what it can see is as it was
+ * found - the PLLs' registers among it.  All writes go through ad_wr(), so
+ * a host model sees each one as the hardware would.
  */
 
 #include "adreno.h"
@@ -560,6 +561,248 @@ gpucc_up(const struct ad_clk *c, char *note, size_t size)
 	return EIO;
 }
 
+/*===========================================================================*
+ *    the core's clock (step 10)                                              *
+ *===========================================================================*/
+/*
+ * gfx3d off a GPU PLL, in Linux's way (clk_gfx3d_src_ops and
+ * gpucc-sdm660.c; hw-gpu.md, §2 and §20).  Each new rate is built on the
+ * PLL the root does not run from: that PLL, off, gets L, alpha, its VCO
+ * band and Linux's configuration, is switched on (BYPASSNL, 5 us, RESET_N)
+ * and waited for until it locks, its output enabled; the root moves to it
+ * with the table's divider (UPDATE - glitch free, both sources running);
+ * the PLL it left is switched off.  A running PLL is never written: the
+ * "default" alpha PLL has no dynamic update.  The PLL runs at twice the
+ * rate, four times for 160 MHz (ftbl_gfx3d_clk_src_660); below 30 MHz the
+ * root is the crystal.
+ */
+static const struct {
+	unsigned mhz, pll_mhz;
+	uint32_t hid;			/* the root's half-divider field */
+} gfx3d_tbl[] = {
+	{ 160, 640, 7 }, { 266, 532, 3 }, { 370, 740, 3 }, { 430, 860, 3 },
+	{ 465, 930, 3 }, { 585, 1170, 3 }, { 588, 1176, 3 }, { 647, 1294, 3 },
+	{ 700, 1400, 3 }, { 750, 1500, 3 },
+};
+
+#define NPLL	NELEM(sdm660_gpucc_pll)
+
+/* The PLLs as cc_power_up() found them, for cc_power_down(). */
+static struct {
+	uint32_t mode, l, a, au, user, config;
+} pll_found[NPLL];
+static int pll_used[NPLL];
+static unsigned core_mhz = XO_KHZ / 1000;
+
+#define PLL_MODE_ON	(PLL_MODE_OUTCTRL | PLL_MODE_RESET_N | PLL_MODE_BYPASSNL)
+
+static void
+pll_save(void)
+{
+	unsigned p, b;
+
+	for (p = 0; p < NPLL; p++) {
+		b = sdm660_gpucc_pll[p].base;
+		pll_found[p].mode = ad_rd(&ad.gpucc, b + PLL_MODE);
+		pll_found[p].l = ad_rd(&ad.gpucc, b + PLL_L);
+		pll_found[p].a = ad_rd(&ad.gpucc, b + PLL_ALPHA);
+		pll_found[p].au = ad_rd(&ad.gpucc, b + PLL_ALPHA_U);
+		pll_found[p].user = ad_rd(&ad.gpucc, b + PLL_USER_CTL);
+		pll_found[p].config = ad_rd(&ad.gpucc, b + PLL_CONFIG_CTL);
+		pll_used[p] = 0;
+	}
+}
+
+/* Does PLL p differ from what was found? (its output state and setting) */
+static int
+pll_differs(unsigned p)
+{
+	unsigned b = sdm660_gpucc_pll[p].base;
+
+	return (ad_rd(&ad.gpucc, b + PLL_MODE) & PLL_MODE_ON) !=
+	    (pll_found[p].mode & PLL_MODE_ON) ||
+	    ad_rd(&ad.gpucc, b + PLL_L) != pll_found[p].l ||
+	    ad_rd(&ad.gpucc, b + PLL_ALPHA) != pll_found[p].a ||
+	    ad_rd(&ad.gpucc, b + PLL_ALPHA_U) != pll_found[p].au ||
+	    ad_rd(&ad.gpucc, b + PLL_USER_CTL) != pll_found[p].user ||
+	    ad_rd(&ad.gpucc, b + PLL_CONFIG_CTL) != pll_found[p].config;
+}
+
+static int
+pll_running(unsigned p)
+{
+	return (ad_rd(&ad.gpucc, sdm660_gpucc_pll[p].base + PLL_MODE) &
+	    PLL_MODE_ON) != 0;
+}
+
+/* Linux's clk_alpha_pll_disable(): the output, two ticks, the rest. */
+static void
+pll_stop(unsigned p)
+{
+	unsigned b = sdm660_gpucc_pll[p].base;
+
+	gp_clear(b + PLL_MODE, PLL_MODE_OUTCTRL);
+	micro_delay(1);
+	gp_clear(b + PLL_MODE, PLL_MODE_RESET_N | PLL_MODE_BYPASSNL);
+}
+
+/*
+ * PLL p, off, set to khz (Linux's alpha_pll_round_rate(): L the whole
+ * part, alpha the fraction in 32 bits rounded up, in the top of the 40),
+ * then switched on.  The microseconds the lock took, or -1.
+ */
+static int
+pll_start(unsigned p, unsigned khz)
+{
+	unsigned b = sdm660_gpucc_pll[p].base;
+	uint64_t hz = (uint64_t)khz * 1000, xo = (uint64_t)XO_KHZ * 1000;
+	uint64_t rem = hz % xo, a40 = 0;
+	uint32_t vco, user;
+	int t;
+
+	if (rem != 0)
+		a40 = (((rem << 32) + xo - 1) / xo) << 8;
+	/* gpu_vco: 1000-2000 MHz band 0, 500-1000 band 2, 250-500 band 3. */
+	vco = khz >= 1000000 ? 0 : khz >= 500000 ? 2 : 3;
+	pll_used[p] = 1;
+	ad_wr(&ad.gpucc, b + PLL_L, (uint32_t)(hz / xo));
+	ad_wr(&ad.gpucc, b + PLL_ALPHA, (uint32_t)a40);
+	ad_wr(&ad.gpucc, b + PLL_ALPHA_U, (uint32_t)(a40 >> 32));
+	ad_wr(&ad.gpucc, b + PLL_CONFIG_CTL, PLL_CONFIG_GPU);
+	user = ad_rd(&ad.gpucc, b + PLL_USER_CTL) & ~PLL_USER_VCO_MASK;
+	ad_wr(&ad.gpucc, b + PLL_USER_CTL, user | PLL_USER_MAIN |
+	    PLL_USER_VCO(vco) | PLL_USER_ALPHA_EN);
+	gp_set(b + PLL_MODE, PLL_MODE_BYPASSNL);
+	micro_delay(5);		/* bypass off, then the reset released */
+	gp_set(b + PLL_MODE, PLL_MODE_RESET_N);
+	if ((t = gp_wait(b + PLL_MODE, PLL_MODE_LOCK_DET, PLL_MODE_LOCK_DET,
+	    1500)) < 0)
+		return -1;
+	gp_set(b + PLL_MODE, PLL_MODE_OUTCTRL);
+	return t;
+}
+
+static int
+gfx3d_root(void)
+{
+	unsigned i;
+
+	for (i = 0; i < NELEM(sdm660_gpucc_rcg); i++)
+		if (strcmp(sdm660_gpucc_rcg[i].name, "GFX3D_CLK_SRC") == 0)
+			return (int)i;
+	return -1;
+}
+
+/* The source number of PLL p at root r, or -1. */
+static int
+pll_src(int r, unsigned p)
+{
+	char sn[24];
+	unsigned s;
+
+	short_name(sdm660_gpucc_pll[p].name, sn, sizeof(sn));
+	for (s = 0; s < 8; s++)
+		if (sdm660_gpucc_rcg[r].src[s] != NULL &&
+		    strcmp(sdm660_gpucc_rcg[r].src[s], sn) == 0)
+			return (int)s;
+	return -1;
+}
+
+unsigned
+cc_gfx3d_mhz(void)
+{
+	return core_mhz;
+}
+
+/*
+ * The core's clock to mhz: one of gfx3d_tbl, or below 30 the crystal.
+ * Whether the rate is the tree's and the voltage allows it is the
+ * caller's to say (adreno_gpu.c).  On a failure the clock is where it was.
+ */
+int
+cc_gfx3d_set(unsigned mhz)
+{
+	char sn[24];
+	uint32_t cmd, cfg, src;
+	unsigned i, khz, p, s[NPLL];
+	int r, cur = -1, t;
+
+	if ((r = gfx3d_root()) < 0 || NPLL != 2)
+		return EINVAL;
+	for (p = 0; p < NPLL; p++) {
+		t = pll_src(r, p);
+		if (t < 0)
+			return EINVAL;
+		s[p] = (unsigned)t;
+	}
+	cmd = sdm660_gpucc_rcg[r].cmd;
+	cfg = ad_rd(&ad.gpucc, cmd + 4);
+	src = RCG_CFG_SRC(cfg);
+	for (p = 0; p < NPLL; p++)
+		if (src == s[p])
+			cur = (int)p;
+
+	if (mhz < 30) {
+		ad_wr(&ad.gpucc, cmd + 4, (cfg & ~RCG_CFG_FIELDS) | 1u);
+		gp_set(cmd, RCG_CMD_UPDATE);
+		if (gp_wait(cmd, RCG_CMD_UPDATE, 0, 500) < 0) {
+			log_warn(&ad_log, "Q24 gfx3d to the crystal: the root "
+			    "did not take it\n");
+			return EIO;
+		}
+		if (cur >= 0)
+			pll_stop((unsigned)cur);
+		core_mhz = XO_KHZ / 1000;
+		log_info(&ad_log, "Q24 gfx3d 19.2 MHz: the crystal%s\n",
+		    cur >= 0 ? ", the PLL it left off" : "");
+		return OK;
+	}
+	for (i = 0; i < NELEM(gfx3d_tbl); i++)
+		if (gfx3d_tbl[i].mhz == mhz)
+			break;
+	if (i == NELEM(gfx3d_tbl))
+		return EINVAL;
+
+	/* Ping-pong: the PLL the root is not on (from the crystal: PLL0). */
+	p = cur == 0 ? 1 : 0;
+	if (pll_running(p))
+		pll_stop(p);		/* nothing runs off it: not the root's */
+	khz = gfx3d_tbl[i].pll_mhz * 1000;
+	if ((t = pll_start(p, khz)) < 0) {
+		log_warn(&ad_log, "Q24 gfx3d %u MHz: %s did not lock at %u MHz "
+		    "(mode %08x); the clock stays at %u MHz\n", mhz,
+		    short_name(sdm660_gpucc_pll[p].name, sn, sizeof(sn)),
+		    gfx3d_tbl[i].pll_mhz, ad_rd(&ad.gpucc,
+		    sdm660_gpucc_pll[p].base + PLL_MODE), core_mhz);
+		pll_stop(p);
+		return EIO;
+	}
+	ad_wr(&ad.gpucc, cmd + 4, (cfg & ~RCG_CFG_FIELDS) | (s[p] << 8) |
+	    gfx3d_tbl[i].hid);
+	gp_set(cmd, RCG_CMD_UPDATE);
+	if (gp_wait(cmd, RCG_CMD_UPDATE, 0, 500) < 0) {
+		/* Which source the root runs from is not known: both stay. */
+		log_warn(&ad_log, "Q24 gfx3d %u MHz: the root did not take "
+		    "%s\n", mhz, short_name(sdm660_gpucc_pll[p].name, sn,
+		    sizeof(sn)));
+		return EIO;
+	}
+	if (cur >= 0)
+		pll_stop((unsigned)cur);
+	log_info(&ad_log, "Q24 gfx3d %u MHz: %s at %u MHz (L %x, alpha "
+	    "%02x%08x, band %u) locked in %d us, the root on it /%u; was %u "
+	    "MHz%s\n", mhz, short_name(sdm660_gpucc_pll[p].name, sn,
+	    sizeof(sn)), gfx3d_tbl[i].pll_mhz,
+	    ad_rd(&ad.gpucc, sdm660_gpucc_pll[p].base + PLL_L),
+	    ad_rd(&ad.gpucc, sdm660_gpucc_pll[p].base + PLL_ALPHA_U),
+	    ad_rd(&ad.gpucc, sdm660_gpucc_pll[p].base + PLL_ALPHA),
+	    (ad_rd(&ad.gpucc, sdm660_gpucc_pll[p].base + PLL_USER_CTL) &
+	    PLL_USER_VCO_MASK) >> 20, t, (gfx3d_tbl[i].hid + 1) / 2, core_mhz,
+	    cur >= 0 ? ", the PLL it left off" : "");
+	core_mhz = mhz;
+	return OK;
+}
+
 int
 cc_power_up(int stage)
 {
@@ -569,6 +812,8 @@ cc_power_up(int stage)
 	int r = OK, id;
 
 	memset(&undo, 0, sizeof(undo));
+	pll_save();
+	core_mhz = XO_KHZ / 1000;
 	if (ad.dt.smmu_pd < 0) {
 		log_warn(&ad_log, "Q4 the SMMU names no GPUCC domain; "
 		    "refusing to power anything\n");
@@ -628,6 +873,22 @@ cc_power_down(void)
 		gp_set(undo.rcg[i].cmd, RCG_CMD_UPDATE);
 		(void)gp_wait(undo.rcg[i].cmd, RCG_CMD_UPDATE, 0, 500);
 	}
+	/* The GPU PLLs this switched on: off - nothing runs from them now -
+	 * and their setting as found. */
+	for (i = 0; i < NPLL; i++) {
+		unsigned pb = sdm660_gpucc_pll[i].base;
+
+		if (!pll_used[i])
+			continue;
+		pll_stop(i);
+		ad_wr(&ad.gpucc, pb + PLL_L, pll_found[i].l);
+		ad_wr(&ad.gpucc, pb + PLL_ALPHA, pll_found[i].a);
+		ad_wr(&ad.gpucc, pb + PLL_ALPHA_U, pll_found[i].au);
+		ad_wr(&ad.gpucc, pb + PLL_CONFIG_CTL, pll_found[i].config);
+		ad_wr(&ad.gpucc, pb + PLL_USER_CTL, pll_found[i].user);
+		pll_used[i] = 0;
+	}
+	core_mhz = XO_KHZ / 1000;
 	/* GCC branches: their bit back; another master may keep one on. */
 	for (i = undo.ngcc; i-- > 0; ) {
 		uint32_t en;
@@ -679,6 +940,14 @@ cc_power_down(void)
 		    RCG_CFG_FIELDS) != (found.rcg_cfg[i] & RCG_CFG_FIELDS)) {
 			snprintf(part, sizeof(part), " %s root differs",
 			    short_name(sdm660_gpucc_rcg[i].name, sn,
+			    sizeof(sn)));
+			strlcat(line, part, sizeof(line));
+			differs++;
+		}
+	for (i = 0; i < NPLL; i++)
+		if (pll_differs(i)) {
+			snprintf(part, sizeof(part), " %s differs",
+			    short_name(sdm660_gpucc_pll[i].name, sn,
 			    sizeof(sn)));
 			strlcat(line, part, sizeof(line));
 			differs++;

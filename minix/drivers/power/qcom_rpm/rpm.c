@@ -19,6 +19,12 @@
  *
  * This driver does that much and no more: no voltage that the tree does
  * not pin, no regulator that it does not mark, no disabling, no loads.
+ *
+ * Then it stays, and takes requests from other services (QRPM_SET,
+ * <minix/qcom_rpm.h>): one key for the active set, the level ("vlvl") or
+ * the enable ("swen") of the CX and MX rails only - what rpmpd.c sends for
+ * a power domain.  The adreno service votes VDDMX for the GPU's clock this
+ * way (port/clover/hw-gpu.md, §20).  Who may send is system.conf's to say.
  * The tables of resource types are Linux's (rpm_pm660_regulators and
  * rpm_pm660l_regulators); a node of another PMIC is named in the log and
  * left alone.  When it is done the driver stays, idle, so that RS does not
@@ -28,6 +34,7 @@
 #include <minix/drivers.h>
 #include <minix/fdt.h>
 #include <minix/log.h>
+#include <minix/qcom_rpm.h>
 #include <minix/sysutil.h>
 #include <minix/vm.h>
 
@@ -123,6 +130,8 @@ static const char *pmic_suffix;
 
 static volatile uint8_t *ipc;
 static uint32_t ipc_bit;
+static struct glink g;		/* the channel, once rpm_init() opened it */
+static int g_open;
 
 static uint32_t
 prop_u32(const struct fdt_node *n, const char *p, unsigned i, uint32_t dflt)
@@ -226,7 +235,6 @@ delay(void *ctx, unsigned us)
 static int
 rpm_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 {
-	static struct glink g;
 	static const uint32_t keys[2] = { RPM_KEY_SWEN, RPM_KEY_UV };
 	uint32_t values[2];
 	u64_t pa, sz;
@@ -295,6 +303,7 @@ rpm_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	}
 	log_info(&rlog, "rpm_requests open (lcid %u, rcid %u)\n", g.lcid,
 	    g.rcid);
+	g_open = 1;
 
 	for (i = 0; i < dt.nregs; i++) {
 		values[0] = 1;
@@ -316,16 +325,51 @@ rpm_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	return OK;
 }
 
+/* QRPM_SET: one key of a rail, for the active set. */
+static int
+do_set(const message *m)
+{
+	uint32_t type = m->m_u32.data[QRPM_TYPE], id = m->m_u32.data[QRPM_ID];
+	uint32_t key = m->m_u32.data[QRPM_KEY];
+	uint32_t value = m->m_u32.data[QRPM_VALUE];
+	int r;
+
+	if (!g_open)
+		return ENODEV;
+	if ((type != QRPM_RES_RWCX && type != QRPM_RES_RWMX) || id != 0 ||
+	    (key != QRPM_KEY_LEVEL && key != QRPM_KEY_ENABLE) ||
+	    (key == QRPM_KEY_ENABLE && value > 1))
+		return EPERM;
+	r = glink_rpm_request(&g, type, id, &key, &value, 1, 1000);
+	if (r == GLINK_OK)
+		log_info(&rlog, "%s %s %u for %d\n", type == QRPM_RES_RWMX ?
+		    "rwmx" : "rwcx", key == QRPM_KEY_LEVEL ? "level" :
+		    "enable", value, m->m_source);
+	else
+		log_warn(&rlog, "%s %s %u for %d: %d%s%s\n", type ==
+		    QRPM_RES_RWMX ? "rwmx" : "rwcx", key == QRPM_KEY_LEVEL ?
+		    "level" : "enable", value, m->m_source, r,
+		    g.rpm_err[0] ? ", RPM says: " : "", g.rpm_err);
+	return r;
+}
+
 int
 main(int argc, char **argv)
 {
-	message m;
+	message m, reply;
 	int ipc_status;
 
 	env_setargs(argc, argv);
 	sef_setcb_init_fresh(rpm_init);
 	sef_startup();
-	for (;;)
-		(void)sef_receive_status(ANY, &m, &ipc_status);
+	for (;;) {
+		if (sef_receive_status(ANY, &m, &ipc_status) != OK)
+			continue;
+		if (is_ipc_notify(ipc_status) || m.m_type != QRPM_SET)
+			continue;
+		memset(&reply, 0, sizeof(reply));
+		reply.m_type = do_set(&m);
+		(void)ipc_send(m.m_source, &reply);
+	}
 	return 0;
 }

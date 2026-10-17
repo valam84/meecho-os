@@ -202,6 +202,11 @@ static const struct scenario tablet = { "tablet", 1, 0, 0, 0, 0, 0, 0, 1,
     .smmu_tablet = 1, .stale_tlb = 1 };
 static const struct scenario measured = { "tablet-measured", 1, 0, 0, 0, 0,
     0, 0, 1, .smmu_tablet = 1, .stale_tlb = 1, .s2cr_ro = 1 };
+/* step 10: another speed bin; a machine without qcom_rpm. */
+static const struct scenario bin122 = { "tablet-bin122", 1, 0, 0, 0, 0, 0, 0,
+    1, .smmu_tablet = 1, .stale_tlb = 1, .speed_fuse = 122 };
+static const struct scenario norpm = { "tablet-norpm", 1, 0, 0, 0, 0, 0, 0,
+    1, .smmu_tablet = 1, .stale_tlb = 1, .no_rpm = 1 };
 
 static void
 serve_up_on(const struct scenario *sc)
@@ -580,6 +585,133 @@ t_start(void)
 	    "off, kept stage 1; all as found"), "measured: no Q17");
 	check(model_saw("Q11 undone:") && model_pages_live() == 0 &&
 	    model_contig_live() == 0, "measured: not all down");
+}
+
+/*
+ * The core's clock (step 10): freq= takes the GPU off the crystal onto a
+ * PLL, as Linux does - the PLL the root is not on, locked before the root
+ * moves, the one left switched off - and everything goes back as found.
+ * A rate whose VDDMX level is above the boot's, or one the tree does not
+ * name, is refused and the crystal kept.  The model stops the run on a
+ * PLL written while it runs, a root moved to a source that does not run,
+ * a PLL stopped under the core, a rate not of Linux's table, or one above
+ * what VDDMX holds.
+ */
+static void
+t_clock(void)
+{
+	struct cbo cmd, tgt;
+	uint32_t f = 0;
+	char why[160];
+	int a, fa;
+
+	printf("the core's clock\n");
+	ad_freq_mhz = 160;
+	serve_up();
+	check(model_saw("Q24 gfx3d 160 MHz: pll0 at 640 MHz (L 21, alpha "
+	    "5555555600, band 2) locked in 20 us, the root on it /4; was 19 "
+	    "MHz"), "160: no Q24 line");
+	check((model_core_khz() + 500) / 1000 == 160, "160: the model has %u kHz",
+	    model_core_khz());
+	a = open_ctx(USER_A, &fa);
+	check(bo_new(a, USER_A, 4096, MSM_BO_WC, &cmd) == OK &&
+	    bo_new(a, USER_A, 4096, MSM_BO_WC, &tgt) == OK &&
+	    bo_map(a, USER_A, &cmd) == OK && bo_map(a, USER_A, &tgt) == OK,
+	    "160: buffers");
+	ibn = 0;
+	ib_mem_write(&cmd, tgt.iova + 16, 0x16000000, 2);
+	check(job(a, USER_A, &cmd, &tgt, &f) == OK, "160: a job");
+	deliver();
+	check(tgt.cpu[4] == 0x16000000 && tgt.cpu[5] == 0x16000001,
+	    "160: the job's writes %x %x", tgt.cpu[4], tgt.cpu[5]);
+
+	/* Once more: the other PLL, the first one off. */
+	model_log_reset();
+	check(cc_gfx3d_set(160) == OK && model_saw("Q24 gfx3d 160 MHz: pll1 "
+	    "at 640 MHz") && model_saw("was 160 MHz, the PLL it left off"),
+	    "160 again: not on pll1");
+	model_log_reset();
+	check(cc_gfx3d_set(19) == OK && model_core_khz() == 19200 &&
+	    model_saw("Q24 gfx3d 19.2 MHz: the crystal, the PLL it left off"),
+	    "the crystal: %u kHz", model_core_khz());
+	model_log_reset();
+	check(cc_gfx3d_set(160) == OK && model_saw("Q24 gfx3d 160 MHz: pll0 "
+	    "at 640 MHz"), "from the crystal: not pll0");
+	ibn = 0;
+	ib_mem_write(&cmd, tgt.iova + 16, 0x16100000, 1);
+	check(job(a, USER_A, &cmd, &tgt, &f) == OK, "after the moves: a job");
+	deliver();
+	check(tgt.cpu[4] == 0x16100000, "after the moves: %x", tgt.cpu[4]);
+	osm_proc_exit(USER_A);
+	serve_down();
+	check(model_saw("Q11 undone:") && model_saw("all as found"),
+	    "160: not as found");
+	check(model_same_as_start(why, sizeof(why)), "160: %s", why);
+
+	check(!model_rpm_on(), "160: VDDMX still voted");
+
+	/* 266: VDDMX up to LOW_SVS first, then the clock. */
+	ad_freq_mhz = 266;
+	serve_up();
+	check(model_saw("Q25 vddmx: level 64 voted (was 0)") &&
+	    model_saw("Q24 gfx3d 266 MHz: pll0 at 532 MHz"), "266: not up");
+	check((model_core_khz() + 500) / 1000 == 266 &&
+	    model_rpm_level() == 64, "266: %u kHz, level %u", model_core_khz(),
+	    model_rpm_level());
+	serve_down();
+	check(model_same_as_start(why, sizeof(why)), "266: %s", why);
+
+	/* max: the highest point the bin allows - fuse 0, as 157: 588. */
+	ad_freq_mhz = 1;
+	serve_up();
+	check(model_saw("Q26 speed bin: fuse 0, opp-supported-hw 0x40: points "
+	    "up to 588 MHz"), "max: no Q26");
+	check(model_saw("Q25 vddmx: level 256 voted") && model_saw("Q24 gfx3d "
+	    "588 MHz: pll0 at 1176 MHz (L 3d, alpha 4000000000, band 0)"),
+	    "max: not 588");
+	check((model_core_khz() + 500) / 1000 == 588, "max: %u kHz",
+	    model_core_khz());
+	serve_down();
+	check(model_same_as_start(why, sizeof(why)), "max: %s", why);
+
+	/* Not a point of the tree. */
+	ad_freq_mhz = 500;
+	serve_up();
+	check(model_saw("gpu: freq=500 is not an operating point the tree "
+	    "gives this bin"), "500: not refused");
+	check(model_core_khz() == 19200, "500: the model has %u kHz",
+	    model_core_khz());
+	serve_down();
+
+	/* Bin 122 (up to 585 in Linux's words; 465 of this tree's points). */
+	ad_freq_mhz = 588;
+	serve_up_on(&bin122);
+	check(model_saw("Q26 speed bin: fuse 122, opp-supported-hw 0x8: points "
+	    "up to 465 MHz") && model_saw("gpu: freq=588 is not an operating "
+	    "point the tree gives this bin"), "bin 122: 588 not refused");
+	check(model_core_khz() == 19200, "bin 122: %u kHz", model_core_khz());
+	serve_down();
+	ad_freq_mhz = 1;
+	serve_up_on(&bin122);
+	check((model_core_khz() + 500) / 1000 == 465 && model_rpm_level() ==
+	    192, "bin 122, max: %u kHz, level %u", model_core_khz(),
+	    model_rpm_level());
+	serve_down();
+
+	/* No qcom_rpm: no vote goes; only what the boot's MIN_SVS holds. */
+	ad_freq_mhz = 266;
+	serve_up_on(&norpm);
+	check(model_saw("gpu: 266 MHz wants VDDMX at level 64 and the vote "
+	    "did not go"), "no rpm: 266 not refused");
+	check(model_core_khz() == 19200, "no rpm: %u kHz", model_core_khz());
+	serve_down();
+	ad_freq_mhz = 160;
+	serve_up_on(&norpm);
+	check((model_core_khz() + 500) / 1000 == 160, "no rpm, 160: %u kHz",
+	    model_core_khz());
+	serve_down();
+	check(model_same_as_start(why, sizeof(why)), "no rpm: %s", why);
+	ad_freq_mhz = 0;
 }
 
 static void
@@ -1459,6 +1591,7 @@ main(int argc, char **argv)
 		failures++;
 	} else {
 		t_start();
+		t_clock();
 		t_params();
 		t_buffers();
 		t_job();

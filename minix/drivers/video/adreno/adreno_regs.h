@@ -247,9 +247,20 @@
 #define PLL_ALPHA			0x08
 #define PLL_ALPHA_U			0x0c
 #define PLL_USER_CTL			0x10
+#define PLL_CONFIG_CTL			0x18
 #define PLL_MODE_OUTCTRL		(1u << 0)
+#define PLL_MODE_BYPASSNL		(1u << 1)
+#define PLL_MODE_RESET_N		(1u << 2)
 #define PLL_MODE_LOCK_DET		(1u << 31)
+#define PLL_USER_MAIN			(1u << 0)	/* PLLOUT_MAIN */
+#define PLL_USER_VCO(v)			((uint32_t)(v) << 20)
+#define PLL_USER_VCO_MASK		(3u << 20)
 #define PLL_USER_ALPHA_EN		(1u << 24)
+/* gpucc-sdm660.c's gpu_pll_config: what Linux writes to both GPU PLLs. */
+#define PLL_CONFIG_GPU			0x4001055bu
+
+/* RPM levels (opp-level of the GPU's points; dt-bindings rpmpd.h). */
+#define RPM_LEVEL_MIN_SVS		48
 
 /* GCC's vote register for GPLL0's branches to the GPU (bits 3 and 4). */
 #define GCC_GPLL0_MODE			0x00000

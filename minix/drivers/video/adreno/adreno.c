@@ -21,7 +21,11 @@
  *            (hw-gpu.md, §15, §16)
  *   fwdir=   where the firmware files are (adreno_fw.c)
  *   hang=MS  a job that makes no progress this long, twice, is a hang
- *            (2000; the GPU runs at the crystal's 19.2 MHz yet)
+ *            (2000)
+ *   freq=MHz the core's clock while serving: an operating point of the
+ *            tree (opp-hz) the chip's speed bin allows, VDDMX voted for it
+ *            through qcom_rpm (adreno_gpu.c); "max" the highest such point,
+ *            0 the crystal's 19.2 MHz (the default yet; step 10)
  *   memmb=, clientmb=   buffers in all and per client, MiB (768, 512)
  *   hold=N   stay N seconds before leaving a stage - to see where it runs
  *            (ps -o cpuid): the stand cannot check "cpu 1", only a machine
@@ -160,6 +164,7 @@ main(int argc, char *argv[])
 	message m;
 	int ipc_status, r;
 	long v;
+	char fbuf[8];
 
 	env_setargs(argc, argv);
 	if (env_parse("log", "d", 0, &v, LEVEL_NONE, LEVEL_TRACE) == EP_SET)
@@ -172,6 +177,11 @@ main(int argc, char *argv[])
 		hold = v;
 	if (env_parse("hang", "d", 0, &v, 100, 60000) == EP_SET)
 		ad_hang_ms = v;
+	if (env_get_param("freq", fbuf, sizeof(fbuf)) == 0 &&
+	    strcmp(fbuf, "max") == 0)
+		ad_freq_mhz = 1;
+	else if (env_parse("freq", "d", 0, &v, 0, 2000) == EP_SET)
+		ad_freq_mhz = (unsigned)v;
 	if (env_parse("memmb", "d", 0, &v, 16, 4096) == EP_SET)
 		mem_total_mb = v;
 	if (env_parse("clientmb", "d", 0, &v, 16, 4096) == EP_SET)

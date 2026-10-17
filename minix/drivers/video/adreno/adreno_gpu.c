@@ -46,6 +46,7 @@
 #include "adreno_drm.h"
 #include "adreno_regs.h"
 
+#include <minix/qcom_rpm.h>
 #include <minix/sysutil.h>
 #include <minix/timers.h>
 
@@ -65,6 +66,7 @@
 
 unsigned gpu_global_faults;
 long ad_hang_ms = 2000;
+unsigned ad_freq_mhz;
 
 static TAILQ_HEAD(, ad_job) pending = TAILQ_HEAD_INITIALIZER(pending);
 static TAILQ_HEAD(, ad_job) flight = TAILQ_HEAD_INITIALIZER(flight);
@@ -81,6 +83,142 @@ static unsigned hang_looks;
 static unsigned quiet_looks;		/* a switch of tables waiting: looks */
 
 static void kick(void);
+
+/*
+ * The core's clock while serving (freq=, hw-gpu.md, §20).
+ *
+ * An operating point of the tree (opp-hz) that the chip's speed bin allows
+ * (opp-supported-hw against the bit Linux's catalog gives the fuse:
+ * a5xx_catalog.c, A512) - without a fuse to read, only the points every
+ * bin has (bit 0).  freq=max: the highest such point.
+ *
+ * VDDMX is voted for the point's level (opp-level) through qcom_rpm, in
+ * Linux's order (the OPP core): the domain on and up before the clock goes
+ * up, down after it comes down.  Without qcom_rpm only the boot's MIN_SVS
+ * points are taken - the rail is at least that, or nothing would run.
+ */
+#define LEVEL_UNVOTED	0
+static unsigned mx_voted = LEVEL_UNVOTED;	/* the level asked for */
+static int mx_on;				/* "swen" 1 sent */
+static uint32_t bin_hw;				/* opp-supported-hw bit */
+
+static int
+mx_vote(unsigned level)
+{
+	int r;
+
+	if (!mx_on) {
+		if ((r = ad_rpm_set(QRPM_KEY_ENABLE, 1)) != OK)
+			return r;
+		mx_on = 1;
+	}
+	if ((r = ad_rpm_set(QRPM_KEY_LEVEL, level)) != OK)
+		return r;
+	log_info(&ad_log, "Q25 vddmx: level %u voted (was %u)\n", level,
+	    mx_voted);
+	mx_voted = level;
+	return OK;
+}
+
+/* The GPU off: the vote taken back, as rpmpd_power_off() does. */
+static void
+mx_release(void)
+{
+	if (!mx_on)
+		return;
+	if (ad_rpm_set(QRPM_KEY_ENABLE, 0) == OK)
+		log_info(&ad_log, "Q25 vddmx: the vote taken back\n");
+	mx_on = 0;
+	mx_voted = LEVEL_UNVOTED;
+}
+
+/* Linux's speedbins for the A512 (a5xx_catalog.c): fuse -> bit. */
+static uint32_t
+bin_bit(int known, unsigned fuse)
+{
+	static const struct { unsigned fuse, bit; } sb[] = {
+		{ 0, 6 }, { 78, 1 }, { 90, 2 }, { 122, 3 }, { 135, 4 },
+		{ 146, 5 }, { 157, 6 },
+	};
+	unsigned i;
+
+	if (known)
+		for (i = 0; i < sizeof(sb) / sizeof(sb[0]); i++)
+			if (sb[i].fuse == fuse)
+				return 1u << sb[i].bit;
+	return 1u << 0;		/* not known: what every bin has */
+}
+
+/* Q26: the bin, and the points it leaves. */
+static void
+bin_report(void)
+{
+	unsigned i, n = ad.dt.nopp < AD_MAXOPP ? ad.dt.nopp : AD_MAXOPP;
+	unsigned fuse = 0, top = 0;
+	int r = adreno_speed_bin(&fuse);
+
+	bin_hw = bin_bit(r == OK, fuse);
+	for (i = 0; i < n; i++)
+		if ((ad.dt.opp[i].hw & bin_hw) && ad.dt.opp[i].mhz > top)
+			top = ad.dt.opp[i].mhz;
+	if (r == OK)
+		log_info(&ad_log, "Q26 speed bin: fuse %u, opp-supported-hw "
+		    "0x%x: points up to %u MHz\n", fuse, bin_hw, top);
+	else
+		log_info(&ad_log, "Q26 speed bin: no fuse to read (%d); the "
+		    "points every bin has, up to %u MHz\n", r, top);
+}
+
+/* The point freq= names - "max" (1) the highest the bin allows - or -1. */
+static int
+core_point(void)
+{
+	unsigned i, n = ad.dt.nopp < AD_MAXOPP ? ad.dt.nopp : AD_MAXOPP;
+	int best = -1;
+
+	for (i = 0; i < n; i++) {
+		if (!(ad.dt.opp[i].hw & bin_hw))
+			continue;
+		if (ad_freq_mhz == 1 ? (best < 0 ||
+		    ad.dt.opp[i].mhz > ad.dt.opp[best].mhz) :
+		    ad.dt.opp[i].mhz == ad_freq_mhz)
+			best = (int)i;
+	}
+	return best;
+}
+
+static void
+core_clock(void)
+{
+	unsigned level, mhz, was = cc_gfx3d_mhz();
+	int i, r;
+
+	if (ad_freq_mhz == 0 || (ad_freq_mhz > 1 && ad_freq_mhz < 30))
+		return;
+	if ((i = core_point()) < 0) {
+		log_warn(&ad_log, "gpu: freq=%u is not an operating point the "
+		    "tree gives this bin; 19.2 MHz\n", ad_freq_mhz);
+		return;
+	}
+	mhz = ad.dt.opp[i].mhz;
+	level = ad.dt.opp[i].level;
+
+	/* Up: the rail first. */
+	if (level > mx_voted && (r = mx_vote(level)) != OK &&
+	    level > RPM_LEVEL_MIN_SVS) {
+		log_warn(&ad_log, "gpu: %u MHz wants VDDMX at level %u and the "
+		    "vote did not go (%d); 19.2 MHz\n", mhz, level, r);
+		return;
+	}
+	if (cc_gfx3d_set(mhz) != OK) {
+		log_warn(&ad_log, "gpu: the core's clock stays at %u MHz\n",
+		    cc_gfx3d_mhz());
+		return;
+	}
+	/* Down: the rail after. */
+	if (mx_on && level < mx_voted && mhz < was)
+		(void)mx_vote(level);
+}
 
 /*===========================================================================*
  *    the ring                                                               *
@@ -343,8 +481,9 @@ recover(const char *why)
 		finish(j);
 	}
 	cc_power_down();
-	if ((r = cc_power_up(AD_CP)) != OK || (r = smmu_check()) != OK ||
-	    (r = cp_boot()) != OK) {
+	if ((r = cc_power_up(AD_CP)) == OK)
+		core_clock();
+	if (r != OK || (r = smmu_check()) != OK || (r = cp_boot()) != OK) {
 		log_warn(&ad_log, "gpu: the GPU does not come back: %d; every "
 		    "job fails from now on\n", r);
 		give_up();
@@ -513,13 +652,17 @@ gpu_serve(void)
 
 	init_timer(&hang_timer);
 	init_timer(&retry_timer);
-	if ((r = cc_power_up(AD_CP)) == OK && (r = smmu_serve()) == OK &&
-	    (r = cp_alloc()) == OK && (r = cp_boot()) == OK)
+	bin_report();
+	if ((r = cc_power_up(AD_CP)) == OK)
+		core_clock();
+	if (r == OK && (r = smmu_serve()) == OK && (r = cp_alloc()) == OK &&
+	    (r = cp_boot()) == OK)
 		r = cp_first();
 	if (r != OK) {
 		cp_stop();
 		smmu_undo();
 		cc_power_down();
+		mx_release();
 		cp_free();
 		return r;
 	}
@@ -571,5 +714,6 @@ gpu_down(void)
 	cp_stop();
 	smmu_undo();
 	cc_power_down();
+	mx_release();
 	cp_free();
 }

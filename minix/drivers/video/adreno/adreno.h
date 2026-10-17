@@ -97,6 +97,7 @@ ad_wr64(const struct ad_region *r, uint32_t off, uint64_t v)
 
 #define AD_MAXCLK	8
 #define AD_MAXIRQ	16
+#define AD_MAXOPP	16
 
 /* Who provides a clock or a power domain. */
 #define AD_GCC		1
@@ -144,12 +145,24 @@ struct adreno_dt {
 	uint32_t zap_ph;
 	u64_t zap_pa, zap_sz;
 
+	/* The speed bin's fuse (nvmem-cells "speed_bin"): a cell of qfprom. */
+	uint32_t bin_ph;
+	int bin_found;
+	u64_t bin_base;		/* the qfprom block's address */
+	uint32_t bin_off, bin_len, bin_shift, bin_bits;
+
 	unsigned nopp, opp_max_mhz;
+	struct {			/* the first AD_MAXOPP, in the tree's order */
+		unsigned mhz;
+		unsigned level;		/* opp-level: the RPM's, for VDDMX */
+		uint32_t hw;		/* opp-supported-hw (~0: none said) */
+	} opp[AD_MAXOPP];
 };
 
 struct adreno {
 	struct adreno_dt dt;
 	struct ad_region gcc, gpucc, gpu, smmu;
+	struct ad_region qfprom;	/* one page: the speed bin's fuse */
 };
 extern struct adreno ad;
 
@@ -174,6 +187,10 @@ void adreno_find_report(const struct adreno_dt *dt);
 /* adreno_run.c */
 int adreno_run(const void *dtb, int stage, int tz);
 int adreno_map(const void *dtb);
+int adreno_speed_bin(unsigned *fuse);	/* OK: the fuse's value */
+
+/* adreno_rpm.c (the host stand: model.c) */
+int ad_rpm_set(uint32_t key, uint32_t value);	/* VDDMX, active set */
 
 /* adreno_cc.c */
 int cc_gcc_on(unsigned id, uint32_t *reg);
@@ -182,6 +199,8 @@ int cc_power_up(int stage);		/* Q4 */
 void cc_power_down(void);		/* Q11 */
 int cc_gpu_clocked(const char **why);
 int cc_smmu_clocked(const char **why);
+int cc_gfx3d_set(unsigned mhz);		/* Q24: the core's clock */
+unsigned cc_gfx3d_mhz(void);
 
 /* adreno_hw.c */
 void hw_gpu_report(void);		/* Q5..Q8 */

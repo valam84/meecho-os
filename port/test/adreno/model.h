@@ -33,6 +33,9 @@ struct scenario {
 	/* TrustZone and the zap shader (tzmodel.c) */
 	int zap_state;		/* QCOMSCM_PAS_* of peripheral 13 at the start */
 	int zap_auth_fail;	/* the image's signature is not accepted */
+	/* step 10: the speed bin's fuse, and VDDMX's votes (qcom_rpm) */
+	unsigned speed_fuse;	/* the value at qfprom 0x41a2, bits 5..12 */
+	int no_rpm;		/* no qcom_rpm: every vote ENODEV */
 };
 
 extern jmp_buf model_hang;
@@ -48,6 +51,9 @@ void model_log_reset(void);
 void model_fail(const char *fmt, ...) __attribute__((noreturn,
 	format(printf, 1, 2)));
 unsigned long long model_now_us(void);
+uint32_t model_core_khz(void);		/* gfx3d as it runs */
+unsigned model_rpm_level(void);		/* VDDMX: the level voted, or 0 */
+int model_rpm_on(void);			/* "swen" 1 */
 
 /* smmumodel.c */
 uint8_t *smmu_window(void);

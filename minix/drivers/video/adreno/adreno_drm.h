@@ -96,6 +96,7 @@ uint32_t gpu_max_cmds(void);
 int gpu_dead(void);			/* did not come back from a hang */
 extern unsigned gpu_global_faults;
 extern long ad_hang_ms;			/* hang= (adreno.c) */
+extern unsigned ad_freq_mhz;		/* freq= (adreno.c) */
 #define AD_GPU_HOOK	1		/* the GPU's line (cp_first()) */
 #define AD_SMMU_HOOK	0		/* bank 0's (smmu_serve()) */
 

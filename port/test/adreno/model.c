@@ -20,6 +20,23 @@
  *           gfx3d — в GX, rbbmtimer и rbcpr — в CX.
  *           Корень принимает CFG только по UPDATE (CMD, бит 0), UPDATE
  *           сходит через 1 мкс.
+ *   PLL     GPU (0x00, 0x40; hw-gpu.md, §2 и §20): захват (LOCK_DET)
+ *           через 20 мкс после RESET_N, если BYPASSNL стоит не меньше
+ *           5 мкс, конфигурация — Linux'а (0x4001055b), а частота — в
+ *           полосе VCO из USER_CTL; иначе захвата нет.  Работает — захват,
+ *           OUTCTRL и PLLOUT_MAIN.  Запись L, ALPHA, USER_CTL или
+ *           CONFIG_CTL при поднятом RESET_N — нарушение (у этого PLL нет
+ *           динамической смены частоты).  Остановить PLL, от которого идёт
+ *           работающий такт ядра, — нарушение.
+ *   Ядро    gfx3d: корень работающей ветви переводится только на
+ *           работающий источник; частота — из таблицы Linux
+ *           (ftbl_gfx3d_clk_src_660) и не выше того, что держит VDDMX:
+ *           загрузчик оставляет MIN_SVS, это 160 МГц, а голос службы
+ *           (ad_rpm_set(), здесь вместо qcom_rpm) — уровень по таблице
+ *           sdm660.dtsi.  Голос, снятый под работающим ядром, которое
+ *           уровень больше не держит, — нарушение; голос, не снятый к
+ *           концу, — «не как было».
+ *   qfprom  0x780000: фьюз бина в 0x41a2, биты 5..12 — из сценария.
  *   GPU     только при CFG_AHB, обеих BIMC, CX, GX и такте gfx3d.
  *           ALWAYSON_COUNTER идёт от времени модели на 19,2 МГц,
  *           CP_SCRATCH хранит записанное.
@@ -35,6 +52,7 @@
 #include "model.h"
 
 #include <minix/qcomscm.h>
+#include <minix/qcom_rpm.h>
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -53,10 +71,13 @@ int model_verbose;
 #define GPU_SZ		0x40000
 #define SMMU_PA		0x05040000UL
 #define SMMU_SZ		0x10000
+#define QFPROM_PA	0x00780000UL
+#define QFPROM_SZ	0x7000
 
 static uint8_t gcc[GCC_SZ] __attribute__((aligned(8)));
 static uint8_t gpucc[GPUCC_SZ + 8] __attribute__((aligned(8)));
 static uint8_t gpu[GPU_SZ] __attribute__((aligned(8)));
+static uint8_t qfprom[QFPROM_SZ] __attribute__((aligned(8)));
 #define smmu		smmu_window()	/* smmumodel.c: registers, tables */
 
 /* GCC */
@@ -77,6 +98,8 @@ static uint8_t gpu[GPU_SZ] __attribute__((aligned(8)));
 #define R_GFX3D		0x1070
 #define R_RBCPR		0x1030
 #define R_RBBM		0x10b0
+#define PLL0		0x0000
+#define PLL1		0x0040
 
 static const struct scenario *sc;
 static unsigned long long now_us;
@@ -86,6 +109,10 @@ static int bcr_pulsed;
 static unsigned long long bcr_since;
 static uint32_t active_cfg[3];		/* gfx3d, rbcpr, rbbm roots */
 static const uint32_t rcgs[3] = { R_GFX3D, R_RBCPR, R_RBBM };
+static unsigned long long pll_bypass_at[2];
+static unsigned mx_max_mhz;		/* what VDDMX holds: MIN_SVS, 160 */
+static int rpm_on;			/* the service's "swen" */
+static unsigned rpm_level;		/* its "vlvl" */
 
 static struct pend {
 	uint8_t *mem;
@@ -99,6 +126,7 @@ static struct {
 	uint32_t gcc_bits[4];
 	uint32_t p_bits[8];
 	uint32_t cfg[3];
+	uint32_t pll[2][6];
 } start;
 
 static char logbuf[1 << 16];
@@ -205,6 +233,131 @@ bus_off(int which)
 	return NULL;
 }
 
+static uint32_t
+pll_khz_of(uint32_t base)
+{
+	uint64_t l = *w32(gpucc, base + PLL_L);
+	uint64_t a = *w32(gpucc, base + PLL_ALPHA) |
+	    (uint64_t)(*w32(gpucc, base + PLL_ALPHA_U) & 0xff) << 32;
+	uint64_t khz = 19200 * l;
+
+	if (*w32(gpucc, base + PLL_USER_CTL) & PLL_USER_ALPHA_EN)
+		khz += (19200 * a) >> 40;
+	return (uint32_t)khz;
+}
+
+/* Would it lock: Linux's configuration, the rate in its VCO band. */
+static int
+pll_lockable(uint32_t base)
+{
+	uint32_t khz = pll_khz_of(base);
+	unsigned band = (*w32(gpucc, base + PLL_USER_CTL) >> 20) & 3;
+
+	if (*w32(gpucc, base + PLL_CONFIG_CTL) != PLL_CONFIG_GPU)
+		return 0;
+	switch (band) {
+	case 0: return khz >= 1000000 && khz <= 2000000;
+	case 2: return khz >= 500000 && khz <= 1000000;
+	case 3: return khz >= 250000 && khz <= 500000;
+	}
+	return 0;
+}
+
+static int
+pll_runs(uint32_t base)
+{
+	uint32_t m = *w32(gpucc, base + PLL_MODE);
+
+	return (m & PLL_MODE_LOCK_DET) && (m & PLL_MODE_OUTCTRL) &&
+	    (*w32(gpucc, base + PLL_USER_CTL) & PLL_USER_MAIN);
+}
+
+static uint32_t
+core_khz_of(uint32_t cfg)
+{
+	unsigned src = RCG_CFG_SRC(cfg), hid = RCG_CFG_HID(cfg);
+	uint32_t in = src == 0 ? 19200 : src == 1 ? pll_khz_of(PLL0) :
+	    src == 3 ? pll_khz_of(PLL1) : 0;
+
+	return hid == 0 ? in : (uint32_t)((uint64_t)in * 2 / (hid + 1));
+}
+
+uint32_t
+model_core_khz(void)
+{
+	return core_khz_of(active_cfg[0]);
+}
+
+/* Is the core's branch running? (enabled, its clock coming) */
+static int
+core_running(void)
+{
+	return (*w32(gpucc, P_GFX3D) & CBCR_ENABLE) && br_on(P_GFX3D);
+}
+
+/* The core's clock as it now runs: a rate of the table, VDDMX enough. */
+static void
+core_check(void)
+{
+	static const unsigned ok[] = { 19200, 160000, 266000, 370000, 430000,
+	    465000, 585000, 588000, 647000, 700000, 750000 };
+	uint32_t k = model_core_khz();
+	unsigned i;
+
+	if (!(*w32(gpucc, P_GFX3D) & CBCR_ENABLE))
+		return;
+	for (i = 0; i < sizeof(ok) / sizeof(ok[0]); i++)
+		if (k + 500 >= ok[i] && k <= ok[i] + 500)
+			break;
+	if (i == sizeof(ok) / sizeof(ok[0]))
+		hang("gfx3d at %u kHz: not a rate of Linux's table", k);
+	if (k > mx_max_mhz * 1000 + 500)
+		hang("gfx3d at %u MHz with VDDMX holding %u MHz", k / 1000,
+		    mx_max_mhz);
+}
+
+/* The rate a VDDMX level holds (sdm660.dtsi's points); the boot's
+ * MIN_SVS at least, whatever is voted. */
+static unsigned
+level_max_mhz(unsigned level)
+{
+	static const struct { unsigned level, mhz; } t[] = {
+		{ 48, 160 }, { 64, 266 }, { 128, 370 }, { 192, 465 },
+		{ 256, 588 }, { 320, 647 }, { 384, 750 },
+	};
+	unsigned i, m = 160;
+
+	for (i = 0; i < sizeof(t) / sizeof(t[0]); i++)
+		if (level >= t[i].level)
+			m = t[i].mhz;
+	return m;
+}
+
+/* qcom_rpm, as the service's adreno_rpm.c would reach it. */
+int
+ad_rpm_set(uint32_t key, uint32_t value)
+{
+	unsigned before = mx_max_mhz;
+
+	if (sc->no_rpm)
+		return ENODEV;
+	if (key == QRPM_KEY_ENABLE)
+		rpm_on = value != 0;
+	else if (key == QRPM_KEY_LEVEL)
+		rpm_level = value;
+	else
+		model_fail("a key qcom_rpm does not take: %08x", key);
+	mx_max_mhz = rpm_on ? level_max_mhz(rpm_level) : 160;
+	if (mx_max_mhz < before && core_running() &&
+	    model_core_khz() > mx_max_mhz * 1000 + 500)
+		hang("VDDMX down to hold %u MHz under the core at %u MHz",
+		    mx_max_mhz, model_core_khz() / 1000);
+	return OK;
+}
+
+unsigned model_rpm_level(void) { return rpm_on ? rpm_level : 0; }
+int model_rpm_on(void) { return rpm_on; }
+
 /* Is the root that feeds a branch running? (a source that runs) */
 static int
 root_runs(uint32_t rcg)
@@ -218,8 +371,7 @@ root_runs(uint32_t rcg)
 	if (src == 0)
 		return 1;			/* the crystal */
 	if (rcg == R_GFX3D && (src == 1 || src == 3))	/* pll0, pll1 */
-		return (*w32(gpucc, src == 1 ? 0x00 : 0x40) &
-		    PLL_MODE_LOCK_DET) != 0;
+		return pll_runs(src == 1 ? PLL0 : PLL1);
 	return 0;	/* GPLL0's branches: off in every scenario here */
 }
 
@@ -231,6 +383,48 @@ gpucc_write(uint32_t off, uint32_t v)
 
 	*w32(gpucc, off) = v;
 	switch (off) {
+	case PLL0 + PLL_MODE:
+	case PLL1 + PLL_MODE: {
+		uint32_t base = off - PLL_MODE;
+		int n = base == PLL0 ? 0 : 1;
+		unsigned src = RCG_CFG_SRC(active_cfg[0]);
+
+		/* LOCK_DET is the hardware's. */
+		*w32(gpucc, off) = (v & ~PLL_MODE_LOCK_DET) |
+		    (old & PLL_MODE_LOCK_DET);
+		if (!(old & PLL_MODE_BYPASSNL) && (v & PLL_MODE_BYPASSNL))
+			pll_bypass_at[n] = now_us;
+		if (!(old & PLL_MODE_RESET_N) && (v & PLL_MODE_RESET_N)) {
+			if (!(v & PLL_MODE_BYPASSNL))
+				hang("pll%d: reset released with the bypass "
+				    "still on", n);
+			if (now_us < pll_bypass_at[n] + 5)
+				hang("pll%d: reset released %llu us after "
+				    "the bypass, not 5", n,
+				    now_us - pll_bypass_at[n]);
+			if (pll_lockable(base))
+				later(gpucc, off, PLL_MODE_LOCK_DET,
+				    PLL_MODE_LOCK_DET, 20);
+		}
+		if ((old & PLL_MODE_RESET_N) && !(v & PLL_MODE_RESET_N)) {
+			later(gpucc, off, PLL_MODE_LOCK_DET, 0, 0);
+			*w32(gpucc, off) &= ~PLL_MODE_LOCK_DET;
+		}
+		if (((old & PLL_MODE_OUTCTRL) && !(v & PLL_MODE_OUTCTRL)) ||
+		    ((old & PLL_MODE_RESET_N) && !(v & PLL_MODE_RESET_N)))
+			if (core_running() && src == (n == 0 ? 1u : 3u))
+				hang("pll%d stopped under the running core "
+				    "clock", n);
+		break;
+	}
+	case PLL0 + PLL_L: case PLL0 + PLL_ALPHA: case PLL0 + PLL_ALPHA_U:
+	case PLL0 + PLL_USER_CTL: case PLL0 + PLL_CONFIG_CTL:
+	case PLL1 + PLL_L: case PLL1 + PLL_ALPHA: case PLL1 + PLL_ALPHA_U:
+	case PLL1 + PLL_USER_CTL: case PLL1 + PLL_CONFIG_CTL:
+		if (*w32(gpucc, (off & 0x40) + PLL_MODE) & PLL_MODE_RESET_N)
+			hang("pll%d: register %02x written while it runs (no "
+			    "dynamic update)", (off & 0x40) ? 1 : 0, off & 0x3f);
+		break;
 	case P_CX:
 		if ((old & GDSC_SW_COLLAPSE) && !(v & GDSC_SW_COLLAPSE))
 			later(gpucc, P_CX_ST, GDSC_PWR_ON, GDSC_PWR_ON, 5);
@@ -288,8 +482,20 @@ gpucc_write(uint32_t off, uint32_t v)
 					break;
 			if (sc->root_stuck && off == R_GFX3D)
 				break;		/* never done */
+			if (off == R_GFX3D && core_running()) {
+				uint32_t ncfg = *w32(gpucc, off + 4);
+				unsigned ns = RCG_CFG_SRC(ncfg);
+
+				if (ns != 0 && !pll_runs(ns == 1 ? PLL0 :
+				    ns == 3 ? PLL1 : 0x80))
+					hang("gfx3d's root moved to source %u, "
+					    "which does not run, under the "
+					    "running core", ns);
+			}
 			active_cfg[i] = *w32(gpucc, off + 4);
 			later(gpucc, off, RCG_CMD_UPDATE, 0, 1);
+			if (off == R_GFX3D)
+				core_check();
 		}
 		break;
 	}
@@ -336,6 +542,8 @@ model_rd(const struct ad_region *r, uint32_t off)
 		    r->size);
 	if (r->base == gcc)
 		return *w32(gcc, off);
+	if (r->base >= qfprom && r->base < qfprom + QFPROM_SZ)
+		return *(const uint32_t *)(const void *)(r->base + off);
 	if (r->base == gpucc) {
 		if ((off_one = bus_off(0)) != NULL)
 			hang("read of gpucc +0x%x with %s off", off, off_one);
@@ -433,6 +641,8 @@ vm_map_phys(int who, void *phys, size_t len)
 		return gpu;
 	if (pa == SMMU_PA && len <= SMMU_SZ)
 		return smmu;
+	if (pa >= QFPROM_PA && pa + len <= QFPROM_PA + QFPROM_SZ)
+		return qfprom + (pa - QFPROM_PA);
 	return tz_map(pa, len);		/* the zap shader's region, or none */
 }
 
@@ -533,6 +743,20 @@ snapshot(uint32_t *gb, uint32_t *pb, uint32_t *cfg)
 		cfg[i] = active_cfg[i] & RCG_CFG_FIELDS;
 }
 
+static void
+pll_snapshot(uint32_t pl[2][6])
+{
+	static const uint32_t reg[6] = { PLL_MODE, PLL_L, PLL_ALPHA,
+	    PLL_ALPHA_U, PLL_USER_CTL, PLL_CONFIG_CTL };
+	unsigned n, k;
+
+	for (n = 0; n < 2; n++)
+		for (k = 0; k < 6; k++)
+			pl[n][k] = *w32(gpucc, (n ? PLL1 : PLL0) + reg[k]) &
+			    (k == 0 ? (PLL_MODE_OUTCTRL | PLL_MODE_RESET_N |
+			    PLL_MODE_BYPASSNL) : ~0u);
+}
+
 int
 model_same_as_start(char *why, size_t size)
 {
@@ -563,6 +787,24 @@ model_same_as_start(char *why, size_t size)
 			    rcgs[i], cfg[i], start.cfg[i]);
 			return 0;
 		}
+	{
+		uint32_t pl[2][6];
+		unsigned n, k;
+
+		pll_snapshot(pl);
+		for (n = 0; n < 2; n++)
+			for (k = 0; k < 6; k++)
+				if (pl[n][k] != start.pll[n][k]) {
+					snprintf(why, size, "pll%u register %u "
+					    "%08x, was %08x", n, k, pl[n][k],
+					    start.pll[n][k]);
+					return 0;
+				}
+	}
+	if (rpm_on) {
+		snprintf(why, size, "VDDMX still voted (level %u)", rpm_level);
+		return 0;
+	}
 	return tz_model_same(why, size) && smmu_model_same(why, size);
 }
 
@@ -580,6 +822,11 @@ model_reset(const struct scenario *s)
 	memset(gcc, 0, sizeof(gcc));
 	memset(gpucc, 0, sizeof(gpucc));
 	memset(gpu, 0, sizeof(gpu));
+	memset(qfprom, 0, sizeof(qfprom));
+	qfprom[0x41a2] = (uint8_t)(s->speed_fuse << 5);
+	qfprom[0x41a3] = (uint8_t)(s->speed_fuse >> 3);
+	rpm_on = 0;
+	rpm_level = 0;
 
 	/* GCC, as the boot loader may leave it. */
 	*w32(gcc, G_IFACE) = s->iface_on ? CBCR_ENABLE : CBCR_OFF;
@@ -622,4 +869,7 @@ model_reset(const struct scenario *s)
 
 	model_log_reset();
 	snapshot(start.gcc_bits, start.p_bits, start.cfg);
+	pll_snapshot(start.pll);
+	mx_max_mhz = 160;
+	pll_bypass_at[0] = pll_bypass_at[1] = 0;
 }

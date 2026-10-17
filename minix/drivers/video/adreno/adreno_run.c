@@ -64,6 +64,37 @@ adreno_map(const void *dtb)
 	    (r = map_region(&ad.smmu, "smmu", ad.dt.smmu_pa,
 	    ad.dt.smmu_sz)) != OK)
 		return r;
+	/* The speed bin's fuse: the page of qfprom it is on, read only.  No
+	 * clock needed (Linux's qfprom reads it so); without it the bin is
+	 * not known and only the points every bin has are taken. */
+	if (ad.dt.bin_found && map_region(&ad.qfprom, "qfprom",
+	    (ad.dt.bin_base + ad.dt.bin_off) & ~(u64_t)0xfff, 4096) != OK)
+		ad.dt.bin_found = 0;
+	return OK;
+}
+
+/* The speed bin's fuse: little-endian bytes from the cell, shifted and
+ * masked as its "bits" say (nvmem_cell_read_variable_le_u32()). */
+int
+adreno_speed_bin(unsigned *fuse)
+{
+	uint32_t o, w0, w1;
+	uint64_t v;
+
+	if (!ad.dt.bin_found || ad.qfprom.base == NULL)
+		return ENOENT;
+	o = (uint32_t)((ad.dt.bin_base + ad.dt.bin_off) & 0xfff);
+	if ((o & 3) + ad.dt.bin_len > 8 || (o & ~3u) + 8 > 4096)
+		return EINVAL;
+	w0 = ad_rd(&ad.qfprom, o & ~3u);
+	w1 = (o & 3) + ad.dt.bin_len > 4 ? ad_rd(&ad.qfprom, (o & ~3u) + 4) :
+	    0;
+	v = ((uint64_t)w1 << 32 | w0) >> ((o & 3) * 8);
+	v &= ad.dt.bin_len >= 8 ? ~0ull : (1ull << (ad.dt.bin_len * 8)) - 1;
+	v >>= ad.dt.bin_shift;
+	if (ad.dt.bin_bits < 32)
+		v &= (1ull << ad.dt.bin_bits) - 1;
+	*fuse = (unsigned)v;
 	return OK;
 }
 

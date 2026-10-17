@@ -137,6 +137,22 @@ adreno_cp.c@s/^\tW(A5XX_RBBM_INT_CLEAR_CMD, st \& ~A5XX_INT_AHB_ERROR);$//@the G
 adreno_smmu.c@s/for (i = 0; i < nglobal; i++)/for (i = 0; i < nglobal \&\& 0; i++)/@a client's table without the service's buffers
 adreno_smmu.c@s/^\tCB_WR(SMMU_CB_FSR, \*fsr);$//@a fault in bank 0 never cleared
 adreno_cp.c@s/return mem_word(MEM_SHADOW) == cp.wptr \&\&/return G(A5XX_CP_RB_RPTR) == cp.wptr \&\&/@the read pointer from the CP's register: the GPU never looks idle (the tablet's first round)
+# The core's clock (t_clock): adreno_cc.c's PLLs, adreno_gpu.c's choice.
+adreno_cc.c@s/^\tp = cur == 0 ? 1 : 0;$/\tp = 0;/@(clock) no ping-pong: the PLL the core runs from programmed again
+adreno_cc.c@s/PLL_MODE_LOCK_DET, PLL_MODE_LOCK_DET,$/0, 0,/@(clock) the root moved before the PLL locked
+adreno_cc.c@/the root did not take /,/pll_stop((unsigned)cur)/s/pll_stop((unsigned)cur)/pll_stop(p)/@(clock) the new PLL stopped, not the one left
+adreno_cc.c@s/{ 160, 640, 7 }/{ 160, 640, 3 }/@(clock) 160 MHz's divider wrong
+adreno_cc.c@s/khz >= 500000 ? 2 : 3;/khz >= 500000 ? 3 : 2;/@(clock) the VCO band wrong
+adreno_cc.c@s/^\t\tif (!pll_used\[i\])$/\t\tif (1)/@(clock) the PLLs not put back
+adreno_cc.c@s/^\tmicro_delay(5);\t\t\/\* bypass off, then the reset released \*\/$//@(clock) the reset released with the bypass
+adreno_cc.c@s/^\tad_wr(\&ad.gpucc, b + PLL_CONFIG_CTL, PLL_CONFIG_GPU);$//@(clock) the PLL's configuration not written
+adreno_cc.c@s/PLL_USER_VCO(vco) | PLL_USER_ALPHA_EN);/PLL_USER_VCO(vco));/@(clock) the PLL's fraction not enabled
+adreno_cc.c@s/user | PLL_USER_MAIN |$/user |/@(clock) the PLL's main output not enabled
+adreno_gpu.c@s/if (level > mx_voted \&\& (r = mx_vote(level)) != OK \&\&/if (0 \&\& (r = mx_vote(level)) != OK \&\&/@(clock) the clock up without VDDMX voted up
+adreno_gpu.c@s/^\tmx_release();$//@(clock) the VDDMX vote left when the GPU goes
+adreno_gpu.c@s/if (!(ad.dt.opp\[i\].hw \& bin_hw))/if (0)/@(clock) the speed bin not looked at
+adreno_gpu.c@s/{ 122, 3 }/{ 122, 4 }/@(clock) the bin table off by one
+adreno_run.c@s/^\tv >>= ad.dt.bin_shift;$//@(clock) the fuse's bits not shifted
 EOF
 echo "$caught of $n caught"
 exit $rc

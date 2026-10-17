@@ -221,6 +221,10 @@ walk_gpu(void *cookie, int depth, const char *name,
 		if (clock_list(node, dt->clk, &dt->nclk) != 0)
 			w->bad = 1;
 		(void)pair(node, "power-domains", &dt->pd_phandle, &dt->pd_id);
+		/* The speed bin (a5xx_set_supported_hw()): the first cell. */
+		if ((p = fdt_getprop(node, "nvmem-cells", &len)) != NULL &&
+		    len >= 4)
+			dt->bin_ph = (uint32_t)fdt_read_cells(p, 1);
 		if (!pair(node, "iommus", &dt->smmu_ph, &dt->sid))
 			dt->smmu_ph = 0;
 		return 0;
@@ -242,6 +246,15 @@ walk_gpu(void *cookie, int depth, const char *name,
 		if ((p = fdt_getprop(node, "opp-hz", &len)) != NULL &&
 		    len == 8) {
 			hz = fdt_read_cells(p, 2);
+			if (dt->nopp < AD_MAXOPP) {
+				dt->opp[dt->nopp].mhz = (unsigned)(hz / 1000000);
+				p = fdt_getprop(node, "opp-level", &len);
+				dt->opp[dt->nopp].level = p != NULL && len == 4 ?
+				    (unsigned)fdt_read_cells(p, 1) : 0;
+				p = fdt_getprop(node, "opp-supported-hw", &len);
+				dt->opp[dt->nopp].hw = p != NULL && len == 4 ?
+				    (uint32_t)fdt_read_cells(p, 1) : ~0u;
+			}
 			dt->nopp++;
 			if (hz / 1000000 > dt->opp_max_mhz)
 				dt->opp_max_mhz = (unsigned)(hz / 1000000);
@@ -256,6 +269,7 @@ walk_gpu(void *cookie, int depth, const char *name,
 struct w2 {
 	struct adreno_dt *dt;
 	int gpucc, smmu, zap, bad;
+	u64_t at_pa[16];		/* the last node with reg, by depth */
 	uint32_t smmu_pd_ph;		/* the SMMU's power-domains pair */
 	unsigned smmu_pd_id;
 };
@@ -272,7 +286,7 @@ is_clock_provider(const struct adreno_dt *dt, uint32_t ph)
 }
 
 static int
-walk_targets(void *cookie, int UNUSED(depth), const char *name,
+walk_targets(void *cookie, int depth, const char *name,
 	const struct fdt_node *node)
 {
 	struct w2 *w = cookie;
@@ -281,10 +295,34 @@ walk_targets(void *cookie, int UNUSED(depth), const char *name,
 	const char *s;
 	uint32_t ph = phandle_of(node);
 	unsigned len, i;
+	u64_t pa, sz;
 	int irq;
 
+	if (depth >= 0 && depth < 16 && fdt_node_reg(node, 0, &pa, &sz) == 0)
+		w->at_pa[depth] = pa;
 	if (ph == 0)
 		return 0;
+
+	/* The speed bin's cell: reg <offset length> in its qfprom (one
+	 * address and one size cell there), bits <shift count>. */
+	if (dt->bin_ph != 0 && ph == dt->bin_ph && depth >= 1 &&
+	    depth < 16 && (p = fdt_getprop(node, "reg", &len)) != NULL &&
+	    len == 8) {
+		dt->bin_off = (uint32_t)fdt_read_cells(p, 1);
+		dt->bin_len = (uint32_t)fdt_read_cells(p + 4, 1);
+		dt->bin_base = w->at_pa[depth - 1];
+		if ((p = fdt_getprop(node, "bits", &len)) != NULL &&
+		    len == 8) {
+			dt->bin_shift = (uint32_t)fdt_read_cells(p, 1);
+			dt->bin_bits = (uint32_t)fdt_read_cells(p + 4, 1);
+		} else {
+			dt->bin_shift = 0;
+			dt->bin_bits = dt->bin_len * 8;
+		}
+		dt->bin_found = dt->bin_len >= 1 && dt->bin_len <= 4 &&
+		    dt->bin_bits >= 1 && dt->bin_bits <= 32 &&
+		    dt->bin_base != 0;
+	}
 
 	if (is_clock_provider(dt, ph)) {
 		if (fdt_node_is_compatible(node, "qcom,gcc-sdm660") ||

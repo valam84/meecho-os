@@ -193,36 +193,60 @@ flush(void)
 }
 
 /*
- * a5xx_idle(): the processor has read up to the write pointer, and the GPU
- * is idle and saw no hang - within a second.  *us: how long it took.
+ * a5xx_idle(), as Linux waits: first the processor has read up to the
+ * write pointer (adreno_idle(), a second), then the GPU is idle and saw no
+ * hang (_a5xx_check_idle(), another second).  The read pointer is taken
+ * from the register; the shadow WHERE_AM_I writes is reported beside it.
+ * idle_rptr_us and idle_busy (the RBBM_STATUS bits last seen busy, but for
+ * HI_BUSY) say where the time went.
  */
+static unsigned idle_rptr_us;
+static uint32_t idle_busy;
+
 static int
 idle(unsigned *us)
 {
-	unsigned t;
+	unsigned t, t0;
+	uint32_t st;
 
-	for (t = 0; t <= 1000000; t += 10) {
-		if (G(A5XX_CP_RB_RPTR) == cp.wptr &&
-		    (G(A5XX_RBBM_STATUS) & ~A5XX_RBBM_STATUS_HI_BUSY) == 0 &&
-		    !(G(A5XX_RBBM_INT_0_STATUS) & A5XX_INT_MISC_HANG_DETECT)) {
+	idle_busy = 0;
+	for (t = 0; G(A5XX_CP_RB_RPTR) != cp.wptr; t += 10) {
+		if (t >= 1000000) {
+			idle_rptr_us = t;
 			*us = t;
-			return OK;
+			return ETIMEDOUT;
 		}
 		micro_delay(10);
 	}
-	*us = t;
-	return ETIMEDOUT;
+	idle_rptr_us = t;
+	for (t0 = t; ; t += 10) {
+		st = G(A5XX_RBBM_STATUS) & ~A5XX_RBBM_STATUS_HI_BUSY;
+		if (st == 0 && !(G(A5XX_RBBM_INT_0_STATUS) &
+		    A5XX_INT_MISC_HANG_DETECT)) {
+			*us = t;
+			return OK;
+		}
+		if (st != 0)
+			idle_busy = st;
+		if (t - t0 >= 1000000) {
+			*us = t;
+			return ETIMEDOUT;
+		}
+		micro_delay(10);
+	}
 }
 
 static void
 say_stuck(const char *what)
 {
-	log_warn(&ad_log, "Q20 cp: %s: NOT idle in 1 s: rbbm %08x int %08x "
-	    "rptr %x wptr %x cp_int %08x hw_fault %08x protect %08x; "
-	    "smmu fsr %x\n", what, G(A5XX_RBBM_STATUS),
+	log_warn(&ad_log, "Q20 cp: %s: NOT idle: rptr %s at %u us, busy %08x; "
+	    "now rbbm %08x int %08x rptr %x wptr %x shadow %x cp_int %08x "
+	    "hw_fault %08x protect %08x; smmu fsr %x\n", what,
+	    G(A5XX_CP_RB_RPTR) == cp.wptr ? "reached" : "NOT reached",
+	    idle_rptr_us, idle_busy, G(A5XX_RBBM_STATUS),
 	    G(A5XX_RBBM_INT_0_STATUS), G(A5XX_CP_RB_RPTR), cp.wptr,
-	    G(A5XX_CP_INTERRUPT_STATUS), G(A5XX_CP_HW_FAULT),
-	    G(A5XX_CP_PROTECT_STATUS), smmu_fsr());
+	    mem_word(MEM_SHADOW), G(A5XX_CP_INTERRUPT_STATUS),
+	    G(A5XX_CP_HW_FAULT), G(A5XX_CP_PROTECT_STATUS), smmu_fsr());
 }
 
 /*===========================================================================*
@@ -494,9 +518,10 @@ cp_run(void)
 		say_stuck("me_init");
 		return ETIMEDOUT;
 	}
-	log_info(&ad_log, "Q20 cp: me_init done, idle in %u us: rptr %x wptr %x"
-	    " shadow %x, rbbm %08x int %08x\n", us, G(A5XX_CP_RB_RPTR),
-	    cp.wptr, mem_word(MEM_SHADOW), G(A5XX_RBBM_STATUS),
+	log_info(&ad_log, "Q20 cp: me_init done, idle in %u us (read in %u, "
+	    "busy %x): rptr %x wptr %x shadow %x, rbbm %08x int %08x\n", us,
+	    idle_rptr_us, idle_busy, G(A5XX_CP_RB_RPTR), cp.wptr,
+	    mem_word(MEM_SHADOW), G(A5XX_RBBM_STATUS),
 	    G(A5XX_RBBM_INT_0_STATUS));
 
 	/* 5. The zap shader, then out of secure mode from the ring. */

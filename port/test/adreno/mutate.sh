@@ -99,6 +99,43 @@ adreno_cp.c@s/((uint32_t)__builtin_ctz(len) << 24)/((uint32_t)(__builtin_ctz(len
 adreno_cp.c@s/rmw(A5XX_RB_DBG_ECO_CNTL, 0, 1u << 9);/w(A5XX_RB_DBG_ECO_CNTL, 1u << 9);/@a read-modify-write that loses the other bits
 adreno_cp.c@s/^\tW(A5XX_CP_RB_CNTL, A5XX_CP_RB_CNTL_VALUE);$//@the CP started without its ring's size
 adreno_run.c@s/^\tcp_stop();.*$//@the CP never stopped before the power goes
+# The render node (msmtest.c): adreno_gpu.c, adreno_drm.c, the serving SMMU and CP.
+adreno_gpu.c@s/^\t\t\tinval_due = 1;$/\t\t\t;/@no UCHE invalidation at a switch of tables
+adreno_gpu.c@s/^\t\t\tif (!TAILQ_EMPTY(\&flight))$/\t\t\tif (0)/;s/if (!quiesce(100)) {/if (0) {/@a client's table loaded under another's running jobs
+adreno_smmu.c@s/return tlbi();\t\t\/\* nothing of the last table remembered \*\//return OK;/@a table switch the TLB does not hear of
+adreno_gpu.c@s/(int32_t)(fence - j->seqno) >= 0/(int32_t)(fence - j->seqno) > 0/@a job retired one fence late
+adreno_gpu.c@s/^\t\tdrmdrv_mem_for_cpu(j->bos\[i\]->mem);$//@the GPU's writes never shown to the processor
+adreno_gpu.c@s/^\t\t\tdrmdrv_mem_for_gpu(j->bos\[i\]->mem);$//@what the client wrote not cleaned before its job
+adreno_gpu.c@s/^\t\tj->fault_fsr = fsr;$/\t\tj->fault_fsr = fsr; j->result = OK;/@a fault in a job forgotten
+adreno_gpu.c@s/^\tsmmu_line();$//@the fence's line taken before the fault's - the job ends well
+adreno_gpu.c@0,/^\tcp_emit(0);$/s//\tcp_emit(1);/@the save address written in protected mode
+adreno_gpu.c@s/cp_emit(CP_EVENT_WRITE_IRQ | CACHE_FLUSH_TS);/cp_emit(CACHE_FLUSH_TS);/@a job's fence without the GPU's line
+adreno_gpu.c@s/^\t\trecover("gpu: a job made no progress");$/\t\t(void)0;/@a hang never recovered
+adreno_gpu.c@s/^\tif (cp_halt() != OK)$/\tif (0)/@a hang's recovery powers the GPU off under a running CP
+adreno_gpu.c@s/^\t\t\tj->result = EIO;$/\t\t\t(void)0;/@the jobs in the ring at a hang end well
+adreno_gpu.c@s/^\t(void)smmu_load(NULL);$/\t;/@a client's table freed while bank 0 walks it
+adreno_gpu.c@s/if (++hang_looks < 2) {/if (0) {/@a hang called at the first look
+adreno_gpu.c@s/^\t(void)cp_irq();$//@the GPU's line left masked after the first command
+adreno_drm.c@s/((flags \& MSM_BO_GPU_READONLY) ? 0 :/(0 ? 0 :/@a read-only buffer mapped writable
+adreno_drm.c@s/^\t(void)smmu_pt_unmap(\&bo->vm->pt, bo->iova, bo->size \/ PAGE);$//@a buffer freed still in its table
+adreno_smmu.c@s/return pt == loaded \&\& cc_smmu_clocked(\&why) ? tlbi() : OK;/return (void)\&why, OK;/@a buffer out of the loaded table, still in the TLB
+adreno_drm.c@s/^\t\t\tdrmdrv_job_uses(\&j->dj, j->bos\[i\]->mem);$/\t\t\t(void)drmdrv_job_touches(\&j->dj, j->bos[i]->mem);/@no implicit order on shared buffers
+adreno_drm.c@s/deadline_of(\&w->timeout), ETIMEDOUT);/deadline_of(\&w->timeout), EBUSY);/@WAIT_FENCE past its deadline: EBUSY, not ETIMEDOUT
+adreno_drm.c@s/^\t\ta->q->faults++;$/\t\t;/@a queue's faults not counted
+adreno_drm.c@s/((c >> 8) \& 0xff)/((c >> 4) \& 0xff)/@GPU_ID misread from the chip id
+adreno_drm.c@s/^\tq->fences\[q->nfences\].seq = seq;$/\treturn OK;/@a queue's fences not kept for WAIT_FENCE
+adreno_drm.c@s/s->fence = ++q->seq;/s->fence = q->seq++;/@fence numbers one behind
+adreno_drm.c@s/if (g->len >= sizeof(bo->name))/if (g->len > sizeof(bo->name))/@a name with no room for its zero taken
+adreno_drm.c@s/^\t\t\t\tgoto fail;\t\/\* twice in one list \*\/$/\t\t\t\t(void)0;/@a buffer twice in one submission
+adreno_drm.c@s/j->bos\[sc.submit_idx\]->size || sc.size \/ 4 >= (1u << 20))/~0ull || sc.size \/ 4 >= (1u << 20))/@a command buffer past its buffer
+adreno_drm.c@s/^\tgpu_vm_gone(\&a->vm);$//@a client's table freed while bank 0 may walk it (no switch)
+adreno_drm.c@s/(p->op \& MSM_PREP_NOSYNC) ?/0 ?/@CPU_PREP with NOSYNC waits
+adreno_drm.c@s/s->flags != 0 || s->prio >= NR_PRIORITIES/s->flags != 0 || s->prio > NR_PRIORITIES/@a queue of priority 3 taken
+adreno_drm.c@s/if (p->pipe != MSM_PIPE_3D0 || p->pad != 0 || p->len != 0)/if (p->pad != 0 || p->len != 0)/@GET_PARAM of the 2D pipe answered
+adreno_cp.c@s/^\t\t(void)sys_irqenable(\&cp.hook);$/\t\t(void)0;/@the GPU's line never enabled again
+adreno_cp.c@s/^\tW(A5XX_RBBM_INT_CLEAR_CMD, st \& ~A5XX_INT_AHB_ERROR);$//@the GPU's interrupt status never cleared
+adreno_smmu.c@s/for (i = 0; i < nglobal; i++)/for (i = 0; i < nglobal \&\& 0; i++)/@a client's table without the service's buffers
+adreno_smmu.c@s/^\tCB_WR(SMMU_CB_FSR, \*fsr);$//@a fault in bank 0 never cleared
 EOF
 echo "$caught of $n caught"
 exit $rc

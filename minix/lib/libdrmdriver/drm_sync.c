@@ -393,6 +393,23 @@ drmdrv_job_uses(struct drmdrv_job *j, struct drmdrv_mem *mem)
 	mem->fence = drmdrv_fence_ref(j->out);
 }
 
+/*
+ * The job touches the memory but waits for nobody on it (msm's
+ * NO_IMPLICIT): its fence goes beside what the memory had, so that a wait
+ * for the buffer still waits for both.
+ */
+int
+drmdrv_job_touches(struct drmdrv_job *j, struct drmdrv_mem *mem)
+{
+	struct drmdrv_fence *f;
+
+	if ((f = drm_fence_merge(mem->fence, j->out)) == NULL)
+		return ENOMEM;
+	drmdrv_fence_unref(mem->fence);
+	mem->fence = f;
+	return OK;
+}
+
 /* Every fence the job waits for is over: it may go to the driver. */
 static int
 job_ready(struct drmdrv_job *j)

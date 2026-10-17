@@ -12,4 +12,7 @@ typedef int64_t i64_t;
 typedef unsigned long phys_bytes;
 typedef unsigned long vir_bytes;
 typedef int endpoint_t;
+/* The render node's (msmtest.c): grants and minors. */
+typedef int32_t cp_grant_id_t;
+typedef int devminor_t;
 #endif

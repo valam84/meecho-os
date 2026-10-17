@@ -238,6 +238,111 @@ smmu_smr_test(void)
 /*===========================================================================*
  *    Q14..Q16: bank 0                                                       *
  *===========================================================================*/
+static int tlbi(void);
+
+/*
+ * Bank 0 must be nobody's - off, no fault in it, no stream to it, the GPU's
+ * stream not routed elsewhere - and this SMMU of the kind this driver
+ * knows; q names the question the refusal answers.
+ */
+static int
+bank_free(const char *q)
+{
+	const char *why;
+	uint32_t sctlr;
+	unsigned i;
+	int s;
+
+	if (!cc_smmu_clocked(&why)) {
+		log_warn(&ad_log, "%s smmu not written: %s is off; refusing\n", q,
+		    why);
+		return EIO;
+	}
+	if (geom() != OK)
+		return EINVAL;
+	if (!(g.id0 & ID0_SMS) || !(g.id2 & ID2_PTFS_4K) || g.ncb < 1 ||
+	    (g.id0 & ID0_ATOSNS)) {
+		log_warn(&ad_log, "%s smmu id %08x %08x %08x: no SMRs, 4K "
+		    "tables, banks or translation operations; refusing\n", q,
+		    g.id0, g.id1, g.id2);
+		return ENOTSUP;
+	}
+	sctlr = CB(SMMU_CB_SCTLR);
+	if ((sctlr & SCTLR_M) || (CB(SMMU_CB_FSR) & FSR_FAULT)) {
+		log_warn(&ad_log, "%s cb0 is in use (sctlr %08x fsr %08x); "
+		    "refusing\n", q, sctlr, CB(SMMU_CB_FSR));
+		return EBUSY;
+	}
+	for (i = 0; i < g.nsmr && i < 128; i++) {
+		uint32_t smr = GR0(SMMU_SMR(i)), s2 = GR0(SMMU_S2CR(i));
+
+		if ((smr & SMR_VALID) && S2CR_TYPE(s2) == S2CR_TYPE_TRANS &&
+		    S2CR_CBNDX(s2) == 0) {
+			log_warn(&ad_log, "%s smr %u (%08x) routes to cb0; "
+			    "refusing\n", q, i, smr);
+			return EBUSY;
+		}
+	}
+	if ((s = smr_for(ad.dt.sid)) >= 0) {
+		log_warn(&ad_log, "%s sid %u is routed already (smr %d); "
+		    "refusing\n", q, ad.dt.sid, s);
+		return EBUSY;
+	}
+	return OK;
+}
+
+/* What is there, for smmu_undo(). */
+static void
+bank_save(void)
+{
+	u.cba2r = ad_rd(&ad.smmu, g.gr1 + SMMU_CBA2R(0));
+	u.cbar = ad_rd(&ad.smmu, g.gr1 + SMMU_CBAR(0));
+	u.tcr2 = CB(SMMU_CB_TCR2);
+	u.tcr = CB(SMMU_CB_TCR);
+	u.ttbr0 = ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0);
+	u.ttbr1 = ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR1);
+	u.mair0 = CB(SMMU_CB_MAIR0);
+	u.mair1 = CB(SMMU_CB_MAIR1);
+	u.sctlr = CB(SMMU_CB_SCTLR);
+}
+
+/*
+ * The bank over the table at root, in Linux's order
+ * (arm_smmu_write_context_bank()); OK if it keeps what was written.
+ */
+static uint32_t bank_sctlr, bank_tcr, bank_tcr2;
+
+static int
+bank_on(uint64_t root)
+{
+	uint64_t ttbr0;
+	int r;
+
+	u.cb_touched = 1;
+	ad_wr(&ad.smmu, g.gr1 + SMMU_CBA2R(0), CBA2R_VA64);
+	ad_wr(&ad.smmu, g.gr1 + SMMU_CBAR(0), CBAR_S1_BANK);
+	bank_tcr2 = g.pasize | TCR2_SEP_UPSTREAM | TCR2_AS;
+	bank_tcr = TCR_EPD1 | TCR_SH0_OS | TCR_T0SZ(64 - g.ias);
+	ttbr0 = root | ((uint64_t)GPU_ASID << 48);
+	CB_WR(SMMU_CB_TCR2, bank_tcr2);
+	CB_WR(SMMU_CB_TCR, bank_tcr);
+	ad_wr64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0, ttbr0);
+	ad_wr64(&ad.smmu, g.cb0 + SMMU_CB_TTBR1, (uint64_t)GPU_ASID << 48);
+	CB_WR(SMMU_CB_MAIR0, MAIR0_LINUX);
+	CB_WR(SMMU_CB_MAIR1, 0);
+	if ((r = tlbi()) != OK)
+		return r;
+	/* Linux's SCTLR for the GPU's bank, without stalling on a fault
+	 * (arm-smmu-qcom.c adds HUPCF: later accesses go on). */
+	bank_sctlr = SCTLR_CFIE | SCTLR_CFRE | SCTLR_AFE | SCTLR_TRE | SCTLR_M |
+	    SCTLR_ASIDPNE | SCTLR_HUPCF;
+	CB_WR(SMMU_CB_SCTLR, bank_sctlr);
+	if (CB(SMMU_CB_SCTLR) != bank_sctlr || CB(SMMU_CB_TCR) != bank_tcr ||
+	    ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0) != ttbr0)
+		return EIO;
+	return OK;
+}
+
 /* Invalidate the bank's ASID and wait for the SMMU to say it is done. */
 static int
 tlbi(void)
@@ -398,17 +503,37 @@ fault_line(void)
  * cb0 has set the bank up and found it working; smmu_undo() takes the
  * route back as it takes back the test's.
  */
+/*
+ * The service's own buffers - microcode, ring, what the GPU writes back -
+ * are in every table at the same address (smmu_pt_new()): the command
+ * processor reads and writes them whichever client's table is loaded.
+ */
+#define NGLOBAL		8
+static struct {
+	uint64_t va;
+	phys_bytes pa;
+	size_t len;
+	int prot;
+} global[NGLOBAL];
+static unsigned nglobal;
+static struct ad_pt *loaded;		/* what TTBR0 names; NULL: u.pt */
+
 int
 smmu_gpu_map(uint64_t va, phys_bytes pa, size_t len, int prot)
 {
 	size_t off;
 	int r;
 
-	if (!u.cb_touched || !(CB(SMMU_CB_SCTLR) & SCTLR_M))
+	if (!u.cb_touched || !(CB(SMMU_CB_SCTLR) & SCTLR_M) ||
+	    nglobal == NGLOBAL)
 		return EINVAL;
 	for (off = 0; off < len; off += 4096)
 		if ((r = pt_map(&u.pt, va + off, pa + off, prot)) != OK)
 			return r;
+	global[nglobal].va = va;
+	global[nglobal].pa = pa;
+	global[nglobal].len = len;
+	global[nglobal++].prot = prot;
 	return tlbi();
 }
 
@@ -448,6 +573,205 @@ uint32_t
 smmu_fsr(void)
 {
 	return g.ready ? CB(SMMU_CB_FSR) : 0;
+}
+
+/*===========================================================================*
+ *    serving: bank 0 kept, the clients' tables switched                     *
+ *===========================================================================*/
+/*
+ * The render node's SMMU (hw-gpu.md, step 7): bank 0 set up as stage cb0
+ * sets it up, over a table of the service's own (u.pt, where the command
+ * processor's buffers go), the GPU's stream routed to it, and the bank's
+ * fault line taken - until smmu_undo().  No test translations, no route
+ * taken back: those were the stages' questions, answered on the tablet.
+ */
+int
+smmu_serve(void)
+{
+	int irq, r;
+
+	if ((r = bank_free("smmu:")) != OK)
+		return r;
+	if (ad.dt.smmu_nirq <= ad.dt.smmu_nglobal) {
+		log_warn(&ad_log, "smmu: the tree names no context lines; "
+		    "refusing\n");
+		return EINVAL;
+	}
+	bank_save();
+	if ((r = pt_init(&u.pt, g.ias, g.oas)) != OK) {
+		log_warn(&ad_log, "smmu: no page table: %d\n", r);
+		return r;
+	}
+	if ((r = bank_on(pt_root(&u.pt))) != OK) {
+		log_warn(&ad_log, "smmu: cb0 does not keep what was written "
+		    "(sctlr %08x tcr %08x); stopping\n", CB(SMMU_CB_SCTLR),
+		    CB(SMMU_CB_TCR));
+		return r;
+	}
+	loaded = NULL;
+	if ((r = smmu_attach()) != OK)
+		return r;
+	irq = ad.dt.smmu_irq[ad.dt.smmu_nglobal + 0];
+	u.hook = 0;
+	if ((r = sys_irqsetpolicy(irq, 0, &u.hook)) != OK) {
+		log_warn(&ad_log, "smmu: line %d: irqsetpolicy %d\n", irq, r);
+		return r;
+	}
+	u.hooked = 1;
+	if ((r = sys_irqenable(&u.hook)) != OK)
+		return r;
+	log_info(&ad_log, "smmu: cb0 over tables at %llx (ias %u oas %u), sid "
+	    "%u by smr %d, faults on line %d\n",
+	    (unsigned long long)pt_root(&u.pt), g.ias, g.oas, ad.dt.sid,
+	    u.smr, irq);
+	return OK;
+}
+
+/* A client's table: the service's buffers in it from the start. */
+int
+smmu_pt_new(struct ad_pt *pt)
+{
+	size_t off;
+	unsigned i;
+	int r;
+
+	if (!g.ready)
+		return EINVAL;
+	if ((r = pt_init(pt, g.ias, g.oas)) != OK)
+		return r;
+	for (i = 0; i < nglobal; i++)
+		for (off = 0; off < global[i].len; off += 4096)
+			if ((r = pt_map(pt, global[i].va + off,
+			    global[i].pa + off, global[i].prot)) != OK) {
+				pt_free(pt);
+				return r;
+			}
+	return OK;
+}
+
+/* Gone: never while the bank walks it (smmu_load() another first). */
+int
+smmu_pt_free(struct ad_pt *pt)
+{
+	if (pt == loaded) {
+		log_warn(&ad_log, "smmu: a loaded table freed; kept\n");
+		return EBUSY;
+	}
+	pt_free(pt);
+	return OK;
+}
+
+/*
+ * n pages at va, each its own physical address.  A new entry needs no TLB
+ * invalidation (the SMMU keeps no failed walk); on an error what was
+ * mapped of it is taken out again.
+ */
+int
+smmu_pt_map(struct ad_pt *pt, uint64_t va, const phys_bytes *pages, size_t n,
+	int prot)
+{
+	size_t k;
+	int r;
+
+	for (k = 0; k < n; k++)
+		if ((r = pt_map(pt, va + k * 4096, pages[k], prot)) != OK) {
+			while (k-- > 0)
+				(void)pt_unmap(pt, va + k * 4096);
+			return r;
+		}
+	return OK;
+}
+
+/*
+ * Out of the table, and out of the TLB if the bank walks it now - unless
+ * the SMMU is unpowered (a recovery that did not come back): then it has
+ * no TLB to keep.
+ */
+int
+smmu_pt_unmap(struct ad_pt *pt, uint64_t va, size_t n)
+{
+	const char *why;
+	size_t k;
+
+	for (k = 0; k < n; k++)
+		(void)pt_unmap(pt, va + k * 4096);
+	return pt == loaded && cc_smmu_clocked(&why) ? tlbi() : OK;
+}
+
+/*
+ * The bank walks pt from now on (NULL: the service's own table) - only
+ * while the GPU is idle, which is the caller's to know: TTBR0 changes
+ * under nothing in flight, and the TLB forgets the table before it.
+ */
+int
+smmu_load(struct ad_pt *pt)
+{
+	struct ad_pt *t = pt != NULL ? pt : &u.pt;
+	const char *why;
+
+	loaded = pt;
+	if (!cc_smmu_clocked(&why))
+		return OK;		/* smmu_check() sets it up again */
+	ad_wr64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0, pt_root(t) |
+	    ((uint64_t)GPU_ASID << 48));
+	return tlbi();		/* nothing of the last table remembered */
+}
+
+struct ad_pt *
+smmu_loaded(void)
+{
+	return loaded;
+}
+
+/*
+ * A fault in bank 0, taken: its status, address and syndrome, the status
+ * cleared (write one to clear) and the line enabled again.  0 if there was
+ * none.  The bank does not stall (no CFCFG): the access that faulted was
+ * terminated already, and the GPU went on.
+ */
+int
+smmu_fault(uint32_t *fsr, uint64_t *far, uint32_t *fsynr0)
+{
+	const char *why;
+
+	if (!cc_smmu_clocked(&why))
+		return 0;
+	*fsr = CB(SMMU_CB_FSR);
+	if (!(*fsr & FSR_FAULT)) {
+		(void)sys_irqenable(&u.hook);
+		return 0;
+	}
+	*far = ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_FAR);
+	*fsynr0 = CB(SMMU_CB_FSYNR0);
+	CB_WR(SMMU_CB_FSR, *fsr);
+	(void)sys_irqenable(&u.hook);
+	return 1;
+}
+
+/* After the GPU was powered off and on: the bank and the route as left. */
+int
+smmu_check(void)
+{
+	uint64_t want = pt_root(loaded != NULL ? loaded : &u.pt) |
+	    ((uint64_t)GPU_ASID << 48);
+	const char *why;
+
+	if (!cc_smmu_clocked(&why)) {
+		log_warn(&ad_log, "smmu: not checked: %s is off\n", why);
+		return EIO;
+	}
+	if (CB(SMMU_CB_SCTLR) == bank_sctlr &&
+	    ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0) == want &&
+	    u.smr >= 0 && GR0(SMMU_SMR(u.smr)) == (SMR_VALID |
+	    (ad.dt.sid & 0x7fff)))
+		return OK;
+	log_warn(&ad_log, "smmu: bank 0 or the route lost (sctlr %08x smr "
+	    "%08x); set up again\n", CB(SMMU_CB_SCTLR),
+	    u.smr >= 0 ? GR0(SMMU_SMR(u.smr)) : 0);
+	if (bank_on(pt_root(&u.pt)) != OK)
+		return EIO;
+	loaded = NULL;
+	return smmu_attach();
 }
 
 /* Q15: the GPU's stream routed to bank 0 for 10 ms, and back. */
@@ -504,59 +828,12 @@ route(void)
 int
 smmu_cb0(int fault)
 {
-	const char *why;
-	uint32_t sctlr, tcr, tcr2;
-	uint64_t ttbr0;
 	unsigned i, good = 0, n = 0;
 	int r, s;
 
-	if (!cc_smmu_clocked(&why)) {
-		log_warn(&ad_log, "Q14 smmu not written: %s is off; refusing\n",
-		    why);
-		return EIO;
-	}
-	if (geom() != OK)
-		return EINVAL;
-	if (!(g.id0 & ID0_SMS) || !(g.id2 & ID2_PTFS_4K) || g.ncb < 1 ||
-	    (g.id0 & ID0_ATOSNS)) {
-		log_warn(&ad_log, "Q14 smmu id %08x %08x %08x: no SMRs, 4K "
-		    "tables, banks or translation operations; refusing\n",
-		    g.id0, g.id1, g.id2);
-		return ENOTSUP;
-	}
-	/* Bank 0 must be nobody's: off, no fault in it, no stream to it. */
-	sctlr = CB(SMMU_CB_SCTLR);
-	if ((sctlr & SCTLR_M) || (CB(SMMU_CB_FSR) & FSR_FAULT)) {
-		log_warn(&ad_log, "Q14 cb0 is in use (sctlr %08x fsr %08x); "
-		    "refusing\n", sctlr, CB(SMMU_CB_FSR));
-		return EBUSY;
-	}
-	for (i = 0; i < g.nsmr && i < 128; i++) {
-		uint32_t smr = GR0(SMMU_SMR(i)), s2 = GR0(SMMU_S2CR(i));
-
-		if ((smr & SMR_VALID) && S2CR_TYPE(s2) == S2CR_TYPE_TRANS &&
-		    S2CR_CBNDX(s2) == 0) {
-			log_warn(&ad_log, "Q14 smr %u (%08x) routes to cb0; "
-			    "refusing\n", i, smr);
-			return EBUSY;
-		}
-	}
-	if ((s = smr_for(ad.dt.sid)) >= 0) {
-		log_warn(&ad_log, "Q14 sid %u is routed already (smr %d); "
-		    "refusing\n", ad.dt.sid, s);
-		return EBUSY;
-	}
-
-	/* What is there, for smmu_undo(). */
-	u.cba2r = ad_rd(&ad.smmu, g.gr1 + SMMU_CBA2R(0));
-	u.cbar = ad_rd(&ad.smmu, g.gr1 + SMMU_CBAR(0));
-	u.tcr2 = CB(SMMU_CB_TCR2);
-	u.tcr = CB(SMMU_CB_TCR);
-	u.ttbr0 = ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0);
-	u.ttbr1 = ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR1);
-	u.mair0 = CB(SMMU_CB_MAIR0);
-	u.mair1 = CB(SMMU_CB_MAIR1);
-	u.sctlr = sctlr;
+	if ((r = bank_free("Q14")) != OK)
+		return r;
+	bank_save();
 
 	/* The tables: one page writable, one read-only, one never mapped. */
 	if ((r = pt_init(&u.pt, g.ias, g.oas)) != OK) {
@@ -580,32 +857,13 @@ smmu_cb0(int fault)
 	}
 
 	/* The bank, in Linux's order (arm_smmu_write_context_bank()). */
-	u.cb_touched = 1;
-	ad_wr(&ad.smmu, g.gr1 + SMMU_CBA2R(0), CBA2R_VA64);
-	ad_wr(&ad.smmu, g.gr1 + SMMU_CBAR(0), CBAR_S1_BANK);
-	tcr2 = g.pasize | TCR2_SEP_UPSTREAM | TCR2_AS;
-	tcr = TCR_EPD1 | TCR_SH0_OS | TCR_T0SZ(64 - g.ias);
-	ttbr0 = pt_root(&u.pt) | ((uint64_t)GPU_ASID << 48);
-	CB_WR(SMMU_CB_TCR2, tcr2);
-	CB_WR(SMMU_CB_TCR, tcr);
-	ad_wr64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0, ttbr0);
-	ad_wr64(&ad.smmu, g.cb0 + SMMU_CB_TTBR1, (uint64_t)GPU_ASID << 48);
-	CB_WR(SMMU_CB_MAIR0, MAIR0_LINUX);
-	CB_WR(SMMU_CB_MAIR1, 0);
-	if ((r = tlbi()) != OK)
+	if ((r = bank_on(pt_root(&u.pt))) == ETIMEDOUT)
 		return r;
-	/* Linux's SCTLR for the GPU's bank, without stalling on a fault
-	 * (arm-smmu-qcom.c adds HUPCF: later accesses go on). */
-	sctlr = SCTLR_CFIE | SCTLR_CFRE | SCTLR_AFE | SCTLR_TRE | SCTLR_M |
-	    SCTLR_ASIDPNE | SCTLR_HUPCF;
-	CB_WR(SMMU_CB_SCTLR, sctlr);
-
 	log_info(&ad_log, "Q14 cb0: tables at %llx, ias %u oas %u, %d "
 	    "levels; sctlr %08x tcr %08x tcr2 %08x\n",
 	    (unsigned long long)pt_root(&u.pt), g.ias, g.oas, 4 - u.pt.start,
 	    CB(SMMU_CB_SCTLR), CB(SMMU_CB_TCR), CB(SMMU_CB_TCR2));
-	if (CB(SMMU_CB_SCTLR) != sctlr || CB(SMMU_CB_TCR) != tcr ||
-	    ad_rd64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0) != ttbr0) {
+	if (r != OK) {
 		log_warn(&ad_log, "Q14 cb0 does not keep what was written "
 		    "(ttbr0 %llx); stopping\n", (unsigned long long)ad_rd64(
 		    &ad.smmu, g.cb0 + SMMU_CB_TTBR0));
@@ -789,4 +1047,6 @@ out:
 	u.sme_touched = u.cb_touched = 0;
 	u.smr = -1;
 	g.ready = 0;
+	nglobal = 0;
+	loaded = NULL;
 }

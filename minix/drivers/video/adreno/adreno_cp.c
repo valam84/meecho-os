@@ -71,6 +71,7 @@ static struct {
 	struct gbuf pm4, pfp, ring, mem;
 	size_t pm4_len, pfp_len;	/* the microcode's bytes */
 	uint32_t wptr;			/* in dwords */
+	uint32_t seqno;			/* the last fence put in the ring */
 	int hooked, hook;
 	int whereami;
 } cp;
@@ -351,9 +352,9 @@ hw_init(void)
 	    A5XX_VPC_ADDR_MODE_CNTL, A5XX_UCHE_ADDR_MODE_CNTL,
 	    A5XX_SP_ADDR_MODE_CNTL, A5XX_TPL1_ADDR_MODE_CNTL,
 	    A5XX_RBBM_SECVID_TSB_ADDR_MODE_CNTL };
-	const uint64_t trap = 0x0001ffffffff0000ull;	/* UCHE_TRAP_BASE */
-	const uint32_t gmem = 0x44000;			/* 256 + 16 KiB */
-	const uint32_t hbb = 14 - 13;			/* highest bank bit 14 */
+	const uint64_t trap = A5XX_UCHE_TRAP;		/* UCHE_TRAP_BASE */
+	const uint32_t gmem = A512_GMEM_SIZE;
+	const uint32_t hbb = A512_HIGHEST_BANK_BIT - 13;
 	unsigned i;
 
 	hw_writes = 0;
@@ -375,8 +376,8 @@ hw_init(void)
 	w(A5XX_UCHE_CACHE_WAYS, 0x02);
 	w64(A5XX_UCHE_TRAP_BASE, trap);
 	w64(A5XX_UCHE_WRITE_THRU_BASE, trap);
-	w64(A5XX_UCHE_GMEM_RANGE_MIN, 0x00100000);
-	w64(A5XX_UCHE_GMEM_RANGE_MAX, 0x00100000 + gmem - 1);
+	w64(A5XX_UCHE_GMEM_RANGE_MIN, A5XX_GMEM_BASE);
+	w64(A5XX_UCHE_GMEM_RANGE_MAX, A5XX_GMEM_BASE + gmem - 1);
 	w(A5XX_CP_MEQ_THRESHOLDS, 0x40);
 	w(A5XX_CP_MERCIU_SIZE, 0x400);
 	w(A5XX_CP_ROQ_THRESHOLDS_2, 0x80000060);
@@ -437,13 +438,13 @@ wait_gpu_irq(clock_t ticks)
 /*===========================================================================*
  *    cp_run                                                                 *
  *===========================================================================*/
+/* 1. Memory, the microcode in it. */
 int
-cp_run(void)
+cp_alloc(void)
 {
 	const char *why;
-	uint32_t pm4w[4], pfpw[4], st, fence, scratch, secvid;
-	unsigned us;
-	int r, got;
+	uint32_t pm4w[4], pfpw[4];
+	int r;
 
 	memset(&cp, 0, sizeof(cp));
 	if (!cc_gpu_clocked(&why)) {
@@ -456,7 +457,6 @@ cp_run(void)
 		return EINVAL;
 	}
 
-	/* 1. Memory, the microcode in it, the route. */
 	if ((r = ucode("a530_pm4.fw", &cp.pm4, VA_PM4, pm4w,
 	    &cp.pm4_len)) != OK ||
 	    (r = ucode("a530_pfp.fw", &cp.pfp, VA_PFP, pfpw,
@@ -477,6 +477,25 @@ cp_run(void)
 	    cp.pfp_len, (unsigned long long)VA_PFP, pfpw[1], pfpw[3],
 	    cp.whereami ? ", where-am-i" : "", (unsigned long long)VA_RING,
 	    (unsigned long long)VA_MEM);
+	return OK;
+}
+
+/*
+ * 2-5: the route, the registers, the start, CP_ME_INIT, the zap shader and
+ * out of secure mode - at the first start and again after the GPU was
+ * powered off and on (a hang's recovery): the buffers stay, the ring
+ * starts again from its beginning.
+ */
+int
+cp_boot(void)
+{
+	uint32_t secvid;
+	unsigned us;
+	int r;
+
+	if (cp.ring.cpu == NULL)
+		return EINVAL;
+	cp.wptr = 0;
 	if ((r = smmu_attach()) != OK)
 		return r;
 
@@ -538,25 +557,36 @@ cp_run(void)
 	log_info(&ad_log, "Q21 cp: set_secure_mode 0, idle in %u us; secvid "
 	    "%08x, rbbm %08x int %08x\n", us, secvid, G(A5XX_RBBM_STATUS),
 	    G(A5XX_RBBM_INT_0_STATUS));
+	return OK;
+}
 
-	/* 6. The first command: a scratch register, a fence, the line. */
-	cp.hook = GPU_HOOK;
-	if ((r = sys_irqsetpolicy(ad.dt.irq, 0, &cp.hook)) != OK) {
-		log_warn(&ad_log, "Q22 line %d: irqsetpolicy %d\n", ad.dt.irq,
-		    r);
-		return r;
+/* 6. The first command: a scratch register, a fence, the line (Q22). */
+int
+cp_first(void)
+{
+	uint32_t st, fence, scratch, seq = ++cp.seqno;
+	unsigned us;
+	int r, got;
+
+	if (!cp.hooked) {
+		cp.hook = GPU_HOOK;
+		if ((r = sys_irqsetpolicy(ad.dt.irq, 0, &cp.hook)) != OK) {
+			log_warn(&ad_log, "Q22 line %d: irqsetpolicy %d\n",
+			    ad.dt.irq, r);
+			return r;
+		}
+		cp.hooked = 1;
 	}
-	cp.hooked = 1;
 	(void)sys_irqenable(&cp.hook);
 	W(A5XX_RBBM_INT_CLEAR_CMD, G(A5XX_RBBM_INT_0_STATUS) &
 	    ~A5XX_INT_AHB_ERROR);
 	out(pm4_pkt4(A5XX_CP_SCRATCH_REG(2), 1));
-	out(1);
+	out(seq);
 	out(pm4_pkt7(CP_EVENT_WRITE, 4));
 	out(CP_EVENT_WRITE_IRQ | CACHE_FLUSH_TS);
 	out((uint32_t)(VA_MEM + MEM_FENCE));
 	out((uint32_t)((VA_MEM + MEM_FENCE) >> 32));
-	out(1);
+	out(seq);
 	flush();
 	got = wait_gpu_irq((clock_t)sys_hz());
 	st = G(A5XX_RBBM_INT_0_STATUS);
@@ -568,8 +598,8 @@ cp_run(void)
 	    "scratch2 %u, %s; smmu fsr %x\n", ad.dt.irq,
 	    got == 1 ? "came" : "did NOT come", st, fence, scratch,
 	    r == OK ? "idle" : "NOT idle", smmu_fsr());
-	if (got == 1 && (st & A5XX_INT_CP_CACHE_FLUSH_TS) && fence == 1 &&
-	    scratch == 1 && r == OK)
+	if (got == 1 && (st & A5XX_INT_CP_CACHE_FLUSH_TS) && fence == seq &&
+	    scratch == seq && r == OK)
 		log_info(&ad_log, "Q22 the GPU ran its first command: the "
 		    "line, the fence and the scratch register say so\n");
 	else {
@@ -580,6 +610,34 @@ cp_run(void)
 	return OK;
 }
 
+int
+cp_run(void)
+{
+	int r;
+
+	if ((r = cp_alloc()) == OK && (r = cp_boot()) == OK)
+		r = cp_first();
+	return r;
+}
+
+/* The VBIF's ports halted - nothing in flight - then let go: their halt
+ * mask as read back. */
+static uint32_t
+vbif_halt(void)
+{
+	unsigned t;
+	uint32_t got = 0;
+
+	W(A5XX_VBIF_XIN_HALT_CTRL0, 0xf);
+	for (t = 0; t < 100000; t += 10) {
+		if (((got = G(A5XX_VBIF_XIN_HALT_CTRL1)) & 0xf) == 0xf)
+			break;
+		micro_delay(10);
+	}
+	W(A5XX_VBIF_XIN_HALT_CTRL0, 0);
+	return got & 0xf;
+}
+
 /*
  * After cp_run(), whatever it came to, while the GPU and its SMMU are
  * still powered: nothing more raised, nothing in flight on the VBIF's
@@ -588,25 +646,114 @@ cp_run(void)
 void
 cp_stop(void)
 {
-	unsigned t;
-	uint32_t got = 0;
+	const char *why;
+	uint32_t got;
 
 	if (cp.ring.cpu == NULL && !cp.hooked)
 		return;
+	if (!cc_gpu_clocked(&why)) {
+		/* A recovery that did not come back left it off. */
+		if (cp.hooked)
+			(void)sys_irqrmpolicy(&cp.hook);
+		cp.hooked = 0;
+		log_warn(&ad_log, "Q23 cp: not stopped: %s is off\n", why);
+		return;
+	}
 	W(A5XX_RBBM_INT_0_MASK, 0);
 	if (cp.hooked) {
 		(void)sys_irqrmpolicy(&cp.hook);
 		cp.hooked = 0;
 	}
-	W(A5XX_VBIF_XIN_HALT_CTRL0, 0xf);
-	for (t = 0; t < 100000; t += 10) {
-		if (((got = G(A5XX_VBIF_XIN_HALT_CTRL1)) & 0xf) == 0xf)
-			break;
-		micro_delay(10);
-	}
-	W(A5XX_VBIF_XIN_HALT_CTRL0, 0);
+	got = vbif_halt();
 	log_info(&ad_log, "Q23 cp: interrupts masked, vbif ports %s (%x)\n",
-	    (got & 0xf) == 0xf ? "halted" : "NOT halted", got & 0xf);
+	    got == 0xf ? "halted" : "NOT halted", got);
+}
+
+/*
+ * The same before a hang's recovery powers the GPU off: the line stays
+ * this driver's, the buffers stay where they are.  OK if the ports halted.
+ */
+int
+cp_halt(void)
+{
+	const char *why;
+
+	if (!cc_gpu_clocked(&why))
+		return EIO;
+	W(A5XX_RBBM_INT_0_MASK, 0);
+	return vbif_halt() == 0xf ? OK : EIO;
+}
+
+/*===========================================================================*
+ *    the ring, for the render node (adreno_gpu.c)                           *
+ *===========================================================================*/
+/* Where the next word goes, in dwords; the ring's size in dwords. */
+uint32_t cp_wptr(void) { return cp.wptr; }
+uint32_t cp_ring_dwords(void) { return A5XX_RING_SIZE / 4; }
+void cp_emit(uint32_t v) { out(v); }
+/* WHERE_AM_I, the ring to memory, the write pointer: the CP goes on. */
+void cp_kick(void) { flush(); }
+/* Words cp_kick() adds. */
+uint32_t cp_kick_dwords(void) { return cp.whereami ? 3 : 0; }
+/* Fences: the next one, where CACHE_FLUSH_TS writes them, the last one
+ * memory holds. */
+uint32_t cp_seq_next(void) { return ++cp.seqno; }
+uint64_t cp_fence_va(void) { return VA_MEM + MEM_FENCE; }
+uint32_t cp_fence(void) { return mem_word(MEM_FENCE); }
+
+/* The CP has read everything and the GPU is idle, now (no waiting). */
+int
+cp_quiet(void)
+{
+	return G(A5XX_CP_RB_RPTR) == cp.wptr &&
+	    (G(A5XX_RBBM_STATUS) & ~A5XX_RBBM_STATUS_HI_BUSY) == 0;
+}
+
+/*
+ * The GPU's line came: what RBBM_INT_0_STATUS says, cleared - all of it
+ * but AHB_ERROR, which is cleared at its source first, or it comes back
+ * at once (a5xx_irq()) - and the line enabled again.
+ */
+uint32_t
+cp_irq(void)
+{
+	uint32_t st = G(A5XX_RBBM_INT_0_STATUS);
+
+	W(A5XX_RBBM_INT_CLEAR_CMD, st & ~A5XX_INT_AHB_ERROR);
+	if (st & A5XX_INT_AHB_ERROR) {
+		log_warn(&ad_log, "gpu: AHB error, status %08x\n",
+		    G(A5XX_RBBM_AHB_ERROR_STATUS));
+		W(A5XX_RBBM_AHB_CMD, 1u << 4);
+		W(A5XX_RBBM_INT_CLEAR_CMD, A5XX_INT_AHB_ERROR);
+	}
+	if (cp.hooked)
+		(void)sys_irqenable(&cp.hook);
+	return st;
+}
+
+/* For the log, when the GPU stopped: where the CP stands. */
+void
+cp_say(const char *what)
+{
+	log_warn(&ad_log, "gpu: %s: rptr %x wptr %x, rbbm %08x status3 %08x, "
+	    "cp_int %08x hw_fault %08x protect %08x, fence %u; smmu fsr %x\n",
+	    what, G(A5XX_CP_RB_RPTR), cp.wptr, G(A5XX_RBBM_STATUS),
+	    G(A5XX_RBBM_STATUS3), G(A5XX_CP_INTERRUPT_STATUS),
+	    G(A5XX_CP_HW_FAULT), G(A5XX_CP_PROTECT_STATUS),
+	    mem_word(MEM_FENCE), smmu_fsr());
+}
+
+/* The always-on counter, 19.2 MHz (MSM_PARAM_TIMESTAMP). */
+uint64_t
+cp_timestamp(void)
+{
+	uint32_t hi, lo;
+
+	do {
+		hi = G(A5XX_RBBM_ALWAYSON_COUNTER_HI);
+		lo = G(A5XX_RBBM_ALWAYSON_COUNTER_LO);
+	} while (hi != G(A5XX_RBBM_ALWAYSON_COUNTER_HI));
+	return (uint64_t)hi << 32 | lo;
 }
 
 /* After smmu_undo(): the bank no longer points at any of it. */

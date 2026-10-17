@@ -200,11 +200,27 @@ uint32_t fw_sum(const void *p, size_t n, uint32_t h);
 int zap_load(void);			/* Q18 */
 
 /* adreno_cp.c */
-int cp_run(void);			/* Q19..Q22 */
+int cp_run(void);			/* Q19..Q22: the three below */
+int cp_alloc(void);			/* Q19: microcode and buffers */
+int cp_boot(void);			/* Q19..Q21: started, out of secure mode */
+int cp_first(void);			/* Q22: a first command and its line */
 void cp_stop(void);			/* Q23 */
+int cp_halt(void);			/* the same, the line kept (recovery) */
 void cp_free(void);
 uint32_t pm4_pkt7(uint32_t op, uint32_t cnt);
 uint32_t pm4_pkt4(uint32_t reg, uint32_t cnt);
+uint32_t cp_wptr(void);
+uint32_t cp_ring_dwords(void);
+void cp_emit(uint32_t v);
+void cp_kick(void);
+uint32_t cp_kick_dwords(void);
+uint32_t cp_seq_next(void);
+uint64_t cp_fence_va(void);
+uint32_t cp_fence(void);
+int cp_quiet(void);
+uint32_t cp_irq(void);
+void cp_say(const char *what);
+uint64_t cp_timestamp(void);
 
 /* adreno_smmu.c */
 int smmu_smr_test(void);		/* Q13 */
@@ -229,5 +245,17 @@ int pt_map(struct ad_pt *pt, uint64_t va, uint64_t pa, int prot);
 int pt_unmap(struct ad_pt *pt, uint64_t va);
 uint64_t pt_root(const struct ad_pt *pt);
 void pt_free(struct ad_pt *pt);
+
+/* adreno_smmu.c, serving: bank 0 kept, the clients' tables switched. */
+int smmu_serve(void);
+int smmu_pt_new(struct ad_pt *pt);
+int smmu_pt_free(struct ad_pt *pt);
+int smmu_pt_map(struct ad_pt *pt, uint64_t va, const phys_bytes *pages,
+	size_t n, int prot);
+int smmu_pt_unmap(struct ad_pt *pt, uint64_t va, size_t n);
+int smmu_load(struct ad_pt *pt);
+struct ad_pt *smmu_loaded(void);
+int smmu_fault(uint32_t *fsr, uint64_t *far, uint32_t *fsynr0);
+int smmu_check(void);
 
 #endif /* _ADRENO_H */

@@ -65,14 +65,27 @@ static struct {
 	uint64_t desc;
 } tlb[16];
 
+/*
+ * Memory: a piece of alloc_contig(), or one page of an mmap(2) region
+ * (model_pages_new(): its pages scattered over physical memory, as VM
+ * gives them).  cpu is what the processor sees - its caches included -
+ * ram what memory holds, sh what a line held when it was last in step
+ * with memory: a line whose cpu differs from sh is dirty, and only dirty
+ * lines are written back by a clean.
+ */
+#define NMEM	8192
 static struct mreg {
-	uint8_t *cpu, *ram;
+	uint8_t *cpu, *ram, *sh;
 	uint64_t pa;
 	size_t len;
 	int live;
 	int seen;		/* the SMMU walked it, or translated into it */
-} mem[64];
-static uint64_t next_pa;
+	void *block;		/* the mmap region it is a page of, or NULL */
+	size_t blocklen;
+} mem[NMEM];
+static uint64_t next_pa, next_page_pa;
+static unsigned mem_hw;		/* slots ever used since the reset: the searches' bound */
+static int serving;		/* frees judged by what the SMMU can reach */
 
 /* Interrupt hooks: bank 0's line (361) and the GPU's (332, cpmodel.c). */
 #define NHOOK		2
@@ -110,32 +123,132 @@ smmu_writes(void)
 /*===========================================================================*
  *    memory                                                                 *
  *===========================================================================*/
-void *
-alloc_contig(size_t len, int flags, phys_bytes *phys)
+static int
+mem_slot(void)
 {
 	unsigned i;
 
+	for (i = 0; i < NMEM; i++)
+		if (!mem[i].live) {
+			if (i + 1 > mem_hw)
+				mem_hw = i + 1;
+			return (int)i;
+		}
+	model_fail("more than %u pieces of memory", NMEM);
+	return -1;
+}
+
+void *
+alloc_contig(size_t len, int flags, phys_bytes *phys)
+{
+	int i = mem_slot();
+
 	(void)flags;
 	len = (len + 4095) & ~(size_t)4095;
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
-		if (!mem[i].live)
-			break;
-	if (i == sizeof(mem) / sizeof(mem[0]))
-		model_fail("alloc_contig: more than %u pieces", i);
 	if (posix_memalign((void **)&mem[i].cpu, 4096, len) != 0)
 		abort();
 	mem[i].ram = malloc(len);
-	if (mem[i].cpu == NULL || mem[i].ram == NULL)
+	mem[i].sh = malloc(len);
+	if (mem[i].cpu == NULL || mem[i].ram == NULL || mem[i].sh == NULL)
 		abort();
 	memset(mem[i].cpu, 0xa5, len);
 	memset(mem[i].ram, 0x5b, len);
+	memcpy(mem[i].sh, mem[i].cpu, len);
 	mem[i].pa = next_pa;
 	mem[i].len = len;
 	mem[i].live = 1;
 	mem[i].seen = 0;
+	mem[i].block = NULL;
 	next_pa += len + 0x3000;	/* never one piece with the next */
 	*phys = (phys_bytes)mem[i].pa;
 	return mem[i].cpu;
+}
+
+/*
+ * Can the SMMU still reach [lo, hi): its TLB, or - bank 0 on - the table
+ * TTBR0 names, every level of it?  The service's frees while it serves are
+ * judged by this, not by "the bank is on": its clients' buffers and tables
+ * go while the bank stays on, and must be out of the tables and the TLB
+ * first.
+ */
+static uint64_t
+ram_peek(uint64_t pa)
+{
+	unsigned i;
+
+	for (i = 0; i < mem_hw; i++)
+		if (mem[i].live && pa >= mem[i].pa && pa + 8 <= mem[i].pa +
+		    mem[i].len)
+			return *(uint64_t *)(void *)(mem[i].ram + (pa -
+			    mem[i].pa));
+	return 0;
+}
+
+static int
+in_range(uint64_t a, uint64_t n, uint64_t lo, uint64_t hi)
+{
+	return a < hi && a + n > lo;
+}
+
+static const char *
+reach_table(uint64_t table, unsigned level, uint64_t lo, uint64_t hi)
+{
+	uint64_t d;
+	unsigned i;
+	const char *w;
+
+	if (in_range(table, 4096, lo, hi))
+		return "a page table bank 0 walks";
+	if (model_ram_pa(table, 4096) == NULL)
+		return NULL;	/* a garbage entry: nothing real behind it */
+	for (i = 0; i < 512; i++) {
+		d = ram_peek(table + 8 * i);
+		if (!(d & 1))
+			continue;
+		if (level < 3 && (d & 3) == 3) {
+			if ((w = reach_table(d & 0x0000fffffffff000ull, level + 1,
+			    lo, hi)) != NULL)
+				return w;
+		} else if (in_range(d & 0x0000fffffffff000ull, 4096ull <<
+		    (9 * (3 - level)), lo, hi))
+			return "a page bank 0's tables map";
+	}
+	return NULL;
+}
+
+static const char *
+reachable(uint64_t lo, uint64_t hi)
+{
+	unsigned i, t0sz, ias;
+
+	for (i = 0; i < 16; i++)
+		if (tlb[i].valid && in_range(tlb[i].pa, 4096, lo, hi))
+			return "an entry of the SMMU's TLB";
+	if (!(*r32(CB0 + SMMU_CB_SCTLR) & SCTLR_M))
+		return NULL;
+	t0sz = *r32(CB0 + SMMU_CB_TCR) & 0x3f;
+	ias = 64 - t0sz;
+	return reach_table(*r64(CB0 + SMMU_CB_TTBR0) & 0x0000fffffffff000ull,
+	    4 - (ias - 12 + 8) / 9, lo, hi);
+}
+
+static void
+mem_free(unsigned i)
+{
+	const char *w;
+
+	if (serving) {
+		if ((w = reachable(mem[i].pa, mem[i].pa + mem[i].len)) != NULL)
+			model_fail("memory at %llx freed while the SMMU can "
+			    "still reach it: %s", (unsigned long long)mem[i].pa,
+			    w);
+	} else if ((*r32(CB0 + SMMU_CB_SCTLR) & SCTLR_M) && mem[i].seen)
+		model_fail("memory freed while bank 0 still translates");
+	if (mem[i].block == NULL)
+		free(mem[i].cpu);
+	free(mem[i].ram);
+	free(mem[i].sh);
+	mem[i].live = 0;
 }
 
 int
@@ -144,42 +257,160 @@ free_contig(void *addr, size_t len)
 	unsigned i;
 
 	len = (len + 4095) & ~(size_t)4095;
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
-		if (mem[i].live && mem[i].cpu == addr && mem[i].len == len)
+	for (i = 0; i < mem_hw; i++)
+		if (mem[i].live && mem[i].block == NULL && mem[i].cpu == addr &&
+		    mem[i].len == len)
 			break;
-	if (i == sizeof(mem) / sizeof(mem[0]))
+	if (i == mem_hw)
 		model_fail("free_contig of %p+0x%zx, never given", addr, len);
-	if ((*r32(CB0 + SMMU_CB_SCTLR) & SCTLR_M) && mem[i].seen)
-		model_fail("memory freed while bank 0 still translates");
-	free(mem[i].cpu);
-	free(mem[i].ram);
-	mem[i].live = 0;
+	mem_free(i);
 	return 0;
 }
 
+/*
+ * An mmap(2) region of the service's (MAP_PREALLOC: every page present),
+ * its pages scattered: each its own piece, physical addresses going down
+ * with gaps between them, so that nothing passes that takes the region for
+ * contiguous.  VM zeroes them through the processor's cacheable view: the
+ * zeros are dirty in the cache, memory holds whatever it held.
+ */
+void *
+model_pages_new(size_t len)
+{
+	uint8_t *block;
+	size_t k;
+	int i;
+
+	len = (len + 4095) & ~(size_t)4095;
+	if (len == 0 || posix_memalign((void **)&block, 4096, len) != 0)
+		return NULL;
+	memset(block, 0, len);
+	for (k = 0; k < len / 4096; k++) {
+		i = mem_slot();
+		mem[i].cpu = block + k * 4096;
+		mem[i].ram = malloc(4096);
+		mem[i].sh = malloc(4096);
+		if (mem[i].ram == NULL || mem[i].sh == NULL)
+			abort();
+		memset(mem[i].ram, 0x5b, 4096);
+		memset(mem[i].sh, 0x5b, 4096);
+		mem[i].pa = next_page_pa;
+		next_page_pa -= 0x3000;
+		mem[i].len = 4096;
+		mem[i].live = 1;
+		mem[i].seen = 0;
+		mem[i].block = block;
+		mem[i].blocklen = len;
+	}
+	return block;
+}
+
+int
+model_pages_free(void *addr, size_t len)
+{
+	unsigned i, n = 0;
+
+	len = (len + 4095) & ~(size_t)4095;
+	for (i = 0; i < mem_hw; i++)
+		if (mem[i].live && mem[i].block == addr) {
+			if (mem[i].blocklen != len)
+				model_fail("munmap of %p+0x%zx: the region is "
+				    "0x%zx", addr, len, mem[i].blocklen);
+			mem_free(i);
+			n++;
+		}
+	if (n == 0)
+		model_fail("munmap of %p+0x%zx, never mapped", addr, len);
+	free(addr);
+	return 0;
+}
+
+/* The physical address of a byte the service sees, one page at most. */
+int
+model_umap(const void *cpu, size_t len, uint64_t *pa)
+{
+	const uint8_t *a = cpu;
+	unsigned i;
+
+	for (i = 0; i < mem_hw; i++)
+		if (mem[i].live && a >= mem[i].cpu && a + len <= mem[i].cpu +
+		    mem[i].len) {
+			*pa = mem[i].pa + (uint64_t)(a - mem[i].cpu);
+			return 0;
+		}
+	return EFAULT;
+}
+
+/* Is p, len a region of model_pages_new()'s, whole? */
+int
+model_pages_whole(const void *p, size_t len)
+{
+	unsigned i;
+
+	for (i = 0; i < mem_hw; i++)
+		if (mem[i].live && mem[i].block == p)
+			return mem[i].blocklen == len;
+	return 0;
+}
+
+unsigned
+model_pages_live(void)
+{
+	unsigned i, n = 0;
+
+	for (i = 0; i < mem_hw; i++)
+		n += mem[i].live && mem[i].block != NULL;
+	return n;
+}
+
+void
+smmu_model_serving(int on)
+{
+	serving = on;
+}
+
+/*
+ * The caches, line by line: a clean writes back the dirty lines, an
+ * invalidate makes the processor see memory again - and loses a dirty
+ * line, as it would.  The range may cross pieces (an mmap region's
+ * pages), each of them the service's.
+ */
 int
 sys_cachectl(int op, void *addr, size_t len)
 {
 	uint8_t *a = addr;
-	size_t off, end;
+	size_t off, end, l;
 	unsigned i;
 
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
-		if (mem[i].live && a >= mem[i].cpu &&
-		    a + len <= mem[i].cpu + mem[i].len)
-			break;
-	if (i == sizeof(mem) / sizeof(mem[0]))
-		return EFAULT;
-	off = (size_t)(a - mem[i].cpu) & ~(size_t)63;
-	end = ((size_t)(a - mem[i].cpu) + len + 63) & ~(size_t)63;
-	if (end > mem[i].len)
-		end = mem[i].len;
-	if (op == CACHE_CLEAN || op == CACHE_CLEAN_INVALIDATE)
-		memcpy(mem[i].ram + off, mem[i].cpu + off, end - off);
-	else if (op == CACHE_INVALIDATE)
-		memcpy(mem[i].cpu + off, mem[i].ram + off, end - off);
-	else
+	if (op != CACHE_CLEAN && op != CACHE_INVALIDATE &&
+	    op != CACHE_CLEAN_INVALIDATE)
 		return EINVAL;
+	while (len > 0) {
+		for (i = 0; i < mem_hw; i++)
+			if (mem[i].live && a >= mem[i].cpu &&
+			    a < mem[i].cpu + mem[i].len)
+				break;
+		if (i == mem_hw)
+			return EFAULT;
+		off = (size_t)(a - mem[i].cpu);
+		l = mem[i].len - off < len ? mem[i].len - off : len;
+		end = (off + l + 63) & ~(size_t)63;
+		if (end > mem[i].len)
+			end = mem[i].len;
+		for (off &= ~(size_t)63; off < end; off += 64) {
+			if (op != CACHE_INVALIDATE &&
+			    memcmp(mem[i].cpu + off, mem[i].sh + off, 64) != 0) {
+				memcpy(mem[i].ram + off, mem[i].cpu + off, 64);
+				memcpy(mem[i].sh + off, mem[i].cpu + off, 64);
+			}
+			if (op != CACHE_CLEAN) {
+				memcpy(mem[i].cpu + off, mem[i].ram + off, 64);
+				memcpy(mem[i].sh + off, mem[i].ram + off, 64);
+			}
+		}
+		a += l;
+		len -= l;
+	}
 	return 0;
 }
 
@@ -189,7 +420,7 @@ ram64(uint64_t pa)
 {
 	unsigned i;
 
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
+	for (i = 0; i < mem_hw; i++)
 		if (mem[i].live && pa >= mem[i].pa &&
 		    pa + 8 <= mem[i].pa + mem[i].len) {
 			mem[i].seen = 1;
@@ -207,7 +438,7 @@ known_pa(uint64_t pa)
 {
 	unsigned i;
 
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
+	for (i = 0; i < mem_hw; i++)
 		if (mem[i].live && pa >= mem[i].pa && pa < mem[i].pa +
 		    mem[i].len) {
 			mem[i].seen = 1;
@@ -224,7 +455,7 @@ model_ram_of(const void *cpu, size_t len, uint64_t *pa)
 	const uint8_t *a = cpu;
 	unsigned i;
 
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
+	for (i = 0; i < mem_hw; i++)
 		if (mem[i].live && a >= mem[i].cpu &&
 		    a + len <= mem[i].cpu + mem[i].len) {
 			*pa = mem[i].pa + (uint64_t)(a - mem[i].cpu);
@@ -238,7 +469,7 @@ model_contig_live(void)
 {
 	unsigned i, n = 0;
 
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
+	for (i = 0; i < mem_hw; i++)
 		n += mem[i].live;
 	return n;
 }
@@ -429,6 +660,7 @@ smmu_gpu_pa(uint64_t va, int write, uint64_t *pa)
 	if (f != 0) {
 		*r32(CB0 + SMMU_CB_FSR) |= f;
 		*r64(CB0 + SMMU_CB_FAR) = va;
+		*r32(CB0 + SMMU_CB_FSYNR0) = write ? 1u << 4 : 0;	/* WNR */
 		return -1;
 	}
 	*pa = (p & ~0xfffull) | (va & 0xfff);
@@ -441,7 +673,7 @@ model_ram_pa(uint64_t pa, size_t n)
 {
 	unsigned i;
 
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
+	for (i = 0; i < mem_hw; i++)
 		if (mem[i].live && pa >= mem[i].pa &&
 		    pa + n <= mem[i].pa + mem[i].len) {
 			mem[i].seen = 1;
@@ -704,6 +936,32 @@ sys_hz(void)
 	return 100;
 }
 
+/*
+ * The kernel's side of a serving driver's hooks (msmtest.c delivers them):
+ * every enabled hook whose line is up, its notify bit in the mask, and the
+ * hook disabled until the driver enables it again.
+ */
+uint64_t
+smmu_model_lines_of(uint64_t want)
+{
+	uint64_t mask = 0;
+	int k;
+
+	for (k = 0; k < NHOOK; k++)
+		if (hooks[k].used && hooks[k].enabled &&
+		    (want & (1ull << hooks[k].bit)) && line_up(hooks[k].vec)) {
+			hooks[k].enabled = 0;
+			mask |= 1ull << hooks[k].bit;
+		}
+	return mask;
+}
+
+uint64_t
+smmu_model_lines(void)
+{
+	return smmu_model_lines_of(~0ull);
+}
+
 int
 ipc_receive(endpoint_t src, message *m, int *status)
 {
@@ -763,13 +1021,22 @@ smmu_model_reset(const struct scenario *s)
 	memset(tlb, 0, sizeof(tlb));
 	memset(hooks, 0, sizeof(hooks));
 	alarm_set = 0;
-	for (i = 0; i < sizeof(mem) / sizeof(mem[0]); i++)
+	for (i = 0; i < NMEM; i++)
+		if (mem[i].live && mem[i].block != NULL &&
+		    mem[i].cpu == mem[i].block)
+			free(mem[i].block);
+	for (i = 0; i < NMEM; i++)
 		if (mem[i].live) {
-			free(mem[i].cpu);
+			if (mem[i].block == NULL)
+				free(mem[i].cpu);
 			free(mem[i].ram);
+			free(mem[i].sh);
 			mem[i].live = 0;
 		}
+	mem_hw = 0;
 	next_pa = 0x90000000ull;
+	next_page_pa = 0xc0000000ull;
+	serving = 0;
 
 	if (!s->smmu_tablet) {
 		/* 5 banks, 16 SMRs, 4K pages, 36-bit IPA/PA, 48-bit VA;

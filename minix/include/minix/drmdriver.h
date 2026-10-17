@@ -198,6 +198,7 @@ int drmdrv_job_init(struct drmdrv_job *j, struct drmdrv_ctx *ctx,
 void drmdrv_job_fini(struct drmdrv_job *j);
 int drmdrv_job_wait_for(struct drmdrv_job *j, struct drmdrv_fence *f);
 void drmdrv_job_uses(struct drmdrv_job *j, struct drmdrv_mem *mem);
+int drmdrv_job_touches(struct drmdrv_job *j, struct drmdrv_mem *mem);
 void drmdrv_job_submit(struct drmdrv_job *j);
 void drmdrv_job_done(struct drmdrv_job *j, int error);
 

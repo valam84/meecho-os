@@ -16,7 +16,10 @@
 #		"cb0-noroute", "fault-noroute": the same without routing the
 #		GPU's stream (route=0; the route stopped the tablet, §15);
 #		"zap": TrustZone loads the zap shader, or resumes it (§17);
-#		"cp": the command processor and its first command (§17)
+#		"cp": the command processor and its first command (§17);
+#		"drm": the service stays - the render node, msm DRM (step 7)
+#		- and DIR/fdtest (port/test/adreno/fdtest.c) asks it, then
+#		the service goes down again; "drm:ARGS" gives fdtest ARGS
 #
 # Firmware: whatever is in DIR/fw/qcom goes to /libdata/firmware/qcom on
 # the tablet, where the service reads it (adreno_fw.c) - the zap shader
@@ -72,12 +75,21 @@ MEECHO*) say "tablet: $v" ;;
 esac
 
 tab 'mkdir -p /root/adreno' || exit 3
+fdtest=
+[ -f "$DIR/fdtest" ] && fdtest="$DIR/fdtest"
 scp -q "${TAB_O[@]}" "$DIR/adreno" "$DIR/adreno.conf" "$DIR/minix-service" \
-    "$CLOVER:/root/adreno/" || { say "FAIL: upload"; exit 3; }
+    $fdtest "$CLOVER:/root/adreno/" || { say "FAIL: upload"; exit 3; }
 # scp from Windows brings no execute bit.
 sums=$(tab 'cd /root/adreno && chmod 755 adreno minix-service &&
-    md5 adreno adreno.conf minix-service' | tr -d '\r')
+    { [ ! -f fdtest ] || chmod 755 fdtest; } &&
+    md5 adreno adreno.conf minix-service $(ls fdtest 2>/dev/null)' |
+    tr -d '\r')
 say "$sums"
+# The render node: its device file, as MAKEDEV makes it (major 18, the
+# GPU service's; the tablet has no Mali to share it with).
+say "$(tab '[ -c /dev/dri/renderD128 ] || { mkdir -p /dev/dri &&
+    mknod /dev/dri/renderD128 c 18 128 && chmod 666 /dev/dri/renderD128; };
+    ls -l /dev/dri/renderD128' 2>&1 | tr -d '\r')"
 if ls "$DIR"/fw/qcom/* > /dev/null 2>&1; then
 	tab 'mkdir -p /libdata/firmware/qcom' || exit 3
 	scp -q "${TAB_O[@]}" "$DIR"/fw/qcom/* "$CLOVER:/libdata/firmware/qcom/" ||
@@ -88,6 +100,25 @@ fi
 
 for s in "$@"; do
 	case $s in
+	drm|drm:*)
+		fargs=${s#drm}
+		fargs=${fargs#:}
+		say "--- stage=drm, fdtest $fargs"
+		T=300 tab "kmsg > /tmp/adreno-k0 2>/dev/null; cd /root/adreno &&
+		    ./minix-service up /root/adreno/adreno \
+		    -config /root/adreno/adreno.conf \
+		    -dev /dev/dri/renderD128 2>&1; sleep 1;
+		    ./fdtest $fargs 2>&1; echo \"fdtest: exit \$?\";
+		    ./minix-service down adreno 2>&1; sleep 1;
+		    kmsg > /tmp/adreno-k1 2>/dev/null;
+		    diff /tmp/adreno-k0 /tmp/adreno-k1 | sed -n 's/^> //p'" 2>&1 |
+		    tr -d '\r' | tee -a "$log"
+		if ! T=20 tab true 2> /dev/null; then
+			say "FAIL: the tablet stopped answering after stage=drm"
+			exit 4
+		fi
+		continue
+		;;
 	probe+tz) args="stage=probe tz=1" ;;
 	probe|cx|gx|gpu|smmu|smr|cb0|fault|zap|cp) args="stage=$s" ;;
 	cb0-noroute|fault-noroute) args="stage=${s%-noroute} route=0" ;;

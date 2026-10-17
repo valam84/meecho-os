@@ -62,6 +62,14 @@ unsigned model_contig_live(void);
 const uint8_t *model_ram_of(const void *cpu, size_t len, uint64_t *pa);
 uint8_t *model_ram_pa(uint64_t pa, size_t n);
 int smmu_gpu_pa(uint64_t va, int write, uint64_t *pa);
+void *model_pages_new(size_t len);
+int model_pages_free(void *addr, size_t len);
+int model_pages_whole(const void *p, size_t len);
+unsigned model_pages_live(void);
+int model_umap(const void *cpu, size_t len, uint64_t *pa);
+void smmu_model_serving(int on);
+uint64_t smmu_model_lines(void);
+uint64_t smmu_model_lines_of(uint64_t want);
 int model_gpu_powered(void);		/* model.c */
 uint32_t model_gpu_reg(uint32_t dw);
 void model_gpu_set(uint32_t dw, uint32_t v);
@@ -77,6 +85,17 @@ int cp_model_busy(void);
 int cp_model_started(void);
 unsigned cp_model_packets(void);
 int cp_model_line_up(int vec);
+/* The ring as the render node feeds it (msmtest.c): run at once, or when
+ * told; what ran; a hang; the GPU's own hang detection. */
+void cp_model_defer(int on);
+void cp_model_run(void);
+int cp_model_hung(void);
+unsigned cp_model_ibs(void);
+unsigned cp_model_invals(void);
+const char *cp_model_trail(void);
+void cp_model_trail_reset(void);
+void cp_model_raise(uint32_t bits);
+#define CP_MODEL_HANG	0x4a414d00u	/* a CP_NOP's word: the CP stops */
 
 /* tzmodel.c */
 void tz_model_reset(const struct scenario *s);

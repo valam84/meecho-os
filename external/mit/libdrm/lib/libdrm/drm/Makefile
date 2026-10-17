@@ -3,7 +3,11 @@
 #
 # panfrost_drm.h is not libdrm's: it is the kernel's interface of Panfrost
 # (Linux 7.0, include/uapi/drm, MIT), untouched, beside this file - what
-# the GPU service mali serves (stage 11.6) and Mesa speaks.
+# the GPU service mali serves (stage 11.6) and Mesa speaks.  msm_drm.h
+# beside it is the same for msm - the kernel's header as Mesa 26.2.4
+# carries it (include/drm-uapi, MIT), untouched: what the adreno service
+# serves (port/clover/hw-gpu.md, step 7); libdrm's own copy is from 2015,
+# without submit queues or sync objects, and this one is found first.
 
 .include <bsd.init.mk>
 

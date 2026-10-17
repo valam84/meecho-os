@@ -101,6 +101,13 @@
 #define A5XX_INT_MISC_HANG_DETECT	(1u << 23)
 #define A5XX_INT_MASK			0x1190037eu
 
+/* The A512's own numbers (a5xx_catalog.c, a5xx_gpu.c; hw-gpu.md, §6, §8):
+ * what hw_init() writes and MSM_PARAM_* answers alike. */
+#define A512_GMEM_SIZE			0x44000u	/* 256 + 16 KiB */
+#define A5XX_GMEM_BASE			0x00100000u
+#define A5XX_UCHE_TRAP			0x0001ffffffff0000ull
+#define A512_HIGHEST_BANK_BIT		14
+
 /* CP_RB_CNTL: 32 KiB (BUFSZ log2(size/8)), 32-byte blocks, and the
  * processor never writes the read pointer back on its own (NO_UPDATE). */
 #define A5XX_CP_RB_CNTL_VALUE		0x0800020cu

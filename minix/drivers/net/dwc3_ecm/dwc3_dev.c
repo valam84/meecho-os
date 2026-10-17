@@ -223,6 +223,26 @@ dwc3_dev_start(volatile uint8_t *core)
 	/* 1. No more events into the boot loader's buffer. */
 	dwc3_wr(DWC3_GEVNTSIZ, dwc3_rd(DWC3_GEVNTSIZ) | DWC3_GEVNTSIZ_INTMASK);
 
+	/*
+	 * 1a. A core left in another role - by xhci, which drives the same
+	 * port as a host (port/clover/hw-usbhost.md) - goes back to device
+	 * mode first, the way Linux switches a role (__dwc3_set_mode()):
+	 * GCTL's soft reset held for 100 ms, the direction changed, the reset
+	 * let go.  The soft reset below is the device half's own, and what it
+	 * does to a core in host mode nobody has checked.
+	 */
+	v = dwc3_rd(DWC3_GCTL);
+	if (DWC3_GCTL_PRTCAP(v) != DWC3_GCTL_PRTCAP_DEVICE) {
+		log_info(&dwc3_log, "core found in %s mode (GCTL 0x%08x); back "
+		    "to device first\n", DWC3_GCTL_PRTCAP(v) == 1 ? "host" :
+		    "otg", v);
+		dwc3_wr(DWC3_GCTL, v | DWC3_GCTL_CORESOFTRESET);
+		micro_delay(100000);
+		v = dwc3_rd(DWC3_GCTL) & ~(DWC3_GCTL_CORESOFTRESET |
+		    DWC3_GCTL_PRTCAPDIR_MASK);
+		dwc3_wr(DWC3_GCTL, v | DWC3_GCTL_PRTCAP_DEVICE << 12);
+	}
+
 	/* 2. The core's soft reset, with the pull-up off. */
 	v = dwc3_rd(DWC3_DCTL);
 	dwc3_wr(DWC3_DCTL, (v | DWC3_DCTL_CSFTRST) & ~DWC3_DCTL_RUN_STOP);

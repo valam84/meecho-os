@@ -1,0 +1,19 @@
+/*
+ * What MEECHO says about the Mi Pad 4 that its mainline device tree
+ * (sdm660-xiaomi-clover.dts, sdm660-mainline) does not: statements about
+ * the board, not about a driver.  mkboot.sh compiles the mainline tree with
+ * this file after it, and the image carries the result; the tree as
+ * mainline has it stays next to it for the host stands.
+ *
+ * The USB-C port is dual-role.  Mainline says "peripheral" because it has
+ * no driver for what makes it a host - the PM660 charger's Type-C block
+ * and its VBUS boost - and the tablet's own Android tree says "otg" for
+ * the same controller, with the role from the charger
+ * (port/clover/hw-usbhost.md, section 3).  MEECHO's xhci takes a core only
+ * when the tree lets it be a host; which role the port has at a given
+ * moment is decided by Type-C (qcom_pmic, usbrole), not here.
+ */
+
+&usb3_dwc3 {
+	dr_mode = "otg";
+};

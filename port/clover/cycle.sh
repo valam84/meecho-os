@@ -146,7 +146,7 @@ if [ -z "$img" ]; then
 		[ -n "${DTS_TREE:-}" ] && echo "export DTS_TREE='$DTS_TREE'"
 		echo "export CMDLINE='$CMDLINE cycle=$ID'"
 		echo "bash port/clover/mkboot.sh '$OUTI'"
-		echo "python3 port/clover/checkboot.py '$OUTI' --kernel \"\$WORK_DIR/kernel.bin\" --ramdisk \"\$WORK_DIR/boot.mba\" --dtb \"\$WORK_DIR/\${DTS:-sdm660-xiaomi-clover}.dtb\""
+		echo "python3 port/clover/checkboot.py '$OUTI' --kernel \"\$WORK_DIR/kernel.bin\" --ramdisk \"\$WORK_DIR/boot.mba\" --dtb \"\$WORK_DIR/\${DTS:-sdm660-xiaomi-clover}-meecho.dtb\""
 		# 17 MB a round: the last five images stay, with every log.
 		echo "cd '$WORK' && ls -1t boot-*.img | tail -n +6 | xargs -r rm -f"
 	} > "$LWORK/build-$ID.sh"

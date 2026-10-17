@@ -9,6 +9,7 @@
 
 /* Global registers, from the core's reg base. */
 #define DWC3_GCTL		0xc110
+#define DWC3_GCTL_CORESOFTRESET	(1u << 11)
 #define DWC3_GCTL_PRTCAP(v)	(((v) >> 12) & 3)	/* 1 host, 2 device */
 #define DWC3_GCTL_PRTCAPDIR_MASK (3u << 12)
 #define DWC3_GCTL_PRTCAP_DEVICE	2u

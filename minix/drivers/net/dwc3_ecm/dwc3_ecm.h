@@ -101,6 +101,12 @@ struct dwc3_glue_ops {
 	 * "peripheral").  Only after report() said OK.
 	 */
 	void (*peripheral)(void);
+	/*
+	 * Host mode: the session override off again (Linux, for an extcon
+	 * that says USB_HOST).  xhci, which drives the same port as a host,
+	 * calls it; only after report() said OK.
+	 */
+	void (*host)(void);
 };
 struct dwc3_phy_ops {
 	const char *compatible;

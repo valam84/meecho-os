@@ -163,8 +163,29 @@ qcom_peripheral(void)
 	    rd32(qs, QSCRATCH_SS_PHY_CTRL));
 }
 
+/*
+ * The same, off: in host mode Linux takes the override away
+ * (dwc3_qcom_host_notifier()), and the downstream driver of the tablet
+ * writes HS_PHY_CTRL only on its device path.
+ */
+static void
+qcom_host(void)
+{
+	if (qs == NULL)
+		return;
+	wr32(qs, QSCRATCH_SS_PHY_CTRL, rd32(qs, QSCRATCH_SS_PHY_CTRL) &
+	    ~QSCRATCH_LANE0_PWR_PRESENT);
+	wr32(qs, QSCRATCH_HS_PHY_CTRL, rd32(qs, QSCRATCH_HS_PHY_CTRL) &
+	    ~(QSCRATCH_UTMI_OTG_VBUS_VALID | QSCRATCH_SW_SESSVLD_SEL));
+	(void)rd32(qs, QSCRATCH_HS_PHY_CTRL);
+	log_info(&dwc3_log, "qscratch: no session override (HS_PHY_CTRL "
+	    "0x%08x, SS_PHY_CTRL 0x%08x)\n", rd32(qs, QSCRATCH_HS_PHY_CTRL),
+	    rd32(qs, QSCRATCH_SS_PHY_CTRL));
+}
+
 const struct dwc3_glue_ops dwc3_qcom_glue = {
 	.compatible	= "qcom,dwc3",
 	.report		= qcom_report,
-	.peripheral	= qcom_peripheral
+	.peripheral	= qcom_peripheral,
+	.host		= qcom_host
 };

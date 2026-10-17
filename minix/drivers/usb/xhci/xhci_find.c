@@ -36,6 +36,7 @@
 /* The glues this driver knows, by the wrapper's (or the core's) string. */
 static const struct xhci_glue *const glues[] = {
 	&xhci_rk_glue,
+	&xhci_qcom_glue,
 };
 
 struct ctrl {

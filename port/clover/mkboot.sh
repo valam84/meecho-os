@@ -9,7 +9,8 @@
 #   kernel   the kernel (KERNEL_ELF, default the shared one) as a flat
 #            image, gzipped, with the clover device tree appended - the
 #            "Image.gz-dtb" an ABL expects with a v0 header
-#   dtb      sdm660-xiaomi-clover.dts (the LTE model: fastboot says
+#   dtb      sdm660-xiaomi-clover.dts with sdm660-xiaomi-clover-meecho.dtsi
+#            after it (the USB-C port is dual-role) - the LTE model: fastboot says
 #            "variant: SDM EMMC"; the Wi-Fi one is sda660-...) from the
 #            sdm660-mainline kernel tree in $DTS_TREE - a sparse clone of
 #            github.com/sdm660-mainline/linux with arch/arm64/boot/dts/qcom,
@@ -51,20 +52,38 @@ for f in kernel.bin boot.mba; do
 	[ -s "$WORK_DIR/$f" ] || { echo "FAIL: no $WORK_DIR/$f"; exit 1; }
 done
 
-# 2. The device tree, through cpp as the kernel build would.
+# 2. The device tree, through cpp as the kernel build would - twice: as
+# mainline has it ($DTS.dtb, what the host stands read), and with
+# MEECHO's statements about this board after it ($DTS-meecho.dtb, what the
+# image carries; port/clover/$DTS-meecho.dtsi, or DTS_FIXUP=, or none).
 Q=$DTS_TREE/arch/arm64/boot/dts/qcom
 [ -f "$Q/$DTS.dts" ] || { echo "FAIL: no $Q/$DTS.dts"; exit 1; }
-cpp -nostdinc -undef -D__DTS__ -x assembler-with-cpp \
-    -I "$Q" -I "$DTS_TREE/include" "$Q/$DTS.dts" 2>"$WORK_DIR/dtc.log" |
-    dtc -q -I dts -O dtb -o "$WORK_DIR/$DTS.dtb" - 2>>"$WORK_DIR/dtc.log" ||
+: ${DTS_FIXUP=$HERE/$DTS-meecho.dtsi}
+dtb() {	# out.dtb source.dts
+	cpp -nostdinc -undef -D__DTS__ -x assembler-with-cpp \
+	    -I "$Q" -I "$DTS_TREE/include" "$2" 2>>"$WORK_DIR/dtc.log" |
+	    dtc -q -I dts -O dtb -o "$1" - 2>>"$WORK_DIR/dtc.log"
+}
+: > "$WORK_DIR/dtc.log"
+dtb "$WORK_DIR/$DTS.dtb" "$Q/$DTS.dts" ||
     { echo "FAIL: dtc ($WORK_DIR/dtc.log)"; exit 1; }
+if [ -n "$DTS_FIXUP" ]; then
+	[ -f "$DTS_FIXUP" ] || { echo "FAIL: no $DTS_FIXUP"; exit 1; }
+	printf '#include "%s"\n#include "%s"\n' "$Q/$DTS.dts" "$DTS_FIXUP" \
+	    > "$WORK_DIR/$DTS-meecho.dts"
+	dtb "$WORK_DIR/$DTS-meecho.dtb" "$WORK_DIR/$DTS-meecho.dts" ||
+	    { echo "FAIL: dtc with $DTS_FIXUP ($WORK_DIR/dtc.log)"; exit 1; }
+else
+	cp "$WORK_DIR/$DTS.dtb" "$WORK_DIR/$DTS-meecho.dtb"
+fi
 
 # 3. Image.gz-dtb and the boot image.
 gzip -9n < "$WORK_DIR/kernel.bin" > "$WORK_DIR/kernel.gz" || exit 1
-cat "$WORK_DIR/kernel.gz" "$WORK_DIR/$DTS.dtb" > "$WORK_DIR/kernel.gz-dtb"
+cat "$WORK_DIR/kernel.gz" "$WORK_DIR/$DTS-meecho.dtb" > "$WORK_DIR/kernel.gz-dtb"
 python3 "$HERE/mkbootimg.py" --kernel "$WORK_DIR/kernel.gz-dtb" \
     --ramdisk "$WORK_DIR/boot.mba" --cmdline "$CMDLINE" -o "$OUT" || exit 1
 
 echo "ok $OUT ($(stat -c %s "$OUT") bytes)"
 echo "dtb $DTS from $(git -C "$DTS_TREE" rev-parse --short HEAD 2>/dev/null)"
-md5sum "$OUT" "$WORK_DIR/kernel.bin" "$WORK_DIR/boot.mba" "$WORK_DIR/$DTS.dtb"
+md5sum "$OUT" "$WORK_DIR/kernel.bin" "$WORK_DIR/boot.mba" \
+    "$WORK_DIR/$DTS-meecho.dtb"

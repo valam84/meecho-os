@@ -24,6 +24,8 @@
  *
  *   xhci_find.c  the device tree: the core, and which glue wraps it
  *   xhci_rk.c    Rockchip's glue: power domain, clocks, resets, PHY
+ *   xhci_qcom.c  Qualcomm's glue, dwc3_ecm's files: the block as the boot
+ *                loader left it
  *   xhci_dwc3.c  the DWC3 core around the xHCI: its mode, its PHY interface
  *   xhci_ring.c  the structures the controller and the driver share
  *   xhci_dev.c   one device: its slot, contexts, endpoints, transfers
@@ -330,6 +332,7 @@ struct xhci_glue {
 };
 
 extern const struct xhci_glue xhci_rk_glue;	/* xhci_rk.c */
+extern const struct xhci_glue xhci_qcom_glue;	/* xhci_qcom.c */
 
 struct xhci {
 	struct xhci_devinfo info;

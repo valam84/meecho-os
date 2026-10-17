@@ -446,6 +446,7 @@ static struct {
 	uint32_t pending;	/* event bytes not yet acked */
 	unsigned evw;		/* where the next event goes */
 	int reset;		/* the soft reset happened */
+	int gctl_reset;		/* GCTL's soft reset was held */
 	int started[NEP];	/* a transfer is running on the endpoint */
 	uint64_t trb_pa[NEP];	/* its TRB */
 	int stalled;		/* ep0 stalled since the host last looked */
@@ -474,7 +475,20 @@ model_wr(unsigned off, uint32_t v)
 	uint32_t ty;
 
 	switch (off) {
+	case DWC3_GCTL:
+		if (v & DWC3_GCTL_CORESOFTRESET)
+			M.gctl_reset = 1;
+		R(off) = v;
+		return;
 	case DWC3_DCTL:
+		/*
+		 * The device half's reset of a core in host mode: nobody knows
+		 * what that does on this part, and Linux never asks for it.
+		 */
+		if ((v & DWC3_DCTL_CSFTRST) && DWC3_GCTL_PRTCAP(R(DWC3_GCTL)) !=
+		    DWC3_GCTL_PRTCAP_DEVICE)
+			MERR("device soft reset with the core in host mode "
+			    "(GCTL 0x%x)", R(DWC3_GCTL));
 		if (v & DWC3_DCTL_CSFTRST) {
 			M.reset = 1;
 			v &= ~DWC3_DCTL_CSFTRST;	/* done at once */
@@ -1041,6 +1055,43 @@ ecm_checks(void)
 	    "written");
 }
 
+/*
+ * The block as xhci leaves it when it goes down without putting the core
+ * back (hw-usbhost.md, section 4): host mode.  The take-over has to make
+ * it a device again before the device half's soft reset; and xhci's
+ * counterpart, the wrapper's host(), takes the session override off.
+ */
+static void
+from_host(void)
+{
+	int r;
+
+	printf("--- take-over of a core left in host mode\n");
+	as_left();
+	w32(coremem, DWC3_GCTL, 0x00111000);
+	r = init();
+	CHECK(r == OK && running, "from host: init %d, running %d", r,
+	    running);
+	CHECK(M.gctl_reset, "from host: GCTL's soft reset never held");
+	CHECK(DWC3_GCTL_PRTCAP(R(DWC3_GCTL)) == DWC3_GCTL_PRTCAP_DEVICE &&
+	    !(R(DWC3_GCTL) & DWC3_GCTL_CORESOFTRESET), "from host: GCTL 0x%x",
+	    R(DWC3_GCTL));
+	CHECK(M.errors == 0, "from host: the model saw %u errors", M.errors);
+
+	CHECK(dt.glue->host != NULL, "the wrapper has no host()");
+	if (dt.glue->host != NULL)
+		dt.glue->host();
+	CHECK(*(uint32_t *)(qsmem + QSCRATCH_HS_PHY_CTRL) == 0 &&
+	    *(uint32_t *)(qsmem + QSCRATCH_SS_PHY_CTRL) == 0 &&
+	    *(uint32_t *)(qsmem + QSCRATCH_GENERAL_CFG) == 0xd,
+	    "host(): qscratch %x %x %x",
+	    *(uint32_t *)(qsmem + QSCRATCH_GENERAL_CFG),
+	    *(uint32_t *)(qsmem + QSCRATCH_HS_PHY_CTRL),
+	    *(uint32_t *)(qsmem + QSCRATCH_SS_PHY_CTRL));
+	CHECK(same(GCC) && same(PHY) && same(FUSE), "from host: GCC, PHY or "
+	    "QFPROM written");
+}
+
 static void
 refusal(void)
 {
@@ -1123,6 +1174,7 @@ main(int argc, char **argv)
 	takeover();
 	enumeration();
 	ecm_checks();
+	from_host();
 	refusal();
 
 	printf("dwtest: %u checks, %u failed\n", checks, failures);

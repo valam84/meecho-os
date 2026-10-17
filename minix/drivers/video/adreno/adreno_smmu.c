@@ -411,15 +411,17 @@ route(void)
 	i = u.smr;
 	u.sme_touched = 1;
 	/*
-	 * Linux's order (arm_smmu_write_sme()): where to, then what.  On the
-	 * tablet one of these two writes stopped the whole machine
-	 * (hw-gpu.md, §15); a line before each, and time for the screen's
-	 * console (10 Hz) to draw it, so that a photo can tell which.
+	 * Linux's order (arm_smmu_write_sme()): where to, then what.  The
+	 * S2CR as the tablet's own downstream kernel writes it - translate,
+	 * bank 0, and SHCFG NSH (0x300) - from a real register (ad_wr()):
+	 * written as "str wzr", a zero stopped the machine (hw-gpu.md, §15,
+	 * §16).  A line before each write, and time for the screen's console
+	 * (10 Hz) to draw it, so that a photo can tell which one a stop is.
 	 */
-	log_info(&ad_log, "Q15 writing s2cr %d = 00000000 (translate, cb0)\n",
-	    i);
+	log_info(&ad_log, "Q15 writing s2cr %d = %08x (translate, cb0)\n", i,
+	    S2CR_ROUTE_CB0);
 	micro_delay(300000);
-	ad_wr(&ad.smmu, SMMU_S2CR(i), ((uint32_t)S2CR_TYPE_TRANS << 16) | 0);
+	ad_wr(&ad.smmu, SMMU_S2CR(i), S2CR_ROUTE_CB0);
 	log_info(&ad_log, "Q15 s2cr %d reads %08x; writing smr %d = %08x\n",
 	    i, GR0(SMMU_S2CR(i)), i, SMR_VALID | (ad.dt.sid & 0x7fff));
 	micro_delay(300000);

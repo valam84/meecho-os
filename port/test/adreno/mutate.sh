@@ -68,11 +68,11 @@ adreno_smmu.c@s/if (pt_unmap(\&u.pt, VA_A) == OK \&\& tlbi() == OK)/if (pt_unmap
 adreno_smmu.c@s/TCR_T0SZ(64 - g.ias)/TCR_T0SZ(64 - 36)/@the input width told wrong
 adreno_smmu.c@s/^\tad_wr64(\&ad.smmu, g.cb0 + SMMU_CB_TTBR0, ttbr0);//@the bank enabled without its tables
 adreno_smmu.c@s/ad_wr64(\&ad.smmu, g.cb0 + op, va \& ~0xfffull);/ad_wr(\&ad.smmu, g.cb0 + op, (uint32_t)va);/@a translation operation written by halves
-adreno_smmu.c@s/^\tad_wr(\&ad.smmu, SMMU_S2CR(i), ((uint32_t)S2CR_TYPE_TRANS << 16) | 0);//@the stream routed before its S2CR says where
+adreno_smmu.c@s/^\tad_wr(\&ad.smmu, SMMU_S2CR(i), S2CR_ROUTE_CB0);//@the stream routed before its S2CR says where
 adreno_smmu.c@s/irq = ad.dt.smmu_irq\[ad.dt.smmu_nglobal + 0\];/irq = ad.dt.smmu_irq[0];/@a global line taken for bank 0's
 adreno_smmu.c@s/^\tCB_WR(SMMU_CB_FSR, fsr);.*$//@the fault never cleared
 adreno_smmu.c@s/^\t\tCB_WR(SMMU_CB_SCTLR, u.sctlr);//@bank 0 left enabled
-adreno_smmu.c@s/	ad_wr(\&ad.smmu, SMMU_S2CR(i), ((uint32_t)S2CR_TYPE_TRANS << 16) | 0);/	ad_wr(\&ad.smmu, SMMU_S2CR(i), ((uint32_t)S2CR_TYPE_TRANS << 16) | 1);/@the stream routed to a bank that is not set up
+adreno_smmu.c@s/	ad_wr(\&ad.smmu, SMMU_S2CR(i), S2CR_ROUTE_CB0);/	ad_wr(\&ad.smmu, SMMU_S2CR(i), S2CR_ROUTE_CB0 | 1);/@the stream routed to a bank that is not set up
 adreno_smmu.c@s/	if (u.cb_touched \&\& keep_bank) {/	if (0 \&\& keep_bank) {/@bank 0 made stage 2 under an S2CR that names it
 adreno_smmu.c@s/	test_s2 = (uint32_t)S2CR_TYPE_FAULT << 16;/	test_s2 = (uint32_t)S2CR_TYPE_TRANS << 16;/@the S2CR test translates (the tablet stopped)
 EOF

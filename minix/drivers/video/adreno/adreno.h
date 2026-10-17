@@ -38,16 +38,35 @@ struct ad_region {
 	const char *name;
 };
 
+/*
+ * Every register access is one plain LDR or STR: a base register, no
+ * offset, no writeback, the value in a general register - never the zero
+ * register.  On this SoC a hypervisor traps some of these registers (the
+ * SMMU's stream-matching table) and emulates the access from the
+ * syndrome the trap leaves (ESR_EL2: ISV, SRT); that much any emulator
+ * decodes.  What this one does not: a store from register 31.  The C
+ * accessors let GCC write a constant 0 as "str wzr" (and with register
+ * offsets), and on the Mi Pad 4 the S2CR write "translate, bank 0" -
+ * a zero - so made stopped the whole machine twice, while non-zero
+ * values written from ordinary registers were taken (hw-gpu.md, §16).
+ * Linux's accessors are this same shape (asm "str %w0, [%1]"); "r" and
+ * not "rZ", so that zero too comes from a real register.
+ */
 static inline uint32_t
 ad_rd(const struct ad_region *r, uint32_t off)
 {
-	return *(volatile uint32_t *)(r->base + off);
+	uint32_t v;
+
+	__asm__ volatile("ldr %w0, [%1]" : "=r" (v) :
+	    "r" (r->base + off) : "memory");
+	return v;
 }
 
 static inline void
 ad_wr(const struct ad_region *r, uint32_t off, uint32_t v)
 {
-	*(volatile uint32_t *)(r->base + off) = v;
+	__asm__ volatile("str %w0, [%1]" : : "r" (v),
+	    "r" (r->base + off) : "memory");
 }
 
 /*
@@ -57,13 +76,18 @@ ad_wr(const struct ad_region *r, uint32_t off, uint32_t v)
 static inline uint64_t
 ad_rd64(const struct ad_region *r, uint32_t off)
 {
-	return *(volatile uint64_t *)(r->base + off);
+	uint64_t v;
+
+	__asm__ volatile("ldr %x0, [%1]" : "=r" (v) :
+	    "r" (r->base + off) : "memory");
+	return v;
 }
 
 static inline void
 ad_wr64(const struct ad_region *r, uint32_t off, uint64_t v)
 {
-	*(volatile uint64_t *)(r->base + off) = v;
+	__asm__ volatile("str %x0, [%1]" : : "r" (v),
+	    "r" (r->base + off) : "memory");
 }
 
 #define AD_MAXCLK	8

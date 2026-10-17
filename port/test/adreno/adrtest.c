@@ -298,7 +298,7 @@ main(int argc, char **argv)
 	saw(&tablet, "cb0", "Q14 cb0: 7 of 7 translations as the tables say");
 	not_saw(&tablet, "cb0", "NOT as mapped");
 	saw(&tablet, "cb0", "Q15 sid 0 by smr 0 to cb0: smr 80000000 s2cr "
-	    "00000000; 10 ms: fsr 0 gfsr 0; taken back");
+	    "00000300; 10 ms: fsr 0 gfsr 0; taken back");
 	saw(&tablet, "cb0", "Q17 smmu put back: smr 0 cb0; all as found");
 	not_saw(&tablet, "cb0", "Q16");
 
@@ -321,11 +321,11 @@ main(int argc, char **argv)
 	    "(ignored: a hypervisor's); back 00000000 000200ff");
 	saw(&measured, "fault", "Q13 the SMRs take writes");
 	saw(&measured, "fault", "Q15 sid 0 by smr 0 to cb0: smr 80000000 s2cr "
-	    "00000000");
+	    "00000300");
 	saw(&measured, "fault", "the line works");
 	/* The S2CR cannot be put back (a fault-type write is ignored): it
 	 * keeps naming bank 0, and bank 0 stays stage 1, off. */
-	saw(&measured, "fault", "Q17 smmu put back: smr 0 (s2cr left 00000000) "
+	saw(&measured, "fault", "Q17 smmu put back: smr 0 (s2cr left 00000300) "
 	    "cb0 off, kept stage 1; all as found");
 	check(model_contig_live() == 0, "measured/fault: memory never freed");
 	r = run(dtb, &measured, AD_SMR, 0);

@@ -78,6 +78,8 @@
 #define S2CR_TYPE_TRANS			0
 #define S2CR_TYPE_FAULT			2
 #define S2CR_FIELDS			0x000300ffu	/* TYPE, CBNDX */
+/* Translate through bank 0, SHCFG NSH - the tablet's downstream value */
+#define S2CR_ROUTE_CB0			0x00000300u
 
 /* CBAR of a stage-1 bank, Linux's: S1 with S2 bypassed and the weakest
  * shareability and memory type (BPSHCFG 3, MEMATTR 0xf), which the tables

@@ -455,7 +455,7 @@ smmu_wr(uint32_t off, uint32_t v)
 	if (off == GR1 + SMMU_CBAR(0) || off == GR1 + SMMU_CBA2R(0)) {
 		for (i = 0; off == GR1 + SMMU_CBAR(0) && ((v >> 16) & 3) != 1 &&
 		    i < nsmr; i++)
-			if (*r32(SMMU_S2CR(i)) == 0)
+			if ((*r32(SMMU_S2CR(i)) & S2CR_FIELDS) == 0)
 				model_fail("bank 0 made stage 2 again while "
 				    "S2CR %u names it", i);
 		*r32(off) = v;

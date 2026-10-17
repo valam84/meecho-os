@@ -404,6 +404,41 @@ GPL-2.0-only в репозиторий не кладётся: его собир�
 `port/clover/mkboot.sh`, стенды берут `CLOVER_DTB=`. **На eMMC планшета
 xbl/abl: всякая правка драйвера, которая пишет, — только через окно.**
 
+**Mi Pad 4, графика: шаги 1–3 Adreno 512 (2026-10-17, стенды, QEMU и
+планшет).** Разбор и план — `port/clover/hw-gpu.md`; разбор правок —
+`PORTING-LOG.md`, «Mi Pad 4: Adreno 512 — проба, домены, TrustZone».
+
+Что сделано:
+
+- служба `adreno` (`minix/drivers/video/adreno`) — стадии
+  `probe`/`cx`/`gx`/`gpu`/`smmu` и `tz=1`, ответ — строка `Qn` на
+  вопрос, всё включённое выключается обратно;
+- таблицы GPUCC — `gen-sdm660-tables.py` → `sdm660_gpucc.h`;
+- **`sys_qcomscm(2)`**: ядро даёт операции TrustZone, а не SMC; пока два
+  вопроса, без `qcom,scm` — `ENODEV`;
+- **Mesa с freedreno рядом с panfrost**: один `libgallium`, драйвер по
+  имени узла DRM.
+
+Что сказал планшет:
+
+- GX включается;
+- GPU отвечает, таймер — 19,2 МГц;
+- **`SECVID_TRUST_CNTL` = 1** — zap нужен;
+- **SMMU не пропускает поток GPU** (USFCFG, SID 0 без SMR) — SMMU раньше
+  CP;
+- TZ: SMCCC64, вызовы PAS есть, PAS_IS_SUPPORTED(13) = 0, но Linux
+  этого не спрашивает.
+
+Что помнить:
+
+- **Службу проб держать не на BSP**: `sched` ставит туда любой системный
+  процесс, `scheduler KERNEL; cpu 1;` — нет; так и на QEMU, и на планшете.
+- **`clocks` разбирать по `#clock-cells` поставщика**: у кварца их ноль.
+- Стенд — `port/test/adreno` (`run.sh` и `mutate.sh`).
+- Круг без человека: `cycle.sh` с `KERNEL_ELF=` ядра с `sys_qcomscm`,
+  затем `port/clover/gpu-probe.sh`.
+- На CB2 `glcube` с новым `libgallium` не проверен.
+
 **MEECHO работает на плате (2026-09-07).** BIGTREETECH CB2 загружается с
 SD-карты до `login:`, `root` входит, шелл отвечает на команды; консоль —
 `uart2` на 1500000, ввод и вывод свои. Комплект для карты собирает

@@ -197,12 +197,17 @@ smmu_smr_test(void)
 	ad_wr(&ad.smmu, SMMU_SMR(i), 0x7fffu << 16);
 	r_mask = GR0(SMMU_SMR(i));
 	/*
-	 * Its S2CR, unused while the SMR is not valid: "fault, bank 0", the
-	 * type unchanged from what a free entry holds on the tablet.  NOT
-	 * "translate, bank 0" - the value the GPU's stream would need: on
-	 * the tablet (2026-10-17) that one write, to an entry no valid SMR
-	 * used, stopped the whole machine (hw-gpu.md, §15).  The fault-type
-	 * write is the one that came back unchanged and harmless.
+	 * Its S2CR: "fault, bank 0" - the one value that cannot route
+	 * anything anywhere, whatever the SMR.  Whether it sticks is only
+	 * reported.  On the tablet it does not, and Linux says why
+	 * (arm-smmu-qcom.c, qcom_smmu_cfg_probe()): with some firmware the
+	 * hypervisor traps the stream-matching registers and ignores a
+	 * fault-type S2CR.  Never "translate" here: an S2CR that names a bank
+	 * routes into whatever that bank is, and an unset bank 0 is a
+	 * stage-2 one (CBAR 0) - the hypervisor's kind.  On the tablet
+	 * (2026-10-17) writing "translate, bank 0" before the bank was set
+	 * up stopped the whole machine (hw-gpu.md, §15); Linux sets the bank
+	 * up first, and so does smmu_cb0().
 	 */
 	test_s2 = (uint32_t)S2CR_TYPE_FAULT << 16;
 	ad_wr(&ad.smmu, SMMU_S2CR(i), test_s2);
@@ -215,19 +220,19 @@ smmu_smr_test(void)
 
 	ok = !(r_id & SMR_VALID) && SMR_ID(r_id) != 0 && SMR_MASK(r_id) == 0 &&
 	    !(r_mask & SMR_VALID) && SMR_MASK(r_mask) != 0 &&
-	    SMR_ID(r_mask) == 0 && (r_s2 & S2CR_FIELDS) == test_s2 &&
-	    b_smr == u.smr_v && b_s2 == u.s2cr_v;
+	    SMR_ID(r_mask) == 0 && b_smr == u.smr_v && b_s2 == u.s2cr_v;
 	log_info(&ad_log, "Q13 smr %d (%08x %08x): id bits %x mask bits %x "
 	    "(numsidb %u)\n", i, u.smr_v, u.s2cr_v,
 	    SMR_ID(r_id), SMR_MASK(r_mask), g.sidbits);
+	log_info(&ad_log, "Q13 s2cr wrote %08x read %08x (%s); back %08x "
+	    "%08x\n", test_s2, r_s2 & S2CR_FIELDS,
+	    (r_s2 & S2CR_FIELDS) == test_s2 ? "taken" :
+	    "ignored: a hypervisor's", b_smr, b_s2);
 	if (ok)
-		log_info(&ad_log, "Q13 s2cr wrote %08x read %08x; back %08x "
-		    "%08x: the table takes writes\n", test_s2, r_s2 & S2CR_FIELDS,
-		    b_smr, b_s2);
+		log_info(&ad_log, "Q13 the SMRs take writes\n");
 	else
-		log_warn(&ad_log, "Q13 s2cr wrote %08x read %08x; back %08x "
-		    "%08x: writes do NOT stick; stopping\n", test_s2,
-		    r_s2 & S2CR_FIELDS, b_smr, b_s2);
+		log_warn(&ad_log, "Q13 the SMRs do NOT keep what is written; "
+		    "stopping\n");
 	return ok ? OK : EIO;
 }
 
@@ -575,6 +580,7 @@ smmu_undo(void)
 	char line[200], part[48];
 	const char *why;
 	unsigned differs = 0;
+	int keep_bank;
 	uint32_t v;
 	int i;
 
@@ -589,12 +595,29 @@ smmu_undo(void)
 		goto out;
 	}
 	strlcpy(line, "Q17 smmu put back:", sizeof(line));
+	keep_bank = 0;
 	if (u.sme_touched && (i = u.smr) >= 0) {
 		ad_wr(&ad.smmu, SMMU_SMR(i), u.smr_v);
 		ad_wr(&ad.smmu, SMMU_S2CR(i), u.s2cr_v);
-		if (GR0(SMMU_SMR(i)) != u.smr_v ||
-		    GR0(SMMU_S2CR(i)) != u.s2cr_v) {
+		v = GR0(SMMU_S2CR(i));
+		if (GR0(SMMU_SMR(i)) != u.smr_v) {
 			snprintf(part, sizeof(part), " smr %d differs", i);
+			strlcat(line, part, sizeof(line));
+			differs++;
+		} else if (v != u.s2cr_v && S2CR_TYPE(v) == S2CR_TYPE_TRANS &&
+		    S2CR_CBNDX(v) == 0 && !(u.smr_v & SMR_VALID)) {
+			/*
+			 * A fault-type S2CR is ignored (smmu_smr_test()): this
+			 * one still names bank 0, unused, its SMR not valid.
+			 * Then bank 0 stays a stage-1 bank, off - never the
+			 * stage-2 kind an S2CR must not name (hw-gpu.md, §15).
+			 */
+			snprintf(part, sizeof(part), " smr %d (s2cr left %08x)",
+			    i, v);
+			strlcat(line, part, sizeof(line));
+			keep_bank = 1;
+		} else if (v != u.s2cr_v) {
+			snprintf(part, sizeof(part), " s2cr %d differs", i);
 			strlcat(line, part, sizeof(line));
 			differs++;
 		} else {
@@ -602,7 +625,18 @@ smmu_undo(void)
 			strlcat(line, part, sizeof(line));
 		}
 	}
-	if (u.cb_touched) {
+	if (u.cb_touched && keep_bank) {
+		CB_WR(SMMU_CB_SCTLR, u.sctlr & ~SCTLR_M);
+		(void)tlbi();
+		/* It names no table of this service, which is freed below. */
+		ad_wr64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0, u.ttbr0);
+		ad_wr64(&ad.smmu, g.cb0 + SMMU_CB_TTBR1, u.ttbr1);
+		if ((v = CB(SMMU_CB_FSR)) != 0)
+			CB_WR(SMMU_CB_FSR, v);
+		strlcat(line, " cb0 off, kept stage 1", sizeof(line));
+		if (CB(SMMU_CB_SCTLR) & SCTLR_M)
+			differs++;
+	} else if (u.cb_touched) {
 		CB_WR(SMMU_CB_SCTLR, u.sctlr);
 		(void)tlbi();
 		ad_wr64(&ad.smmu, g.cb0 + SMMU_CB_TTBR0, u.ttbr0);

@@ -425,8 +425,21 @@ smmu_wr(uint32_t off, uint32_t v)
 				if (busy_smr & (1u << i))
 					model_fail("S2CR %u belongs to a live "
 					    "stream", i);
-				if (sc->smr_ro || sc->s2cr_ro)
+				if (sc->smr_ro)
 					return;
+				/* The tablet's hypervisor: fault and bypass
+				 * types ignored (Linux's bypass quirk). */
+				if (sc->s2cr_ro && S2CR_TYPE(v) != 0)
+					return;
+				/* An S2CR that translates through a bank that
+				 * is not a stage-1 one yet: the tablet stopped
+				 * here (hw-gpu.md, §15). */
+				if (S2CR_TYPE(v) == 0 && (S2CR_CBNDX(v) != 0 ||
+				    ((*r32(GR1 + SMMU_CBAR(0)) >> 16) & 3) != 1))
+					model_fail("S2CR %u translates through "
+					    "bank %u, not set up (CBAR %08x)", i,
+					    S2CR_CBNDX(v),
+					    *r32(GR1 + SMMU_CBAR(0)));
 				*r32(off) = v;
 				check_routes(i);
 				return;
@@ -436,6 +449,11 @@ smmu_wr(uint32_t off, uint32_t v)
 		    "driver's", off, v);
 	}
 	if (off == GR1 + SMMU_CBAR(0) || off == GR1 + SMMU_CBA2R(0)) {
+		for (i = 0; off == GR1 + SMMU_CBAR(0) && ((v >> 16) & 3) != 1 &&
+		    i < nsmr; i++)
+			if (*r32(SMMU_S2CR(i)) == 0)
+				model_fail("bank 0 made stage 2 again while "
+				    "S2CR %u names it", i);
 		*r32(off) = v;
 		return;
 	}

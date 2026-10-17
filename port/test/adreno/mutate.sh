@@ -72,6 +72,9 @@ adreno_smmu.c@s/^\tad_wr(\&ad.smmu, SMMU_S2CR(i), ((uint32_t)S2CR_TYPE_TRANS << 
 adreno_smmu.c@s/irq = ad.dt.smmu_irq\[ad.dt.smmu_nglobal + 0\];/irq = ad.dt.smmu_irq[0];/@a global line taken for bank 0's
 adreno_smmu.c@s/^\tCB_WR(SMMU_CB_FSR, fsr);.*$//@the fault never cleared
 adreno_smmu.c@s/^\t\tCB_WR(SMMU_CB_SCTLR, u.sctlr);//@bank 0 left enabled
+adreno_smmu.c@s/	ad_wr(\&ad.smmu, SMMU_S2CR(i), ((uint32_t)S2CR_TYPE_TRANS << 16) | 0);/	ad_wr(\&ad.smmu, SMMU_S2CR(i), ((uint32_t)S2CR_TYPE_TRANS << 16) | 1);/@the stream routed to a bank that is not set up
+adreno_smmu.c@s/	if (u.cb_touched \&\& keep_bank) {/	if (0 \&\& keep_bank) {/@bank 0 made stage 2 under an S2CR that names it
+adreno_smmu.c@s/	test_s2 = (uint32_t)S2CR_TYPE_FAULT << 16;/	test_s2 = (uint32_t)S2CR_TYPE_TRANS << 16;/@the S2CR test translates (the tablet stopped)
 EOF
 echo "$caught of $n caught"
 exit $rc

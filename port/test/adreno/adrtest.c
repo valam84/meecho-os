@@ -278,8 +278,8 @@ main(int argc, char **argv)
 	expect_clean(&tablet, "smr", r, OK);
 	saw(&tablet, "smr", "Q13 smr 0 (00000000 000200ff): id bits 7fff mask "
 	    "bits 7fff (numsidb 3)");
-	saw(&tablet, "smr", "Q13 s2cr wrote 00020000 read 00020000; back "
-	    "00000000 000200ff: the table takes writes");
+	saw(&tablet, "smr", "Q13 s2cr wrote 00020000 read 00020000 (taken); back "
+	    "00000000 000200ff");
 	saw(&tablet, "smr", "Q17 smmu put back: smr 0; all as found");
 	not_saw(&tablet, "smr", "Q14");
 
@@ -313,13 +313,22 @@ main(int argc, char **argv)
 	 * stage after it, nothing changed and nothing routed. */
 	printf("%s\n", measured.name);
 	r = run(dtb, &measured, AD_FAULT, 0);
-	expect_clean(&measured, "fault", r, EIO);
+	check(r == OK, "measured/fault: returned %d (%s)", r, model_violation());
 	saw(&measured, "fault", "Q13 smr 0 (00000000 000200ff): id bits 7fff "
 	    "mask bits 7fff (numsidb 3)");
-	saw(&measured, "fault", "Q13 s2cr wrote 00020000 read 000200ff; back "
-	    "00000000 000200ff: writes do NOT stick; stopping");
-	saw(&measured, "fault", "Q17 smmu put back: smr 0; all as found");
-	not_saw(&measured, "fault", "Q14");
+	saw(&measured, "fault", "Q13 s2cr wrote 00020000 read 000200ff "
+	    "(ignored: a hypervisor's); back 00000000 000200ff");
+	saw(&measured, "fault", "Q13 the SMRs take writes");
+	saw(&measured, "fault", "Q15 sid 0 by smr 0 to cb0: smr 80000000 s2cr "
+	    "00000000");
+	saw(&measured, "fault", "the line works");
+	/* The S2CR cannot be put back (a fault-type write is ignored): it
+	 * keeps naming bank 0, and bank 0 stays stage 1, off. */
+	saw(&measured, "fault", "Q17 smmu put back: smr 0 (s2cr left 00000000) "
+	    "cb0 off, kept stage 1; all as found");
+	check(model_contig_live() == 0, "measured/fault: memory never freed");
+	r = run(dtb, &measured, AD_SMR, 0);
+	expect_clean(&measured, "smr", r, OK);
 
 	/* A busy SMR, and a free one whose S2CR would bypass the SMMU: the
 	 * order of the writes is all that keeps the GPU's stream inside. */
@@ -334,7 +343,7 @@ main(int argc, char **argv)
 	printf("%s\n", smr_ro.name);
 	r = run(dtb, &smr_ro, AD_FAULT, 0);
 	expect_clean(&smr_ro, "fault", r, EIO);
-	saw(&smr_ro, "fault", "writes do NOT stick; stopping");
+	saw(&smr_ro, "fault", "the SMRs do NOT keep what is written; stopping");
 	not_saw(&smr_ro, "fault", "Q14");
 
 	/* The line never comes: said so, everything back. */

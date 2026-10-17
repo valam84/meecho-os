@@ -38,7 +38,8 @@ SRCS+= 	\
 	do_schedule.c \
 	do_schedctl.c \
 	do_statectl.c \
-	do_cachectl.c
+	do_cachectl.c \
+	do_qcomscm.c
 
 .if ${MACHINE_ARCH} == "i386"
 SRCS+=  \

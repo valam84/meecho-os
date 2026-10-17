@@ -1220,6 +1220,18 @@ typedef struct {
 _ASSERT_MSG_SIZE(mess_lsys_krn_sys_cachectl);
 
 typedef struct {
+	int op;			/* QCOMSCM_* from <minix/qcomscm.h> */
+	uint32_t svc;		/* SCM service (QCOMSCM_AVAIL) */
+	uint32_t cmd;		/* SCM command, or the peripheral id */
+	int conv;		/* out: QCOMSCM_CONV_* */
+	int64_t status;		/* out: the firmware's x0 */
+	uint64_t res[3];	/* out: x1..x3 */
+
+	uint8_t padding[72];
+} mess_lsys_krn_sys_qcomscm;
+_ASSERT_MSG_SIZE(mess_lsys_krn_sys_qcomscm);
+
+typedef struct {
 	int request;
 	int port;
 	uint32_t value;
@@ -2687,6 +2699,7 @@ typedef struct noxfer_message {
 		mess_lsys_krn_sys_irqctl m_lsys_krn_sys_irqctl;
 		mess_lsys_krn_sys_memset m_lsys_krn_sys_memset;
 		mess_lsys_krn_sys_privctl m_lsys_krn_sys_privctl;
+		mess_lsys_krn_sys_qcomscm m_lsys_krn_sys_qcomscm;
 		mess_lsys_krn_sys_sdevio m_lsys_krn_sys_sdevio;
 		mess_lsys_krn_sys_setalarm m_lsys_krn_sys_setalarm;
 		mess_lsys_krn_sys_setgrant m_lsys_krn_sys_setgrant;

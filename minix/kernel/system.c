@@ -269,6 +269,9 @@ void system_init(void)
   /* Sharing memory with a device that does not look in the caches. */
   map(SYS_CACHECTL, do_cachectl);	/* data cache maintenance */
 
+  /* A Qualcomm SoC's secure monitor, for drivers TrustZone has a say in. */
+  map(SYS_QCOMSCM, do_qcomscm);		/* ask TrustZone */
+
   /* Machine state switching. */
   map(SYS_SETMCONTEXT, do_setmcontext); /* set machine context */
   map(SYS_GETMCONTEXT, do_getmcontext); /* get machine context */

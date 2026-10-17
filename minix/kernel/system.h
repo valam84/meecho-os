@@ -211,5 +211,10 @@ int do_cachectl(struct proc * caller, message *m_ptr);
 #define do_cachectl NULL
 #endif
 
+int do_qcomscm(struct proc * caller, message *m_ptr);
+#if ! USE_QCOMSCM
+#define do_qcomscm NULL
+#endif
+
 #endif	/* SYSTEM_H */
 

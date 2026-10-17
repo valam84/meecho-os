@@ -268,8 +268,10 @@
 
 #  define SYS_CACHECTL (KERNEL_CALL + 58)	/* sys_cachectl() */
 
+#  define SYS_QCOMSCM (KERNEL_CALL + 59)	/* sys_qcomscm() */
+
 /* Total */
-#define NR_SYS_CALLS	59	/* number of kernel calls */
+#define NR_SYS_CALLS	60	/* number of kernel calls */
 
 #define SYS_CALL_MASK_SIZE BITMAP_CHUNKS(NR_SYS_CALLS)
 
@@ -436,6 +438,14 @@
 #define SCACHE_OP	m_lsys_krn_sys_cachectl.op
 #define SCACHE_ADDR	m_lsys_krn_sys_cachectl.addr
 #define SCACHE_LEN	m_lsys_krn_sys_cachectl.len
+
+/* Field names for SYS_QCOMSCM.  The operations are in <minix/qcomscm.h>. */
+#define QSCM_OP		m_lsys_krn_sys_qcomscm.op
+#define QSCM_SVC	m_lsys_krn_sys_qcomscm.svc
+#define QSCM_CMD	m_lsys_krn_sys_qcomscm.cmd
+#define QSCM_CONV	m_lsys_krn_sys_qcomscm.conv
+#define QSCM_STATUS	m_lsys_krn_sys_qcomscm.status
+#define QSCM_RES	m_lsys_krn_sys_qcomscm.res
 
 /* Codes and field names for SYS_DIAGCTL. */
 #define DIAGCTL_CODE_DIAG	1	/* Print diagnostics. */

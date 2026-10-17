@@ -260,6 +260,8 @@ int arch_enable_paging(struct proc * caller);
 int arch_cache_range(struct proc *caller, vir_bytes addr, vir_bytes len,
 	int op);
 void arch_cache_info(vir_bytes *ctr, vir_bytes *clidr);
+int arch_qcomscm(int op, u32_t svc, u32_t cmd, int *conv, i64_t *status,
+	u64_t res[3]);
 int vm_check_range(struct proc *caller,
        struct proc *target, vir_bytes vir_addr, size_t bytes, int writable);
 

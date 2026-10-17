@@ -117,7 +117,7 @@ CPPFLAGS.fbcon.c+=	-I${NETBSDSRCDIR}/sys/dev/wsfont
 # the rest of the architecture's headers.
 SRCS+=	head.S arch_system.c memory.c cache.c direct_tty_utils.c \
 	pg_utils.c pre_init.c protect.c arch_do_vmctl.c \
-	arch_reset.c arch_clock.c psci.c fpu.c \
+	arch_reset.c arch_clock.c psci.c qcom_scm.c fpu.c \
 	gic.c gicv2.c gicv3.c \
 	generic_timer.c psci_reset.c \
 	serial.c pl011.c dw8250.c fbcon.c \

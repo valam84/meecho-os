@@ -425,7 +425,7 @@ smmu_wr(uint32_t off, uint32_t v)
 				if (busy_smr & (1u << i))
 					model_fail("S2CR %u belongs to a live "
 					    "stream", i);
-				if (sc->smr_ro)
+				if (sc->smr_ro || sc->s2cr_ro)
 					return;
 				*r32(off) = v;
 				check_routes(i);
@@ -629,23 +629,29 @@ smmu_model_reset(const struct scenario *s)
 		idmask = 0x7fff;
 		busy_smr = 1;
 	} else {
-		/* As the tablet answered Q9 (hw-gpu.md, §13): 5 banks, 3
-		 * SMRs, 3 stream ID bits, translation operations, unmatched
-		 * streams fault.  SMR 0 routes the secure stream 2 to a bank
-		 * of TrustZone's; SMR 1 is free with an S2CR that would
-		 * bypass the SMMU - the worst a free entry can hold; SMR 2 is
-		 * free and faults. */
+		/* As the tablet answered Q9, Q10 and Q13 (hw-gpu.md, §13,
+		 * §14): 5 banks, 3 SMRs - all free, each S2CR "fault, bank
+		 * 0xff" - all 15 bits of ID and MASK writable, translation
+		 * operations, unmatched streams fault. */
 		*r32(SMMU_SCR0) = 0x00200626;
 		*r32(SMMU_ID0) = 0x48016603;
 		*r32(SMMU_ID1) = 0x20008005;
 		*r32(SMMU_ID2) = 0x00007511;
-		*r32(SMMU_SMR(0)) = SMR_VALID | 2;
-		*r32(SMMU_S2CR(0)) = 2;		/* translate, bank 2 */
-		*r32(SMMU_S2CR(1)) = 0x00010000;
-		*r32(SMMU_S2CR(2)) = 0x00020000;
+		*r32(SMMU_S2CR(0)) = 0x000200ff;
+		*r32(SMMU_S2CR(1)) = 0x000200ff;
+		*r32(SMMU_S2CR(2)) = 0x000200ff;
 		nsmr = 3;
-		idmask = 0x7;
-		busy_smr = 1;
+		idmask = 0x7fff;
+		busy_smr = 0;
+		if (s->bypass_free) {
+			/* Made up, the worst a machine might hold: SMR 0
+			 * routes stream 2 to a bank of TrustZone's, the free
+			 * SMR 1 has an S2CR that would bypass the SMMU. */
+			*r32(SMMU_SMR(0)) = SMR_VALID | 2;
+			*r32(SMMU_S2CR(0)) = 2;
+			*r32(SMMU_S2CR(1)) = 0x00010000;
+			busy_smr = 1;
+		}
 		if (s->cb0_busy)
 			*r32(CB0 + SMMU_CB_SCTLR) = SCTLR_M;
 		if (s->stale_tlb) {

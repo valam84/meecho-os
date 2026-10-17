@@ -125,8 +125,12 @@ main(int argc, char **argv)
 	    1, 0, .smmu_tablet = 0 };
 	static const struct scenario stale = { "stale-clocks", 1, 1, 1, 0, 1,
 	    0, 0, 0, .smmu_tablet = 0 };
-	/* The SMMU as the tablet answered (hw-gpu.md, §13), and what may
-	 * differ on another: writes dropped, a line not wired, bank 0 taken. */
+	/* The SMMU as the tablet answered (hw-gpu.md, §13, §15): S2CR writes
+	 * dropped ("measured").  "tablet": the same SMMU taking them - the
+	 * stages beyond smr, for when a way to route is found - and what may
+	 * differ: writes dropped, a line not wired, bank 0 taken. */
+	static const struct scenario measured = { "tablet-measured", 1, 0, 0,
+	    0, 0, 0, 0, 1, .smmu_tablet = 1, .stale_tlb = 1, .s2cr_ro = 1 };
 	static const struct scenario tablet = { "tablet", 1, 0, 0, 0, 0, 0, 0,
 	    1, .smmu_tablet = 1, .stale_tlb = 1 };
 	static const struct scenario smr_ro = { "smr-ro", 1, 0, 0, 0, 0, 0, 0,
@@ -135,6 +139,8 @@ main(int argc, char **argv)
 	    1, .smmu_tablet = 1, .no_line = 1, .stale_tlb = 1 };
 	static const struct scenario cbbusy = { "cb0-busy", 1, 0, 0, 0, 0, 0,
 	    0, 1, .smmu_tablet = 1, .cb0_busy = 1 };
+	static const struct scenario bypfree = { "bypass-free", 1, 0, 0, 0,
+	    0, 0, 0, 1, .smmu_tablet = 1, .stale_tlb = 1, .bypass_free = 1 };
 	static const char *const stages[] = { "probe", "cx", "gx", "gpu",
 	    "smmu", "smr", "cb0", "fault" };
 	const struct scenario *all[] = { &boot, &allon, &cxon };
@@ -264,17 +270,17 @@ main(int argc, char **argv)
 	saw(&tablet, "smmu", "Q9 smmu scr0 00200626 id 48016603 20008005 "
 	    "00007511 gfsr 00000000: 5 cb, 3 smr, 4K pages, ias 36 oas 36 "
 	    "ubs 48");
-	saw(&tablet, "smmu", "Q10 sme 1: smr 00000000 s2cr 00010000");
+	saw(&tablet, "smmu", "Q10 sme 1: smr 00000000 s2cr 000200ff");
 	saw(&tablet, "smmu", "Q10 sid 0: no valid SMR routes it");
 	not_saw(&tablet, "smmu", "Q13");
 
 	r = run(dtb, &tablet, AD_SMR, 0);
 	expect_clean(&tablet, "smr", r, OK);
-	saw(&tablet, "smr", "Q13 smr 1 (00000000 00010000): id bits 7 mask "
-	    "bits 7 (numsidb 3)");
+	saw(&tablet, "smr", "Q13 smr 0 (00000000 000200ff): id bits 7fff mask "
+	    "bits 7fff (numsidb 3)");
 	saw(&tablet, "smr", "Q13 s2cr wrote 00020000 read 00020000; back "
-	    "00000000 00010000: the table takes writes");
-	saw(&tablet, "smr", "Q17 smmu put back: smr 1; all as found");
+	    "00000000 000200ff: the table takes writes");
+	saw(&tablet, "smr", "Q17 smmu put back: smr 0; all as found");
 	not_saw(&tablet, "smr", "Q14");
 
 	r = run(dtb, &tablet, AD_CB0, 0);
@@ -290,9 +296,9 @@ main(int argc, char **argv)
 	    "unmapped");
 	saw(&tablet, "cb0", "Q14 cb0: 7 of 7 translations as the tables say");
 	not_saw(&tablet, "cb0", "NOT as mapped");
-	saw(&tablet, "cb0", "Q15 sid 0 by smr 1 to cb0: smr 80000000 s2cr "
+	saw(&tablet, "cb0", "Q15 sid 0 by smr 0 to cb0: smr 80000000 s2cr "
 	    "00000000; 10 ms: fsr 0 gfsr 0; taken back");
-	saw(&tablet, "cb0", "Q17 smmu put back: smr 1 cb0; all as found");
+	saw(&tablet, "cb0", "Q17 smmu put back: smr 0 cb0; all as found");
 	not_saw(&tablet, "cb0", "Q16");
 
 	r = run(dtb, &tablet, AD_FAULT, 0);
@@ -302,6 +308,27 @@ main(int argc, char **argv)
 	saw(&tablet, "fault", "Q16 cleared (fsr 00000000), quiet after: the "
 	    "line works");
 	saw(&tablet, "fault", "all as found");
+
+	/* As measured: SMRs take writes, S2CRs do not - stop at Q13, every
+	 * stage after it, nothing changed and nothing routed. */
+	printf("%s\n", measured.name);
+	r = run(dtb, &measured, AD_FAULT, 0);
+	expect_clean(&measured, "fault", r, EIO);
+	saw(&measured, "fault", "Q13 smr 0 (00000000 000200ff): id bits 7fff "
+	    "mask bits 7fff (numsidb 3)");
+	saw(&measured, "fault", "Q13 s2cr wrote 00020000 read 000200ff; back "
+	    "00000000 000200ff: writes do NOT stick; stopping");
+	saw(&measured, "fault", "Q17 smmu put back: smr 0; all as found");
+	not_saw(&measured, "fault", "Q14");
+
+	/* A busy SMR, and a free one whose S2CR would bypass the SMMU: the
+	 * order of the writes is all that keeps the GPU's stream inside. */
+	printf("%s\n", bypfree.name);
+	r = run(dtb, &bypfree, AD_FAULT, 0);
+	expect_clean(&bypfree, "fault", r, OK);
+	saw(&bypfree, "fault", "Q15 sid 0 by smr 1 to cb0");
+	saw(&bypfree, "fault", "the line works");
+	saw(&bypfree, "fault", "Q17 smmu put back: smr 1 cb0; all as found");
 
 	/* Writes that do not stick: stop before the bank, nothing changed. */
 	printf("%s\n", smr_ro.name);

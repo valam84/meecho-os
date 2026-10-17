@@ -196,11 +196,16 @@ smmu_smr_test(void)
 	r_id = GR0(SMMU_SMR(i));
 	ad_wr(&ad.smmu, SMMU_SMR(i), 0x7fffu << 16);
 	r_mask = GR0(SMMU_SMR(i));
-	/* Its S2CR: unused while the SMR is not valid. */
-	test_s2 = (S2CR_TYPE(u.s2cr_v) == S2CR_TYPE_FAULT &&
-	    S2CR_CBNDX(u.s2cr_v) == 0) ? ((uint32_t)S2CR_TYPE_TRANS << 16) | 1 :
-	    (uint32_t)S2CR_TYPE_FAULT << 16;
-	ad_wr(&ad.smmu, SMMU_S2CR(i), (u.s2cr_v & ~S2CR_FIELDS) | test_s2);
+	/*
+	 * Its S2CR, unused while the SMR is not valid: "fault, bank 0", the
+	 * type unchanged from what a free entry holds on the tablet.  NOT
+	 * "translate, bank 0" - the value the GPU's stream would need: on
+	 * the tablet (2026-10-17) that one write, to an entry no valid SMR
+	 * used, stopped the whole machine (hw-gpu.md, §15).  The fault-type
+	 * write is the one that came back unchanged and harmless.
+	 */
+	test_s2 = (uint32_t)S2CR_TYPE_FAULT << 16;
+	ad_wr(&ad.smmu, SMMU_S2CR(i), test_s2);
 	r_s2 = GR0(SMMU_S2CR(i));
 
 	ad_wr(&ad.smmu, SMMU_SMR(i), u.smr_v);
@@ -213,8 +218,8 @@ smmu_smr_test(void)
 	    SMR_ID(r_mask) == 0 && (r_s2 & S2CR_FIELDS) == test_s2 &&
 	    b_smr == u.smr_v && b_s2 == u.s2cr_v;
 	log_info(&ad_log, "Q13 smr %d (%08x %08x): id bits %x mask bits %x "
-	    "(numsidb %u)\n", i, u.smr_v, u.s2cr_v, SMR_ID(r_id),
-	    SMR_MASK(r_mask), g.sidbits);
+	    "(numsidb %u)\n", i, u.smr_v, u.s2cr_v,
+	    SMR_ID(r_id), SMR_MASK(r_mask), g.sidbits);
 	if (ok)
 		log_info(&ad_log, "Q13 s2cr wrote %08x read %08x; back %08x "
 		    "%08x: the table takes writes\n", test_s2, r_s2 & S2CR_FIELDS,

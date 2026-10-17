@@ -28,6 +28,8 @@ struct scenario {
 	int no_line;		/* bank 0's fault never reaches its line */
 	int cb0_busy;		/* bank 0 enabled by someone at the start */
 	int stale_tlb;		/* a stale TLB entry for ASID 0, 16 MiB */
+	int bypass_free;	/* SMR 0 busy, the free SMR 1 bypasses */
+	int s2cr_ro;		/* S2CR writes dropped, SMR ones kept: the tablet */
 };
 
 extern jmp_buf model_hang;

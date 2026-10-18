@@ -168,6 +168,8 @@ char *schedulerstr(struct proc *scheduler);
 void print_proc(struct proc *pp);
 /* prints the given process and recursively all processes it depends on */
 void print_proc_recursive(struct proc *pp);
+/* prints every process, a line each */
+void print_proc_table(void);
 void printmsg(message *msg, struct proc *src, struct proc *dst,
     char operation, int printparams);
 #if DEBUG_IPC_HOOK

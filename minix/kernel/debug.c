@@ -260,6 +260,14 @@ void print_proc(struct proc *pp)
 		pp->p_seg.p_cr3,
 #elif defined(__arm__)
 		pp->p_seg.p_ttbr,
+#elif defined(__aarch64__)
+		/*
+		 * Without a branch here the format had one argument too few,
+		 * and every %s after "pdbr" read the argument before it: the
+		 * rts flags printed as the misc flags, and the scheduler's
+		 * name came from wherever the next slot pointed.
+		 */
+		(unsigned long)pp->p_seg.p_ttbr,
 #endif
 		rtsflagstr(pp->p_rts_flags), miscflagstr(pp->p_misc_flags),
 		schedulerstr(pp->p_scheduler));
@@ -309,6 +317,33 @@ static void print_proc_depends(struct proc *pp, const int level)
 void print_proc_recursive(struct proc *pp)
 {
 	print_proc_depends(pp, 0);
+}
+
+/*
+ * Every process there is, a short line each: who is blocked on whom. For
+ * the boot watchdog (clock.c), which fires on a machine that is alive in
+ * the kernel and stuck above it - the one case where this table is the
+ * whole diagnosis. Short, because it shares the message ring with what
+ * came before it, and that matters as much.
+ */
+void print_proc_table(void)
+{
+	struct proc *rp;
+	endpoint_t dep;
+
+	for (rp = BEG_PROC_ADDR; rp < END_PROC_ADDR; rp++) {
+		if (isemptyp(rp))
+			continue;
+		printf("%s %d %s%s", rp->p_name, rp->p_endpoint,
+		    rtsflagstr(rp->p_rts_flags),
+		    miscflagstr(rp->p_misc_flags));
+		dep = P_BLOCKEDON(rp);
+		if (dep != NONE) {
+			printf("on ");
+			print_endpoint(dep);
+		}
+		printf("\n");
+	}
 }
 
 #if DEBUG_DUMPIPC || DEBUG_DUMPIPCF

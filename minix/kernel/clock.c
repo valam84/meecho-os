@@ -109,7 +109,17 @@ int timer_int_handler(void)
 	 */
 	if (bootwd_ticks != 0 && kclockinfo.uptime >= bootwd_ticks) {
 		bootwd_ticks = 0;		/* say it once */
-		printf("boot watchdog expired, resetting\n");
+		/*
+		 * The tick still comes, so the kernel is alive; whatever
+		 * hung is above it, and the table of who waits on whom is
+		 * the first thing that says where - on the serial line, the
+		 * last thing before the reset. Short lines (debug.c), so
+		 * that it does not push out of the ring what came before.
+		 */
+		printf("boot watchdog expired after %lu s; the processes:\n",
+		    (unsigned long)(kclockinfo.uptime / system_hz));
+		print_proc_table();
+		printf("boot watchdog: resetting\n");
 		arch_shutdown(RB_AUTOBOOT);
 	}
 

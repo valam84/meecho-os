@@ -5,7 +5,8 @@
 # sessions of /etc/ttys after it.
 #
 # Not the CB2's rc (port/mkroot.sh): this machine has no Ethernet, its
-# one USB port is the network or a host by turns, it has no Mali, and on a
+# one USB port is the network or a host by turns, its GPU is an Adreno, not
+# a Mali, and on a
 # Snapdragon a driver that probes a block whose clock nobody turned on can
 # stall the bus - so nothing is started here that was not written for this
 # SoC or does not touch hardware at all.
@@ -59,6 +60,28 @@ if [ -x /service/qcom_touch ]
 then
 	minix-service up /service/qcom_touch ||
 	    echo "WARNING: no touch screen driver"
+fi
+
+# The GPU: Adreno 512, Mesa's freedreno through /dev/dri/renderD128
+# (port/clover/hw-gpu.md).  After qcom_rpm, which takes its VDDMX votes.
+# It needs the CP's microcode and the tablet's zap shader in
+# /libdata/firmware/qcom - neither may be in MEECHO's tree, so a kit puts
+# them there (port/clover/mkkit.sh) or they are copied in by hand; without
+# them the service is not started and the desktop draws with the
+# processor.  gpufreq= (a boot argument): the core's clock, "max" by
+# default - the highest point the chip's speed bin allows, 588 MHz on this
+# tablet - or MHz, or 0 for the crystal.
+if [ -x /service/adreno ] && [ -f /libdata/firmware/qcom/a530_pm4.fw ]
+then
+	gpufreq=max
+	if sysenv gpufreq >/dev/null
+	then	gpufreq="`sysenv gpufreq`"
+	fi
+	[ -c /dev/dri/renderD128 ] || { mkdir -p /dev/dri &&
+	    mknod /dev/dri/renderD128 c 18 128 &&
+	    chmod 666 /dev/dri/renderD128; }
+	minix-service up /service/adreno -dev /dev/dri/renderD128 \
+	    -args "freq=$gpufreq" || echo "WARNING: no GPU"
 fi
 
 # Randomness: the SoC's PRNG (qcom,prng-ee, random/qcom_prng.c) seeds the
@@ -177,6 +200,20 @@ fi
 if [ -x /usr/sbin/usbrole ]
 then
 	( trap '' HUP; /usr/sbin/usbrole -d ) </dev/null >/dev/console 2>&1 &
+fi
+
+# The desktop, with desktop=1 (a boot argument): meecho-desktop as root,
+# in the background, as if typed at the console - meechowm takes the
+# screen, the console keyboard gives way to the desktop's (meechowm-osk),
+# touches go to the desktop, and a USB keyboard and mouse to it as soon as
+# usbrole makes the port a host.  Super+Shift+e ends it, and the console
+# has the screen back with login: on it.  Its log is /var/log/desktop.log.
+if [ "`sysenv desktop 2>/dev/null`" = 1 ] && [ -x /usr/bin/meecho-desktop ]
+then
+	echo "Starting the desktop"
+	( trap '' HUP; cd /root && HOME=/root USER=root LOGNAME=root \
+	    SHELL=/bin/sh exec /usr/bin/meecho-desktop ) \
+	    </dev/null >/var/log/desktop.log 2>&1 &
 fi
 
 exit 0

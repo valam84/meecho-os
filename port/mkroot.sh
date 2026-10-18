@@ -382,6 +382,45 @@ else
 fi
 fi
 
+# Файлы площадки, которым не место в дереве ОС, - каталогом ROOT_EXTRA,
+# разложенным как в корне (например libdata/firmware/qcom с микрокодом GPU
+# Mi Pad 4 под LICENSE.qcom: в BSD-дерево его класть нельзя,
+# port/clover/mkkit.sh). Каталоги верхнего уровня должны быть новыми для
+# корня: сливать их с тем, что описал proto, этот код не берётся.
+if [ -n "${ROOT_EXTRA:-}" ]
+then
+	python3 - "${ROOT_EXTRA}" "${WORK}/proto.emmc" <<'END_PY' || exit 1
+import os, stat, sys
+extra, proto = os.path.abspath(sys.argv[1]), sys.argv[2]
+lines = open(proto).read().split('\n')
+while lines and lines[-1] == '':
+	lines.pop()
+assert lines[-1] == '$', 'proto does not end with the root\'s "$"'
+# mkfs reads the tree from the "$" lines, not from the indent, and the
+# proto indents by spaces and tabs both: one blank before the name is the
+# root's own entry.
+top = {l.split()[0] for l in lines
+       if len(l) > 1 and l[0] in ' \t' and l[1] not in ' \t' and
+       len(l.split()) > 1}
+add = []
+def walk(d, depth):
+	for n in sorted(os.listdir(d)):
+		p = os.path.join(d, n)
+		if depth == 1 and n in top:
+			sys.exit('ROOT_EXTRA: /%s is already in the root' % n)
+		if os.path.isdir(p):
+			add.append(' ' * depth + n + ' d--755 0 0')
+			walk(p, depth + 1)
+			add.append(' ' * (depth + 1) + '$')
+		else:
+			m = '755' if os.stat(p).st_mode & stat.S_IXUSR else '644'
+			add.append(' ' * depth + n + ' ---' + m + ' 0 0 ' + p)
+walk(extra, 1)
+open(proto, 'w').write('\n'.join(lines[:-1] + add + ['$', '']))
+print('ROOT_EXTRA: %s, %d entries' % (extra, len(add)))
+END_PY
+fi
+
 rm -f "${IMG}" "${IMG}.gz"
 dd if=/dev/zero of="${IMG}" bs=1M count=0 seek=${MB} 2>/dev/null
 

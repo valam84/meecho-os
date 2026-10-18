@@ -388,8 +388,10 @@ def main():
                bg != col["ink"] and ink > 500,
                "x %d: background 0x%06x ink %d" % (wx, bg, ink))
 
-        # 5. foot.
-        bg, _ = fbart(fx + 20, 600, 200, 40)
+        # 5. foot - above the bottom third: foot asks for text input, and
+        # meechowm-osk (up with every meecho-desktop since 515c0df6e)
+        # covers the bottom of the screen with its keys.
+        bg, _ = fbart(fx + 20, 300, 200, 40)
         record("5. foot: its background is ink", bg == col["ink"],
                "0x%06x" % bg)
 

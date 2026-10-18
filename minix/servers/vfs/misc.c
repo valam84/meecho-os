@@ -729,7 +729,28 @@ static void free_proc(int flags)
 		vp = rfilp->filp_vno;
 		if (!S_ISCHR(vp->v_mode)) continue;
 		if (vp->v_sdev != dev) continue;
-		lock_filp(rfilp, VNODE_READ);
+		/*
+		 * Not lock_filp(): this filp is another process's, and this
+		 * thread holds no reference to it.  lock_filp() takes the
+		 * vnode and then waits for the filp, and the filp's holder
+		 * may be the worker closing its last reference - which
+		 * holds the filp and, in put_vnode(), waits for the vnode
+		 * to have no readers before it can have it alone.  Each
+		 * waited for the other for good: the session leader's exit
+		 * and the exit of a process with the terminal open, side by
+		 * side - which is what reboot(8) makes of getty and every
+		 * daemon on the console.  So the vnode first, then only a
+		 * try for the filp; a filp another worker has is being
+		 * closed or used by it, and is left to it.
+		 */
+		if (rfilp->filp_count == 0) continue;	/* last close under way */
+		if (lock_vnode(vp, VNODE_READ) == EBUSY) continue;
+		if (rfilp->filp_vno != vp || rfilp->filp_count == 0 ||
+		    rfilp->filp_mode == FILP_CLOSED ||
+		    mutex_trylock(&rfilp->filp_lock) != 0) {
+			unlock_vnode(vp);
+			continue;
+		}
 		(void) cdev_close(dev); /* Ignore any errors. */
 		/* FIXME: missing select check */
 		rfilp->filp_mode = FILP_CLOSED;

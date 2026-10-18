@@ -98,16 +98,13 @@ mthread_cond_t *cond;
   else if (!mthread_cond_valid(cond))
   	return(EINVAL);
 
-  /* Is another thread currently using this condition variable? A timed
-   * waiter uses it until it has left, signalled or not. */
-  tcb = mthread_find_tcb(MAIN_THREAD);
-  if (tcb->m_cond == *cond && (tcb->m_state == MS_CONDITION || tcb->m_timed))
-  	return(EBUSY);
-
-  for (t = (mthread_thread_t) 0; t < no_threads; t++) {
+  /* Is another thread currently using this condition variable? A waiter
+   * uses it until it has left, signalled or not: one signalled but not yet
+   * run is runnable and still writes mc_mutex when it runs (MEECHO; see
+   * mthread_mutex_destroy()). */
+  for (t = MAIN_THREAD; t < no_threads; t++) {
   	tcb = mthread_find_tcb(t);
-	if (tcb->m_cond == *cond &&
-	    (tcb->m_state == MS_CONDITION || tcb->m_timed))
+	if (tcb->m_cond == *cond)
 		return(EBUSY);
   }
 

@@ -66,13 +66,18 @@ mthread_mutex_t *mutex;
   else if ((*mutex)->mm_owner != NO_THREAD)
   	return(EBUSY);
 
-  /* Check if this mutex is not associated with a condition */
-  for (t = (mthread_thread_t) 0; t < no_threads; t++) {
+  /* Check if this mutex is not associated with a condition.  MEECHO: by
+   * m_cond alone, which a waiter holds from its wait until it has the mutex
+   * back - not by its state: a waiter signalled but not yet run is runnable,
+   * and freeing the mutex under it had it lock a NULL when it ran (Mesa's
+   * freedreno destroys a job's fence while its waiter is woken, on the Mi
+   * Pad 4: SIGSEGV at 0x14 in mthread_cond_wait).  The main thread is a
+   * waiter too.  Code that ignores EBUSY leaks the mutex rather than crash.
+   */
+  for (t = MAIN_THREAD; t < no_threads; t++) {
   	tcb = mthread_find_tcb(t);
-	if (tcb->m_state == MS_CONDITION || tcb->m_timed) {
-		if (tcb->m_cond != NULL && tcb->m_cond->mc_mutex == *mutex)
-			return(EBUSY);
-	}
+	if (tcb->m_cond != NULL && tcb->m_cond->mc_mutex == *mutex)
+		return(EBUSY);
   }
 
   /* Not in use; invalidate it */

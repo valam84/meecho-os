@@ -21,7 +21,17 @@
 #	STAGE	fuse, pmic, rails, apcs, apm, osm, cprh (the service's stages, in that
 #		order by default), hz (the cores' speed); "osm!" and "cprh!"
 #		read those blocks even with their clock off (force=1) - only
-#		when asked for by name
+#		when asked for by name.  Two more, never by default:
+#		"cf:ARGS" runs the qcom_cpufreq service (hw-cpu.md, section
+#		13; DIR/qcom_cpufreq and its .conf go to /root/qcom_cpufreq)
+#		with ARGS, e.g. "cf:stage=set gold=1747" - stage=set WRITES
+#		the clusters' PLL and mux, and only with the user's yes for
+#		that step; "stress:SECONDS" keeps every core busy that long
+#		with work whose result is known (gzip and gunzip of the same
+#		random bytes, cpuhz's add count) and counts what came out
+#		wrong
+#
+# BOOTWD= (default 1200) is the boot watchdog of the -b image, in seconds.
 #
 # A stage after which the tablet no longer answers stops the round: the
 # kernel's boot watchdog takes it to fastboot (nextboot=bootloader) and the
@@ -83,7 +93,7 @@ EOF
 	wsl -d "$WSL_DISTRO" -u "$WSL_USER" -- bash "$W/tree.sh" 2>&1 | tr -d '\0'
 	[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "FAIL: the tree"; exit 101; }
 	KERNEL_ELF=$W/kit/kernel BOOT_MBA=$W/kit/boot.mba DTS_TREE=$W/dts \
-	CMDLINE="rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata console=console osk=1 netdrv=dwc3_ecm netaddr=10.42.0.2/24 nextboot=bootloader bootwd=1200" \
+	CMDLINE="rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata console=console osk=1 netdrv=dwc3_ecm netaddr=10.42.0.2/24 nextboot=bootloader bootwd=${BOOTWD:-1200}" \
 	    bash "$HERE/cycle.sh" -c 'uname -a; sysenv cycle; uptime'
 	exit $?
 fi
@@ -143,6 +153,39 @@ for s in "$@"; do
 		    sleep 2; kill \$k; awk '/cpuprobe: stage ${s%!} \\(tag $n\\)/ { on = 1 }
 		    on && /cpuprobe:/' /tmp/cpuprobe.k; }" 2>&1 |
 		    tr -d '\r' | tee -a "$log"
+		;;
+	cf:*)
+		# The service and its .conf go up once.  Its lines: everything
+		# the kernel's ring gets after the start.  RS gives a service
+		# 10 s (RS_INIT_T) to finish its init, and qcom_cpufreq does its
+		# work in init: no hold= of 10 s or more.
+		args=${s#cf:}
+		if [ -z "${cf_up:-}" ]; then
+			tab 'mkdir -p /root/qcom_cpufreq' || exit 3
+			scp -q "${TAB_O[@]}" "$DIR/qcom_cpufreq" \
+			    "$DIR/qcom_cpufreq.conf" "$CLOVER:/root/qcom_cpufreq/" ||
+			    { say "FAIL: upload"; exit 3; }
+			say "$(tab 'cd /root/qcom_cpufreq && chmod 755 qcom_cpufreq &&
+			    md5 qcom_cpufreq qcom_cpufreq.conf' | tr -d '\r')"
+			cf_up=1
+		fi
+		say "--- qcom_cpufreq $args"
+		T=120 tab "cd /root/qcom_cpufreq && { kmsg -f > /tmp/cf.k 2>&1 &
+		    k=\$!; sleep 1; n=\$(wc -l < /tmp/cf.k);
+		    /sbin/minix-service up /root/qcom_cpufreq/qcom_cpufreq \
+		    -config /root/qcom_cpufreq/qcom_cpufreq.conf -args '$args' 2>&1;
+		    sleep 2; kill \$k; tail -n +\$((n + 1)) /tmp/cf.k; }" 2>&1 |
+		    tr -d '\r' | tee -a "$log"
+		;;
+	stress:*)
+		secs=${s#stress:}
+		say "--- stress $secs s"
+		cp "$HERE/cpu-stress.sh" "$DIR/cpu-stress.sh" &&
+		    scp -q "${TAB_O[@]}" "$DIR/cpu-stress.sh" \
+		    "$CLOVER:/root/cpuprobe/cpu-stress.sh" ||
+		    { say "FAIL: upload"; exit 3; }
+		T=$((secs + 120)) tab "sh /root/cpuprobe/cpu-stress.sh $secs 8;
+		    echo \"stress: exit \$?\"" 2>&1 | tr -d '\r' | tee -a "$log"
 		;;
 	*) say "FAIL: no stage $s"; exit 2 ;;
 	esac

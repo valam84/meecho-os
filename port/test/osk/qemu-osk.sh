@@ -5,12 +5,13 @@
 # QEMU does not have - and the two talk through DS.  Three frames are saved
 # and made PNGs to look at:
 #
-#   1-upper.png   "echo Hi" typed and run; then Ctrl tapped twice (locked),
-#                 Shift once (armed: the upper case shown), Alt held down
-#                 (armed, and pressed)
-#   2-digits.png  a new owner (down and up again): digits, '5' held
+#   1-term.png    "echo Hi" typed and run; then Ctrl tapped twice (locked),
+#                 the terminal layer (">_"), Alt held down (armed, and
+#                 pressed)
+#   2-upper.png   a new owner (down and up again): Shift tapped (armed, the
+#                 upper case shown)
 #   3-back.png    after a program held /dev/fb0: the console hidden, the
-#                 owner let '5' go; the screen given back, nothing pressed
+#                 owner let Shift go; the screen given back, the letters
 #
 # and the serial log is checked for what the keys typed and for the owner
 # hearing the console go and come back.
@@ -94,20 +95,19 @@ save() {
 }
 
 UP="minix-service up /service/qcom_touch -args"
-INJ1="log=3 inject=~25,e,c,h,o,Space,Shift,H,i,Enter,~50,Ctrl,Ctrl,Shift,+Alt"
-INJ2="log=3 inject=~25,123,+5"
+INJ1="log=3 inject=~25,e,c,h,o,Space,Shift,H,i,Enter,~50,Ctrl,Ctrl,>_,+Alt"
+INJ2="log=3 inject=~25,Shift"
 
 # 2. Boot with the keyboard drawn, log in, type, look.
 rm -f "$SOCK" "$WORK_DIR/monitor.log"
 {
 	sleep 35; echo root; sleep 4
 	echo "$UP \"$INJ1\""; sleep 25
-	save 1-upper
+	save 1-term
 	echo "minix-service down qcom_touch"; sleep 4
 	echo "$UP \"$INJ2\""; sleep 15
-	save 2-digits
-	# The '5' held down is on the command line already: DEL it first.
-	printf '\177sleep 6 < /dev/fb0\n'; sleep 14
+	save 2-upper
+	echo "sleep 6 < /dev/fb0"; sleep 14
 	save 3-back
 	echo /sbin/poweroff; sleep 6
 } | BOOTARGS="bootramdisk=1 console=tty00 osk=1" \
@@ -127,9 +127,9 @@ check "fb draws the keyboard" "on-screen keyboard"
 check "the owner hears the console" "console 0x3: the keyboard takes touches"
 check "keys typed and run" "^Hi"
 check "the console hidden under a program" "console 0x0: the keyboard takes no touches"
-# Upper case shown, Shift armed, Ctrl locked, Alt armed - and a key down.
-check "the owner holds Alt" 'inject: hold "\+Alt", word 0x00[0-9a-f]{2}0191'
-for f in 1-upper 2-digits 3-back; do
+# The terminal layer, Ctrl locked, Alt armed - and a key down.
+check "the owner holds Alt" 'inject: hold "\+Alt", word 0x00[0-9a-f]{2}0184'
+for f in 1-term 2-upper 3-back; do
 	if [ -s "$WORK_DIR/$f.raw" ]; then
 		python3 "$SRC/port/test/fbcon/fbpng.py" "$WORK_DIR/$f.raw" $W $H \
 		    "$WORK_DIR/$f.png" || fail=1

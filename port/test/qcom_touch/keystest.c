@@ -108,11 +108,11 @@ main(void)
 	(void)keys_touch(&k, 0, TOUCH_UP, x, y);
 	CHECK(log_[0] == 0, "slide on: %s", log_);
 
-	/* Its first line is the keyboard's: Esc there. */
+	/* Its first line is the keyboard's: the up arrow there. */
 	log_[0] = 0;
-	(void)keys_touch(&k, 0, TOUCH_DOWN, 10, k.top);
-	(void)keys_touch(&k, 0, TOUCH_UP, 10, k.top);
-	CHECK(strcmp(log_, "+29 -29 ") == 0, "top line: %s", log_);
+	(void)keys_touch(&k, 0, TOUCH_DOWN, 500, k.top);
+	(void)keys_touch(&k, 0, TOUCH_UP, 500, k.top);
+	CHECK(strcmp(log_, "+52 -52 ") == 0, "top line: %s", log_);
 
 	/* The screen's last line too: the layer key, which sends nothing. */
 	log_[0] = 0;
@@ -179,6 +179,24 @@ main(void)
 	(void)keys_touch(&k, 0, TOUCH_UP, 0, 0);
 	(void)keys_touch(&k, 1, TOUCH_UP, 0, 0);
 	CHECK(strcmp(log_, "+08 +15 -08 -15 ") == 0, "two: %s", log_);
+
+	/*
+	 * The FT5x06 repeats "down" for one touch: the layer key acts once,
+	 * a letter comes once.
+	 */
+	log_[0] = 0;
+	centre(&k, "123", &x, &y);
+	(void)keys_touch(&k, 0, TOUCH_DOWN, x, y);
+	(void)keys_touch(&k, 0, TOUCH_DOWN, x + 1, y);
+	(void)keys_touch(&k, 0, TOUCH_UP, x + 1, y);
+	osk_unword(keys_word(&k), &v);
+	CHECK(v.layer == OSK_DIGITS, "two downs on 123: layer %u", v.layer);
+	(void)tap(&k, 0, "abc");
+	centre(&k, "a", &x, &y);
+	(void)keys_touch(&k, 0, TOUCH_DOWN, x, y);
+	(void)keys_touch(&k, 0, TOUCH_DOWN, x, y + 1);
+	(void)keys_touch(&k, 0, TOUCH_UP, x, y + 1);
+	CHECK(strcmp(log_, "+04 -04 ") == 0, "two downs on a: %s", log_);
 
 	/* An id out of range is ignored. */
 	log_[0] = 0;

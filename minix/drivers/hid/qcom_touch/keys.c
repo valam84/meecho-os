@@ -49,6 +49,15 @@ keys_touch(struct keys *k, unsigned id, int event, unsigned x, unsigned y)
 {
 	if (!k->shown)
 		return 0;
+	/*
+	 * The FT5x06 says "down" for a touch in more than one frame (the Mi
+	 * Pad 4's: two downs a pixel apart, 20 ms between): to libosk a down
+	 * on a live touch is a new one, so a layer key flipped the layer and
+	 * flipped it back, and a letter came twice.  A touch this driver has
+	 * seen and not seen go is the same touch.
+	 */
+	if (event == TOUCH_DOWN && id < OSK_MAX_TOUCH && k->osk.t[id].active)
+		event = TOUCH_CONTACT;
 	/* Above the keyboard: below its rectangle, on no key. */
 	return osk_touch(&k->osk, id, event, x,
 	    y >= k->top ? y - k->top : k->osk.h);

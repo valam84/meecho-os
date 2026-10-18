@@ -29,6 +29,13 @@ into.
      "Hi" "OKx" " " "42!" "{~" ^A ESC b ESC [ D TAB LF
   5. Ctrl, d: end of file at a line's start - cat ends, foot closes, and
      the keyboard goes down by itself; the strip has all of the height back
+ 5a. touches, from the touch driver without a touch screen (qcom_touch
+     inject=@X:Y, fractions of the screen; the digitizer page through the
+     mice, meechowm's wl_touch): t, o, u, then two fingers - Shift kept
+     down while c is tapped - and Enter: "touC" and a line feed in another
+     foot's file.  The first touch makes meechowm's touch device; until the
+     client has a wl_touch it comes as the pointer
+ 5b. Ctrl, d touched: that foot goes, the keyboard goes down
   6. Super+t (usb_kbd inject=) with no window that wants text: the
      keyboard up ("mode on"); "meechowm -m osk" again: down; "osk auto"
   7. the client killed: the input method gone; "meechowm -m osk on" starts
@@ -374,6 +381,48 @@ def main():
         record("5. foot gone, the keyboard down by itself",
                not st["cols"] and st.get("osk") == "down" and
                "layer" not in st and st.get("area") == (0, 0, W, H),
+               "state: %s" % st)
+
+        # 5a. Touches: the touch driver without a touch screen
+        # (qcom_touch inject=, fractions of the screen) - a contact on a
+        # key is a key, two fingers are two: Shift held, c tapped.
+        send("rm -f /tmp/touched; foot -o main.workers=0 -f 'DejaVu Sans "
+             "Mono:size=14' sh -c 'cat > /tmp/touched' > /tmp/foot.log "
+             "2>&1 &")
+        st = wait_for(lambda s: s.get("osk") == "up" and "layer" in s and
+                      s["cols"], 400)
+        time.sleep(3)
+
+        def frac(key):
+            x, y = centre(key)
+            return "%d:%d" % (x * 65535 // (W - 1), y * 65535 // (H - 1))
+
+        def touch(items):
+            send("minix-service up /service/qcom_touch -label toucho -args "
+                 "'inject=%s'" % ",".join(items))
+            send("sleep %d; minix-service down toucho; echo TO''UCH" %
+                 (3 + len(items) // 25))
+            expect(r"TOUCH\r?\n", 120)
+
+        touch(["~25"] + ["@" + frac(letter(c)) for c in "tou"] +
+              ["+@" + frac(SHIFT), "~5", "@" + frac(letter("c")), "~5",
+               "-@", "@" + frac(ENTER)])
+        time.sleep(3)
+        send("od -An -tx1 /tmp/touched | tr -d ' \\n'; echo; echo OD''DONE")
+        out = expect(r"ODDONE\r?\n", 60)
+        m = re.search(r"\n([0-9a-f]*)\r?\n", out)
+        got = bytes.fromhex(m.group(1)) if m else b"?"
+        send("grep -c 'touch screen: in the mice' /tmp/mwm.log; echo TS''EEN")
+        seen = re.search(r"\n(\d+)\r?\n", expect(r"TSEEN\r?\n", 60))
+        record("5a. touched: keys, two fingers at once", got == b"touC\n" and
+               seen is not None and seen.group(1) != "0",
+               "typed %r; meechowm's touch device: %s" %
+               (got, seen.group(1) if seen else "?"))
+        touch(["~25", "@" + frac(CTRL), "@" + frac(letter("d"))])
+        st = wait_for(lambda s: not s["cols"] and s.get("osk") == "down",
+                      200)
+        record("5b. Ctrl d touched: foot gone, the keyboard down",
+               not st["cols"] and st.get("osk") == "down",
                "state: %s" % st)
 
         # 6. Super+t; the command; auto.

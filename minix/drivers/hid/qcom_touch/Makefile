@@ -1,7 +1,7 @@
 # Makefile for qcom_touch: an FT5x06 touch screen on a Qualcomm QUP I2C bus
-# (the Mi Pad 4) as the on-screen keyboard's keys.
+# (the Mi Pad 4) as the on-screen keyboard's keys, and as the desktop's touches.
 PROG=	qcom_touch
-SRCS=	touch.c qup.c keys.c qcom_soc.c
+SRCS=	touch.c qup.c keys.c desk.c qcom_soc.c
 
 
 # The console's keyboard is libosk's (keys.c is its owner).  libsys's timer

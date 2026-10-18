@@ -28,10 +28,19 @@
  * its console and keyboard are on the screen at all.  Under the test card
  * or a compositor, touches are not keys.
  *
+ * When the console's keyboard is not on the screen - a compositor has it,
+ * or osk=0 - a touch is the desktop's: desk.c sends it through the mice as
+ * the digitizer page's frames (<minix/input.h>), and meechowm makes a
+ * wl_touch of them.  So the driver is a keyboard and a mouse both.
+ *
  * inject=ITEM,ITEM,... touches the keyboard without a touch screen (QEMU,
  * port/test/osk/qemu-osk.sh), once the keyboard is on the screen: an item
  * is a key's label on the layer shown then (Space and Comma for those two),
- * tapped; +LABEL presses it and keeps it down; ~N waits N fiftieths.
+ * tapped; +LABEL presses it and keeps it down; ~N waits N fiftieths.  And
+ * the desktop's touches, any time (port/gfx/test/qemu-osk.py): @X:Y taps,
+ * +@X:Y keeps a touch down, =@X:Y moves the last kept, -@ lifts them all -
+ * X and Y fractions of the screen, 0 to 65535.  Without a screen size in
+ * the tree there is no console keyboard, and only those.
  *
  * The power rail (l11a, 1.8 V) is always on according to the tree, and
  * nothing here touches a regulator.
@@ -53,6 +62,7 @@
 #include "qcom_soc.h"
 #include "qup.h"
 #include "keys.h"
+#include "desk.h"
 
 static struct log tlog = {
 	.name = "touch",
@@ -95,12 +105,15 @@ bus_line(unsigned i)
 static struct qup qup;
 static volatile uint8_t *qup_regs;
 static struct keys keys;
+static struct desk desk;
 static int osk_on, ev_ft;
 static int hw;				/* a touch screen, not only inject= */
 static char inject[256];		/* inject=, what is left of it */
 static char *inject_at;
 static unsigned inject_wait, inject_held;
 static int inject_tap;			/* touch 0 is down: up next tick */
+static int desk_tap;			/* the desktop's too */
+static unsigned desk_held;		/* the last contact +@ put down */
 static unsigned active;			/* touch ids in the last frame */
 static unsigned long frames, errors, polls, int_low;
 static unsigned shown;			/* touches written to the log */
@@ -404,6 +417,20 @@ emit(unsigned usage, int down)
 	    down ? INPUT_PRESS : INPUT_RELEASE, 0);
 }
 
+/* A touch for the desktop: through the mice (desk.c). */
+static void
+desk_send(unsigned page, unsigned code, int value, unsigned flags)
+{
+	inputdriver_send_event(TRUE, (int)page, (int)code, value, (int)flags);
+}
+
+/* A touch is the console keyboard's while that is on the screen. */
+static int
+to_keys(void)
+{
+	return osk_on && keys.shown;
+}
+
 /* What the keyboard shows, for fb to draw. */
 static void
 publish(void)
@@ -437,6 +464,9 @@ console_check(void)
 	}
 	if (changed)
 		publish();
+	/* The keyboard has the touches now: the desktop's are lifted. */
+	if (keys.shown)
+		desk_lift(&desk);
 }
 
 static void
@@ -502,20 +532,43 @@ read_frame(void)
 		}
 		log_debug(&tlog, "touch %u: %s at %u,%u\n", tid,
 		    ev == 0 ? "down" : ev == 1 ? "up" : "contact", x, y);
-		if (osk_on)
+		if (to_keys())
 			changed |= keys_touch(&keys, tid, (int)ev, x, y);
+		else if (ev == 1)
+			desk_up(&desk, tid);
+		else
+			desk_touch(&desk, tid, x, y);
 	}
 	for (i = 0; i < MAX_TOUCH; i++)
-		if ((active & (1u << i)) && !(seen & (1u << i)) && osk_on)
-			changed |= keys_lost(&keys, i);
+		if ((active & (1u << i)) && !(seen & (1u << i))) {
+			if (to_keys())
+				changed |= keys_lost(&keys, i);
+			desk_up(&desk, i);
+		}
 	active = seen;
 	if (changed)
 		publish();		/* once a frame, however many touches */
 }
 
 /*
+ * An inject= item that is the desktop's: @X:Y, +@X:Y, =@X:Y or -@.  A
+ * digit after the @ tells it from the keyboard's own "@" key.
+ */
+static int
+desk_item(const char *s)
+{
+	if (s[0] == '-' && s[1] == '@')
+		return s[2] == '\0' || s[2] == ',';
+	if (s[0] == '+' || s[0] == '=')
+		s++;
+	return s[0] == '@' && s[1] >= '0' && s[1] <= '9';
+}
+
+/*
  * inject=: one step a tick, through keys_touch() at the key's centre - the
- * path a touch takes, but for the controller.
+ * path a touch takes, but for the controller.  The desktop's touches go
+ * through desk.c, as the controller's do when the screen is not the
+ * console's.
  */
 static void
 inject_step(void)
@@ -526,9 +579,20 @@ inject_step(void)
 	const char *name;
 	unsigned i, n, x0, y0, x1, y1;
 	int hold;
+	unsigned long fx, fy;
+	char *e;
 
-	if (!keys.shown)
-		return;			/* keys only where they are drawn */
+	if (desk_tap) {
+		desk_tap = 0;
+		desk_up(&desk, 0);
+		return;
+	}
+	/* A key is pressed only where it is drawn; a touch of the desktop's
+	 * any time - so a key waits for the keyboard, and what comes after
+	 * it waits too. */
+	if (inject_at != NULL && *inject_at != '\0' && *inject_at != '~' &&
+	    !desk_item(inject_at) && !keys.shown)
+		return;
 	if (inject_tap) {
 		inject_tap = 0;
 		if (keys_touch(&keys, 0, TOUCH_UP, 0, 0))
@@ -552,6 +616,36 @@ inject_step(void)
 
 	if (item[0] == '~') {
 		inject_wait = (unsigned)strtoul(item + 1, NULL, 10);
+		return;
+	}
+	/*
+	 * The desktop's touches, X and Y fractions of the screen (0 to 65535):
+	 * @X:Y a tap (touch 0, up the next tick), +@X:Y a touch kept down (its
+	 * own contact), =@X:Y the last one kept moves there, -@ every one
+	 * kept lifts.
+	 */
+	if (strcmp(item, "-@") == 0) {
+		desk_lift(&desk);
+		return;
+	}
+	if (desk_item(item)) {
+		name = item[0] == '@' ? item + 1 : item + 2;
+		fx = strtoul(name, &e, 10);
+		fy = *e == ':' ? strtoul(e + 1, &e, 10) : ~0UL;
+		if (*e != '\0' || fx > INPUT_DIGI_MAX || fy > INPUT_DIGI_MAX) {
+			log_warn(&tlog, "inject: \"%s\" is not @X:Y\n", item);
+			return;
+		}
+		if (item[0] == '@') {
+			desk_touch_frac(&desk, 0, (unsigned)fx, (unsigned)fy);
+			desk_tap = 1;
+		} else {
+			if (item[0] == '+')
+				desk_held = 1 + desk_held % (DESK_TOUCHES - 1);
+			desk_touch_frac(&desk, desk_held, (unsigned)fx,
+			    (unsigned)fy);
+		}
+		log_debug(&tlog, "inject: desktop %s\n", item);
 		return;
 	}
 	hold = item[0] == '+' && item[1] != '\0';
@@ -592,7 +686,7 @@ touch_alarm(clock_t UNUSED(stamp))
 	uint8_t td;
 	int r;
 
-	if (osk_on)
+	if (inject_at != NULL)
 		inject_step();
 	if (!hw) {
 		arm();
@@ -659,9 +753,17 @@ touch_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	hw = (r == OK);
 	keys_init(&keys, dt.scr_w ? dt.scr_w : dt.size_x,
 	    dt.scr_h ? dt.scr_h : dt.size_y, emit);
+	desk_init(&desk, keys.w, keys.h, desk_send);
 	if (keys.w == 0 || keys.h == 0) {
-		log_warn(&tlog, "no screen size in the tree\n");
-		return EINVAL;
+		if (hw) {
+			log_warn(&tlog, "no screen size in the tree\n");
+			return EINVAL;
+		}
+		/* inject= for the desktop alone: its touches are fractions
+		 * of the screen, and the keyboard has nowhere to be. */
+		log_info(&tlog, "no screen size in the tree: no console "
+		    "keyboard, the desktop's touches only\n");
+		osk_on = 0;
 	}
 	if (osk_on) {
 		/* fb's word, whenever it changes - and now, if it is there. */
@@ -676,7 +778,7 @@ touch_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	if (!hw) {
 		log_info(&tlog, "no touch screen; inject=%s on a %ux%u "
 		    "screen\n", inject, keys.w, keys.h);
-		inputdriver_announce(INPUT_DEV_KBD);
+		inputdriver_announce(INPUT_DEV_KBD | INPUT_DEV_MOUSE);
 		arm();
 		return OK;
 	}
@@ -688,7 +790,9 @@ touch_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	log_info(&tlog, "FocalTech 0x%02x at 0x%02x ready; the on-screen "
 	    "keyboard %s\n", chip_id, dt.addr, osk_on ? "is live" :
 	    "is off (osk=0)");
-	inputdriver_announce(INPUT_DEV_KBD);
+	/* A keyboard (the console's on-screen one) and, through the mice,
+	 * the desktop's touch screen (desk.c). */
+	inputdriver_announce(INPUT_DEV_KBD | INPUT_DEV_MOUSE);
 	arm();
 	return OK;
 }
@@ -701,6 +805,7 @@ touch_signal(int signo)
 	/* Nothing held down after we are gone, and fb draws it so. */
 	if (osk_on && keys_show(&keys, 0))
 		publish();
+	desk_lift(&desk);
 	inputdriver_terminate();
 }
 

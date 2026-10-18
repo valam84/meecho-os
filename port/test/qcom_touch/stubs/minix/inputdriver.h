@@ -1,12 +1,14 @@
 /* Host stand: <minix/inputdriver.h>, recorded rather than sent. */
 #ifndef _STUB_MINIX_INPUTDRIVER_H
 #define _STUB_MINIX_INPUTDRIVER_H
+#include <stdint.h>
 #include <time.h>
+/* The pages, codes and values are the real header's (-idirafter). */
+#include <minix/input.h>
 #define FALSE 0
-#define INPUT_PAGE_KEY	0x07
-#define INPUT_PRESS	1
-#define INPUT_RELEASE	0
+#define TRUE 1
 #define INPUT_DEV_KBD	0x01
+#define INPUT_DEV_MOUSE	0x02
 struct inputdriver {
 	void (*idr_leds)(unsigned int);
 	void (*idr_intr)(unsigned int);

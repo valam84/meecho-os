@@ -1929,8 +1929,10 @@ SDMA или ADMA2 — решается по регистру возможнос�
     Mi Pad 4. **Сделано 2026-10-18 (хост и QEMU):** `osk.state` и
     `fb.console` в DS, `inject=` у `qcom_touch`, стенд
     `port/test/osk/qemu-osk.sh` (кадры в PNG вместо `fbocr`), 5 из 5;
-    `osk.h` убран. На планшете — не проверено. Разбор — `PORTING-LOG.md`,
-    «11.9, часть Б».
+    `osk.h` убран. **На планшете — 2026-10-18:** набор касанием, вид
+    Buffyboard (Inter, значки, слой `>_`; Tab вместо Alt наверху — по
+    просьбе человека). Разбор — `PORTING-LOG.md`, «11.9, часть Б» и
+    «…на планшете и вид Buffyboard».
   - **В. Стол.** Страница дигитайзера в `<minix/input.h>`, `qcom_touch`
     шлёт касания всегда; `meechowm` — `wlr_touch` (клиенту без касаний —
     как указатель), `virtual-keyboard-v1`, `input-method-v2`,

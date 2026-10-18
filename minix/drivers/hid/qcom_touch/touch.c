@@ -17,16 +17,28 @@
  *
  * Then it polls: fifty times a second it reads the controller's touch
  * count, and when there are touches it reads a frame - up to five - and
- * hands each to keys.c, which turns touches on the keyboard <minix/osk.h>
- * draws into key presses for the input server.  Only with osk=1, the same
- * switch that makes fb draw the keyboard; without it the driver reports
- * touches in its log and sends nothing.
+ * hands each to keys.c, where the console's keyboard (libosk,
+ * <minix/libosk.h>) turns them into key presses for the input server.  Only
+ * with osk=1, the same switch that makes fb draw the keyboard; without it
+ * the driver reports touches in its log and sends nothing.
+ *
+ * The driver owns the keyboard - its layer, its modifiers, the key held -
+ * and fb draws it, so the two talk through DS: every change goes out as
+ * osk_word() under OSK_DS_STATE, and fb says under OSK_DS_CONSOLE whether
+ * its console and keyboard are on the screen at all.  Under the test card
+ * or a compositor, touches are not keys.
+ *
+ * inject=ITEM,ITEM,... touches the keyboard without a touch screen (QEMU,
+ * port/test/osk/qemu-osk.sh), once the keyboard is on the screen: an item
+ * is a key's label on the layer shown then (Space and Comma for those two),
+ * tapped; +LABEL presses it and keeps it down; ~N waits N fiftieths.
  *
  * The power rail (l11a, 1.8 V) is always on according to the tree, and
  * nothing here touches a regulator.
  */
 
 #include <minix/drivers.h>
+#include <minix/ds.h>
 #include <minix/inputdriver.h>
 #include <minix/fdt.h>
 #include <minix/log.h>
@@ -84,6 +96,11 @@ static struct qup qup;
 static volatile uint8_t *qup_regs;
 static struct keys keys;
 static int osk_on, ev_ft;
+static int hw;				/* a touch screen, not only inject= */
+static char inject[256];		/* inject=, what is left of it */
+static char *inject_at;
+static unsigned inject_wait, inject_held;
+static int inject_tap;			/* touch 0 is down: up next tick */
 static unsigned active;			/* touch ids in the last frame */
 static unsigned long frames, errors, polls, int_low;
 static unsigned shown;			/* touches written to the log */
@@ -387,6 +404,48 @@ emit(unsigned usage, int down)
 	    down ? INPUT_PRESS : INPUT_RELEASE, 0);
 }
 
+/* What the keyboard shows, for fb to draw. */
+static void
+publish(void)
+{
+	static int failed;
+	int r;
+
+	if ((r = ds_publish_u32(OSK_DS_STATE, keys_word(&keys),
+	    DSF_OVERWRITE)) != OK && failed++ < 3)
+		log_warn(&tlog, "cannot publish the keyboard's state: %d\n", r);
+}
+
+/* fb said something: is its console, keyboard and all, on the screen? */
+static void
+console_check(void)
+{
+	char key[DS_MAX_KEYLEN];
+	endpoint_t owner;
+	u32_t v;
+	int type, changed = 0;
+
+	while (ds_check(key, &type, &owner) == OK) {
+		if (strcmp(key, OSK_DS_CONSOLE) != 0)
+			continue;
+		if (ds_retrieve_u32(OSK_DS_CONSOLE, &v) != OK)
+			v = 0;			/* fb is gone */
+		changed |= keys_show(&keys, (v & (OSK_CON_SHOWN |
+		    OSK_CON_KEYBOARD)) == (OSK_CON_SHOWN | OSK_CON_KEYBOARD));
+		log_debug(&tlog, "console 0x%x: the keyboard takes %s\n", v,
+		    keys.shown ? "touches" : "no touches");
+	}
+	if (changed)
+		publish();
+}
+
+static void
+touch_other(message *m, int ipc_status)
+{
+	if (is_ipc_notify(ipc_status) && m->m_source == DS_PROC_NR && osk_on)
+		console_check();
+}
+
 /* Raw coordinates to screen pixels, as the tree's properties say. */
 static void
 to_screen(unsigned *x, unsigned *y)
@@ -414,7 +473,7 @@ read_frame(void)
 {
 	uint8_t f[FRAME_LEN];
 	unsigned i, seen = 0, ev, x, y, tid;
-	int r;
+	int r, changed = 0;
 
 	if ((r = reg_read(0x00, f, sizeof(f))) != QUP_OK) {
 		if (errors++ < 5)
@@ -444,12 +503,81 @@ read_frame(void)
 		log_debug(&tlog, "touch %u: %s at %u,%u\n", tid,
 		    ev == 0 ? "down" : ev == 1 ? "up" : "contact", x, y);
 		if (osk_on)
-			keys_touch(&keys, tid, (int)ev, x, y);
+			changed |= keys_touch(&keys, tid, (int)ev, x, y);
 	}
 	for (i = 0; i < MAX_TOUCH; i++)
 		if ((active & (1u << i)) && !(seen & (1u << i)) && osk_on)
-			keys_lost(&keys, i);
+			changed |= keys_lost(&keys, i);
 	active = seen;
+	if (changed)
+		publish();		/* once a frame, however many touches */
+}
+
+/*
+ * inject=: one step a tick, through keys_touch() at the key's centre - the
+ * path a touch takes, but for the controller.
+ */
+static void
+inject_step(void)
+{
+	const struct osk_layer *l;
+	const struct osk_key *k = NULL;
+	char item[32];
+	const char *name;
+	unsigned i, n, x0, y0, x1, y1;
+	int hold;
+
+	if (!keys.shown)
+		return;			/* keys only where they are drawn */
+	if (inject_tap) {
+		inject_tap = 0;
+		if (keys_touch(&keys, 0, TOUCH_UP, 0, 0))
+			publish();
+		return;
+	}
+	if (inject_wait > 0) {
+		inject_wait--;
+		return;
+	}
+	if (inject_at == NULL || *inject_at == '\0')
+		return;
+	n = strcspn(inject_at, ",");
+	if (n >= sizeof(item))
+		n = sizeof(item) - 1;
+	memcpy(item, inject_at, n);
+	item[n] = '\0';
+	inject_at += strcspn(inject_at, ",");
+	if (*inject_at == ',')
+		inject_at++;
+
+	if (item[0] == '~') {
+		inject_wait = (unsigned)strtoul(item + 1, NULL, 10);
+		return;
+	}
+	hold = item[0] == '+' && item[1] != '\0';
+	name = hold ? item + 1 : item;
+	if (strcmp(name, "Space") == 0)
+		name = "";
+	else if (strcmp(name, "Comma") == 0)
+		name = ",";
+	l = &osk_layers[osk_shown(&keys.osk)];
+	for (i = 0; i < l->nkeys && k == NULL; i++)
+		if (strcmp(l->keys[i].label, name) == 0)
+			k = &l->keys[i];
+	if (k == NULL) {
+		log_warn(&tlog, "inject: no key \"%s\" on layer %u\n", item,
+		    osk_shown(&keys.osk));
+		return;
+	}
+	osk_rect(k, keys.osk.w, keys.osk.h, &x0, &y0, &x1, &y1);
+	/* A held key keeps its own touch; a tapped one is touch 0. */
+	i = hold ? 1 + inject_held++ % (OSK_MAX_TOUCH - 1) : 0;
+	if (keys_touch(&keys, i, TOUCH_DOWN, (x0 + x1) / 2,
+	    keys.top + (y0 + y1) / 2))
+		publish();
+	inject_tap = !hold;
+	log_debug(&tlog, "inject: %s \"%s\", word 0x%08x\n", hold ? "hold" :
+	    "tap", item, keys_word(&keys));
 }
 
 static void
@@ -463,6 +591,13 @@ touch_alarm(clock_t UNUSED(stamp))
 {
 	uint8_t td;
 	int r;
+
+	if (osk_on)
+		inject_step();
+	if (!hw) {
+		arm();
+		return;
+	}
 
 	/*
 	 * Every poll asks the controller how many touches it has (TD_STATUS,
@@ -498,7 +633,8 @@ touch_alarm(clock_t UNUSED(stamp))
 }
 
 static struct inputdriver touch_tab = {
-	.idr_alarm	= touch_alarm
+	.idr_alarm	= touch_alarm,
+	.idr_other	= touch_other
 };
 
 static int
@@ -512,13 +648,37 @@ touch_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	v = 0;
 	(void)env_parse("osk", "d", 0, &v, 0, 1);
 	osk_on = (int)v;
-	if ((r = bring_up()) != OK)
+	if (env_get_param("inject", inject, sizeof(inject)) == OK &&
+	    inject[0] != '\0') {
+		inject_at = inject;
+		osk_on = 1;
+	}
+	/* No touch screen is the end, unless inject= stands in for one. */
+	if ((r = bring_up()) != OK && (inject_at == NULL || dt.found))
 		return r;
+	hw = (r == OK);
 	keys_init(&keys, dt.scr_w ? dt.scr_w : dt.size_x,
 	    dt.scr_h ? dt.scr_h : dt.size_y, emit);
 	if (keys.w == 0 || keys.h == 0) {
 		log_warn(&tlog, "no screen size in the tree\n");
 		return EINVAL;
+	}
+	if (osk_on) {
+		/* fb's word, whenever it changes - and now, if it is there. */
+		if ((r = ds_subscribe("fb\\.console", DSF_INITIAL |
+		    DSF_OVERWRITE)) != OK) {
+			log_warn(&tlog, "cannot ask DS about the console: %d\n",
+			    r);
+			return r;
+		}
+		publish();		/* a restarted driver holds nothing */
+	}
+	if (!hw) {
+		log_info(&tlog, "no touch screen; inject=%s on a %ux%u "
+		    "screen\n", inject, keys.w, keys.h);
+		inputdriver_announce(INPUT_DEV_KBD);
+		arm();
+		return OK;
 	}
 	/*
 	 * One line when it works; the bring-up details, the first touches
@@ -536,8 +696,12 @@ touch_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 static void
 touch_signal(int signo)
 {
-	if (signo == SIGTERM)
-		inputdriver_terminate();
+	if (signo != SIGTERM)
+		return;
+	/* Nothing held down after we are gone, and fb draws it so. */
+	if (osk_on && keys_show(&keys, 0))
+		publish();
+	inputdriver_terminate();
 }
 
 int

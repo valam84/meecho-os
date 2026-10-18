@@ -12,6 +12,12 @@
 #include <minix/syslib.h>
 #include <minix/sysutil.h>
 #define OK 0
+/* A message, as far as touch.c looks into one. */
+typedef struct { int m_source, m_type; } message;
+typedef int endpoint_t;
+typedef uint32_t u32_t;
+#define DS_PROC_NR	6
+#define is_ipc_notify(s)	((s) != 0)
 #define UNUSED(x) x __attribute__((unused))
 int sys_setalarm(clock_t ticks, int abs_time);
 clock_t sys_hz(void);

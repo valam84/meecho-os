@@ -150,6 +150,9 @@ fb_other(message *m, int ipc_status)
 	/* tty's console grew (see fbcon.c). */
 	if (is_ipc_notify(ipc_status) && m->m_source == TTY_PROC_NR)
 		fbcon_pull();
+	/* The console keyboard's owner published its state (fbcon.c). */
+	if (is_ipc_notify(ipc_status) && m->m_source == DS_PROC_NR)
+		fbcon_ds();
 }
 
 static ssize_t

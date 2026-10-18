@@ -54,7 +54,7 @@
 #include <minix/inputdriver.h>
 #include <minix/fdt.h>
 #include <minix/log.h>
-#include <minix/osk.h>
+#include <minix/libosk.h>
 #include <minix/rmib.h>
 #include <minix/sysctl.h>
 #include <minix/sysutil.h>

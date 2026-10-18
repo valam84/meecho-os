@@ -11,6 +11,7 @@ struct inputdriver {
 	void (*idr_leds)(unsigned int);
 	void (*idr_intr)(unsigned int);
 	void (*idr_alarm)(clock_t);
+	void (*idr_other)(message *, int);
 };
 void inputdriver_send_event(int mouse, unsigned short page,
 	unsigned short code, int value, int flags);

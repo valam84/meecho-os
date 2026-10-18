@@ -22,7 +22,8 @@ DPSRCS+=	style.h
 CLEANFILES+=	style.h style.h.tmp
 CPPFLAGS+=	-I.
 
-DPADD+=	${LIBCHARDRIVER} ${LIBSYS}
-LDADD+=	-lchardriver -lsys
+# The console's on-screen keyboard: its layers and geometry (fbcon.c).
+DPADD+=	${LIBOSK} ${LIBCHARDRIVER} ${LIBSYS}
+LDADD+=	-losk -lchardriver -lsys
 
 .include <minix.service.mk>

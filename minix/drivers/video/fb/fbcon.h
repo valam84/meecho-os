@@ -9,5 +9,6 @@ void fbcon_tick(void);
 void fbcon_stats(char *buf, size_t len);
 void fbcon_pause(int paused);
 void fbcon_resize(void);
+void fbcon_ds(void);
 
 #endif /* __FBCON_H__ */

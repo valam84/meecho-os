@@ -10,8 +10,9 @@
  * the kernel, rc, getty, login and a shell - into a grid of character
  * cells, and draws the cells that changed.  The screen is therefore a
  * second view of the serial console, and starts with as much of the boot
- * as tty's ring still holds.  There is no keyboard: input is the serial
- * line's, or ssh's.
+ * as tty's ring still holds.  Input is not this driver's: it is the serial
+ * line's, ssh's, a USB keyboard's - or, with osk=1, the on-screen keyboard
+ * drawn below the text, whose owner is the touch driver (see osk_paint()).
  *
  * Kernel messages - and the printf() of every system service, which goes
  * through the kernel - do not pass through tty on this port: the kernel
@@ -50,7 +51,8 @@
 #include <dev/videomode/videomode.h>
 #include <dev/videomode/edidvar.h>
 
-#include <minix/osk.h>
+#include <minix/ds.h>
+#include <minix/libosk.h>
 
 #include "fb.h"
 #include "fbcon.h"
@@ -109,11 +111,24 @@ static struct {
 	 * on a dense panel (fontscale=, or a screen a thousand pixels across
 	 * or more: Spleen 8x16 on the Mi Pad 4's eight-inch 1200x1920 is
 	 * under a millimetre wide).  Below text_h the screen is the on-screen
-	 * keyboard (osk=1, <minix/osk.h>), or nothing.
+	 * keyboard (osk=1, <minix/libosk.h>), or nothing.
 	 */
 	unsigned	scale, cw, ch;
 	unsigned	text_h;
 	int		osk;
+	unsigned	roff, goff, boff;	/* the buffer's channels */
+
+	/*
+	 * The keyboard: the word its owner published (osk_word()), and what
+	 * of it is drawn - so a change redraws only the keys it changed.
+	 */
+	uint32_t	osk_word;
+	struct osk_view	osk_drawn;
+	int		osk_drawn_ok;
+
+	/* What DS was last told under OSK_DS_CONSOLE. */
+	uint32_t	published;
+	int		published_ok;
 
 	/* The grid. */
 	unsigned	cols, rows;
@@ -465,58 +480,189 @@ draw_row(unsigned row)
 }
 
 /*
- * The on-screen keyboard (osk=1): every key of <minix/osk.h> as a face with
- * a gap round it and its label in the middle, in the console's palette.  It
- * is drawn whole, whenever the console takes the screen; nothing on it
- * changes - the touch driver that reads it keeps the Shift and Ctrl state.
+ * The on-screen keyboard (osk=1): the layer of <minix/libosk.h> its owner
+ * shows - the touch driver, which publishes osk_word() in DS - every key a
+ * face with a gap round it and its label in the middle, in MEECHO's colours
+ * (minix/share/style/palette).  A modifier armed for the next key and one
+ * locked are lit in two colours, a key held down shows it, and a key that
+ * is not a character (Esc, Enter, the layer key) is a shade darker than the
+ * letters, as on Buffyboard.  A change of layer draws the keyboard whole; any
+ * other change only the keys whose look it changed.
  */
-#define OSK_GAP_BG	0		/* the ground: ink */
-#define OSK_FACE	8		/* bright black: the key */
-#define OSK_LABEL	15		/* bright white */
+#define OSK_KEY		0		/* how a key looks */
+#define OSK_FUNC	1
+#define OSK_ARMED_K	2
+#define OSK_LOCKED_K	3
+#define OSK_PRESSED	4
 
-static void
-osk_draw(void)
+static const struct {
+	uint32_t face, label;
+} osk_look[] = {
+	[OSK_KEY]	= { STYLE_SURFACE,	STYLE_TEXT },
+	[OSK_FUNC]	= { STYLE_LINE,		STYLE_PALE },
+	[OSK_ARMED_K]	= { STYLE_ACCENT_DEEP,	STYLE_BRIGHT },
+	[OSK_LOCKED_K]	= { STYLE_ACCENT,	STYLE_INK_DEEP },
+	[OSK_PRESSED]	= { STYLE_MUTED,	STYLE_INK_DEEP },
+};
+#define OSK_GROUND	STYLE_INK_DEEP
+
+/* An 0xRRGGBB colour in the buffer's format. */
+static uint32_t
+rgb(uint32_t c)
 {
-	unsigned i, j, x0, y0, x1, y1, x, y, n, gap, lw, lh, s;
-	uint32_t face = con.pixel[OSK_FACE], ground = con.pixel[OSK_GAP_BG];
-	uint32_t *p;
-	const struct osk_key *k;
+	return (c >> 16 & 0xff) << con.roff | (c >> 8 & 0xff) << con.goff |
+	    (c & 0xff) << con.boff;
+}
 
-	if (!con.osk)
-		return;
-	for (y = con.text_h; y < con.height; y++) {
-		p = (uint32_t *)(con.fb + (size_t)y * con.stride);
-		for (x = 0; x < con.width; x++)
-			p[x] = ground;
+static unsigned
+osk_height(void)
+{
+	return con.height - con.text_h;
+}
+
+static int
+osk_key_look(const struct osk_view *v, unsigned i, const struct osk_key *k)
+{
+	if ((int)i == v->pressed)
+		return OSK_PRESSED;
+	if (k->act == OSK_A_MOD && k->usage < OSK_NMODS) {
+		if (v->mod[k->usage] == OSK_LOCKED)
+			return OSK_LOCKED_K;
+		if (v->mod[k->usage] == OSK_ARMED)
+			return OSK_ARMED_K;
 	}
+	return k->act != OSK_A_KEY || strlen(k->label) > 1 ? OSK_FUNC :
+	    OSK_KEY;
+}
+
+/* One key; its lines on the screen in [*top, *bottom). */
+static void
+osk_key_draw(const struct osk_key *k, int look, unsigned *top,
+	unsigned *bottom)
+{
+	unsigned j, x0, y0, x1, y1, x, y, n, gap, lw, lh, s;
+	uint32_t face = rgb(osk_look[look].face);
+	uint32_t *p;
+
+	osk_rect(k, con.width, osk_height(), &x0, &y0, &x1, &y1);
+	y0 += con.text_h;
+	y1 += con.text_h;
+	*top = y0;
+	*bottom = y1;
 	gap = con.scale * 2;
-	for (i = 0; i < OSK_NKEYS; i++) {
-		k = &osk_keys[i];
-		osk_rect(k, con.width, con.height, &x0, &y0, &x1, &y1);
-		if (x1 - x0 <= 2 * gap || y1 - y0 <= 2 * gap)
-			continue;
-		for (y = y0 + gap; y < y1 - gap; y++) {
-			p = (uint32_t *)(con.fb + (size_t)y * con.stride);
-			for (x = x0 + gap; x < x1 - gap; x++)
-				p[x] = face;
-		}
-		/* The label, as large as the key allows up to the console's. */
-		n = (unsigned)strlen(k->label);
-		if (n == 0)
-			continue;
-		for (s = con.scale; s > 1 && (n * CW * s + 2 * gap > x1 - x0 ||
-		    CH * s + 2 * gap > y1 - y0); s--)
-			;
-		lw = n * CW * s;
-		lh = CH * s;
-		if (lw + 2 * gap > x1 - x0 || lh + 2 * gap > y1 - y0)
-			continue;
-		x = x0 + (x1 - x0 - lw) / 2;
-		y = y0 + (y1 - y0 - lh) / 2;
-		for (j = 0; j < n; j++)
-			draw_glyph(x + j * CW * s, y, (uint8_t)k->label[j],
-			    con.pixel[OSK_LABEL], face, s);
+	if (x1 - x0 <= 2 * gap || y1 - y0 <= 2 * gap)
+		return;
+	for (y = y0 + gap; y < y1 - gap; y++) {
+		p = (uint32_t *)(con.fb + (size_t)y * con.stride);
+		for (x = x0 + gap; x < x1 - gap; x++)
+			p[x] = face;
 	}
+	/* The label, as large as the key allows up to the console's. */
+	n = (unsigned)strlen(k->label);
+	if (n == 0)
+		return;
+	for (s = con.scale; s > 1 && (n * CW * s + 2 * gap > x1 - x0 ||
+	    CH * s + 2 * gap > y1 - y0); s--)
+		;
+	lw = n * CW * s;
+	lh = CH * s;
+	if (lw + 2 * gap > x1 - x0 || lh + 2 * gap > y1 - y0)
+		return;
+	x = x0 + (x1 - x0 - lw) / 2;
+	y = y0 + (y1 - y0 - lh) / 2;
+	for (j = 0; j < n; j++)
+		draw_glyph(x + j * CW * s, y, (uint8_t)k->label[j],
+		    rgb(osk_look[look].label), face, s);
+}
+
+/*
+ * Bring the keyboard's pixels up to con.osk_word: all of it, or the keys
+ * whose look changed.  Flushed here unless the caller flushes the screen.
+ */
+static void
+osk_paint(int all, int flush)
+{
+	const struct osk_layer *l;
+	struct osk_view v;
+	unsigned i, x, y, top, bottom, lo = ~0u, hi = 0;
+	uint32_t ground, *p;
+	int look;
+
+	if (!con.osk || con.paused || con.fb == NULL)
+		return;
+	osk_unword(con.osk_word, &v);
+	if (!con.osk_drawn_ok || v.layer != con.osk_drawn.layer)
+		all = 1;
+	l = &osk_layers[v.layer];
+	if (all) {
+		ground = rgb(OSK_GROUND);
+		for (y = con.text_h; y < con.height; y++) {
+			p = (uint32_t *)(con.fb + (size_t)y * con.stride);
+			for (x = 0; x < con.width; x++)
+				p[x] = ground;
+		}
+		lo = con.text_h;
+		hi = con.height;
+	}
+	for (i = 0; i < l->nkeys; i++) {
+		look = osk_key_look(&v, i, &l->keys[i]);
+		if (!all && look == osk_key_look(&con.osk_drawn, i,
+		    &l->keys[i]))
+			continue;
+		osk_key_draw(&l->keys[i], look, &top, &bottom);
+		if (top < lo)
+			lo = top;
+		if (bottom > hi)
+			hi = bottom;
+	}
+	con.osk_drawn = v;
+	con.osk_drawn_ok = 1;
+	if (flush && lo < hi)
+		arch_fb_flush(con.minor, (size_t)lo * con.stride,
+		    (size_t)(hi - lo) * con.stride);
+}
+
+/*
+ * Tell DS whether the console is on the screen, and its keyboard with it:
+ * the touch driver makes keys of touches only then.
+ */
+static void
+console_publish(void)
+{
+	uint32_t v = 0;
+	int r;
+
+	if (con.attached && !con.paused)
+		v = OSK_CON_SHOWN | (con.osk ? OSK_CON_KEYBOARD : 0);
+	if (con.published_ok && v == con.published)
+		return;
+	if ((r = ds_publish_u32(OSK_DS_CONSOLE, v, DSF_OVERWRITE)) != OK) {
+		printf("fb: cannot tell DS about the console: %d\n", r);
+		return;
+	}
+	con.published = v;
+	con.published_ok = 1;
+}
+
+/* DS has news: the keyboard's owner published a new word. */
+void
+fbcon_ds(void)
+{
+	char key[DS_MAX_KEYLEN];
+	endpoint_t owner;
+	u32_t w;
+	int type, changed = 0;
+
+	while (ds_check(key, &type, &owner) == OK) {
+		if (strcmp(key, OSK_DS_STATE) != 0)
+			continue;
+		if (ds_retrieve_u32(OSK_DS_STATE, &w) != OK)
+			w = 0;			/* the owner is gone */
+		changed |= w != con.osk_word;
+		con.osk_word = w;
+	}
+	if (changed && con.attached)
+		osk_paint(0, 1);
 }
 
 /*
@@ -536,7 +682,7 @@ geometry(unsigned width, unsigned height, unsigned *cols, unsigned *rows)
 		con.osk = (int)v;
 	con.cw = CW * con.scale;
 	con.ch = CH * con.scale;
-	con.text_h = con.osk ? osk_top(height) : height;
+	con.text_h = con.osk ? height - osk_console_height(height) : height;
 	*cols = width / con.cw;
 	*rows = con.text_h / con.ch;
 }
@@ -609,7 +755,7 @@ take_screen(void)
 		return;
 	con.fb = (uint8_t *)(vir_bytes)dev.dv_base;
 	memset(con.fb, 0, (size_t)con.height * con.stride);
-	osk_draw();
+	osk_paint(1, 0);
 	arch_fb_flush(con.minor, 0, (size_t)con.height * con.stride);
 	draw(1);
 }
@@ -640,10 +786,11 @@ fbcon_attach(int minor, int kmess)
 	con.width = v.xres;
 	con.height = v.yres;
 	geometry(v.xres, v.yres, &con.cols, &con.rows);
+	con.roff = v.red.offset;
+	con.goff = v.green.offset;
+	con.boff = v.blue.offset;
 	for (i = 0; i < 16; i++)
-		con.pixel[i] = (COLOUR(i) >> 16 & 0xff) << v.red.offset |
-		    (COLOUR(i) >> 8 & 0xff) << v.green.offset |
-		    (COLOUR(i) & 0xff) << v.blue.offset;
+		con.pixel[i] = rgb(COLOUR(i));
 	if ((con.cells = calloc(con.cols * con.rows, sizeof(con.cells[0]))) ==
 	    NULL || (con.dirty = calloc(con.rows, 1)) == NULL)
 		return ENOMEM;
@@ -693,6 +840,15 @@ fbcon_attach(int minor, int kmess)
 	if (!con.paused)
 		take_screen();
 	fbcon_pull();
+
+	/*
+	 * The keyboard as its owner has it (now, if it published already) and
+	 * whenever that changes; and the owner told the keyboard is up.
+	 */
+	if (con.osk && (r = ds_subscribe("osk\\.state", DSF_INITIAL |
+	    DSF_OVERWRITE)) != OK)
+		printf("fb: cannot ask DS about the keyboard: %d\n", r);
+	console_publish();
 	return OK;
 }
 
@@ -852,6 +1008,7 @@ fbcon_resize(void)
 		con.attached = 0;
 		printf("fb: no memory for a %ux%u console; no console on the "
 		    "screen\n", cols, rows);
+		console_publish();
 		return;
 	}
 	for (r = 0; r < (size_t)cols * rows; r++)
@@ -888,4 +1045,6 @@ fbcon_pause(int paused)
 	con.paused = paused;
 	if (!paused && con.attached)
 		take_screen();
+	if (con.attached)
+		console_publish();
 }

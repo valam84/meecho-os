@@ -1,105 +1,77 @@
 /*
- * The on-screen keyboard's side of a touch (keys.h).
+ * The console keyboard's side of a touch (keys.h).
  *
- * A touch that starts on a key presses it, and the key is released when
- * that touch ends - wherever it ends, so a finger that slides off does not
- * leave a key down.  Shift and Ctrl are one-shot: touching them arms them,
- * and the next key goes out between their press and release; touching an
- * armed one again disarms it.  A touch that starts off the keyboard does
- * nothing.  The layout and geometry are <minix/osk.h>, the same table the
- * frame buffer driver draws.
+ * The keyboard itself - its layers, the modifiers that stick, which key a
+ * touch is on and when that key goes down and up - is libosk's, and this
+ * driver is its owner: fb only draws what the owner publishes.  What is
+ * left here is the screen around it.  The keyboard is the bottom
+ * osk_console_height() lines of the screen, the same rectangle fb draws it
+ * in; a touch above it is a touch on no key, so a finger that starts on the
+ * text and slides down presses nothing.
+ *
+ * And it takes touches only while fb says its console is on the screen
+ * with the keyboard drawn (keys_show()): under the test card, or under a
+ * compositor that has the screen, a touch at the bottom is not a key.
+ * When the keyboard goes away everything it holds is let go - a key held
+ * down, a locked Ctrl - so nothing stays pressed behind the screen's back;
+ * the layer it showed it keeps.
  */
 
 #include <stddef.h>
-#include <minix/osk.h>
+#include <minix/libosk.h>
 
 #include "keys.h"
 
+static void
+emit(void *arg, unsigned usage, int down)
+{
+	struct keys *k = arg;
+
+	k->emit(usage, down);
+}
+
 void
 keys_init(struct keys *k, unsigned w, unsigned h,
-	void (*emit)(unsigned usage, int down))
+	void (*emitf)(unsigned usage, int down))
 {
-	unsigned i;
+	unsigned kh = osk_console_height(h);
 
 	k->w = w;
 	k->h = h;
-	k->emit = emit;
-	k->shift = k->ctrl = 0;
-	for (i = 0; i < KEYS_MAX_TOUCH; i++)
-		k->t[i].active = 0;
+	k->top = h - kh;
+	k->shown = 0;
+	k->emit = emitf;
+	osk_init(&k->osk, w, kh, emit, k);
 }
 
-static void
-press(struct keys *k, unsigned id, unsigned x, unsigned y)
-{
-	const struct osk_key *key = osk_hit(x, y, k->w, k->h);
-
-	k->t[id].active = 1;
-	k->t[id].usage = 0;
-	k->t[id].shift = k->t[id].ctrl = 0;
-	if (key == NULL)
-		return;
-	if (key->usage == OSK_U_LSHIFT) {
-		k->shift = !k->shift;
-		return;
-	}
-	if (key->usage == OSK_U_LCTRL) {
-		k->ctrl = !k->ctrl;
-		return;
-	}
-	if (k->ctrl) {
-		k->emit(OSK_U_LCTRL, 1);
-		k->t[id].ctrl = 1;
-	}
-	if (k->shift) {
-		k->emit(OSK_U_LSHIFT, 1);
-		k->t[id].shift = 1;
-	}
-	k->shift = k->ctrl = 0;
-	k->emit(key->usage, 1);
-	k->t[id].usage = key->usage;
-}
-
-static void
-release(struct keys *k, unsigned id)
-{
-	if (!k->t[id].active)
-		return;
-	if (k->t[id].usage != 0)
-		k->emit(k->t[id].usage, 0);
-	if (k->t[id].shift)
-		k->emit(OSK_U_LSHIFT, 0);
-	if (k->t[id].ctrl)
-		k->emit(OSK_U_LCTRL, 0);
-	k->t[id].active = 0;
-	k->t[id].usage = 0;
-	k->t[id].shift = k->t[id].ctrl = 0;
-}
-
-void
+int
 keys_touch(struct keys *k, unsigned id, int event, unsigned x, unsigned y)
 {
-	if (id >= KEYS_MAX_TOUCH)
-		return;
-	switch (event) {
-	case TOUCH_DOWN:
-		if (k->t[id].active)
-			release(k, id);	/* a down we missed the up of */
-		press(k, id, x, y);
-		break;
-	case TOUCH_CONTACT:
-		if (!k->t[id].active)
-			press(k, id, x, y);	/* the down was missed */
-		break;
-	case TOUCH_UP:
-		release(k, id);
-		break;
-	}
+	if (!k->shown)
+		return 0;
+	/* Above the keyboard: below its rectangle, on no key. */
+	return osk_touch(&k->osk, id, event, x,
+	    y >= k->top ? y - k->top : k->osk.h);
 }
 
-void
+int
 keys_lost(struct keys *k, unsigned id)
 {
-	if (id < KEYS_MAX_TOUCH)
-		release(k, id);
+	return k->shown ? osk_lost(&k->osk, id) : 0;
+}
+
+int
+keys_show(struct keys *k, int shown)
+{
+	shown = shown != 0;
+	if (shown == k->shown)
+		return 0;
+	k->shown = shown;
+	return shown ? 0 : osk_reset(&k->osk);
+}
+
+uint32_t
+keys_word(const struct keys *k)
+{
+	return osk_word(&k->osk);
 }

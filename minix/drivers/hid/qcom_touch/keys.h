@@ -1,34 +1,39 @@
 /*
- * Touches on the on-screen keyboard as key events (keys.c).  No MINIX
- * calls: the host test (port/test/qcom_touch/keystest.c) drives it.
+ * Touches on the screen as the console keyboard's (keys.c): the keyboard is
+ * libosk's (<minix/libosk.h>), this is where it sits on the screen and when
+ * it takes touches at all.  No MINIX calls: the host test
+ * (port/test/qcom_touch/keystest.c) drives it.
  */
 #ifndef _KEYS_H
 #define _KEYS_H
 
-#define KEYS_MAX_TOUCH	10
+#include <stdint.h>
+#include <minix/libosk.h>
 
-/* Touch events, as the controller reports them. */
-#define TOUCH_DOWN	0
-#define TOUCH_UP	1
-#define TOUCH_CONTACT	2
+/* Touch events, as the controller reports them - libosk's numbers. */
+#define TOUCH_DOWN	OSK_TOUCH_DOWN
+#define TOUCH_UP	OSK_TOUCH_UP
+#define TOUCH_CONTACT	OSK_TOUCH_CONTACT
 
 struct keys {
+	struct osk	osk;
 	unsigned	w, h;		/* the screen, in pixels */
+	unsigned	top;		/* the keyboard's first line */
+	int		shown;		/* the console's keyboard is on screen */
 	void		(*emit)(unsigned usage, int down);
-
-	int		shift, ctrl;	/* one-shot, waiting for a key */
-	struct {
-		int	active;
-		unsigned usage;		/* 0: on no key, or a modifier */
-		int	shift, ctrl;	/* pressed along with it */
-	} t[KEYS_MAX_TOUCH];
 };
 
 void keys_init(struct keys *k, unsigned w, unsigned h,
 	void (*emit)(unsigned usage, int down));
-void keys_touch(struct keys *k, unsigned id, int event, unsigned x,
+/*
+ * A touch at (x, y) on the screen; a lost one; whether the keyboard is on
+ * the screen now.  Each returns nonzero if what the keyboard shows changed:
+ * then keys_word() is the word to publish.
+ */
+int keys_touch(struct keys *k, unsigned id, int event, unsigned x,
 	unsigned y);
-/* A touch the last frame had and this one does not: let it go. */
-void keys_lost(struct keys *k, unsigned id);
+int keys_lost(struct keys *k, unsigned id);
+int keys_show(struct keys *k, int shown);
+uint32_t keys_word(const struct keys *k);
 
 #endif /* _KEYS_H */

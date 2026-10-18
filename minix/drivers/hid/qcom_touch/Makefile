@@ -4,9 +4,10 @@ PROG=	qcom_touch
 SRCS=	touch.c qup.c keys.c qcom_soc.c
 
 
-# libsys's timer calls are built on libtimers, so it comes after.
-DPADD+=	${LIBINPUTDRIVER} ${LIBSYS} ${LIBTIMERS}
-LDADD+=	-linputdriver -lsys -ltimers
+# The console's keyboard is libosk's (keys.c is its owner).  libsys's timer
+# calls are built on libtimers, so it comes after.
+DPADD+=	${LIBOSK} ${LIBINPUTDRIVER} ${LIBSYS} ${LIBTIMERS}
+LDADD+=	-losk -linputdriver -lsys -ltimers
 
 WARNS?=	5
 

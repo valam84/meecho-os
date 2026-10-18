@@ -42,6 +42,18 @@
 /* The console's keyboard: the bottom OSK_CONSOLE_PERMILLE of the screen. */
 #define OSK_CONSOLE_PERMILLE	300
 
+/*
+ * The console's keyboard between its two services, through DS: the touch
+ * driver - the keyboard's owner - publishes osk_word() under OSK_DS_STATE,
+ * fb draws it; fb publishes under OSK_DS_CONSOLE whether the console is on
+ * the screen (OSK_CON_SHOWN) and draws the keyboard (OSK_CON_KEYBOARD), and
+ * a touch makes a key only when both are set.
+ */
+#define OSK_DS_STATE		"osk.state"
+#define OSK_DS_CONSOLE		"fb.console"
+#define OSK_CON_SHOWN		0x1
+#define OSK_CON_KEYBOARD	0x2
+
 /* Layers. */
 #define OSK_LOWER	0
 #define OSK_UPPER	1	/* shown, never chosen: OSK_LOWER with Shift */

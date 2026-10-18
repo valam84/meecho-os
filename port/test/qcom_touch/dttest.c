@@ -113,6 +113,13 @@ void default_log(void) { }
 int env_parse(const char *n, const char *f, int fl, long *p, long lo, long hi)
 	{ (void)n; (void)f; (void)fl; (void)p; (void)lo; (void)hi; return 0; }
 void env_setargs(int argc, char **argv) { (void)argc; (void)argv; }
+int env_get_param(const char *k, char *v, int n)
+	{ (void)k; (void)v; (void)n; return -1; }
+int ds_publish_u32(const char *n, uint32_t v, int f)
+	{ (void)n; (void)v; (void)f; return 0; }
+int ds_retrieve_u32(const char *n, uint32_t *v) { (void)n; *v = 0; return 0; }
+int ds_subscribe(const char *r, int f) { (void)r; (void)f; return 0; }
+int ds_check(char *n, int *t, int *o) { (void)n; (void)t; (void)o; return -1; }
 void sef_setcb_init_fresh(int (*cb)(int, sef_init_info_t *)) { (void)cb; }
 void sef_setcb_signal_handler(void (*cb)(int)) { (void)cb; }
 void sef_startup(void) { }

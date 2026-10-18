@@ -37,6 +37,7 @@ struct input_event {
 #define INPUT_PAGE_LED		0x0008	/* LED page */
 #define INPUT_PAGE_BUTTON	0x0009	/* Button page */
 #define INPUT_PAGE_CONS		0x000C	/* Consumer page */
+#define INPUT_PAGE_DIGITIZER	0x000D	/* Digitizers page: touch screens */
 
 /* Event values.  Not exhaustive. */
 #define INPUT_RELEASE		0
@@ -299,6 +300,28 @@ enum {
 
 enum {
 	INPUT_BUTTON_1 = 0x0001,
+};
+
+/*
+ * A touch screen, through the mice (INPUT_DEV_MOUSE): a frame per contact,
+ * in this order -
+ *
+ *   INPUT_PAGE_DIGITIZER  INPUT_DIGI_CONTACT_ID   the contact's number
+ *   INPUT_PAGE_GD         INPUT_GD_X, INPUT_GD_Y  where it is, absolute
+ *                         (INPUT_FLAG_ABS): 0 to INPUT_DIGI_MAX across the
+ *                         screen, left to right and top to bottom
+ *   INPUT_PAGE_DIGITIZER  INPUT_DIGI_TIP_SWITCH   INPUT_PRESS while it
+ *                         touches, INPUT_RELEASE when it has gone
+ *
+ * A mouse's X and Y are relative, so nothing else reads a touch as motion.
+ * Fractions of the screen, not pixels: the driver knows its panel, the
+ * reader the screen's mode.
+ */
+#define INPUT_DIGI_MAX		0xffff
+
+enum {
+	INPUT_DIGI_TIP_SWITCH = 0x0042,
+	INPUT_DIGI_CONTACT_ID = 0x0051
 };
 
 enum {

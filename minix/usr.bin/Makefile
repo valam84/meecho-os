@@ -13,9 +13,10 @@ SUBDIR+=	toproto
 SUBDIR+=	trace
 
 # The compositor (stage 11.4), on the Wayland stack in external/mit, and
-# its x-ray view of the system and its cards for restarted services (11.7).
+# its x-ray view of the system and its cards for restarted services (11.7),
+# and its on-screen keyboard (11.9).
 .if ${MACHINE_ARCH} == "aarch64"
-SUBDIR+=	meechowm meechowm-xray meechowm-notify
+SUBDIR+=	meechowm meechowm-xray meechowm-notify meechowm-osk
 .endif
 
 .include <bsd.subdir.mk>

@@ -31,6 +31,7 @@ entries() {
 	    "Width: a half"			"meechowm -m width 1/2" \
 	    "Width: two thirds"			"meechowm -m width 2/3" \
 	    "Width: all of the screen, or back"	"meechowm -m maximize" \
+	    "Keyboard on the screen, or away"	"meechowm -m osk" \
 	    "Centre the column"			"meechowm -m center" \
 	    "Close the window"			"meechowm -m close" \
 	    "Workspace above"			"meechowm -m focus up" \

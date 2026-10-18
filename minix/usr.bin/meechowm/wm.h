@@ -13,6 +13,9 @@
  *                (wlr-foreign-toplevel-management)
  *   overview.c   the camera pulled back from the strip (Mod+o)
  *   ipc.c        the commands over a socket (meechowm -m)
+ *   textinput.c  the on-screen keyboard's protocols: its keys into the
+ *                seat, and when it is up (virtual-keyboard, text-input,
+ *                input-method)
  */
 #ifndef MEECHOWM_WM_H
 #define MEECHOWM_WM_H
@@ -57,6 +60,16 @@ struct tinywl_server {
 	struct wl_listener cursor_button;
 	struct wl_listener cursor_axis;
 	struct wl_listener cursor_frame;
+
+	/* A touch screen (meechowm.c): its touches through the cursor. */
+	bool has_touch;
+	struct wl_listener touch_down;
+	struct wl_listener touch_up;
+	struct wl_listener touch_motion;
+	struct wl_listener touch_cancel;
+	struct wl_listener touch_frame;
+	int touch_pointer;		/* the touch that is the pointer, or -1 */
+	double touch_dx[16], touch_dy[16];	/* layout less surface coords */
 
 	struct wlr_seat *seat;
 	struct wl_listener new_input;
@@ -172,6 +185,8 @@ struct mw_reply {
 };
 
 /* meechowm.c */
+struct wlr_input_device;
+void wm_add_input(struct tinywl_server *server, struct wlr_input_device *dev);
 void focus_toplevel(struct tinywl_toplevel *toplevel);
 void wm_pointer_refresh(struct tinywl_server *server);
 bool wm_set_mode(struct tinywl_server *server, unsigned width,
@@ -226,6 +241,15 @@ void toplevels_fini(void);
 void toplevels_map(struct tinywl_toplevel *toplevel);
 void toplevels_unmap(struct tinywl_toplevel *toplevel);
 void toplevels_width(struct tinywl_toplevel *toplevel);
+
+/* textinput.c */
+struct wlr_keyboard;
+void textinput_init(struct tinywl_server *server);
+void textinput_fini(void);
+bool textinput_virtual(struct wlr_keyboard *kb);
+bool textinput_command(struct tinywl_server *server, const char *arg,
+	struct mw_reply *reply);
+void textinput_state(struct tinywl_server *server, struct mw_reply *reply);
 
 /* ipc.c */
 bool ipc_start(struct tinywl_server *server);

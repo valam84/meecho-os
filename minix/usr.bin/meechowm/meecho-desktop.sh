@@ -2,7 +2,9 @@
 #
 # meecho-desktop - the MEECHO desktop, from the console (stage 11.7):
 # meechowm, and in it the wallpaper (wbg), the panel (meechowm-bar), the
-# cards for restarted services (meechowm-notify) and a terminal (foot).
+# cards for restarted services (meechowm-notify), the on-screen keyboard
+# (meechowm-osk: up while a window wants text, and on Super+t) and a
+# terminal (foot).
 # Super+d is the palette, Print a screenshot; Super+Shift+e ends it, and
 # the console has the screen back.
 #
@@ -36,7 +38,7 @@ export XDG_RUNTIME_DIR
 export NNN_COLORS NNN_FCOLORS
 
 wall=${MEECHOWM_WALLPAPER:-/usr/share/meecho/wallpaper.svg}
-startup="meechowm-bar & meechowm-notify & ${MEECHOWM_TERM:-foot}"
+startup="meechowm-bar & meechowm-notify & meechowm-osk & ${MEECHOWM_TERM:-foot}"
 [ "$wall" = none ] || startup="wbg '$wall' & $startup"
 
 exec meechowm -s "$startup"

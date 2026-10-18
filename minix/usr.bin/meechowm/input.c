@@ -1,6 +1,6 @@
 /*
- * The keyboard and the mouse: the input server's devices, as wlroots input
- * devices.
+ * The keyboard, the mouse and a touch screen: the input server's devices,
+ * as wlroots input devices.
  *
  * The input server merges every keyboard into /dev/kbdmux and every mouse
  * into /dev/mousemux, and gives each reader struct input_event records -
@@ -21,7 +21,11 @@
  *   a mouse report is X, Y, the wheel and the buttons together, and the
  *   input server hands them over one event each, with no end of a report
  *   marked: mousesplit.c cuts a read back into reports, and each becomes
- *   one motion event, its wheel and buttons, and a frame event.
+ *   one motion event, its wheel and buttons, and a frame event;
+ *
+ *   a touch screen comes with the mice, its contacts in the digitizer page
+ *   and absolute X and Y (<minix/input.h>): touchsplit.c takes them out
+ *   before mousesplit.c sees the read, and they become a wlr_touch.
  */
 #include <sys/types.h>
 
@@ -38,12 +42,15 @@
 #include <wayland-server-core.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/interfaces/wlr_pointer.h>
+#include <wlr/interfaces/wlr_touch.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_touch.h>
 #include <wlr/util/log.h>
 
 #include "meechowm.h"
 #include "mousesplit.h"
+#include "touchsplit.h"
 
 static struct wlr_keyboard keyboard;
 static struct wlr_pointer pointer;
@@ -162,17 +169,101 @@ static const struct mc_mouse_ops mouse_ops = {
 	.frame = mouse_frame,
 };
 
+/*
+ * A touch screen, from touchsplit.c: a wlr_touch made when its first touch
+ * comes - a machine without one has no touch in its seat, and its clients
+ * are not told of one.
+ */
+static struct wlr_touch touch;
+static bool touch_made;
+static struct mc_touch touch_state;
+static mc_new_input_fn touch_new_input;
+static void *touch_new_input_data;
+
+static const struct wlr_touch_impl touch_impl = {
+	.name = "meecho-touch",
+};
+
+static void
+touch_made_now(void)
+{
+	if (touch_made)
+		return;
+	touch_made = true;
+	wlr_touch_init(&touch, &touch_impl, "meecho-touch");
+	touch_new_input(touch_new_input_data, &touch.base);
+	wlr_log(WLR_INFO, "touch screen: in the mice");
+}
+
+static void
+touch_down(unsigned id, double x, double y, void *arg)
+{
+	struct wlr_touch_down_event d;
+
+	touch_made_now();
+	memset(&d, 0, sizeof(d));
+	d.touch = &touch;
+	d.time_msec = *(uint32_t *)arg;
+	d.touch_id = (int32_t)id;
+	d.x = x;
+	d.y = y;
+	wl_signal_emit_mutable(&touch.events.down, &d);
+}
+
+static void
+touch_motion(unsigned id, double x, double y, void *arg)
+{
+	struct wlr_touch_motion_event m;
+
+	memset(&m, 0, sizeof(m));
+	m.touch = &touch;
+	m.time_msec = *(uint32_t *)arg;
+	m.touch_id = (int32_t)id;
+	m.x = x;
+	m.y = y;
+	wl_signal_emit_mutable(&touch.events.motion, &m);
+}
+
+static void
+touch_up(unsigned id, void *arg)
+{
+	struct wlr_touch_up_event u;
+
+	memset(&u, 0, sizeof(u));
+	u.touch = &touch;
+	u.time_msec = *(uint32_t *)arg;
+	u.touch_id = (int32_t)id;
+	wl_signal_emit_mutable(&touch.events.up, &u);
+}
+
+static void
+touch_frame(void *arg)
+{
+	wl_signal_emit_mutable(&touch.events.frame, NULL);
+}
+
+static const struct mc_touch_ops touch_ops = {
+	.down = touch_down,
+	.motion = touch_motion,
+	.up = touch_up,
+	.frame = touch_frame,
+};
+
 static int
 mouse_readable(int fd, uint32_t mask, void *data)
 {
 	struct input_event ev[32];
 	ssize_t r;
+	size_t n;
 	uint32_t t = now_ms();
 
 	if ((r = read(fd, ev, sizeof(ev))) <= 0)
 		return 0;
 	wlr_log(WLR_DEBUG, "mouse: %zu event(s)", (size_t)r / sizeof(ev[0]));
-	mc_mouse_split(ev, (size_t)r / sizeof(ev[0]), &mouse_ops, &t);
+	/* A touch screen's events out first; the mice's are left. */
+	n = mc_touch_split(&touch_state, ev, (size_t)r / sizeof(ev[0]),
+	    &touch_ops, &t);
+	mc_mouse_split(ev, n, &mouse_ops, &t);
 	return 0;
 }
 
@@ -198,6 +289,8 @@ mc_input_start(struct wl_event_loop *loop, mc_new_input_fn new_input,
 		wlr_log(WLR_INFO, "keyboard: %s", kdev);
 	}
 
+	touch_new_input = new_input;
+	touch_new_input_data = data;
 	if ((mfd = open(mdev, O_RDONLY | O_NONBLOCK | O_CLOEXEC)) < 0)
 		wlr_log_errno(WLR_ERROR, "no mouse: %s", mdev);
 	else {

@@ -36,6 +36,9 @@
  *                               workspace in sight (overview.c); in it the
  *                               arrows alone move the focus, a click takes
  *                               a window, o again, Return or Esc go back
+ *   t                           the on-screen keyboard (meechowm-osk) up or
+ *                               down; it comes up by itself where a window
+ *                               wants text (textinput.c)
  *   1 .. 9                      workspace 1 .. 9
  *   Shift+e                     end the compositor (and so does Alt+Escape)
  *   the wheel                   focus the column left or right
@@ -91,12 +94,14 @@
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_touch.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
+#include <linux/input-event-codes.h>
 
 #include "fb_ioc.h"
 #include "layout.h"
@@ -176,6 +181,7 @@ static const struct binding {
 	{ false, XKB_KEY_x,	"xray" },	/* the system on view */
 	{ false, XKB_KEY_i,	"passport" },	/* the focused window's */
 	{ false, XKB_KEY_o,	"overview" },	/* the camera pulled back */
+	{ false, XKB_KEY_t,	"osk" },	/* the on-screen keyboard */
 	{ false, XKB_KEY_1,	"workspace 1" },
 	{ false, XKB_KEY_2,	"workspace 2" },
 	{ false, XKB_KEY_3,	"workspace 3" },
@@ -422,7 +428,10 @@ static void keyboard_handle_key(
 
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
-	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+	/* MEECHO: the on-screen keyboard's keys are the windows' - Alt and Esc
+	 * tapped on the screen do not end the desktop (textinput.c). */
+	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED &&
+	    !textinput_virtual(keyboard->wlr_keyboard)) {
 		bool shift = (modifiers & WLR_MODIFIER_SHIFT) != 0;
 		for (int i = 0; i < nsyms; i++) {
 			if ((modifiers & WLR_MODIFIER_ALT) &&
@@ -534,6 +543,12 @@ static void server_new_input(struct wl_listener *listener, void *data) {
 	case WLR_INPUT_DEVICE_POINTER:
 		server_new_pointer(server, device);
 		break;
+	case WLR_INPUT_DEVICE_TOUCH:
+		/* MEECHO: its touches come through the cursor, which maps
+		 * them onto the screen. */
+		wlr_cursor_attach_input_device(server->cursor, device);
+		server->has_touch = true;
+		break;
 	default:
 		break;
 	}
@@ -543,6 +558,9 @@ static void server_new_input(struct wl_listener *listener, void *data) {
 	uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
 	if (!wl_list_empty(&server->keyboards)) {
 		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+	}
+	if (server->has_touch) {
+		caps |= WL_SEAT_CAPABILITY_TOUCH;
 	}
 	wlr_seat_set_capabilities(server->seat, caps);
 }
@@ -749,6 +767,124 @@ static void server_cursor_frame(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, server, cursor_frame);
 	/* Notify the client with pointer focus of the frame event. */
 	wlr_seat_pointer_notify_frame(server->seat);
+}
+
+/*
+ * MEECHO: a touch screen (input.c).  A touch lands as a click does - the
+ * column under it takes the focus, a panel the keyboard if it asks for it -
+ * and goes to the client as a touch if the client has a wl_touch.  To one
+ * that has not, the first touch is the pointer: it goes where the finger
+ * is, the left button down, and up when the finger lifts.  The on-screen
+ * keyboard takes touches, so that two fingers on it are two keys.
+ */
+static bool surface_takes_touch(struct tinywl_server *server,
+		struct wlr_surface *surface) {
+	struct wlr_seat_client *client = wlr_seat_client_for_wl_client(
+		server->seat, wl_resource_get_client(surface->resource));
+	return client != NULL && !wl_list_empty(&client->touches);
+}
+
+static void touch_pointer_to(struct tinywl_server *server, uint32_t time,
+		double lx, double ly) {
+	wlr_cursor_warp_closest(server->cursor, NULL, lx, ly);
+	process_cursor_motion(server, time);
+}
+
+static void touch_pointer_up(struct tinywl_server *server, uint32_t time) {
+	server->touch_pointer = -1;
+	wlr_seat_pointer_notify_button(server->seat, time, BTN_LEFT,
+		WL_POINTER_BUTTON_STATE_RELEASED);
+	wlr_seat_pointer_notify_frame(server->seat);
+}
+
+static void server_touch_down(struct wl_listener *listener, void *data) {
+	struct tinywl_server *server =
+		wl_container_of(listener, server, touch_down);
+	struct wlr_touch_down_event *event = data;
+	struct wlr_surface *surface = NULL;
+	double lx, ly, sx, sy;
+	int id = event->touch_id;
+
+	wlr_cursor_absolute_to_layout_coords(server->cursor,
+		&event->touch->base, event->x, event->y, &lx, &ly);
+	if (overview_on(server)) {
+		(void)overview_click(server, lx, ly);
+		return;
+	}
+	struct tinywl_toplevel *toplevel = desktop_toplevel_at(server, lx, ly,
+		&surface, &sx, &sy);
+	if (toplevel != NULL) {
+		strip_focus(toplevel);
+	} else {
+		layers_click(server, surface);
+	}
+	if (surface != NULL && surface_takes_touch(server, surface) &&
+			id >= 0 && id < 16) {
+		server->touch_dx[id] = lx - sx;
+		server->touch_dy[id] = ly - sy;
+		wlr_seat_touch_notify_down(server->seat, surface,
+			event->time_msec, id, sx, sy);
+	} else if (server->touch_pointer < 0) {
+		server->touch_pointer = id;
+		touch_pointer_to(server, event->time_msec, lx, ly);
+		wlr_seat_pointer_notify_button(server->seat, event->time_msec,
+			BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED);
+		wlr_seat_pointer_notify_frame(server->seat);
+	}
+}
+
+static void server_touch_motion(struct wl_listener *listener, void *data) {
+	struct tinywl_server *server =
+		wl_container_of(listener, server, touch_motion);
+	struct wlr_touch_motion_event *event = data;
+	double lx, ly;
+	int id = event->touch_id;
+
+	wlr_cursor_absolute_to_layout_coords(server->cursor,
+		&event->touch->base, event->x, event->y, &lx, &ly);
+	if (id == server->touch_pointer) {
+		touch_pointer_to(server, event->time_msec, lx, ly);
+		wlr_seat_pointer_notify_frame(server->seat);
+	} else if (id >= 0 && id < 16 &&
+			wlr_seat_touch_get_point(server->seat, id) != NULL) {
+		/* Where it went in the surface it went down on. */
+		wlr_seat_touch_notify_motion(server->seat, event->time_msec, id,
+			lx - server->touch_dx[id], ly - server->touch_dy[id]);
+	}
+}
+
+static void server_touch_up(struct wl_listener *listener, void *data) {
+	struct tinywl_server *server =
+		wl_container_of(listener, server, touch_up);
+	struct wlr_touch_up_event *event = data;
+
+	if (event->touch_id == server->touch_pointer) {
+		touch_pointer_up(server, event->time_msec);
+	} else if (wlr_seat_touch_get_point(server->seat,
+			event->touch_id) != NULL) {
+		wlr_seat_touch_notify_up(server->seat, event->time_msec,
+			event->touch_id);
+	}
+}
+
+static void server_touch_cancel(struct wl_listener *listener, void *data) {
+	struct tinywl_server *server =
+		wl_container_of(listener, server, touch_cancel);
+	struct wlr_touch_cancel_event *event = data;
+	struct wlr_touch_point *point;
+
+	if (event->touch_id == server->touch_pointer) {
+		touch_pointer_up(server, event->time_msec);
+	} else if ((point = wlr_seat_touch_get_point(server->seat,
+			event->touch_id)) != NULL) {
+		wlr_seat_touch_notify_cancel(server->seat, point->client);
+	}
+}
+
+static void server_touch_frame(struct wl_listener *listener, void *data) {
+	struct tinywl_server *server =
+		wl_container_of(listener, server, touch_frame);
+	wlr_seat_touch_notify_frame(server->seat);
 }
 
 static void output_frame(struct wl_listener *listener, void *data) {
@@ -1157,6 +1293,11 @@ static void mc_new_input(void *data, struct wlr_input_device *device) {
 	server_new_input(&server->new_input, device);
 }
 
+/* And one from a client: the on-screen keyboard's (textinput.c). */
+void wm_add_input(struct tinywl_server *server, struct wlr_input_device *device) {
+	server_new_input(&server->new_input, device);
+}
+
 /* MEECHO: the strip's settings, from the environment. */
 static void settings(struct tinywl_server *server) {
 	const char *v;
@@ -1349,6 +1490,20 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.cursor->events.axis, &server.cursor_axis);
 	server.cursor_frame.notify = server_cursor_frame;
 	wl_signal_add(&server.cursor->events.frame, &server.cursor_frame);
+	/* MEECHO: and a touch screen's touches. */
+	server.touch_pointer = -1;
+	server.touch_down.notify = server_touch_down;
+	wl_signal_add(&server.cursor->events.touch_down, &server.touch_down);
+	server.touch_up.notify = server_touch_up;
+	wl_signal_add(&server.cursor->events.touch_up, &server.touch_up);
+	server.touch_motion.notify = server_touch_motion;
+	wl_signal_add(&server.cursor->events.touch_motion,
+			&server.touch_motion);
+	server.touch_cancel.notify = server_touch_cancel;
+	wl_signal_add(&server.cursor->events.touch_cancel,
+			&server.touch_cancel);
+	server.touch_frame.notify = server_touch_frame;
+	wl_signal_add(&server.cursor->events.touch_frame, &server.touch_frame);
 
 	/*
 	 * Configures a seat, which is a single "seat" at which a user sits and
@@ -1372,6 +1527,8 @@ int main(int argc, char *argv[]) {
 
 	/* MEECHO: the windows, for task bars - the panel among them. */
 	toplevels_init(&server);
+	/* MEECHO: and the on-screen keyboard's protocols. */
+	textinput_init(&server);
 
 	/*
 	 * MEECHO: the keyboard and the mouse, from the input server; then the
@@ -1470,12 +1627,18 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.cursor_button.link);
 	wl_list_remove(&server.cursor_axis.link);
 	wl_list_remove(&server.cursor_frame.link);
+	wl_list_remove(&server.touch_down.link);
+	wl_list_remove(&server.touch_up.link);
+	wl_list_remove(&server.touch_motion.link);
+	wl_list_remove(&server.touch_cancel.link);
+	wl_list_remove(&server.touch_frame.link);
 
 	wl_list_remove(&server.new_input.link);
 	wl_list_remove(&server.request_cursor.link);
 	wl_list_remove(&server.pointer_focus_change.link);
 	wl_list_remove(&server.request_set_selection.link);
 	toplevels_fini();
+	textinput_fini();
 
 	wl_list_remove(&server.new_output.link);
 

@@ -1,5 +1,6 @@
 # foot, the terminal of the desktop (stage 11.4), as meson builds it here:
-# no IME, no grapheme clustering (utf8proc), no utmp, no themes or
+# with IME (text-input-v3: its text field brings the on-screen keyboard
+# up, stage 11.9), no grapheme clustering (utf8proc), no utmp, no themes or
 # terminfo installed, docs not built (scdoc); TERM is "foot", and the
 # capabilities foot answers itself (XTGETTCAP) are built in.
 #
@@ -67,7 +68,7 @@ CLEANFILES+=	${_x:T:R}.c ${_x:T:R}.h
 CPPFLAGS+=	-D_GNU_SOURCE=200809L -D_NETBSD_SOURCE -DNDEBUG \
 		-DFOOT_DEFAULT_TERM=\"foot\" -DMEMFD_CREATE -DEXECVPE \
 		-DHAVE_PIXMAN_RGBA_16 -DHAVE_XDG_TOPLEVEL_TAG=1 \
-		-DHAVE_EXT_BACKGROUND_EFFECT=1
+		-DHAVE_EXT_BACKGROUND_EFFECT=1 -DFOOT_IME_ENABLED=1
 CPPFLAGS+=	-I. -I${.CURDIR} -I${FOOTDIST}
 CPPFLAGS+=	-I${DESTDIR}/usr/include/pixman-1 \
 		-I${DESTDIR}/usr/include/freetype2 \

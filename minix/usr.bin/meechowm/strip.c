@@ -36,7 +36,10 @@
  *   anim MS                      how long a move takes; 0: no motion
  *   overview [on|off]            the camera pulled back, or not; alone,
  *                                the other way (overview.c)
- *   state                        the layout, as text (for the stands)
+ *   osk [on|off|auto]            the on-screen keyboard up, down, or as
+ *                                text fields want it; alone, the other
+ *                                way (textinput.c)
+ *   state                       the layout, as text (for the stands)
  *   frames [reset]               who draws, and what the frames cost
  *   quit
  */
@@ -702,6 +705,7 @@ state(struct tinywl_server *s, struct mw_reply *r)
 	}
 	layers_state(s, r);
 	passport_state(s, r);
+	textinput_state(s, r);
 }
 
 /* "left" and "up" are -1, "right" and "down" +1, anything else 0. */
@@ -962,6 +966,9 @@ wm_command(struct tinywl_server *s, const char *line, struct mw_reply *r)
 	} else if (strcmp(verb, "passport") == 0) {
 		passport_command(s, arg, r);
 		return;
+	} else if (strcmp(verb, "osk") == 0) {
+		if (!textinput_command(s, arg, r))
+			return;
 	}
 	else if (strcmp(verb, "anim") == 0) {
 		char *end;

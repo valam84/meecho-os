@@ -6,7 +6,8 @@
  *                (FBIOC_MAP), what was drawn copied into the one not
  *                shown, and shown (FBIOC_FLIP); the cursor in the display
  *                controller's own window (FBIOC_CURSOR)
- *   input.c      the keyboard and the mouse: the input server's devices
+ *   input.c      the keyboard, the mouse and a touch screen: the input
+ *                server's devices
  *                (/dev/kbdmux, /dev/mousemux) as wlroots input devices
  *   hid2evdev.c  HID keyboard usages to evdev key codes
  *   render.c     who draws: the GPU (GLES2 over Mesa and the mali

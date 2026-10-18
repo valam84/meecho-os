@@ -15,7 +15,12 @@
 
 static int mthread_increase_thread_pool(void);
 static void mthread_thread_init(mthread_thread_t thread, mthread_attr_t
-	*tattr, void *(*proc)(void *), void *arg);
+	*tattr, void *(*proc)(void *), void *arg, size_t dflt_stack);
+static int create_thread(mthread_thread_t *threadid, mthread_attr_t *tattr,
+	void *(*proc)(void *), void *arg, size_t dflt_stack);
+/* <minix/mthread.h> declares it only under _MTHREADIFY_PTHREADS. */
+int pthread_create(mthread_thread_t *threadid, mthread_attr_t *tattr,
+	void *(*proc)(void *), void *arg);
 
 static void mthread_thread_stop(mthread_thread_t thread);
 static void mthread_trampoline(void);
@@ -27,6 +32,19 @@ static struct __mthread_attr default_attr = {	MTHREAD_STACK_MIN,
 						NULL,
 						MTHREAD_CREATE_JOINABLE,
 						NULL, NULL };
+
+/*
+ * The stack a thread gets when its creator names no size, through the POSIX
+ * names (pthread_create(3) with no attributes, or attributes whose size was
+ * never set).  A service's threads are sized by the service and keep
+ * MTHREAD_STACK_MIN (8 KiB), but a program written for POSIX expects what
+ * POSIX systems give: musl 128 KiB, glibc and NetBSD megabytes.  Mesa's
+ * shader compiler thread (ir3's register allocator keeps three arrays of
+ * its register file on the stack) overflowed 8 KiB on the Mi Pad 4 - that
+ * is what FD_MESA_DEBUG=serialc used to hide (port/clover/hw-gpu.md, §19).
+ * 256 KiB, as libgfxcompat's thrd_create(); the pages come on first touch.
+ */
+#define PTHREAD_STACK_DEFAULT	(256 * 1024)
 
 /*===========================================================================*
  *				mthread_equal				     *
@@ -51,6 +69,29 @@ void *(*proc)(void *);
 void *arg;
 {
 /* Register procedure proc for execution in a thread. */
+
+  return create_thread(threadid, tattr, proc, arg, MTHREAD_STACK_MIN);
+}
+
+
+/*===========================================================================*
+ *				pthread_create				     *
+ *===========================================================================*/
+int pthread_create(mthread_thread_t *threadid, mthread_attr_t *tattr,
+	void *(*proc)(void *), void *arg)
+{
+/* As mthread_create(), with a POSIX program's stack when no size is named. */
+
+  return create_thread(threadid, tattr, proc, arg, PTHREAD_STACK_DEFAULT);
+}
+
+
+/*===========================================================================*
+ *				create_thread				     *
+ *===========================================================================*/
+static int create_thread(mthread_thread_t *threadid, mthread_attr_t *tattr,
+	void *(*proc)(void *), void *arg, size_t dflt_stack)
+{
   mthread_thread_t thread;
 
   if (proc == NULL)
@@ -58,7 +99,7 @@ void *arg;
 
   if (!mthread_queue_isempty(&free_threads)) {
   	thread = mthread_queue_remove(&free_threads);
-  	mthread_thread_init(thread, tattr, proc, arg);
+  	mthread_thread_init(thread, tattr, proc, arg, dflt_stack);
  	used_threads++;
  	if(threadid != NULL) 
  		*threadid = (mthread_thread_t) thread;
@@ -70,7 +111,7 @@ void *arg;
   	if (mthread_increase_thread_pool() == -1) 
   		return(EAGAIN);
 
-  	return mthread_create(threadid, tattr, proc, arg);
+  	return create_thread(threadid, tattr, proc, arg, dflt_stack);
   }
 }
 
@@ -399,11 +440,12 @@ mthread_thread_t mthread_self(void)
 /*===========================================================================*
  *				mthread_thread_init			     *
  *===========================================================================*/
-static void mthread_thread_init(thread, tattr, proc, arg)
+static void mthread_thread_init(thread, tattr, proc, arg, dflt_stack)
 mthread_thread_t thread;
 mthread_attr_t *tattr;
 void *(*proc)(void *);
 void *arg;
+size_t dflt_stack;
 {
 /* Initialize a thread so that it, when unsuspended, will run the given
  * procedure with the given parameter. The thread is marked as runnable.
@@ -427,6 +469,7 @@ void *arg;
   	tcb->m_attr = *((struct __mthread_attr *) *tattr);
   else {
   	tcb->m_attr = default_attr;
+  	tcb->m_attr.ma_stacksize = dflt_stack;
   }
 
   if (mthread_cond_init(&(tcb->m_exited), NULL) != 0)
@@ -446,7 +489,7 @@ void *arg;
 	/* User provided too small a stack size. Forget about that stack and
 	 * allocate a new one ourselves.
 	 */
-	stacksize = (size_t) MTHREAD_STACK_MIN;
+	stacksize = dflt_stack;
 	tcb->m_attr.ma_stackaddr = stackaddr = NULL;
   }
 
@@ -596,7 +639,6 @@ static void mthread_trampoline(void)
 }
 
 /* pthread compatibility layer. */
-__weak_alias(pthread_create, mthread_create)
 __weak_alias(pthread_detach, mthread_detach)
 __weak_alias(pthread_equal, mthread_equal)
 __weak_alias(pthread_exit, mthread_exit)

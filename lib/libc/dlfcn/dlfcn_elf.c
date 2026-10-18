@@ -35,6 +35,7 @@ __RCSID("$NetBSD: dlfcn_elf.c,v 1.13 2012/06/24 15:26:03 christos Exp $");
 #include <assert.h>
 #include <elf.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
@@ -129,6 +130,7 @@ dlerror(void)
 	return dlfcn_error;
 }
 
+#if !defined(__minix)
 /*ARGSUSED*/
 int
 dladdr(const void *addr, Dl_info *dli)
@@ -136,6 +138,7 @@ dladdr(const void *addr, Dl_info *dli)
 
 	return 0;
 }
+#endif /* !defined(__minix) */
 
 /*ARGSUSED*/
 int
@@ -176,13 +179,10 @@ dl_iterate_phdr_setup(void)
 	}
 }
 
-/*ARGSUSED*/
-int
-dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *),
-    void *data)
+static void
+dl_iterate_phdr_once(void)
 {
 	static bool setup_done;
-	struct dl_phdr_info phdr_info;
 
 	if (!setup_done) {
 		/*
@@ -196,6 +196,16 @@ dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *),
 #endif /* !defined(__minix) */
 		setup_done = true;
 	}
+}
+
+/*ARGSUSED*/
+int
+dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *),
+    void *data)
+{
+	struct dl_phdr_info phdr_info;
+
+	dl_iterate_phdr_once();
 
 	memset(&phdr_info, 0, sizeof(phdr_info));
 	phdr_info.dlpi_addr = dlpi_addr;
@@ -205,3 +215,45 @@ dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *),
 
 	return callback(&phdr_info, sizeof(phdr_info), data);
 }
+
+#if defined(__minix)
+/*
+ * In a static program there is one object - the program - and the program
+ * headers dl_iterate_phdr() reports (AT_PHDR, AT_PHNUM) say where it lies,
+ * so dladdr() can answer for it: the object's name and base (its first
+ * PT_LOAD, as ld.elf_so reports it), no symbol - a static program carries
+ * no dynamic symbol table to look one up in.  Mesa finds its build-id
+ * note this way (util/build_id.c: dladdr() for the base, then
+ * dl_iterate_phdr()), and ir3, the Adreno's shader compiler, keys its
+ * shader cache on it; the stub's 0 left it reading a null note
+ * (port/clover/hw-gpu.md, §19).
+ */
+int
+dladdr(const void *addr, Dl_info *dli)
+{
+	const char *p = addr;
+	const char *base = NULL, *lo;
+	bool in = false;
+	Elf_Half i;
+
+	dl_iterate_phdr_once();
+	if (dlpi_phdr == NULL)
+		return 0;
+	for (i = 0; i < dlpi_phnum; i++) {
+		if (dlpi_phdr[i].p_type != PT_LOAD)
+			continue;
+		lo = (const char *)(dlpi_addr + dlpi_phdr[i].p_vaddr);
+		if (base == NULL)
+			base = lo;
+		if (p >= lo && p < lo + dlpi_phdr[i].p_memsz)
+			in = true;
+	}
+	if (!in)
+		return 0;
+	dli->dli_fname = dlpi_name != NULL ? dlpi_name : getprogname();
+	dli->dli_fbase = __UNCONST(base);
+	dli->dli_sname = NULL;
+	dli->dli_saddr = NULL;
+	return 1;
+}
+#endif /* defined(__minix) */

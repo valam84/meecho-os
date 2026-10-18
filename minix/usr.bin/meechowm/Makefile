@@ -81,6 +81,12 @@ DPADD+=	${DESTDIR}/usr/lib/libwlroots-0.20.a \
 	${DESTDIR}/usr/lib/libffi.a ${DESTDIR}/usr/lib/libgfxcompat.a \
 	${LIBMTHREAD} ${LIBM}
 
+# A build-id note: Mesa's shader compilers key their shader cache on the
+# program's own (util/build_id.c, through dladdr() and dl_iterate_phdr());
+# ir3, the Adreno's, reads the note unchecked and without one fell on a
+# null pointer (port/clover/hw-gpu.md, §19).
+LDFLAGS+=	-Wl,--build-id=sha1
+
 WARNS?=	3
 
 .include <bsd.prog.mk>

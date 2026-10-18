@@ -481,28 +481,30 @@ draw_row(unsigned row)
 
 /*
  * The on-screen keyboard (osk=1): the layer of <minix/libosk.h> its owner
- * shows - the touch driver, which publishes osk_word() in DS - every key a
- * face with a gap round it and its label in the middle, in MEECHO's colours
+ * shows - the touch driver, which publishes osk_word() in DS - drawn as
+ * Buffyboard draws it: every key a face with a thin rounded frame and a
+ * gap round it, its letters in a smooth sans-serif (Inter, pre-rendered by
+ * mkoskfont.py into osk_font.h, anti-aliased) or an icon for the keys that
+ * have one (the arrows, Shift, Backspace, Enter), in MEECHO's colours
  * (minix/share/style/palette).  A modifier armed for the next key and one
- * locked are lit in two colours, a key held down shows it, and a key that
- * is not a character (Esc, Enter, the layer key) is a shade darker than the
- * letters, as on Buffyboard.  A change of layer draws the keyboard whole; any
- * other change only the keys whose look it changed.
+ * locked are lit in two colours, and a key held down shows it.  A change of
+ * layer draws the keyboard whole; any other change only the keys whose
+ * look it changed.
  */
+#include "osk_font.h"
+
 #define OSK_KEY		0		/* how a key looks */
-#define OSK_FUNC	1
-#define OSK_ARMED_K	2
-#define OSK_LOCKED_K	3
-#define OSK_PRESSED	4
+#define OSK_ARMED_K	1
+#define OSK_LOCKED_K	2
+#define OSK_PRESSED	3
 
 static const struct {
-	uint32_t face, label;
+	uint32_t face, frame, label;
 } osk_look[] = {
-	[OSK_KEY]	= { STYLE_SURFACE,	STYLE_TEXT },
-	[OSK_FUNC]	= { STYLE_LINE,		STYLE_PALE },
-	[OSK_ARMED_K]	= { STYLE_ACCENT_DEEP,	STYLE_BRIGHT },
-	[OSK_LOCKED_K]	= { STYLE_ACCENT,	STYLE_INK_DEEP },
-	[OSK_PRESSED]	= { STYLE_MUTED,	STYLE_INK_DEEP },
+	[OSK_KEY]	= { STYLE_SURFACE,	STYLE_DIM,	STYLE_TEXT },
+	[OSK_ARMED_K]	= { STYLE_ACCENT_DEEP,	STYLE_ACCENT,	STYLE_BRIGHT },
+	[OSK_LOCKED_K]	= { STYLE_ACCENT,	STYLE_PALE,	STYLE_INK_DEEP },
+	[OSK_PRESSED]	= { STYLE_MUTED,	STYLE_PALE,	STYLE_INK_DEEP },
 };
 #define OSK_GROUND	STYLE_INK_DEEP
 
@@ -512,6 +514,19 @@ rgb(uint32_t c)
 {
 	return (c >> 16 & 0xff) << con.roff | (c >> 8 & 0xff) << con.goff |
 	    (c & 0xff) << con.boff;
+}
+
+/* a over b, a's share n of 16 - both 0xRRGGBB. */
+static uint32_t
+mix(uint32_t a, uint32_t b, unsigned n)
+{
+	uint32_t r = 0;
+	unsigned sh;
+
+	for (sh = 0; sh < 24; sh += 8)
+		r |= (((a >> sh & 0xff) * n + (b >> sh & 0xff) * (16 - n) + 8) /
+		    16) << sh;
+	return r;
 }
 
 static unsigned
@@ -531,8 +546,108 @@ osk_key_look(const struct osk_view *v, unsigned i, const struct osk_key *k)
 		if (v->mod[k->usage] == OSK_ARMED)
 			return OSK_ARMED_K;
 	}
-	return k->act != OSK_A_KEY || strlen(k->label) > 1 ? OSK_FUNC :
-	    OSK_KEY;
+	return OSK_KEY;
+}
+
+static unsigned
+isqrt(unsigned v)
+{
+	unsigned r = 0, b = 1u << 30;
+
+	while (b > v)
+		b >>= 2;
+	while (b != 0) {
+		if (v >= r + b) {
+			v -= r + b;
+			r = (r >> 1) + b;
+		} else
+			r >>= 1;
+		b >>= 2;
+	}
+	return r;
+}
+
+/*
+ * How much of pixel (x, y) the rounded rectangle [x0, x1) x [y0, y1) with
+ * corner radius r covers, in sixteenths: the straight edges are on pixel
+ * boundaries, the corners are measured from their centres.
+ */
+static unsigned
+rr_cover(int x, int y, int x0, int y0, int x1, int y1, int r)
+{
+	int cx, cy, dx, dy, d;
+
+	if (x < x0 || x >= x1 || y < y0 || y >= y1)
+		return 0;
+	cx = x < x0 + r ? x0 + r : x >= x1 - r ? x1 - r : -1;
+	cy = y < y0 + r ? y0 + r : y >= y1 - r ? y1 - r : -1;
+	if (cx < 0 || cy < 0 || r <= 0)
+		return 16;
+	dx = (x * 16 + 8) - cx * 16;
+	dy = (y * 16 + 8) - cy * 16;
+	d = (int)isqrt((unsigned)(dx * dx + dy * dy));
+	d = r * 16 + 8 - d;
+	return d <= 0 ? 0 : d >= 16 ? 16 : (unsigned)d;
+}
+
+/* The glyph g of size s, its pen at (x, top of the line y), over face. */
+static void
+osk_glyph(unsigned s, unsigned g, int x, int y, uint32_t label, uint32_t face)
+{
+	const struct oskf_glyph *gl = &oskf_glyphs[oskf_sizes[s].first + g];
+	const uint8_t *b = &oskf_bits[gl->off];
+	unsigned stride = (gl->w + 1u) / 2, i, j, a;
+	int px, py;
+	uint32_t *p;
+
+	for (i = 0; i < gl->h; i++) {
+		py = y + gl->y + (int)i;
+		if (py < (int)con.text_h || py >= (int)con.height)
+			continue;
+		p = (uint32_t *)(con.fb + (size_t)py * con.stride);
+		for (j = 0; j < gl->w; j++) {
+			px = x + gl->x + (int)j;
+			a = b[i * stride + j / 2];
+			a = (j & 1) ? a & 0xf : a >> 4;
+			if (a == 0 || px < 0 || px >= (int)con.width)
+				continue;
+			/* 4 bits of coverage as sixteenths: 15 is whole. */
+			p[px] = rgb(mix(label, face, a == 15 ? 16 : a));
+		}
+	}
+}
+
+/* The icon a key shows instead of its label, or -1. */
+static int
+osk_icon(const struct osk_key *k)
+{
+	if (k->act == OSK_A_MOD)
+		return k->usage == OSK_SHIFT ? OSKF_ICON_SHIFT : -1;
+	if (k->act != OSK_A_KEY)
+		return -1;
+	switch (k->usage) {
+	case OSK_U_UP:		return OSKF_ICON_UP;
+	case OSK_U_DOWN:	return OSKF_ICON_DOWN;
+	case OSK_U_LEFT:	return OSKF_ICON_LEFT;
+	case OSK_U_RIGHT:	return OSKF_ICON_RIGHT;
+	case OSK_U_BKSP:	return OSKF_ICON_BKSP;
+	case OSK_U_ENTER:	return OSKF_ICON_ENTER;
+	}
+	return -1;
+}
+
+/* The width of a label at size s. */
+static unsigned
+osk_text_width(unsigned s, const char *t)
+{
+	unsigned w = 0;
+	unsigned char c;
+
+	for (; (c = (unsigned char)*t) != '\0'; t++)
+		if (c >= OSKF_FIRST && c < OSKF_FIRST + OSKF_NCHARS)
+			w += oskf_glyphs[oskf_sizes[s].first + c - OSKF_FIRST]
+			    .advance;
+	return w;
 }
 
 /* One key; its lines on the screen in [*top, *bottom). */
@@ -540,39 +655,71 @@ static void
 osk_key_draw(const struct osk_key *k, int look, unsigned *top,
 	unsigned *bottom)
 {
-	unsigned j, x0, y0, x1, y1, x, y, n, gap, lw, lh, s;
-	uint32_t face = rgb(osk_look[look].face);
-	uint32_t *p;
+	unsigned x0, y0, x1, y1, rh, gap, r, bw, s, w, cov, in;
+	int x, y, icon, ix0, iy0, ix1, iy1, cap, base;
+	uint32_t face = osk_look[look].face, frame = osk_look[look].frame;
+	uint32_t ground = OSK_GROUND, label = osk_look[look].label, *p;
+	const char *t;
 
 	osk_rect(k, con.width, osk_height(), &x0, &y0, &x1, &y1);
 	y0 += con.text_h;
 	y1 += con.text_h;
 	*top = y0;
 	*bottom = y1;
-	gap = con.scale * 2;
-	if (x1 - x0 <= 2 * gap || y1 - y0 <= 2 * gap)
+
+	/* Proportions from Buffyboard's at 830 pixels across. */
+	rh = osk_height() / OSK_ROWS;
+	gap = rh / 22 + 1;			/* half the gap between keys */
+	r = rh / 18 + 1;			/* corner radius */
+	bw = rh / 70 + 1;			/* frame */
+	if (x1 - x0 <= 2 * gap + 2 * r || y1 - y0 <= 2 * gap + 2 * r)
 		return;
-	for (y = y0 + gap; y < y1 - gap; y++) {
+	ix0 = (int)(x0 + gap);
+	iy0 = (int)(y0 + gap);
+	ix1 = (int)(x1 - gap);
+	iy1 = (int)(y1 - gap);
+	for (y = (int)y0; y < (int)y1; y++) {
 		p = (uint32_t *)(con.fb + (size_t)y * con.stride);
-		for (x = x0 + gap; x < x1 - gap; x++)
-			p[x] = face;
+		for (x = (int)x0; x < (int)x1; x++) {
+			cov = rr_cover(x, y, ix0, iy0, ix1, iy1, (int)r);
+			in = rr_cover(x, y, ix0 + (int)bw, iy0 + (int)bw,
+			    ix1 - (int)bw, iy1 - (int)bw, (int)(r - bw));
+			p[x] = rgb(mix(mix(face, frame, in), ground, cov));
+		}
 	}
-	/* The label, as large as the key allows up to the console's. */
-	n = (unsigned)strlen(k->label);
-	if (n == 0)
-		return;
-	for (s = con.scale; s > 1 && (n * CW * s + 2 * gap > x1 - x0 ||
-	    CH * s + 2 * gap > y1 - y0); s--)
+
+	/* The label: the largest size whose capitals fill about a third. */
+	for (s = OSKF_NSIZES - 1; s > 0 && oskf_sizes[s].px * 48 > rh * 100;
+	    s--)
 		;
-	lw = n * CW * s;
-	lh = CH * s;
-	if (lw + 2 * gap > x1 - x0 || lh + 2 * gap > y1 - y0)
+	icon = osk_icon(k);
+	t = k->label;
+	if (icon < 0) {
+		if (*t == '\0')
+			return;
+		while (s > 0 && osk_text_width(s, t) + 2 * r + 4 * gap >
+		    (unsigned)(ix1 - ix0))
+			s--;
+	}
+	cap = (int)oskf_sizes[s].px * 727 / 1000;	/* Inter's cap height */
+	if (icon >= 0) {
+		w = oskf_glyphs[oskf_sizes[s].first + icon].advance;
+		osk_glyph(s, (unsigned)icon, (ix0 + ix1 - (int)w) / 2,
+		    (iy0 + iy1 - (int)w) / 2, label, face);
 		return;
-	x = x0 + (x1 - x0 - lw) / 2;
-	y = y0 + (y1 - y0 - lh) / 2;
-	for (j = 0; j < n; j++)
-		draw_glyph(x + j * CW * s, y, (uint8_t)k->label[j],
-		    rgb(osk_look[look].label), face, s);
+	}
+	w = osk_text_width(s, t);
+	x = (ix0 + ix1 - (int)w) / 2;
+	base = (iy0 + iy1 + cap) / 2;		/* capitals centred */
+	y = base - (int)oskf_sizes[s].ascent;
+	for (; *t != '\0'; t++) {
+		unsigned c = (unsigned char)*t;
+
+		if (c < OSKF_FIRST || c >= OSKF_FIRST + OSKF_NCHARS)
+			continue;
+		osk_glyph(s, c - OSKF_FIRST, x, y, label, face);
+		x += oskf_glyphs[oskf_sizes[s].first + c - OSKF_FIRST].advance;
+	}
 }
 
 /*

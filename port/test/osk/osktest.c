@@ -157,11 +157,14 @@ test_tables(void)
 				reach[ch] = 1;
 			}
 		}
-		/* Every layer: terminal keys on top, Enter at the bottom. */
-		CHECK(find(layer, "Esc") && find(layer, "Ctrl") &&
-		    find(layer, "Alt") && find(layer, "Enter") &&
-		    find(layer, "Bksp"), "layer %u lacks a fixed key", layer);
+		/* Every layer: Ctrl, Tab and arrows on top, Enter, ">_". */
+		CHECK(find(layer, "Ctrl") && find(layer, "Tab") &&
+		    find(layer, "^") && find(layer, "Enter") &&
+		    find(layer, "Bksp") && find(layer, ">_"),
+		    "layer %u lacks a fixed key", layer);
 	}
+	CHECK(find(OSK_TERM, "Esc") && find(OSK_TERM, "Alt"),
+	    "the terminal layer lacks Esc or Alt");
 	for (c = '!'; c <= '~'; c++)
 		CHECK(reach[c], "'%c' is on no layer", c);
 	/* The letter layers match key for key. */
@@ -247,12 +250,9 @@ test_keys(void)
 	tap(&o, 0, "A");
 	tap(&o, 0, "B");
 	EXPECT("+e1 +04 -04 -e1 +e1 +05 -05 -e1 ");
-	/* ',' and '.' are not '<' and '>' on the upper layer. */
-	tap(&o, 0, ",");
-	EXPECT("+36 -36 ");
-	/* Shift-Tab, for a shell's completion backwards. */
-	tap(&o, 0, "Tab");
-	EXPECT("+e1 +2b -2b -e1 ");
+	/* Shift-Up, on the upper layer: every key goes with Shift. */
+	tap(&o, 0, "^");
+	EXPECT("+e1 +52 -52 -e1 ");
 	tap(&o, 0, "Shift");
 	CHECK(o.mod[OSK_SHIFT] == OSK_OFF && osk_shown(&o) == OSK_LOWER,
 	    "third tap does not let Shift go");
@@ -269,7 +269,9 @@ test_keys(void)
 	/* Ctrl locked, Alt and Shift armed: all three, up the other way. */
 	tap(&o, 0, "Ctrl");
 	tap(&o, 0, "Ctrl");
+	tap(&o, 0, ">_");
 	tap(&o, 0, "Alt");
+	tap(&o, 0, "abc");
 	tap(&o, 0, "Shift");
 	osk_view(&o, &v);
 	CHECK(v.mod[OSK_CTRL] == OSK_LOCKED && v.mod[OSK_ALT] == OSK_ARMED &&
@@ -296,6 +298,22 @@ test_keys(void)
 	EXPECT("+e1 +31 -31 -e1 +31 -31 ");
 	tap(&o, 0, "abc");
 	CHECK(osk_shown(&o) == OSK_LOWER, "abc does not show letters");
+
+	/* The terminal's keys, behind ">_"; ',' plain on the digits. */
+	tap(&o, 0, ">_");
+	CHECK(osk_shown(&o) == OSK_TERM, ">_ does not show the terminal");
+	tap(&o, 0, "Esc");
+	tap(&o, 0, "Tab");
+	tap(&o, 0, "F1");
+	tap(&o, 0, "|");
+	EXPECT("+29 -29 +2b -2b +3a -3a +e1 +31 -31 -e1 ");
+	tap(&o, 0, "abc");
+	CHECK(osk_shown(&o) == OSK_LOWER, "abc does not leave the terminal");
+	tap(&o, 0, "123");
+	tap(&o, 0, ",");
+	tap(&o, 0, ">_");
+	tap(&o, 0, "abc");
+	EXPECT("+36 -36 ");
 
 	/* An armed Shift is for a letter: leaving the letters drops it. */
 	tap(&o, 0, "Shift");

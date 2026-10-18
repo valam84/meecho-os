@@ -10,7 +10,6 @@
 #   keyup     a key never comes up
 #   heldmod   Ctrl pressed with a key never comes up
 #   upper     the upper layer's keys go without Shift
-#   plain     ',' and '.' go with Shift on the upper layer
 #   layer     an armed Shift survives leaving the letters
 #   edge      a key's right edge belongs to it
 #   word      Ctrl is read from Shift's bits of the word
@@ -41,7 +40,7 @@ fi
     echo "osktest: fails unmutated"; exit 1; }
 
 missed=0
-for m in armed lock keyup heldmod upper plain layer edge word pressed \
+for m in armed lock keyup heldmod upper layer edge word pressed \
     missed place; do
 	case $m in
 	armed)	e='s/^		if (o->mod\[i\] == OSK_ARMED)$/		if (0)/' ;;
@@ -49,7 +48,6 @@ for m in armed lock keyup heldmod upper plain layer edge word pressed \
 	keyup)	e='s/o->emit(o->arg, k->usage, 0);/(void)0;/' ;;
 	heldmod) e='s/o->emit(o->arg, mod_usage\[OSK_CTRL\], 0);/(void)0;/' ;;
 	upper)	e='s/(shown == OSK_UPPER \&\& !(k->flags \& OSK_K_PLAIN))/(0)/' ;;
-	plain)	e='s/(shown == OSK_UPPER \&\& !(k->flags \& OSK_K_PLAIN))/(shown == OSK_UPPER)/' ;;
 	layer)	e='s/^		if (o->mod\[OSK_SHIFT\] == OSK_ARMED)$/		if (0)/' ;;
 	edge)	e='s/x >= x0 \&\& x < x1/x >= x0 \&\& x <= x1/' ;;
 	word)	e='s/(word >> 6) \& 3/(word >> 4) \& 3/' ;;

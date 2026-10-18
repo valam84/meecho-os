@@ -9,8 +9,9 @@
  * and the host test (port/test/osk/) link the same code.
  *
  * Its model is Buffyboard's (postmarketOS, now Nura): layers of lower case,
- * upper case, digits and symbols with a row of terminal keys on top of
- * each, modifiers that stick and show it, a pressed key that shows.  The
+ * upper case, digits, symbols and the terminal's keys (">_"), Ctrl, Tab and
+ * the arrows on top of each, modifiers that stick and show it, a pressed
+ * key that shows.  The
  * code and the layouts are MEECHO's own - Buffyboard and squeekboard, whose
  * layouts it takes, are GPL-3.
  *
@@ -37,7 +38,7 @@
 #include <stdint.h>
 
 #define OSK_ROWS	5
-#define OSK_UNITS	20
+#define OSK_UNITS	60	/* six keys or ten divide a row */
 
 /* The console's keyboard: the bottom OSK_CONSOLE_PERMILLE of the screen. */
 #define OSK_CONSOLE_PERMILLE	300
@@ -59,7 +60,8 @@
 #define OSK_UPPER	1	/* shown, never chosen: OSK_LOWER with Shift */
 #define OSK_DIGITS	2
 #define OSK_SYMBOLS	3
-#define OSK_NLAYERS	4
+#define OSK_TERM	4	/* Esc, Alt, Home, End, F1-F10 (">_") */
+#define OSK_NLAYERS	5
 
 /* Modifiers, and what state each is in. */
 #define OSK_SHIFT	0

@@ -1,0 +1,36 @@
+/*
+ * The blocks that set the Mi Pad 4's two CPU clusters' clock and voltage,
+ * which the mainline tree does not describe at all - mainline does not
+ * scale the CPUs on this SoC (port/clover/hw-cpu.md, section 1).  For the
+ * read-only probe (port/clover/cpuprobe, hw-cpu.md step 1); not in the
+ * images the tablet normally boots.  Addresses are the vendor tree's for
+ * the same SoC (Xiaomi clover-o-oss, arch/arm/boot/dts/qcom/sdm660.dtsi,
+ * sdm660-regulator.dtsi, sdm660-pm.dtsi: qcom,clk-cpu-660@179c0000,
+ * cprh-ctrl@179c4000 and @179c8000, the two L2 SAWs).
+ *
+ * cpu-probe.sh -b puts it after sdm660-xiaomi-clover.dts in a tree of its
+ * own (DTS_TREE), and mkboot.sh adds sdm660-xiaomi-clover-meecho.dtsi after
+ * both, as for every image.
+ *
+ * One node, so that RS grants the probe these windows and nothing else
+ * ("devicetree" in cpuprobe.conf).
+ */
+
+&soc {
+	cpu_dvfs: cpu-dvfs@179c0000 {
+		compatible = "meecho,sdm660-cpu-dvfs";
+		reg = <0x179c0000 0x4000>,	/* OSM: silver +0, gold +0x2000 */
+		      <0x179c4000 0x4000>,	/* CPRh APC1 (gold) */
+		      <0x179c8000 0x4000>,	/* CPRh APC0 (silver) */
+		      <0x179d0000 0x2000>,	/* APM, APCS common */
+		      <0x17911000 0x1000>,	/* silver APCS GLB: the RCG */
+		      <0x17912000 0x1000>,	/* silver L2 SAW4 */
+		      <0x17916000 0x1000>,	/* silver PLL */
+		      <0x17811000 0x1000>,	/* gold APCS GLB: the RCG */
+		      <0x17812000 0x1000>,	/* gold L2 SAW4 */
+		      <0x17816000 0x1000>;	/* gold PLL */
+		reg-names = "osm", "cprh-gold", "cprh-silver", "apcs-common",
+			    "silver-glb", "silver-saw", "silver-pll",
+			    "gold-glb", "gold-saw", "gold-pll";
+	};
+};

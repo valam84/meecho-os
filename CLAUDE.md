@@ -477,6 +477,18 @@ MEECHO нет `write(2)`** — только `mmap`. Касания: страни
   затем `port/clover/gpu-probe.sh`.
 - На CB2 `glcube` с новым `libgallium` не проверен.
 
+**Mi Pad 4: стол на Adreno, комплект одной командой (2026-10-18,
+планшет).** `port/clover/mkkit.sh OUTDIR` (`FW_DIR=` — микрокод и
+zap-шейдер, в дерево их нельзя; `ROOT_EXTRA` у `mkroot.sh`) собирает ядро,
+архив, корень `userdata` и образы `desktop`/`emmc`/`boot`/`safe`;
+`desktop=1` — `rc.clover` поднимает `meecho-desktop` на `adreno`
+(`gpufreq=max`, 588 МГц). Три правки системы по дороге: `pthread_create`
+без атрибутов — 256 КиБ стека (было 8), `dladdr()` в статической libc
+отвечает за программу (ir3 ищет build-id), `mthread_*_destroy` не
+освобождает объект под разбуженным, но не бежавшим ожидающим. Касания на
+столе и USB через OTG — проверить человеком (CHECKLIST, 3б). Разбор —
+`PORTING-LOG.md`, «Mi Pad 4: стол на Adreno».
+
 **MEECHO работает на плате (2026-09-07).** BIGTREETECH CB2 загружается с
 SD-карты до `login:`, `root` входит, шелл отвечает на команды; консоль —
 `uart2` на 1500000, ввод и вывод свои. Комплект для карты собирает

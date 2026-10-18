@@ -1556,7 +1556,10 @@ GLCUBE 15 checks, 0 failed
 Кадры/с — от GPU на кварце (19,2 МГц, шаг 10) и копии каждого кадра
 процессором (`glReadPixels`, `/dev/fb0` — `simple-framebuffer`).
 
-**Два обхода, оба — в окружении прогона, не в коде:**
+**Два обхода, оба — в окружении прогона, не в коде** (с 2026-10-18 не
+нужны: `dladdr()` статической программы и `--build-id`, стек
+`pthread_create` 256 КиБ — `PORTING-LOG.md`, «Mi Pad 4: стол на
+Adreno»):
 
 - **`IR3_SHADER_DEBUG=nocache`.** Без него `glcube` падает в
   `ir3_disk_cache_init()`: ключ кэша шейдеров Mesa берёт из заметки

@@ -98,6 +98,7 @@
 ./usr/lib/libnetsock_g.a                                minix-debug     debuglib,obsolete
 ./usr/lib/libobjc_g.a                                   minix-debug     gcc=5,debuglib
 ./usr/lib/libopcodes_g.a                                minix-debug     debuglib
+./usr/lib/libosk_g.a                                    minix-debug     debuglib
 ./usr/lib/libpcap_g.a                                   minix-debug     debuglib
 ./usr/lib/libpci_g.a                                    minix-debug     debuglib
 ./usr/lib/libprop_g.a                                   minix-debug     debuglib

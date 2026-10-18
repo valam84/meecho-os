@@ -11,7 +11,8 @@ was typed is the bytes in that file, read back with od: the check does not
 share code with the keyboard, the compositor or foot.
 
 Where the keys are is worked out by hand from the layout as PLAN.md and
-<minix/libosk.h> describe it - rows of 20 units, five rows, the keyboard
+<minix/libosk.h> describe it - rows of 60 units, five rows (Buffyboard's
+look: Ctrl, Tab and the arrows on top, Alt behind ">_"), the keyboard
 the bottom 30 per cent of the screen in whole rows: 215 of 720 - not taken
 from libosk.  The pointer's position is the stand's own count of the
 relative moves it injected, from the top left corner it is first pushed
@@ -24,8 +25,8 @@ into.
      and the strip gives up its height (area 1280x505)
   3. Shift, H, i, Shift twice: "Hi" typed; Shift locked shows - its key in
      accent, a letter in surface, the ground between keys ink_deep
-  4. o, k, Shift, x, space; 123, 4, 2, !; =\\<, {, ~; abc; Ctrl, a; Alt, b;
-     Left, Tab, Enter: the line, byte for byte -
+  4. o, k, Shift, x, space; 123, 4, 2, !; =\\<, {, ~; abc; Ctrl, a; >_,
+     Alt, abc, b; Left, Tab, Enter: the line, byte for byte -
      "Hi" "OKx" " " "42!" "{~" ^A ESC b ESC [ D TAB LF
   5. Ctrl, d: end of file at a line's start - cat ends, foot closes, and
      the keyboard goes down by itself; the strip has all of the height back
@@ -72,7 +73,7 @@ GUESTDIR = "/usr/tests/gfx"
 W, H = 1280, 720
 KB_H = 215			# 720 * 30 % = 216, down to five whole rows of 43
 KB_Y = H - KB_H
-ROWS, UNITS = 5, 20
+ROWS, UNITS = 5, 60
 
 _spec = importlib.util.spec_from_file_location(
     "qemu_meechowm", os.path.join(HERE, "qemu-meechowm.py"))
@@ -83,32 +84,41 @@ _spec = importlib.util.spec_from_file_location(
 qemu_shot = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(qemu_shot)
 
-# The keys the stand presses: (row, first unit, width in units).
-SHIFT = (3, 0, 3)
-CTRL, ALT = (0, 6, 3), (0, 9, 3)
-TAB, LEFT = (0, 3, 3), (0, 12, 2)
-LAYER3 = (3, 0, 3)		# "=\<" on digits
-LAYER4 = (4, 0, 3)		# "123" on letters, "abc" on the others
-SPACE, ENTER = (4, 5, 10), (4, 17, 3)
+# The keys the stand presses: (row, first unit, width in units).  The top
+# row of every layer: Ctrl, Tab, the arrows, 10 units each; Enter at the
+# bottom right of every layer.
+CTRL, TAB = (0, 0, 10), (0, 10, 10)
+LEFT = (0, 40, 10)		# up, down, left, right
+ENTER = (4, 48, 12)
+SHIFT = (3, 0, 9)		# letters
+TO_DIGITS = (4, 0, 12)		# "123", letters' bottom left
+TO_TERM = (4, 36, 12)		# ">_", beside Enter on the letters
+SPACE = (4, 12, 24)		# letters
+TO_SYMBOLS = (3, 0, 9)		# "=\<" on the digits
+FROM_PUNCT = (4, 0, 9)		# "abc" on the digits and the symbols
+FROM_TERM = (4, 0, 12)		# "abc" on the terminal layer
+ALT = (1, 10, 10)		# the terminal layer: Esc, Alt, Home, ...
 TOP = "qwertyuiop"
 MID = "asdfghjkl"
 LOW = "zxcvbnm"
 
 
 def letter(c):
+    """Keys 6 wide; the middle row in by half a key, the low row after
+    Shift."""
     if c in TOP:
-        return (1, 2 * TOP.index(c), 2)
+        return (1, 6 * TOP.index(c), 6)
     if c in MID:
-        return (2, 1 + 2 * MID.index(c), 2)
-    return (3, 3 + 2 * LOW.index(c), 2)
+        return (2, 3 + 6 * MID.index(c), 6)
+    return (3, 9 + 6 * LOW.index(c), 6)
 
 
 def digit(c):
-    return (1, 2 * "1234567890".index(c), 2)
+    return (1, 6 * "1234567890".index(c), 6)
 
 
-BANG = (3, 11, 2)		# digits, third row: " ' : ; ! ? /
-LBRACE, TILDE = (1, 18, 2), (1, 2, 2)	# symbols, first row
+BANG = (3, 33, 6)		# digits, third row: layer " ' : ; ! ? /
+LBRACE, TILDE = (1, 54, 6), (1, 6, 6)	# symbols: ` ~ \ | ^ * = < > {
 
 LINE = b"HiOKx 42!{~\x01\x1bb\x1b[D\t\n"
 
@@ -361,10 +371,12 @@ def main():
             print("      the screen: %s" % png)
 
         # 4. The rest of the line, through every layer and modifier.
+        # Alt is on the terminal layer: armed there, it stays armed back on
+        # the letters, for b.
         clicks([letter("o"), letter("k"), SHIFT, letter("x"), SPACE,
-                LAYER4, digit("4"), digit("2"), BANG,
-                LAYER3, LBRACE, TILDE, LAYER4,
-                CTRL, letter("a"), ALT, letter("b"),
+                TO_DIGITS, digit("4"), digit("2"), BANG,
+                TO_SYMBOLS, LBRACE, TILDE, FROM_PUNCT,
+                CTRL, letter("a"), TO_TERM, ALT, FROM_TERM, letter("b"),
                 LEFT, TAB, ENTER])
         time.sleep(3)
         send("od -An -tx1 /tmp/typed | tr -d ' \\n'; echo; echo OD''DONE")

@@ -16,6 +16,10 @@
 # hearing the console go and come back.
 #
 #	qemu-osk.sh			# WORK_DIR=~/work-osk
+#
+# The kernel must know DIAGCTL_CODE_SCREEN (2026-10-16), or its own screen
+# console draws over fb's - fb says "the kernel would not give up the
+# screen (-22)".  KERNEL_ELF= picks one (port/kbuild-variant.sh).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$(cd "$HERE/../../.." && pwd)

@@ -1926,7 +1926,11 @@ SDMA или ADMA2 — решается по регистру возможнос�
     консоль: экран у композитора — касания не становятся клавишами.
     Старый `<minix/osk.h>` уходит. Стенд — QEMU (virt +
     simple-framebuffer, `inject=` касаний, `fbpeek`/`fbocr.py`), потом
-    Mi Pad 4.
+    Mi Pad 4. **Сделано 2026-10-18 (хост и QEMU):** `osk.state` и
+    `fb.console` в DS, `inject=` у `qcom_touch`, стенд
+    `port/test/osk/qemu-osk.sh` (кадры в PNG вместо `fbocr`), 5 из 5;
+    `osk.h` убран. На планшете — не проверено. Разбор — `PORTING-LOG.md`,
+    «11.9, часть Б».
   - **В. Стол.** Страница дигитайзера в `<minix/input.h>`, `qcom_touch`
     шлёт касания всегда; `meechowm` — `wlr_touch` (клиенту без касаний —
     как указатель), `virtual-keyboard-v1`, `input-method-v2`,

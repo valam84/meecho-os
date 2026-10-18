@@ -417,6 +417,22 @@ QEMU с simple-framebuffer ядро должно знать `DIAGCTL_CODE_SCREEN
 `the kernel would not give up the screen (-22)`) — свежее ядро брать
 `port/kbuild-variant.sh`. Разбор — `PORTING-LOG.md`, «11.9, часть Б».
 
+**Клавиатура стола — `meechowm-osk` (11.9 В, 2026-10-18, QEMU; на
+платах не проверено).** Клиент — input method композитора: поднят, пока
+у окна с фокусом включено поле `text-input-v3` (foot теперь с IME) или
+просили (`meechowm -m osk [on|off|auto]`, **Super+t** — `k` занят
+лентой, палитра; нет клиента — композитор запускает). Клавиши — через
+`virtual-keyboard-v1` с keymap `us` и своим `xkb_state` (wlroots
+модификаторы виртуальной клавиатуры не ведёт), **мимо сочетаний
+композитора**. Поверхность — layer-shell с исключительной зоной,
+фокус не берёт. Стенд — `port/gfx/test/qemu-osk.py` (щелчки мышью в
+foot под `cat`, байты через `od`), 9 из 9. **У memfd MEECHO нет
+`write(2)`** — только `mmap`. Касания: страница дигитайзера в
+`<minix/input.h>` (через мыши, X/Y абсолютные в долях экрана),
+`touchsplit.c` + `wlr_touch` в `meechowm` (клиенту без касаний — как
+указатель), стенд `touchtest.sh`; **`qcom_touch` их ещё не шлёт**.
+Разбор — `PORTING-LOG.md`, «11.9, часть В».
+
 **Mi Pad 4, графика: шаги 1–3 Adreno 512 (2026-10-17, стенды, QEMU и
 планшет).** Разбор и план — `port/clover/hw-gpu.md`; разбор правок —
 `PORTING-LOG.md`, «Mi Pad 4: Adreno 512 — проба, домены, TrustZone».

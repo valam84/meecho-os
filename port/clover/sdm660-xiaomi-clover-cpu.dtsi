@@ -1,19 +1,19 @@
 /*
  * The blocks that set the Mi Pad 4's two CPU clusters' clock and voltage,
  * which the mainline tree does not describe at all - mainline does not
- * scale the CPUs on this SoC (port/clover/hw-cpu.md, section 1).  For the
- * read-only probe (port/clover/cpuprobe, hw-cpu.md step 1); not in the
- * images the tablet normally boots.  Addresses are the vendor tree's for
- * the same SoC (Xiaomi clover-o-oss, arch/arm/boot/dts/qcom/sdm660.dtsi,
- * sdm660-regulator.dtsi, sdm660-pm.dtsi: qcom,clk-cpu-660@179c0000,
- * cprh-ctrl@179c4000 and @179c8000, the two L2 SAWs).
+ * scale the CPUs on this SoC (port/clover/hw-cpu.md, section 1).
+ * Addresses are the vendor tree's for the same SoC (Xiaomi clover-o-oss,
+ * arch/arm/boot/dts/qcom/sdm660.dtsi, sdm660-regulator.dtsi,
+ * sdm660-pm.dtsi: qcom,clk-cpu-660@179c0000, cprh-ctrl@179c4000 and
+ * @179c8000, the two L2 SAWs), and the tablet's own probe read them
+ * (hw-cpu.md, section 8).
  *
- * cpu-probe.sh -b puts it after sdm660-xiaomi-clover.dts in a tree of its
- * own (DTS_TREE), and mkboot.sh adds sdm660-xiaomi-clover-meecho.dtsi after
- * both, as for every image.
+ * In every image since step 5 of hw-cpu.md: sdm660-xiaomi-clover-meecho.dtsi
+ * includes this file.  The qcom_cpufreq host stand (port/test/qcom_cpufreq)
+ * adds it to the compiled tree by itself.
  *
- * One node, so that RS grants the probe these windows and nothing else
- * ("devicetree" in cpuprobe.conf).
+ * One node, so that RS grants these windows to the services that name it
+ * ("devicetree" in qcom_cpufreq.conf and cpuprobe.conf) and nobody else.
  */
 
 &soc {

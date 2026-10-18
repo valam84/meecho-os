@@ -9,12 +9,12 @@
 #	cpu-probe.sh -b			bring up the probe image (cycle.sh)
 #	cpu-probe.sh [-d DIR] [-l LOG] [STAGE...]
 #
-#	-b	boot the image the stages need: the kit the tablet runs (the
-#		kernel and boot archive below, copied to the WSL work
-#		directory first), with sdm660-xiaomi-clover-cpu.dtsi in its
-#		tree - through a DTS_TREE of its own, since cycle.sh passes no
-#		other tree to mkboot.sh - and bootwd=1200, so that a reboot
-#		that hangs costs twenty minutes, not an hour
+#	-b	boot the kit the tablet runs (the kernel and boot archive
+#		below, copied to the WSL work directory first) through
+#		cycle.sh, with bootwd=1200, so that a reboot that hangs costs
+#		twenty minutes, not an hour.  The CPU blocks' node is in every
+#		image's tree (sdm660-xiaomi-clover-meecho.dtsi includes
+#		sdm660-xiaomi-clover-cpu.dtsi)
 #	-d DIR	where cpuprobe, cpuprobe.conf and cpuhz are
 #		(default D:/minix/clover-flash/cpu)
 #	-l LOG	the log (default DIR/probe-<time>.txt)
@@ -31,7 +31,9 @@
 #		random bytes, cpuhz's add count) and counts what came out
 #		wrong
 #
-# BOOTWD= (default 1200) is the boot watchdog of the -b image, in seconds.
+# BOOTWD= (default 1200) is the boot watchdog of the -b image, in seconds;
+# EXTRA= more boot arguments for it - "cpufreq=0" keeps the clusters at
+# the boot loader's rates (rc.clover).
 #
 # A stage after which the tablet no longer answers stops the round: the
 # kernel's boot watchdog takes it to fastboot (nextboot=bootloader) and the
@@ -72,28 +74,19 @@ done
 shift $((OPTIND - 1))
 
 if [ "$boot" = 1 ]; then
-	# The tree: every file of the mainline one linked, the board's .dts
-	# replaced by one that includes it and then the CPU blocks.
-	cat > "//wsl.localhost/$WSL_DISTRO$W/tree.sh" <<EOF || exit 2
+	# The kit, copied: another session may rebuild the originals.
+	cat > "//wsl.localhost/$WSL_DISTRO$W/kit.sh" <<EOF || exit 2
 set -e
-rm -rf $W/dts $W/kit
-mkdir -p $W/dts/arch/arm64/boot/dts $W/kit
-cp -as /home/$WSL_USER/sdm660-linux/arch/arm64/boot/dts/qcom $W/dts/arch/arm64/boot/dts/
-ln -s /home/$WSL_USER/sdm660-linux/include $W/dts/include
-Q=$W/dts/arch/arm64/boot/dts/qcom
-rm \$Q/sdm660-xiaomi-clover.dts
-printf '#include "%s"\n#include "%s"\n' \
-    /home/$WSL_USER/sdm660-linux/arch/arm64/boot/dts/qcom/sdm660-xiaomi-clover.dts \
-    /home/$WSL_USER/minix-src/port/clover/sdm660-xiaomi-clover-cpu.dtsi \
-    > \$Q/sdm660-xiaomi-clover.dts
+rm -rf $W/kit
+mkdir -p $W/kit
 cp $KIT_ELF $W/kit/kernel
 cp $KIT_MBA $W/kit/boot.mba
 md5sum $W/kit/kernel $W/kit/boot.mba
 EOF
-	wsl -d "$WSL_DISTRO" -u "$WSL_USER" -- bash "$W/tree.sh" 2>&1 | tr -d '\0'
-	[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "FAIL: the tree"; exit 101; }
-	KERNEL_ELF=$W/kit/kernel BOOT_MBA=$W/kit/boot.mba DTS_TREE=$W/dts \
-	CMDLINE="rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata console=console osk=1 netdrv=dwc3_ecm netaddr=10.42.0.2/24 nextboot=bootloader bootwd=${BOOTWD:-1200}" \
+	wsl -d "$WSL_DISTRO" -u "$WSL_USER" -- bash "$W/kit.sh" 2>&1 | tr -d '\0'
+	[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "FAIL: the kit"; exit 101; }
+	KERNEL_ELF=$W/kit/kernel BOOT_MBA=$W/kit/boot.mba \
+	CMDLINE="rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata console=console osk=1 netdrv=dwc3_ecm netaddr=10.42.0.2/24 nextboot=bootloader bootwd=${BOOTWD:-1200}${EXTRA:+ $EXTRA}" \
 	    bash "$HERE/cycle.sh" -c 'uname -a; sysenv cycle; uptime'
 	exit $?
 fi

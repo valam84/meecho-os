@@ -16,6 +16,20 @@ export PATH
 # writable by everyone.
 umask 022
 
+# The CPU clusters at the rates their rails already hold, first, so that
+# everything after runs on them (port/clover/hw-cpu.md, path A, steps 3-5):
+# gold 1747.2 MHz instead of the boot loader's 600, silver 1536 instead of
+# 1382.4 - no write to the PMIC, only the clusters' mux and PLL.  The
+# service reads the rails back before each change and refuses a point
+# they do not hold, so a tablet whose fuses ask for more keeps the boot
+# loader's rates; then it leaves.  cpufreq=0 (a boot argument) leaves the
+# clusters as the boot loader set them.
+if [ -x /service/qcom_cpufreq ] && [ "`sysenv cpufreq 2>/dev/null`" != 0 ]
+then
+	minix-service up /service/qcom_cpufreq \
+	    -args "stage=set gold=1747 silver=1536 steps=0" 2>/dev/null
+fi
+
 echo "Root is on `sysenv rootdevname` (`sysenv gptpart0`), driver `sysenv blkdrv`."
 
 # The screen: the frame the boot loader left running (simple-framebuffer).

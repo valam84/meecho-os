@@ -1,0 +1,271 @@
+cpu-probe 2026-10-18 18:47:17
+tablet: MEECHO 20261018184618 
+MD5 (cpuprobe) = cfa75f79f14b9051ca665c7473dee603
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+MD5 (qcom_cpufreq) = 7309734787b2e1427da3b38494875194
+MD5 (qcom_cpufreq.conf) = c9129cbb6a8990a1cdf565962a1a8d7d
+--- qcom_cpufreq stage=probe
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cf...
+qcom_cpufreq(info)speed bin 1, CPR fusing revision 2
+qcom_cpufreq(info)silver fuse corner LowSVS   raw 0x23 614 mV
+qcom_cpufreq(info)silver fuse corner SVS      raw 0x28 644 mV
+qcom_cpufreq(info)silver fuse corner SVS+     raw 0x2a 688 mV
+qcom_cpufreq(info)silver fuse corner NOM      raw 0x29 778 mV
+qcom_cpufreq(info)silver fuse corner TURBO_L1 raw 0x2e 928 mV
+qcom_cpufreq(info)silver corner 1: 300.0 MHz, open loop 612 mV, floor 588 mV
+qcom_cpufreq(info)silver corner 2: 633.6 MHz, open loop 612 mV, floor 588 mV
+qcom_cpufreq(info)silver corner 3: 902.4 MHz, open loop 648 mV, floor 616 mV
+qcom_cpufreq(info)silver corner 4: 1113.6 MHz, open loop 696 mV, floor 656 mV
+qcom_cpufreq(info)silver corner 5: 1401.6 MHz, open loop 800 mV, floor 756 mV
+qcom_cpufreq(info)silver corner 6: 1536.0 MHz, open loop 836 mV, floor 796 mV
+qcom_cpufreq(info)silver corner 7: 1747.2 MHz, open loop 896 mV, floor 856 mV (APM)
+qcom_cpufreq(info)silver corner 8: 1843.2 MHz, open loop 920 mV, floor 880 mV (APM)
+qcom_cpufreq(info)gold fuse corner SVS      raw 0x26 664 mV
+qcom_cpufreq(info)gold fuse corner SVS+     raw 0x27 718 mV
+qcom_cpufreq(info)gold fuse corner NOM      raw 0x28 788 mV
+qcom_cpufreq(info)gold fuse corner TURBO    raw 0x29 898 mV
+qcom_cpufreq(info)gold fuse corner TURBO_L2 raw 0x2d 938 mV
+qcom_cpufreq(info)gold corner 1: 300.0 MHz, open loop 680 mV, floor 640 mV
+qcom_cpufreq(info)gold corner 2: 1113.6 MHz, open loop 680 mV, floor 640 mV
+qcom_cpufreq(info)gold corner 3: 1401.6 MHz, open loop 748 mV, floor 708 mV
+qcom_cpufreq(info)gold corner 4: 1747.2 MHz, open loop 828 mV, floor 788 mV
+qcom_cpufreq(info)gold corner 5: 1958.4 MHz, open loop 888 mV, floor 852 mV (APM)
+qcom_cpufreq(info)gold corner 6: 2150.4 MHz, open loop 940 mV, floor 876 mV (APM)
+qcom_cpufreq(info)gold corner 7: 2208.0 MHz, open loop 960 mV, floor 920 mV (APM)
+qcom_cpufreq(info)aux (GPLL0): 600.0 MHz
+qcom_cpufreq(info)silver: 1536.0 MHz, from its PLL; mux 0x501, PLL mode 0x7 L 0x50 (1536.0 MHz) locked
+qcom_cpufreq(info)silver: S1 set point 872 mV
+qcom_cpufreq(info)silver: the rail holds up to 1536.0 MHz (open loop 836 mV)
+qcom_cpufreq(info)gold: 1747.2 MHz, from its PLL; mux 0x501, PLL mode 0x7 L 0x5b (1747.2 MHz) locked
+qcom_cpufreq(info)gold: S2 set point 868 mV
+qcom_cpufreq(info)gold: S3 set point 868 mV
+qcom_cpufreq(info)gold: the rail holds up to 1747.2 MHz (open loop 828 mV)
+qcom_cpufreq(info)stage probe: done (0)
+--- hz
+processor       : 0
+processor       : 1
+processor       : 2
+processor       : 3
+processor       : 4
+processor       : 5
+processor       : 6
+processor       : 7
+run 0: 1667 MHz (adds 200000000 in 0.120 s)
+run 1: 1818 MHz (adds 200000000 in 0.110 s)
+run 2: 1667 MHz (adds 200000000 in 0.120 s)
+run 3: 1818 MHz (adds 200000000 in 0.110 s)
+run 4: 1667 MHz (adds 200000000 in 0.120 s)
+run 5: 1818 MHz (adds 200000000 in 0.110 s)
+537     2 sh -c cd /root/cpuprobe && cat /proc/cpuinfo; ./cpuhz;\n\t\t    for i
+563     3 ps -ax -o pid,cpuid,command 
+564     4 grep -e cpuid -e cpuhz 
+copy 1:
+run 0: 1667 MHz (adds 200000000 in 0.120 s)
+run 1: 606 MHz (adds 200000000 in 0.330 s)
+run 2: 1818 MHz (adds 200000000 in 0.110 s)
+run 3: 1667 MHz (adds 200000000 in 0.120 s)
+run 4: 1818 MHz (adds 200000000 in 0.110 s)
+run 5: 1818 MHz (adds 200000000 in 0.110 s)
+copy 2:
+run 0: 1667 MHz (adds 200000000 in 0.120 s)
+run 1: 1667 MHz (adds 200000000 in 0.120 s)
+run 2: 1818 MHz (adds 200000000 in 0.110 s)
+run 3: 1818 MHz (adds 200000000 in 0.110 s)
+run 4: 1667 MHz (adds 200000000 in 0.120 s)
+run 5: 1818 MHz (adds 200000000 in 0.110 s)
+copy 3:
+run 0: 1538 MHz (adds 200000000 in 0.130 s)
+run 1: 1538 MHz (adds 200000000 in 0.130 s)
+run 2: 1538 MHz (adds 200000000 in 0.130 s)
+run 3: 1538 MHz (adds 200000000 in 0.130 s)
+run 4: 1538 MHz (adds 200000000 in 0.130 s)
+run 5: 1538 MHz (adds 200000000 in 0.130 s)
+copy 4:
+run 0: 1538 MHz (adds 200000000 in 0.130 s)
+run 1: 1538 MHz (adds 200000000 in 0.130 s)
+run 2: 1538 MHz (adds 200000000 in 0.130 s)
+run 3: 1538 MHz (adds 200000000 in 0.130 s)
+run 4: 1538 MHz (adds 200000000 in 0.130 s)
+run 5: 1538 MHz (adds 200000000 in 0.130 s)
+copy 5:
+run 0: 1538 MHz (adds 200000000 in 0.130 s)
+run 1: 1538 MHz (adds 200000000 in 0.130 s)
+run 2: 1538 MHz (adds 200000000 in 0.130 s)
+run 3: 1538 MHz (adds 200000000 in 0.130 s)
+run 4: 1538 MHz (adds 200000000 in 0.130 s)
+run 5: 1538 MHz (adds 200000000 in 0.130 s)
+copy 6:
+run 0: 1667 MHz (adds 200000000 in 0.120 s)
+run 1: 1818 MHz (adds 200000000 in 0.110 s)
+run 2: 1667 MHz (adds 200000000 in 0.120 s)
+run 3: 1818 MHz (adds 200000000 in 0.110 s)
+run 4: 1667 MHz (adds 200000000 in 0.120 s)
+run 5: 1818 MHz (adds 200000000 in 0.110 s)
+copy 7:
+run 0: 1667 MHz (adds 200000000 in 0.120 s)
+run 1: 1818 MHz (adds 200000000 in 0.110 s)
+run 2: 1667 MHz (adds 200000000 in 0.120 s)
+run 3: 1818 MHz (adds 200000000 in 0.110 s)
+run 4: 1667 MHz (adds 200000000 in 0.120 s)
+run 5: 1818 MHz (adds 200000000 in 0.110 s)
+copy 8:
+run 0: 1667 MHz (adds 200000000 in 0.120 s)
+run 1: 1818 MHz (adds 200000000 in 0.110 s)
+run 2: 1429 MHz (adds 200000000 in 0.140 s)
+run 3: 1429 MHz (adds 200000000 in 0.140 s)
+run 4: 1429 MHz (adds 200000000 in 0.140 s)
+run 5: 1333 MHz (adds 200000000 in 0.150 s)
+--- end; the tablet answers
+
+cpu-probe 2026-10-18 18:48:04
+tablet: MEECHO 20261018184618 
+MD5 (cpuprobe) = cfa75f79f14b9051ca665c7473dee603
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- stress 300 s
+1101     3 /root/cpuprobe/cpuhz 
+1105     5 gzip -c /tmp/cpu-stress/rnd 
+1114     6 /root/cpuprobe/cpuhz 
+1122     1 /root/cpuprobe/cpuhz 
+1127     5 gzip -c /tmp/cpu-stress/rnd 
+1132     7 gzip -c /tmp/cpu-stress/rnd 
+1142     4 /root/cpuprobe/cpuhz 
+1144     2 ps -ax -o pid,cpuid,command 
+worker 1: gzip ok 229 bad 0; cpuhz runs ok 1374 bad 0
+worker 2: gzip ok 229 bad 0; cpuhz runs ok 1374 bad 0
+worker 3: gzip ok 226 bad 0; cpuhz runs ok 1356 bad 0
+worker 4: gzip ok 223 bad 0; cpuhz runs ok 1338 bad 0
+worker 5: gzip ok 226 bad 0; cpuhz runs ok 1356 bad 0
+worker 6: gzip ok 231 bad 0; cpuhz runs ok 1386 bad 0
+worker 7: gzip ok 229 bad 0; cpuhz runs ok 1374 bad 0
+worker 8: gzip ok 221 bad 0; cpuhz runs ok 1326 bad 0
+stress: 300 s, 8 workers, wrong results: 0
+stress: exit 0
+--- end; the tablet answers
+
+cpu-probe 2026-10-18 18:54:57
+tablet: MEECHO 20261018185407 
+MD5 (cpuprobe) = cfa75f79f14b9051ca665c7473dee603
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+MD5 (qcom_cpufreq) = 7309734787b2e1427da3b38494875194
+MD5 (qcom_cpufreq.conf) = c9129cbb6a8990a1cdf565962a1a8d7d
+--- qcom_cpufreq stage=probe
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cf...
+qcom_cpufreq(info)speed bin 1, CPR fusing revision 2
+qcom_cpufreq(info)silver fuse corner LowSVS   raw 0x23 614 mV
+qcom_cpufreq(info)silver fuse corner SVS      raw 0x28 644 mV
+qcom_cpufreq(info)silver fuse corner SVS+     raw 0x2a 688 mV
+qcom_cpufreq(info)silver fuse corner NOM      raw 0x29 778 mV
+qcom_cpufreq(info)silver fuse corner TURBO_L1 raw 0x2e 928 mV
+qcom_cpufreq(info)silver corner 1: 300.0 MHz, open loop 612 mV, floor 588 mV
+qcom_cpufreq(info)silver corner 2: 633.6 MHz, open loop 612 mV, floor 588 mV
+qcom_cpufreq(info)silver corner 3: 902.4 MHz, open loop 648 mV, floor 616 mV
+qcom_cpufreq(info)silver corner 4: 1113.6 MHz, open loop 696 mV, floor 656 mV
+qcom_cpufreq(info)silver corner 5: 1401.6 MHz, open loop 800 mV, floor 756 mV
+qcom_cpufreq(info)silver corner 6: 1536.0 MHz, open loop 836 mV, floor 796 mV
+qcom_cpufreq(info)silver corner 7: 1747.2 MHz, open loop 896 mV, floor 856 mV (APM)
+qcom_cpufreq(info)silver corner 8: 1843.2 MHz, open loop 920 mV, floor 880 mV (APM)
+qcom_cpufreq(info)gold fuse corner SVS      raw 0x26 664 mV
+qcom_cpufreq(info)gold fuse corner SVS+     raw 0x27 718 mV
+qcom_cpufreq(info)gold fuse corner NOM      raw 0x28 788 mV
+qcom_cpufreq(info)gold fuse corner TURBO    raw 0x29 898 mV
+qcom_cpufreq(info)gold fuse corner TURBO_L2 raw 0x2d 938 mV
+qcom_cpufreq(info)gold corner 1: 300.0 MHz, open loop 680 mV, floor 640 mV
+qcom_cpufreq(info)gold corner 2: 1113.6 MHz, open loop 680 mV, floor 640 mV
+qcom_cpufreq(info)gold corner 3: 1401.6 MHz, open loop 748 mV, floor 708 mV
+qcom_cpufreq(info)gold corner 4: 1747.2 MHz, open loop 828 mV, floor 788 mV
+qcom_cpufreq(info)gold corner 5: 1958.4 MHz, open loop 888 mV, floor 852 mV (APM)
+qcom_cpufreq(info)gold corner 6: 2150.4 MHz, open loop 940 mV, floor 876 mV (APM)
+qcom_cpufreq(info)gold corner 7: 2208.0 MHz, open loop 960 mV, floor 920 mV (APM)
+qcom_cpufreq(info)aux (GPLL0): 600.0 MHz
+qcom_cpufreq(info)silver: 1382.4 MHz, from its PLL; mux 0x501, PLL mode 0x7 L 0x48 (1382.4 MHz) locked
+qcom_cpufreq(info)silver: S1 set point 872 mV
+qcom_cpufreq(info)silver: the rail holds up to 1536.0 MHz (open loop 836 mV)
+qcom_cpufreq(info)gold: 600.0 MHz, from aux; mux 0x401, PLL mode 0x7 L 0x20 (614.4 MHz) locked
+qcom_cpufreq(info)gold: S2 set point 868 mV
+qcom_cpufreq(info)gold: S3 set point 868 mV
+qcom_cpufreq(info)gold: the rail holds up to 1747.2 MHz (open loop 828 mV)
+qcom_cpufreq(info)stage probe: done (0)
+--- hz
+processor       : 0
+processor       : 1
+processor       : 2
+processor       : 3
+processor       : 4
+processor       : 5
+processor       : 6
+processor       : 7
+run 0: 588 MHz (adds 200000000 in 0.340 s)
+run 1: 606 MHz (adds 200000000 in 0.330 s)
+run 2: 606 MHz (adds 200000000 in 0.330 s)
+run 3: 588 MHz (adds 200000000 in 0.340 s)
+run 4: 606 MHz (adds 200000000 in 0.330 s)
+run 5: 588 MHz (adds 200000000 in 0.340 s)
+479     2 sh -c cd /root/cpuprobe && cat /proc/cpuinfo; ./cpuhz;\n\t\t    for i
+496     3 ./cpuhz 
+497     4 ./cpuhz 
+501     1 ./cpuhz 
+502     2 ./cpuhz 
+512     5 ps -ax -o pid,cpuid,command 
+513     5 grep -e cpuid -e cpuhz 
+copy 1:
+run 0: 328 MHz (adds 200000000 in 0.610 s)
+run 1: 606 MHz (adds 200000000 in 0.330 s)
+run 2: 588 MHz (adds 200000000 in 0.340 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 606 MHz (adds 200000000 in 0.330 s)
+run 5: 588 MHz (adds 200000000 in 0.340 s)
+copy 2:
+run 0: 606 MHz (adds 200000000 in 0.330 s)
+run 1: 500 MHz (adds 200000000 in 0.400 s)
+run 2: 606 MHz (adds 200000000 in 0.330 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 588 MHz (adds 200000000 in 0.340 s)
+run 5: 606 MHz (adds 200000000 in 0.330 s)
+copy 3:
+run 0: 1429 MHz (adds 200000000 in 0.140 s)
+run 1: 1333 MHz (adds 200000000 in 0.150 s)
+run 2: 1429 MHz (adds 200000000 in 0.140 s)
+run 3: 1176 MHz (adds 200000000 in 0.170 s)
+run 4: 1333 MHz (adds 200000000 in 0.150 s)
+run 5: 1429 MHz (adds 200000000 in 0.140 s)
+copy 4:
+run 0: 1333 MHz (adds 200000000 in 0.150 s)
+run 1: 1429 MHz (adds 200000000 in 0.140 s)
+run 2: 1333 MHz (adds 200000000 in 0.150 s)
+run 3: 1250 MHz (adds 200000000 in 0.160 s)
+run 4: 1333 MHz (adds 200000000 in 0.150 s)
+run 5: 1429 MHz (adds 200000000 in 0.140 s)
+copy 5:
+run 0: 1333 MHz (adds 200000000 in 0.150 s)
+run 1: 1429 MHz (adds 200000000 in 0.140 s)
+run 2: 1333 MHz (adds 200000000 in 0.150 s)
+run 3: 1250 MHz (adds 200000000 in 0.160 s)
+run 4: 1333 MHz (adds 200000000 in 0.150 s)
+run 5: 1429 MHz (adds 200000000 in 0.140 s)
+copy 6:
+run 0: 588 MHz (adds 200000000 in 0.340 s)
+run 1: 513 MHz (adds 200000000 in 0.390 s)
+run 2: 606 MHz (adds 200000000 in 0.330 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 588 MHz (adds 200000000 in 0.340 s)
+run 5: 606 MHz (adds 200000000 in 0.330 s)
+copy 7:
+run 0: 588 MHz (adds 200000000 in 0.340 s)
+run 1: 513 MHz (adds 200000000 in 0.390 s)
+run 2: 606 MHz (adds 200000000 in 0.330 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 588 MHz (adds 200000000 in 0.340 s)
+run 5: 606 MHz (adds 200000000 in 0.330 s)
+copy 8:
+run 0: 741 MHz (adds 200000000 in 0.270 s)
+run 1: 1429 MHz (adds 200000000 in 0.140 s)
+run 2: 1333 MHz (adds 200000000 in 0.150 s)
+run 3: 1333 MHz (adds 200000000 in 0.150 s)
+run 4: 1333 MHz (adds 200000000 in 0.150 s)
+run 5: 1333 MHz (adds 200000000 in 0.150 s)
+--- end; the tablet answers

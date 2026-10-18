@@ -17,3 +17,13 @@
 &usb3_dwc3 {
 	dr_mode = "otg";
 };
+
+/*
+ * The blocks that set the two CPU clusters' clock and voltage, which
+ * mainline does not describe at all (port/clover/hw-cpu.md, section 1):
+ * one node, meecho,sdm660-cpu-dvfs, for qcom_cpufreq (which writes only
+ * the clusters' mux and PLL) and the read-only probe.  It lives in a file
+ * of its own because the qcom_cpufreq host stand adds it to the compiled
+ * tree by itself, without this file's other statements.
+ */
+#include "sdm660-xiaomi-clover-cpu.dtsi"

@@ -1,8 +1,7 @@
 # Makefile for qcom_cpufreq: the Mi Pad 4's CPU clusters (Qualcomm SDM660)
 # at a fixed frequency their rails already hold - path A of
-# port/clover/hw-cpu.md.  Not in power/Makefile's SUBDIR yet: until the
-# tablet has run it (hw-cpu.md, steps 3 and 4) it is built here and copied
-# over by hand.
+# port/clover/hw-cpu.md.  The tablet ran it (hw-cpu.md, steps 3 and 4), and
+# since step 5 the Mi Pad 4's rc starts it at every boot (rc.clover).
 PROG=	qcom_cpufreq
 SRCS=	cpufreq.c cf_find.c cf_volt.c cf_rail.c cf_clk.c cf_run.c spmi.c
 

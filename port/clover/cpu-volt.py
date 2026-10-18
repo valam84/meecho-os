@@ -173,14 +173,23 @@ def decode_log(text):
                          text):
         rows[int(m.group(1))] = int(m.group(2), 16)
     regs = {}
-    for m in re.finditer(r"cpuprobe: ([a-z-]+)((?: [0-9a-f]{3,4}=[0-9a-f]{8})+)",
+    for m in re.finditer(r"cpuprobe: ([a-z-]+)((?: [0-9a-f]{3,5}=[0-9a-f]{8})+)",
                          text):
-        for off, v in re.findall(r"([0-9a-f]{3,4})=([0-9a-f]{8})", m.group(2)):
+        for off, v in re.findall(r"([0-9a-f]{3,5})=([0-9a-f]{8})", m.group(2)):
             regs[(m.group(1), int(off, 16))] = int(v, 16)
     return rows, regs
 
 
 def clocks(regs):
+    # HMSS_GPLL0_CLK_SRC, the clusters' "aux": GPLL0 (600 MHz) through
+    # an RCG - source 1 GPLL0, half-divider in bits 4:0 (gcc-sdm660.c).
+    aux = None
+    acfg = regs.get(("gcc", 0x48060))
+    if acfg is not None and (acfg >> 8) & 7 == 1:
+        d = acfg & 0x1f
+        aux = 600.0 / ((d + 1) / 2 if d else 1)
+        print("GPLL0 aux (HMSS_GPLL0_CLK_SRC): cfg 0x%08x - %.0f MHz" %
+              (acfg, aux))
     for cl in ("silver", "gold"):
         cfg = regs.get((cl + "-glb", 0x54))
         cmd = regs.get((cl + "-glb", 0x50))
@@ -190,7 +199,8 @@ def clocks(regs):
         if cfg is None or lval is None:
             continue
         src, div = (cfg >> 8) & 7, cfg & 0x1f
-        what = {3: "PLL main", 4: "GPLL0 (300 MHz)", 5: "PLL early",
+        what = {3: "PLL main", 4: "GPLL0 aux (%s MHz)" % (
+                    "%.0f" % aux if aux else "?"), 5: "PLL early",
                 0: "XO"}.get(src, "source %d" % src)
         print("%s: RCG cmd 0x%08x cfg 0x%08x - %s, divide %.1f; PLL mode "
               "0x%08x L %d (%.1f MHz), status 0x%08x" % (

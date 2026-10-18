@@ -18,7 +18,7 @@
 #	-d DIR	where cpuprobe, cpuprobe.conf and cpuhz are
 #		(default D:/minix/clover-flash/cpu)
 #	-l LOG	the log (default DIR/probe-<time>.txt)
-#	STAGE	fuse, pmic, apcs, apm, osm, cprh (the service's stages, in that
+#	STAGE	fuse, pmic, rails, apcs, apm, osm, cprh (the service's stages, in that
 #		order by default), hz (the cores' speed); "osm!" and "cprh!"
 #		read those blocks even with their clock off (force=1) - only
 #		when asked for by name
@@ -88,7 +88,7 @@ EOF
 	exit $?
 fi
 
-[ $# -gt 0 ] || set -- fuse pmic apcs apm osm cprh hz
+[ $# -gt 0 ] || set -- fuse pmic rails apcs apm osm cprh hz
 log=${log:-$DIR/probe-$(date +%Y%m%d%H%M%S).txt}
 : > "$log" || exit 2
 
@@ -129,15 +129,16 @@ for s in "$@"; do
 		    wait; for i in 1 2 3 4 5 6 7 8; do echo "copy $i:";
 		    cat /tmp/hz.$i; done' 2>&1 | tr -d '\r' | tee -a "$log"
 		;;
-	fuse|pmic|apcs|apm|osm|cprh|osm!|cprh!)
+	fuse|pmic|rails|apcs|apm|osm|cprh|osm!|cprh!)
 		args="stage=${s%!} tag=$n"
 		case $s in *!) args="$args force=1" ;; esac
 		say "--- $args"
 		# kmsg -f from before the start: the ring holds 10 kB, and a
 		# stage's lines must not scroll away before they are read.  Only
-		# the lines from this run's own first line on.
+		# the lines from this run's own first line on.  /sbin by name: a
+		# command over ssh gets no /sbin in its PATH.
 		T=120 tab "cd /root/cpuprobe && { kmsg -f > /tmp/cpuprobe.k 2>&1 &
-		    k=\$!; sleep 1; minix-service up /root/cpuprobe/cpuprobe \
+		    k=\$!; sleep 1; /sbin/minix-service up /root/cpuprobe/cpuprobe \
 		    -config /root/cpuprobe/cpuprobe.conf -args '$args' 2>&1;
 		    sleep 2; kill \$k; awk '/cpuprobe: stage ${s%!} \\(tag $n\\)/ { on = 1 }
 		    on && /cpuprobe:/' /tmp/cpuprobe.k; }" 2>&1 |

@@ -1,0 +1,283 @@
+cpu-probe 2026-10-18 16:10:16
+tablet: MEECHO 20261018160839 
+MD5 (cpuprobe) = b2da861dc5b4787c223dcc564ad7b4dd
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- stage=fuse tag=1
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cp...
+cpuprobe: stage fuse (tag 1)
+cpuprobe: fuse row 38 (0x784130) = 0x885992103040008c
+cpuprobe: fuse row 65 (0x784208) = 0x0700084210980000
+cpuprobe: fuse row 66 (0x784210) = 0x0413b4e14bc5ed30
+cpuprobe: fuse row 67 (0x784218) = 0x26f3458e8a6e7777
+cpuprobe: fuse row 68 (0x784220) = 0xeee2a28eaa166198
+cpuprobe: fuse row 69 (0x784228) = 0x42460a7813cd452e
+cpuprobe: fuse row 70 (0x784230) = 0xe406b628a1c4a4f2
+cpuprobe: fuse row 71 (0x784238) = 0x0000010021a3b750
+cpuprobe: speed bin (row 38, bits 31:29) = 1
+cpuprobe: stage fuse: done (0)
+--- end; the tablet answers
+cpu-probe 2026-10-18 16:10:43
+tablet: MEECHO 20261018160839 
+MD5 (cpuprobe) = b2da861dc5b4787c223dcc564ad7b4dd
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- stage=pmic tag=1
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cp...
+cpuprobe: stage pmic (tag 1)
+cpuprobe: SPMI arbiter 0x30000000, 512 channels
+cpuprobe: S1 0x1400: apid 27, owner EE 0, type 0x1c subtype 0x0a
+cpuprobe: S1 0x1500: apid 62, owner EE 0, type 0x1c subtype 0x07
+cpuprobe: S1 0x1600: apid 18, owner EE 0, type 0x1d subtype 0x1b
+cpuprobe: S1 VDD_APC0 (silver): 01=00 04=1c 05=0a 08=84 09=00 40=68 41=03 45=06 46=80 48=88 4c=01 61=81 68=74 69=05
+cpuprobe: S1 FTS426 set point 872 mV, enabled, mode 0x06
+cpuprobe: S2 0x1700: apid 53, owner EE 0, type 0x1c subtype 0x0a
+cpuprobe: S2 0x1800: apid 65, owner EE 0, type 0x1c subtype 0x07
+cpuprobe: S2 0x1900: apid 21, owner EE 0, type 0x1d subtype 0x1b
+cpuprobe: S2 VDD_APC1 (gold): 01=00 04=1c 05=0a 08=84 09=00 40=64 41=03 45=06 46=80 48=88 4c=01 61=81 68=74 69=05
+cpuprobe: S2 FTS426 set point 868 mV, enabled, mode 0x06
+cpuprobe: S3 0x1a00: apid 66, owner EE 0, type 0x1c subtype 0x0a
+cpuprobe: S3 0x1b00: apid 23, owner EE 0, type 0x1c subtype 0x07
+cpuprobe: S3 0x1c00: apid 67, owner EE 0, type 0x1d subtype 0x1b
+cpuprobe: S3 VDD_APC1 (gold, second phase): 01=00 04=1c 05=0a 08=84 09=00 40=64 41=03 45=06 46=80 48=88 4c=01 61=81 68=74 69=05
+cpuprobe: S3 FTS426 set point 868 mV, enabled, mode 0x06
+cpuprobe: stage pmic: done (0)
+--- end; the tablet answers
+cpu-probe 2026-10-18 16:11:17
+tablet: MEECHO 20261018160839 
+MD5 (cpuprobe) = b2da861dc5b4787c223dcc564ad7b4dd
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- stage=apcs tag=1
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cp...
+cpuprobe: stage apcs (tag 1)
+cpuprobe: gcc 48008=00000001 48044=00000000 48048=00000000 4805c=00000002
+cpuprobe: gcc 48060=00000100
+cpuprobe: silver-glb 050=00000002 054=00000501
+cpuprobe: silver-pll 0000=00000007 0004=00000048 0008=00000000 000c=0000000f
+cpuprobe: silver-pll 0010=200d4828 0014=00000006 0018=1c000000 001c=00004000
+cpuprobe: silver-pll 0020=00000000 0024=00000000 0028=00000000 002c=00010000
+cpuprobe: silver-pll 0030=00000000 0034=00000000 0038=00000000 003c=00000000
+cpuprobe: silver-saw 000=0020000d 004=3c11840a 00c=00000014 040=03030080
+cpuprobe: silver-saw 044=00030000 048=00000000 04c=00000000 050=00000000
+cpuprobe: silver-saw 054=00000000 900=00000000 904=00000000 908=00000000
+cpuprobe: silver-saw 90c=00000000 c00=00000000 c04=2020016f c0c=d97b3000
+cpuprobe: silver-saw c10=00000000 c14=00000000 c18=00000000 fd0=40010001
+cpuprobe: gold-glb 050=00000002 054=00000401
+cpuprobe: gold-pll 0000=00000007 0004=00000020 0008=00000000 000c=0000000f
+cpuprobe: gold-pll 0010=200d4828 0014=00000006 0018=1c000000 001c=00004000
+cpuprobe: gold-pll 0020=00000000 0024=00000000 0028=00000000 002c=00010000
+cpuprobe: gold-pll 0030=00000000 0034=00000000 0038=00000000 003c=00000000
+cpuprobe: gold-saw 000=0020000d 004=3c11840a 00c=00000014 040=03030080
+cpuprobe: gold-saw 044=00030000 048=00000000 04c=00000000 050=00000000
+cpuprobe: gold-saw 054=00000000 900=00000000 904=00000000 908=00000000
+cpuprobe: gold-saw 90c=00000000 c00=00000000 c04=2020016f c0c=d97b3000
+cpuprobe: gold-saw c10=00000000 c14=00000000 c18=00000000 fd0=40010001
+cpuprobe: stage apcs: done (0)
+--- end; the tablet answers
+cpu-probe 2026-10-18 16:12:00
+tablet: MEECHO 20261018160839 
+MD5 (cpuprobe) = b2da861dc5b4787c223dcc564ad7b4dd
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- stage=apm tag=1
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cp...
+cpuprobe: stage apm (tag 1)
+cpuprobe: apm 000=fffffff5 004=00000000 008=00000000 00c=00000000
+cpuprobe: apm 010=00000000 014=00000000 018=00000000 01c=00000000
+cpuprobe: apcs-common 112c=00000002 1130=00000105 143c=00000000 1360=00000000
+cpuprobe: apcs-common 1364=00000000 1368=00000000 136c=00000000 1370=00000000
+cpuprobe: stage apm: done (0)
+--- end; the tablet answers
+cpu-probe 2026-10-18 16:12:46
+tablet: MEECHO 20261018160839 
+MD5 (cpuprobe) = b2da861dc5b4787c223dcc564ad7b4dd
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- stage=osm tag=1
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cp...
+cpuprobe: stage osm (tag 1)
+cpuprobe: osm-silver 000=00070000 1004=00000000 100c=00000000 101c=00000000
+cpuprobe: osm-silver 1020=00000000 1024=00000001 1028=000f0000 102c=00000000
+cpuprobe: osm-silver 1030=00000000 1034=00000000 1038=00000000 103c=001f8000
+cpuprobe: osm-silver 1040=00000000 1070=05000000 10a4=00000000 10c0=00000000
+cpuprobe: osm-silver 1c00=00000000 1c74=00000000 1f00=00000014 1f04=00000000
+cpuprobe: osm-silver 1f10=00000000 1f14=00000000 1f2c=00000000 1f38=00000000
+cpuprobe: osm-silver lut: 0 row(s) not zero
+cpuprobe: osm-silver 0x0300..0x047c: 96 word(s) zero
+cpuprobe: osm-silver 0x0170..0x0230: 49 word(s) zero
+cpuprobe: osm-silver 0x0500..0x08fc: 0 of 256 word(s) not zero
+cpuprobe: osm-silver first:
+cpuprobe: osm-gold 000=00000000 1004=00000000 100c=00000000 101c=00000000
+cpuprobe: osm-gold 1020=00000000 1024=00000001 1028=000f0000 102c=00000000
+cpuprobe: osm-gold 1030=00000000 1034=00000000 1038=00000000 103c=001f8000
+cpuprobe: osm-gold 1040=00000000 1070=05000000 10a4=00000000 10c0=00000000
+cpuprobe: osm-gold 1c00=00000000 1c74=00000000 1f00=00000014 1f04=00000000
+cpuprobe: osm-gold 1f10=00000000 1f14=00000000 1f2c=00000000 1f38=00000000
+cpuprobe: osm-gold lut: 0 row(s) not zero
+cpuprobe: osm-gold 0x0300..0x047c: 96 word(s) zero
+cpuprobe: osm-gold 0x0170..0x0230: 49 word(s) zero
+cpuprobe: osm-gold 0x0500..0x08fc: 0 of 256 word(s) not zero
+cpuprobe: osm-gold first:
+cpuprobe: stage osm: done (0)
+--- end; the tablet answers
+cpu-probe 2026-10-18 16:13:18
+tablet: MEECHO 20261018160839 
+MD5 (cpuprobe) = b2da861dc5b4787c223dcc564ad7b4dd
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- stage=cprh tag=1
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cp...
+cpuprobe: stage cprh (tag 1)
+cpuprobe: cprh-silver 000=40020000 004=fffffe3e 008=00000001 00c=0000ffff
+cpuprobe: cprh-silver 014=00000fc0 700=00000000 7a4=00000021KERNEL: SError while running cpuprobe / 360482, pc 0x409a24, esr 0xbf000002; sending SIGBUS
+--- end; the tablet answers
+cpu-probe 2026-10-18 16:16:32
+tablet: MEECHO 20261018160839 
+MD5 (cpuprobe) = cfa75f79f14b9051ca665c7473dee603
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- stage=rails tag=1
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cp...
+cpuprobe: stage rails (tag 1)
+cpuprobe: SPMI arbiter 0x30000000, 512 channels
+cpuprobe: PM660L-S1 0x1400: apid 140, owner EE 4, type 0x1c subtype 0x0a
+cpuprobe: PM660L-S1 0x1500: apid 141, owner EE 4, type 0x1c subtype 0x07
+cpuprobe: PM660L-S1 0x1600: apid 142, owner EE 4, type 0x1d subtype 0x1b
+cpuprobe: PM660L-S1 1.125 V: 01=00 04=1c 05=0a 08=94 09=00 40=68 41=04 45=07 46=80 48=80 4c=01 61=81 68=74 69=05
+cpuprobe: PM660L-S1 FTS426 set point 1128 mV, enabled, mode 0x07
+cpuprobe: PM660L-S2 0x1700: apid 156, owner EE 4, type 0x1c subtype 0x0a
+cpuprobe: PM660L-S2 0x1800: apid 144, owner EE 4, type 0x1c subtype 0x07
+cpuprobe: PM660L-S2 0x1900: apid 145, owner EE 4, type 0x1d subtype 0x1b
+cpuprobe: PM660L-S2 1.05 V: 01=00 04=1c 05=0a 08=84 09=00 40=f8 41=03 45=06 46=80 48=80 4c=01 61=81 68=74 69=05
+cpuprobe: PM660L-S2 FTS426 set point 1016 mV, enabled, mode 0x06
+cpuprobe: PM660L-S3 0x1a00: apid 146, owner EE 4, type 0x1c subtype 0x0a
+cpuprobe: PM660L-S3 0x1b00: apid 147, owner EE 4, type 0x1c subtype 0x07
+cpuprobe: PM660L-S3 0x1c00: apid 148, owner EE 4, type 0x1d subtype 0x1b
+cpuprobe: PM660L-S3 VDD_CX: 01=00 04=1c 05=0a 08=94 09=00 40=04 41=03 45=07 46=80 48=80 4c=01 61=81 68=74 69=05
+cpuprobe: PM660L-S3 FTS426 set point 772 mV, enabled, mode 0x07
+cpuprobe: PM660L-S4 0x1d00: apid 149, owner EE 4, type 0x1c subtype 0x0a
+cpuprobe: PM660L-S4 0x1e00: apid 150, owner EE 4, type 0x1c subtype 0x07
+cpuprobe: PM660L-S4 0x1f00: apid 151, owner EE 4, type 0x1d subtype 0x1b
+cpuprobe: PM660L-S4 VDD_CX (second phase): 01=00 04=1c 05=0a 08=94 09=00 40=04 41=03 45=07 46=80 48=88 4c=01 61=81 68=74 69=05
+cpuprobe: PM660L-S4 FTS426 set point 772 mV, enabled, mode 0x07
+cpuprobe: PM660L-S5 0x2000: apid 152, owner EE 4, type 0x1c subtype 0x0a
+cpuprobe: PM660L-S5 0x2100: apid 153, owner EE 4, type 0x1c subtype 0x07
+cpuprobe: PM660L-S5 0x2200: apid 154, owner EE 4, type 0x1d subtype 0x1b
+cpuprobe: PM660L-S5 VDD_MX: 01=00 04=1c 05=0a 08=94 09=00 40=74 41=03 45=07 46=80 48=80 4c=01 61=81 68=74 69=05
+cpuprobe: PM660L-S5 FTS426 set point 884 mV, enabled, mode 0x07
+cpuprobe: stage rails: done (0)
+--- stage=cprh tag=2
+Request 0x700 to RS failed: specified endpoint is not alive (error 215)
+[1]   Terminated              kmsg -f >/tmp/cp...
+cpuprobe: stage cprh (tag 2)
+cpuprobe: cprh-silver 000=40020000 004=fffffe3e 008=00000001 00c=0000ffff
+cpuprobe: cprh-silver 014=00000fc0 700=00000000 7a4=00000021 7f8=00000000
+cpuprobe: cprh-silver 81c=00000000KERNEL: SError while running cpuprobe / 557092, pc 0x409ac4, esr 0xbf000002; sending SIGBUS
+--- end; the tablet answers
+cpu-probe 2026-10-18 16:17:15
+tablet: MEECHO 20261018160839 
+MD5 (cpuprobe) = cfa75f79f14b9051ca665c7473dee603
+MD5 (cpuprobe.conf) = 0e69b318bd909a773ea17f4005064f65
+MD5 (cpuhz) = e1f7e9126f0ba71e8b43227ec3e3eb0f
+--- hz
+processor       : 0
+processor       : 1
+processor       : 2
+processor       : 3
+processor       : 4
+processor       : 5
+processor       : 6
+processor       : 7
+run 0: 606 MHz (adds 200000000 in 0.330 s)
+run 1: 588 MHz (adds 200000000 in 0.340 s)
+run 2: 606 MHz (adds 200000000 in 0.330 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 588 MHz (adds 200000000 in 0.340 s)
+run 5: 606 MHz (adds 200000000 in 0.330 s)
+3868     1 sh -c cd /root/cpuprobe && cat /proc/cpuinfo; ./cpuhz;\n\t\t    for 
+3885     3 ./cpuhz 
+3886     4 ./cpuhz 
+3890     1 ./cpuhz 
+3891     2 ./cpuhz 
+3892     0 ./cpuhz 
+3901     5 ps -ax -o pid,cpuid,command 
+3902     6 grep -e cpuid -e cpuhz 
+copy 1:
+run 0: 328 MHz (adds 200000000 in 0.610 s)
+run 1: 606 MHz (adds 200000000 in 0.330 s)
+run 2: 588 MHz (adds 200000000 in 0.340 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 588 MHz (adds 200000000 in 0.340 s)
+run 5: 606 MHz (adds 200000000 in 0.330 s)
+copy 2:
+run 0: 588 MHz (adds 200000000 in 0.340 s)
+run 1: 513 MHz (adds 200000000 in 0.390 s)
+run 2: 606 MHz (adds 200000000 in 0.330 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 588 MHz (adds 200000000 in 0.340 s)
+run 5: 606 MHz (adds 200000000 in 0.330 s)
+copy 3:
+run 0: 1429 MHz (adds 200000000 in 0.140 s)
+run 1: 1333 MHz (adds 200000000 in 0.150 s)
+run 2: 1429 MHz (adds 200000000 in 0.140 s)
+run 3: 1176 MHz (adds 200000000 in 0.170 s)
+run 4: 1429 MHz (adds 200000000 in 0.140 s)
+run 5: 1333 MHz (adds 200000000 in 0.150 s)
+copy 4:
+run 0: 1429 MHz (adds 200000000 in 0.140 s)
+run 1: 1333 MHz (adds 200000000 in 0.150 s)
+run 2: 1429 MHz (adds 200000000 in 0.140 s)
+run 3: 1176 MHz (adds 200000000 in 0.170 s)
+run 4: 1429 MHz (adds 200000000 in 0.140 s)
+run 5: 1333 MHz (adds 200000000 in 0.150 s)
+copy 5:
+run 0: 1429 MHz (adds 200000000 in 0.140 s)
+run 1: 1333 MHz (adds 200000000 in 0.150 s)
+run 2: 1429 MHz (adds 200000000 in 0.140 s)
+run 3: 1176 MHz (adds 200000000 in 0.170 s)
+run 4: 1429 MHz (adds 200000000 in 0.140 s)
+run 5: 1333 MHz (adds 200000000 in 0.150 s)
+copy 6:
+run 0: 606 MHz (adds 200000000 in 0.330 s)
+run 1: 513 MHz (adds 200000000 in 0.390 s)
+run 2: 606 MHz (adds 200000000 in 0.330 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 588 MHz (adds 200000000 in 0.340 s)
+run 5: 606 MHz (adds 200000000 in 0.330 s)
+copy 7:
+run 0: 606 MHz (adds 200000000 in 0.330 s)
+run 1: 513 MHz (adds 200000000 in 0.390 s)
+run 2: 606 MHz (adds 200000000 in 0.330 s)
+run 3: 606 MHz (adds 200000000 in 0.330 s)
+run 4: 588 MHz (adds 200000000 in 0.340 s)
+run 5: 606 MHz (adds 200000000 in 0.330 s)
+copy 8:
+run 0: 769 MHz (adds 200000000 in 0.260 s)
+run 1: 1333 MHz (adds 200000000 in 0.150 s)
+run 2: 1429 MHz (adds 200000000 in 0.140 s)
+run 3: 1333 MHz (adds 200000000 in 0.150 s)
+run 4: 1176 MHz (adds 200000000 in 0.170 s)
+run 5: 1111 MHz (adds 200000000 in 0.180 s)
+--- end; the tablet answers
+dwc3(info)usb@a8f8800 (qcom,dwc3): qscratch 0xa8f8800, core 0xa800000 irq 163; otg, high-speed, utmi as pipe
+dwc3(info)clocks: cfg_noc on core on iface on sleep on mock_utmi on
+dwc3(info)roots: core: root on, src 1 div 5; mock_utmi: root on, src 6 div 7.5
+dwc3(info)core GSNPSID 0x5533300a, GCTL 0x00112000 (device), GUSB2PHYCFG 0x00002400, GHWPARAMS3 0x10420085
+dwc3(info)core reset: GCTL 0x00112000, DCFG 0x00480aa8, DCTL 0x10f00000, GEVNTADRLO 0x00000000
+processor       : 0
+processor       : 1
+processor       : 2
+processor       : 3
+processor       : 4
+processor       : 5
+processor       : 6
+processor       : 7
+12:08AM  up 9 mins, 0 users, load averages: 0.29, 0.07, 0.03

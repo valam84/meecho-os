@@ -20,7 +20,10 @@
  *   stage=osm    the OSM of both clusters - only if its clock root runs
  *                (force=1 reads it anyway)
  *   stage=cprh   both CPRh controllers - only if GCC_HMSS_RBCPR_CLK runs
- *                (force=1 reads them anyway)
+ *                (force=1 reads them anyway); only the registers the
+ *                vendor driver reads
+ *   stage=rails  PM660L S1-S5, among them VDD_CX (S3+S4) and VDD_MX (S5),
+ *                the same way as stage=pmic
  *   tag=N        printed in the stage's first line, so that a reader of
  *                the kernel's ring tells this run from an earlier one
  *
@@ -49,6 +52,7 @@
 #include "spmi.h"
 
 #define SID_PM660_REGS	1		/* PM660's regulators (hw-rpm.md) */
+#define SID_PM660L_REGS	3		/* PM660L's */
 
 static int force;
 static long tag;
@@ -249,22 +253,19 @@ delay_us(unsigned us)
 	(void)micro_delay(us);
 }
 
+struct smps {
+	const char *name, *rail;
+	unsigned sid, base;
+};
+
 static int
-stage_pmic(void)
+spmi_up(void)
 {
-	static const struct { const char *name, *rail; unsigned base; } s[] = {
-		{ "S1", "VDD_APC0 (silver)", 0x1400 },
-		{ "S2", "VDD_APC1 (gold)", 0x1700 },
-		{ "S3", "VDD_APC1 (gold, second phase)", 0x1a00 },
-	};
-	static const unsigned regs[] = { 0x01, 0x04, 0x05, 0x08, 0x09, 0x40,
-	    0x41, 0x45, 0x46, 0x48, 0x4c, 0x61, 0x68, 0x69 };
 	static const char *const want[4] = { "core", "chnls", "obsrvr",
 	    "cnfg" };
-	volatile uint8_t *m[4];
+	volatile uint8_t *m;
 	struct node nd;
-	unsigned i, j, k, a;
-	uint8_t b[sizeof(regs) / sizeof(regs[0])], t[2];
+	unsigned i, k;
 	int r;
 
 	if (lookup(&nd, "qcom,spmi-pmic-arb") != OK)
@@ -273,14 +274,13 @@ stage_pmic(void)
 	for (k = 0; k < 4; k++) {
 		for (i = 0; i < nd.n && strcmp(nd.name[i], want[k]) != 0; i++)
 			;
-		if (i == nd.n || (m[k] = region(&nd, i)) == NULL)
+		if (i == nd.n || (m = region(&nd, i)) == NULL)
 			return ENXIO;
 		switch (k) {
-		case 0: spmi.core = m[k]; spmi.core_size = nd.size[i]; break;
-		case 1: spmi.chnls = m[k]; spmi.chnls_size = nd.size[i]; break;
-		case 2: spmi.obsrvr = m[k]; spmi.obsrvr_size = nd.size[i];
-			break;
-		case 3: spmi.cnfg = m[k]; spmi.cnfg_size = nd.size[i]; break;
+		case 0: spmi.core = m; spmi.core_size = nd.size[i]; break;
+		case 1: spmi.chnls = m; spmi.chnls_size = nd.size[i]; break;
+		case 2: spmi.obsrvr = m; spmi.obsrvr_size = nd.size[i]; break;
+		case 3: spmi.cnfg = m; spmi.cnfg_size = nd.size[i]; break;
 		}
 	}
 	spmi.ee = 0;
@@ -292,18 +292,35 @@ stage_pmic(void)
 	}
 	printf("cpuprobe: SPMI arbiter 0x%08x, %u channels\n", spmi.version,
 	    spmi.napid);
-	for (i = 0; i < sizeof(s) / sizeof(s[0]); i++) {
-		for (k = 0; k < 3; k++) {	/* CTRL, PS, FREQ peripherals */
+	return OK;
+}
+
+/*
+ * Each regulator's three peripherals (CTRL, PS, FREQ): channel, owner,
+ * type; then the CTRL registers, and the set point decoded where the
+ * layout is known.  Reads through the observer channels only.
+ */
+static int
+smps_report(const struct smps *s, unsigned n)
+{
+	static const unsigned regs[] = { 0x01, 0x04, 0x05, 0x08, 0x09, 0x40,
+	    0x41, 0x45, 0x46, 0x48, 0x4c, 0x61, 0x68, 0x69 };
+	unsigned i, j, k, a;
+	uint8_t b[sizeof(regs) / sizeof(regs[0])], t[2];
+
+	if (spmi_up() != OK)
+		return ENXIO;
+	for (i = 0; i < n; i++) {
+		for (k = 0; k < 3; k++) {
 			unsigned base = s[i].base + 0x100 * k;
 
-			a = spmi.apid_of[(SID_PM660_REGS << 8) |
-			    ((base >> 8) & 0xff)];
+			a = spmi.apid_of[(s[i].sid << 8) | ((base >> 8) & 0xff)];
 			if (a == SPMI_NO_APID) {
 				printf("cpuprobe: %s 0x%04x: no channel\n",
 				    s[i].name, base);
 				continue;
 			}
-			if (spmi_read(&spmi, SID_PM660_REGS, base + 0x04, t, 2)
+			if (spmi_read(&spmi, s[i].sid, base + 0x04, t, 2)
 			    != OK_SPMI)
 				t[0] = t[1] = 0xff;
 			printf("cpuprobe: %s 0x%04x: apid %u, owner EE %u, "
@@ -311,30 +328,65 @@ stage_pmic(void)
 			    spmi.owner[a], t[0], t[1]);
 		}
 		for (j = 0; j < sizeof(regs) / sizeof(regs[0]); j++)
-			if (spmi_read(&spmi, SID_PM660_REGS, s[i].base + regs[j],
+			if (spmi_read(&spmi, s[i].sid, s[i].base + regs[j],
 			    &b[j], 1) != OK_SPMI)
 				b[j] = 0xff;	/* printed; tells by its look */
 		printf("cpuprobe: %s %s:", s[i].name, s[i].rail);
 		for (j = 0; j < sizeof(regs) / sizeof(regs[0]); j++)
 			printf(" %02x=%02x", regs[j], b[j]);
 		printf("\n");
-		switch (b[2]) {		/* the subtype, register 0x05 */
-		case 0x0a:	/* FTS426: 16-bit set point in mV (0x40/0x41) */
-			printf("cpuprobe: %s FTS426 set point %u mV, %s, mode "
-			    "0x%02x\n", s[i].name, (unsigned)b[6] << 8 | b[5],
+		/*
+		 * Type 0x1c subtype 0x0a is FTS426, type 0x03 subtype 0x0a
+		 * HFS430: both keep a 16-bit set point in mV at 0x40/0x41
+		 * (qcom_spmi-regulator.c).  FTS and FTS2.5: range and VSET.
+		 */
+		if (b[2] == 0x0a && (b[1] == 0x1c || b[1] == 0x03))
+			printf("cpuprobe: %s %s set point %u mV, %s, mode "
+			    "0x%02x\n", s[i].name, b[1] == 0x1c ? "FTS426" :
+			    "HFS430", (unsigned)b[6] << 8 | b[5],
 			    (b[8] & 0x80) ? "enabled" : "disabled", b[7]);
-			break;
-		case 0x08: case 0x09:	/* FTS/FTS2.5: range 0x40, VSET 0x41 */
+		else if (b[1] == 0x1c && (b[2] == 0x08 || b[2] == 0x09))
 			printf("cpuprobe: %s FTS%s range %u vset %u, %s\n",
 			    s[i].name, b[2] == 0x09 ? "2.5" : "", b[5], b[6],
 			    (b[8] & 0x80) ? "enabled" : "disabled");
-			break;
-		default:
-			printf("cpuprobe: %s subtype 0x%02x not decoded\n",
-			    s[i].name, b[2]);
-		}
+		else
+			printf("cpuprobe: %s type 0x%02x subtype 0x%02x not "
+			    "decoded\n", s[i].name, b[1], b[2]);
 	}
 	return OK;
+}
+
+/* PM660 S1-S3: the CPU rails. */
+static int
+stage_pmic(void)
+{
+	static const struct smps s[] = {
+		{ "S1", "VDD_APC0 (silver)", SID_PM660_REGS, 0x1400 },
+		{ "S2", "VDD_APC1 (gold)", SID_PM660_REGS, 0x1700 },
+		{ "S3", "VDD_APC1 (gold, second phase)", SID_PM660_REGS,
+		    0x1a00 },
+	};
+
+	return smps_report(s, sizeof(s) / sizeof(s[0]));
+}
+
+/*
+ * PM660L S1-S5 (SID 3): S3+S4 are VDD_CX, S5 VDD_MX - the rail the CPU
+ * clusters' memory arrays run from while APM is in MX mode.
+ */
+static int
+stage_rails(void)
+{
+	static const struct smps s[] = {
+		{ "PM660L-S1", "1.125 V", SID_PM660L_REGS, 0x1400 },
+		{ "PM660L-S2", "1.05 V", SID_PM660L_REGS, 0x1700 },
+		{ "PM660L-S3", "VDD_CX", SID_PM660L_REGS, 0x1a00 },
+		{ "PM660L-S4", "VDD_CX (second phase)", SID_PM660L_REGS,
+		    0x1d00 },
+		{ "PM660L-S5", "VDD_MX", SID_PM660L_REGS, 0x2000 },
+	};
+
+	return smps_report(s, sizeof(s) / sizeof(s[0]));
 }
 
 /* GCC: the CPR controllers' clock and the 300 MHz alternate source. */
@@ -493,9 +545,14 @@ stage_osm(void)
 static int
 stage_cprh(void)
 {
+	/*
+	 * Only what cpr3-regulator.c itself reads, or reads to modify:
+	 * reading CONT_CMD (0x800), which it only ever writes, took an
+	 * SError on the tablet (2026-10-18; hw-cpu.md, section 12), and the
+	 * corner table (0x3a00) it also only writes.
+	 */
 	static const unsigned reg[] = { 0x000, 0x004, 0x008, 0x00c, 0x014,
-	    0x700, 0x7a4, 0x800, 0x81c, 0x824, 0x3000, 0x3004, 0x3008,
-	    0x3aa0, 0x3aa4, 0x3aa8 };
+	    0x700, 0x7a4, 0x7f8, 0x81c, 0x3004, 0x3008, 0x3aa0, 0x3aa4 };
 	static const char *const cl[2] = { "cprh-silver", "cprh-gold" };
 	volatile uint8_t *v;
 	struct node dv;
@@ -515,7 +572,6 @@ stage_cprh(void)
 		if ((v = named(&dv, cl[c])) == NULL)
 			continue;
 		dump(cl[c], v, reg, sizeof(reg) / sizeof(reg[0]));
-		dump_range(cl[c], v, 0x3a00, 0x3aa0, 1);	/* corners */
 	}
 	return OK;
 }
@@ -526,6 +582,7 @@ stage_cprh(void)
 static const struct { const char *name; int (*run)(void); } stages[] = {
 	{ "fuse", stage_fuse }, { "pmic", stage_pmic }, { "apcs", stage_apcs },
 	{ "apm", stage_apm }, { "osm", stage_osm }, { "cprh", stage_cprh },
+	{ "rails", stage_rails },
 };
 
 static int

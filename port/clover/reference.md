@@ -43,6 +43,10 @@ github.com/sdm660-mainline/linux (`72bc4bb`); postmarketOS берёт его ж�
 | RNG | `qrng@793000` |
 | Таймер MMIO | `timer@17920000` |
 
+**С 2026-10-19 есть эталон с root — `hw-pmos.md`** (postmarketOS на этом
+планшете: модем, Wi-Fi, BT, звук, датчики, батарея; дерево устройства
+работающего ядра). Ограничения ниже относятся к снятию с LineageOS.
+
 ## Чего нет и что нужно
 
 - Содержимое свойств дерева, `/proc/iomem`, `/proc/cmdline`, `/sys/class/graphics/fb0`

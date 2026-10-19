@@ -16,6 +16,9 @@
 
 #define MSS_MAXCLK	10
 
+/* Published in DS (1) once the modem says ready; qrtr waits for it. */
+#define MSS_DS_UP	"qcom_mss.up"
+
 /* What the tree says, and what is mapped of it. */
 struct mss {
 	/* The remoteproc node. */

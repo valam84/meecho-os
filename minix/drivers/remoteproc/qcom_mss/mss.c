@@ -24,6 +24,7 @@
 #include "mss.h"
 #include "qcom_soc.h"
 
+#include <minix/ds.h>
 #include <minix/fdt.h>
 
 #include <stdlib.h>
@@ -77,18 +78,8 @@ mss_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 
 	if ((r = mss_probe()) != OK)
 		return r;
-	if (stage == STAGE_PROBE) {
+	if (stage == STAGE_PROBE)
 		log_info(&mlog, "stage=probe: nothing written\n");
-		return OK;
-	}
-	r = mss_boot(stage == STAGE_MBA);
-	if (r != OK) {
-		log_warn(&mlog, "the modem did not start (%d)\n", r);
-		/* Stay, so that RS does not start us again into a modem in
-		 * an unknown state; the log says what happened. */
-		return OK;
-	}
-	up = 1;
 	return OK;
 }
 
@@ -96,14 +87,32 @@ int
 main(int argc, char **argv)
 {
 	message m;
-	int ipc_status;
+	int ipc_status, r;
 
 	env_setargs(argc, argv);
 	sef_setcb_init_fresh(mss_init);
 	sef_startup();
 
-	if (up)
+	/*
+	 * The boot itself after the initialisation RS waits for: it reads
+	 * some sixty megabytes and waits on the modem's checks, longer than
+	 * RS gives an initialisation (ten seconds).  A modem that did not
+	 * start is said so and the service stays, so that RS does not start
+	 * it again into a modem in an unknown state.
+	 */
+	if (stage != STAGE_PROBE) {
+		if ((r = mss_boot(stage == STAGE_MBA)) == OK)
+			up = stage == STAGE_BOOT;
+		else
+			log_warn(&mlog, "the modem did not start (%d)\n", r);
+	}
+	if (up) {
+		/* qrtr waits for this before it lays out GLINK's pipes, as
+		 * Linux registers the GLINK edge once the modem is up. */
+		if ((r = ds_publish_u32(MSS_DS_UP, 1, DSF_OVERWRITE)) != OK)
+			log_warn(&mlog, "DS: %s: %d\n", MSS_DS_UP, r);
 		(void)sys_setalarm(sys_hz() / 10, 0);
+	}
 	for (;;) {
 		if (sef_receive_status(ANY, &m, &ipc_status) != OK)
 			continue;

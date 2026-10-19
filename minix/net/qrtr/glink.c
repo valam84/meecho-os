@@ -22,6 +22,7 @@
 
 #include "qrtr.h"
 
+#include <minix/ds.h>
 #include <minix/fdt.h>
 #include <minix/vm.h>
 #include <sys/mman.h>
@@ -65,7 +66,13 @@
 
 #define ALIGN8(x)		(((x) + 7) & ~(size_t)7)
 
+/* qcom_mss's, in DS: the modem is up (minix/drivers/remoteproc/qcom_mss). */
+#define MODEM_UP		"qcom_mss.up"
+
+static int pipes_init(void);
+
 static struct smem smem;
+static int smem_ok;
 static volatile uint8_t *mbox;
 static unsigned mbox_off, mbox_bit;
 
@@ -589,11 +596,18 @@ rx_one(uint32_t avail)
 void
 gl_poll(void)
 {
-	uint32_t avail;
+	static unsigned ticks;
+	uint32_t avail, up;
 	unsigned n;
 
-	if (desc == 0)
-		return;
+	if (desc == 0) {
+		/* Ask DS twice a second, not on every tick. */
+		if (!smem_ok || ticks++ % 50 != 0)
+			return;
+		if (ds_retrieve_u32(MODEM_UP, &up) != OK || up != 1 ||
+		    pipes_init() != OK)
+			return;
+	}
 	for (n = 0; n < 1000; n++) {
 		if ((avail = rx_avail()) < 8 || rx_one(avail) == 0)
 			break;
@@ -650,7 +664,6 @@ gl_init(void)
 {
 	volatile uint8_t *base, *lock;
 	void *dtb;
-	size_t sz;
 	int r;
 
 	if ((dtb = fdt_fetch()) == NULL)
@@ -694,6 +707,20 @@ gl_init(void)
 		log_warn(&qlog, "SMEM: %s\n", smem.why);
 		return EIO;
 	}
+	smem_ok = 1;
+	log_info(&qlog, "SMEM version %u; GLINK to the modem once qcom_mss "
+	    "says it is up\n", smem.version);
+	return OK;
+}
+
+/*
+ * The pipes, once the modem is up (qcom_mss publishes MODEM_UP in DS):
+ * Linux too lays them out only when the modem's remoteproc has started.
+ */
+static int
+pipes_init(void)
+{
+	size_t sz;
 
 	if (smem_alloc(&smem, 1, ITEM_DESC, 32) < 0 ||
 	    (desc = smem_get(&smem, 1, ITEM_DESC, &sz)) == 0 || sz != 32 ||

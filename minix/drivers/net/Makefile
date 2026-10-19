@@ -32,6 +32,8 @@ SUBDIR+=	dwc3_ecm
 # Its Wi-Fi, the WCN3990, whose firmware runs in the modem
 # (port/clover/hw-wifi.md).
 SUBDIR+=	wcn
+# The IPA, the modem's data path (port/clover/hw-modem.md, section 9).
+SUBDIR+=	qcom_ipa
 .endif # ${MACHINE_ARCH} == "aarch64"
 
 .include <bsd.subdir.mk>

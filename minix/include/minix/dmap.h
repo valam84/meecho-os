@@ -83,7 +83,9 @@
 #define WCN_MAJOR		 136	/* 136 = /dev/wlan0 (wcn: the
 					 * WCN3990 Wi-Fi's service)         */
 
-#define NR_DEVICES   		 137	/* number of (major) devices */
+#define QCOM_IPA_MAJOR		 137	/* 137 = /dev/ipa (qcom_ipa: the IPA's
+					 * service to its QMI daemon) */
+#define NR_DEVICES   		 138	/* number of (major) devices */
 
 /* Minor device numbers for memory driver. */
 #  define RAM_DEV_OLD  		   0	/* minor device for /dev/ram */

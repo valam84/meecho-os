@@ -13,6 +13,7 @@ SUBDIR+=	usbrole
 # buffer driver's own requests.
 .if ${MACHINE_ARCH} == "aarch64"
 SUBDIR+=	fbmode
+SUBDIR+=	ipaqmid
 SUBDIR+=	mkbootarchive
 .endif
 

@@ -269,6 +269,25 @@ then
 		( trap '' HUP; /usr/sbin/pd-mapper ) \
 		    </dev/null >/var/log/pd-mapper.log 2>&1 &
 	fi
+	# The IPA, the modem's data path, with ipa=1 (hw-modem.md, section
+	# 9): reset and laid out before the modem starts, as Linux has it;
+	# ipaqmid then tells the modem's IPA driver where things are once it
+	# is up.  ipastage= passes stage= (probe: read only).
+	if [ "`sysenv ipa 2>/dev/null`" = 1 ] && [ -x /service/qcom_ipa ]
+	then
+		ipastage=init
+		if sysenv ipastage >/dev/null
+		then	ipastage="`sysenv ipastage`"
+		fi
+		[ -c /dev/ipa ] || mknod /dev/ipa c 137 0
+		if minix-service up /service/qcom_ipa -dev /dev/ipa \
+		    -args "stage=$ipastage" && [ "$ipastage" = init ] &&
+		    [ -x /usr/sbin/ipaqmid ]
+		then
+			( trap '' HUP; /usr/sbin/ipaqmid ) \
+			    </dev/null >/var/log/ipaqmid.log 2>&1 &
+		fi
+	fi
 	# The modem last, once everything it asks for is there; it boots in
 	# the background, and qrtr lays out GLINK when it is up.
 	modemstage=boot

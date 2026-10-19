@@ -23,12 +23,20 @@ umask 022
 # 1382.4 - no write to the PMIC, only the clusters' mux and PLL.  The
 # service reads the rails back before each change and refuses a point
 # they do not hold, so a tablet whose fuses ask for more keeps the boot
-# loader's rates; then it leaves.  cpufreq=0 (a boot argument) leaves the
-# clusters as the boot loader set them.
+# loader's rates.  It stays and moves each cluster by its load, between
+# aux (600 MHz, the PLL off) and those tops: cpugov= (a boot argument) is
+# ondemand by default, performance - the tops always, as before - or
+# powersave - 600 MHz always.  cpufreq=0 leaves the clusters as the boot
+# loader set them.
 if [ -x /service/qcom_cpufreq ] && [ "`sysenv cpufreq 2>/dev/null`" != 0 ]
 then
+	cpugov=ondemand
+	if sysenv cpugov >/dev/null
+	then	cpugov="`sysenv cpugov`"
+	fi
 	minix-service up /service/qcom_cpufreq \
-	    -args "stage=set gold=1747 silver=1536 steps=0" 2>/dev/null
+	    -args "stage=gov gov=$cpugov gold=1747 silver=1536 report=60" \
+	    2>/dev/null
 fi
 
 echo "Root is on `sysenv rootdevname` (`sysenv gptpart0`), driver `sysenv blkdrv`."
@@ -68,20 +76,32 @@ fi
 # /libdata/firmware/qcom - neither may be in MEECHO's tree, so a kit puts
 # them there (port/clover/mkkit.sh) or they are copied in by hand; without
 # them the service is not started and the desktop draws with the
-# processor.  gpufreq= (a boot argument): the core's clock, "max" by
-# default - the highest point the chip's speed bin allows, 588 MHz on this
-# tablet - or MHz, or 0 for the crystal.
+# processor.  gpufreq= (a boot argument): the core's highest clock, "max"
+# by default - the highest point the chip's speed bin allows, 588 MHz on
+# this tablet - or MHz, or 0 for the crystal.  gpugov=: ondemand (the
+# default) moves it between 160 MHz and that by load, performance keeps
+# it there, powersave at 160.  gpusleep=MS powers the GPU off after that
+# long without a job (0: never).
 if [ -x /service/adreno ] && [ -f /libdata/firmware/qcom/a530_pm4.fw ]
 then
 	gpufreq=max
 	if sysenv gpufreq >/dev/null
 	then	gpufreq="`sysenv gpufreq`"
 	fi
+	gpugov=ondemand
+	if sysenv gpugov >/dev/null
+	then	gpugov="`sysenv gpugov`"
+	fi
+	gpusleep=0
+	if sysenv gpusleep >/dev/null
+	then	gpusleep="`sysenv gpusleep`"
+	fi
 	[ -c /dev/dri/renderD128 ] || { mkdir -p /dev/dri &&
 	    mknod /dev/dri/renderD128 c 18 128 &&
 	    chmod 666 /dev/dri/renderD128; }
 	minix-service up /service/adreno -dev /dev/dri/renderD128 \
-	    -args "freq=$gpufreq" || echo "WARNING: no GPU"
+	    -args "freq=$gpufreq gov=$gpugov sleep=$gpusleep report=60" ||
+	    echo "WARNING: no GPU"
 fi
 
 # Randomness: the SoC's PRNG (qcom,prng-ee, random/qcom_prng.c) seeds the

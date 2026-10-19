@@ -295,7 +295,7 @@ read index движка, как у Linux: иначе можно записать
 | `wcn_mlme.c` | клиент 802.11: скан, auth, assoc, BSS | да |
 | `wcn_smmu.c` | банк `apps_smmu`, маршрут SID | нет — планшет |
 | `wcn_find.c` | узел, регистры, линии, MSA, iommus | стенд на DTB clover |
-| `wcn.c` | служба: `netdriver` + `chardriver`, цикл, состояния | нет |
+| `wcn.c` | служба: `netdriver` + `chardriver`, цикл, состояния. **Первая стадия есть** (`afc105593`): MSA и `/dev/wlan0` (старший 136, `wcn_ioc.h`) — `WCNIOC_MSA`, `WCNIOC_ASSIGN`, `WCNIOC_RECLAIM`; отданное — в DS `wcn.msa`. Ждёт загрузочного образа с `NR_DEVICES` 137 | нет |
 | `minix/usr.sbin/wcnd` | демон wlfw: сокет QRTR, порядок §3 | нет |
 
 ## 9. С модемом: QRTR — сокеты, wlfw — демон

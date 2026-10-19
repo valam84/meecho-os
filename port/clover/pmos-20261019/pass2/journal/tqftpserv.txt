@@ -1,0 +1,5 @@
+# journalctl -b -u tqftpserv --no-pager -o short-monotonic
+[   30.165878] xiaomi-clover systemd[1]: Started QRTR TFTP service.
+[   32.042867] xiaomi-clover tqftpserv[2527]: [TQFTP] WRQ: /readwrite/server_check.txt (octet)
+[   32.064965] xiaomi-clover tqftpserv[2527]: tqftpserv: failed to open ota_firewall/ruleset: No such file or directory
+[   42.025221] xiaomi-clover tqftpserv[2527]: tqftpserv: failed to open mcfg.tmp: No such file or directory

@@ -1,0 +1,18 @@
+0
+
+3
+11
+0
+0x0000000b
+65536
+2.0
+PM660
+PM660 2.0
+PM660L 2.0
+0
+family = Snapdragon
+machine = SDM660
+revision = 1.0
+serial_number = 659957866
+soc_id = 317
+uevent = 

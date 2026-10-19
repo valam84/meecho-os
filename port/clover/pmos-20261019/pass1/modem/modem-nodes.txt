@@ -1,0 +1,11 @@
+# sh -c ls -l /dev/qrtr* /dev/smd* /dev/rpmsg* /dev/qcom* /dev/fastrpc* 2>&1
+ls: /dev/qrtr*: No such file or directory
+ls: /dev/smd*: No such file or directory
+crw-------    1 root     root       10, 261 Oct 19 21:42 /dev/fastrpc-adsp
+crw-------    1 root     root       10, 263 Oct 19 21:42 /dev/fastrpc-cdsp
+crw-------    1 root     root       10, 262 Oct 19 21:42 /dev/fastrpc-cdsp-secure
+crw-------    1 root     root      236,   1 Oct 19 21:42 /dev/qcom_rmtfs_mem1
+crw-------    1 root     root      252,   0 Oct 19 21:42 /dev/rpmsg_ctrl0
+crw-------    1 root     root      252,   1 Oct 19 21:42 /dev/rpmsg_ctrl1
+crw-------    1 root     root      252,   2 Oct 19 21:42 /dev/rpmsg_ctrl2
+crw-------    1 root     root      252,   3 Oct 19 21:38 /dev/rpmsg_ctrl3

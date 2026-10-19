@@ -1,0 +1,100 @@
+ regulator                      use open bypass  opmode voltage current     min     max
+---------------------------------------------------------------------------------------
+ regulator-dummy                  5   45      0 unknown     0mV     0mA     0mV     0mV 
+    800f000.spmi:pmic@3:audio-codec@f000-vdd-cdc-tx-rx-cx   1                                 0mA     0mV     0mV
+    800f000.spmi:pmic@3:audio-codec@f000-vdd-cdc-io   1                                 0mA     0mV     0mV
+    18800000.wifi-vdd-3.3-ch1     1                                 0mA     0mV     0mV
+    5000000.gpu-vddcx             0                                 0mA     0mV     0mV
+    5000000.gpu-vdd               0                                 0mA     0mV     0mV
+    0-0038-iovcc                  1                                 0mA     0mV     0mV
+    s1                            0    0      0    fast   872mV     0mA     0mV     0mV 
+    s2                            0    0      0    fast   868mV     0mA     0mV     0mV 
+    s3                            0    0      0    fast   868mV     0mA     0mV     0mV 
+    s4                            0    0      0    fast  1840mV     0mA     0mV     0mV 
+    s5                            0    0      0    fast  1328mV     0mA     0mV     0mV 
+    s6                            0    0      0    fast   664mV     0mA     0mV     0mV 
+    l1                            0    0      0  normal  1256mV     0mA     0mV     0mV 
+    l2                            0    0      0    idle   952mV     0mA     0mV     0mV 
+    l3                            0    0      0    idle  1000mV     0mA     0mV     0mV 
+    l5                            0    0      0    idle   496mV     0mA     0mV     0mV 
+    l6                            0    0      0  normal  1304mV     0mA     0mV     0mV 
+    l7                            0    0      0    idle  1200mV     0mA     0mV     0mV 
+    l8                            0    0      0  normal  1800mV     0mA     0mV     0mV 
+    l9                            0    0      0  normal  1800mV     0mA     0mV     0mV 
+    l10                           0    0      0  normal  1784mV     0mA     0mV     0mV 
+    l11                           0    0      0  normal  1784mV     0mA     0mV     0mV 
+    l12                           0    0      0    idle  1800mV     0mA     0mV     0mV 
+    l13                           0    0      0  normal  1776mV     0mA     0mV     0mV 
+    l14                           0    0      0    idle  1800mV     0mA     0mV     0mV 
+    l15                           0    0      0    idle  1664mV     0mA     0mV     0mV 
+    l16                           0    0      0  normal  2704mV     0mA     0mV     0mV 
+    l17                           0    0      0    idle  1664mV     0mA     0mV     0mV 
+    l18                           0    0      0  normal  2864mV     0mA     0mV     0mV 
+    s1                            0    0      0  normal  1128mV     0mA     0mV     0mV 
+    s2                            0    0      0    fast  1048mV     0mA     0mV     0mV 
+    l19                           0    0      0  normal  3200mV     0mA     0mV     0mV 
+    s3                            0    0      0  normal   880mV     0mA     0mV     0mV 
+    s4                            0    0      0  normal   880mV     0mA     0mV     0mV 
+    s5                            0    0      0  normal   928mV     0mA     0mV     0mV 
+    l1                            0    0      0  normal   920mV     0mA     0mV     0mV 
+    l2                            0    0      0    idle  3000mV     0mA     0mV     0mV 
+    l3                            0    0      0  normal  3000mV     0mA     0mV     0mV 
+    l4                            0    0      0  normal  2896mV     0mA     0mV     0mV 
+    l5                            0    0      0    idle  3296mV     0mA     0mV     0mV 
+    l6                            0    0      0  normal  3312mV     0mA     0mV     0mV 
+    l7                            0    0      0  normal  2928mV     0mA     0mV     0mV 
+    l8                            0    0      0    idle  3312mV     0mA     0mV     0mV 
+    l9                            0    0      0  normal   568mV     0mA     0mV     0mV 
+    l10                           0    0      0  normal   848mV     0mA     0mV     0mV 
+ vph_pwr                          5    6      0 unknown     0mV     0mA     0mV     0mV 
+    bob                           4   10      0 unknown  3300mV     0mA  3300mV  3600mV 
+       l2                         0    1      0 unknown  3000mV     0mA  1648mV  3096mV 
+          c084000.mmc-vqmmc       0                                 0mA  3000mV  3096mV
+       l3                         1    0      0 unknown  3000mV     0mA  3000mV  3000mV 
+       l4                         1    1      0 unknown  2900mV     0mA  1704mV  2952mV 
+          c0c4000.mmc-vmmc        1                               800mA  2900mV  2952mV
+       l5                         0    1      0 unknown  3300mV     0mA  1800mV  3328mV 
+          c084000.mmc-vmmc        0                                 0mA  3300mV  3328mV
+       l6                         0    0      0 unknown  1704mV     0mA  1704mV  3312mV 
+       l7                         1    2      0 unknown  2700mV     0mA  2704mV  3120mV 
+          800f000.spmi:pmic@3:audio-codec@f000-vdd-micbias   0                                 0mA     0mV     0mV
+          c012000.phy-vdda-phy-dpdm   1                                 0mA     0mV     0mV
+       l8                         0    0      0 unknown  3200mV     0mA  3200mV  3400mV 
+       l15                        0    0      0 unknown  1650mV     0mA  1656mV  2952mV 
+       l17                        0    0      0 unknown  1648mV     0mA  1648mV  2952mV 
+       l19                        2    2      0 unknown  3200mV     0mA  3200mV  3400mV 
+          serial0-0-vddch0        1                               450mA     0mV     0mV
+          18800000.wifi-vdd-3.3-ch0   1                                 0mA     0mV     0mV
+    s1                            0    0      0 unknown  1125mV     0mA  1125mV  1125mV 
+    s2                            2    4      0 unknown  1050mV     0mA  1050mV  1050mV 
+       l1                         1    2      0 unknown   800mV     0mA   800mV   920mV 
+          c994400.phy-vcca        0                                73mA*    0mV     0mV
+          c012000.phy-vdd         1                                 0mA     0mV     0mV
+       l2                         0    0      0 unknown   950mV     0mA   952mV  1008mV 
+       l3                         0    0      0 unknown   950mV     0mA   952mV  1008mV 
+       l5                         1    1      0 unknown   525mV     0mA   528mV   952mV 
+          18800000.wifi-vdd-0.8-cx-mx   1                                 0mA     0mV     0mV
+    s4                            6    7      0 unknown  1805mV     0mA  1808mV  2040mV 
+       l8                         1    1      0 unknown  1800mV     0mA  1752mV  1896mV 
+          c0c4000.mmc-vqmmc       1                               325mA  1800mV  1896mV
+       l9                         2    2      0 unknown  1750mV     0mA  1752mV  1896mV 
+          serial0-0-vddxo         1                                80mA     0mV     0mV
+          18800000.wifi-vdd-1.8-xo   1                                 0mA     0mV     0mV
+       l10                        1    1      0 unknown  1780mV     0mA  1784mV  1944mV 
+          c012000.phy-vdda-pll    1                                 0mA     0mV     0mV
+       l11                        2    1      0 unknown  1784mV     0mA  1784mV  1944mV 
+          0-0038-vcc              1                                 0mA     0mV     0mV
+       l12                        0    0      0 unknown  1800mV     0mA  1800mV  1944mV 
+       l13                        2    1      0 unknown  1780mV     0mA  1784mV  1944mV 
+          serial0-0-vddio         1                                15mA     0mV     0mV
+       l14                        0    0      0 unknown  1710mV     0mA  1712mV  1904mV 
+    s5                            1    3      0 unknown  1224mV     0mA  1224mV  1344mV 
+       l1                         0    1      0 unknown  1150mV     0mA  1152mV  1248mV 
+          c994000.dsi-vdda        0                                12mA*    0mV     0mV
+       l6                         2    2      0 unknown  1200mV     0mA  1200mV  1304mV 
+          serial0-0-vddrf         1                               300mA     0mV     0mV
+          18800000.wifi-vdd-1.3-rfa   1                                 0mA     0mV     0mV
+       l7                         0    0      0 unknown  1200mV     0mA  1200mV  1200mV 
+    s6                            0    0      0 unknown   504mV     0mA   504mV   992mV 
+ lcd_pwr                          0    1      0 unknown  3300mV     0mA  3300mV  3300mV 
+    c994000.dsi.0-avdd            0                                 0mA     0mV     0mV

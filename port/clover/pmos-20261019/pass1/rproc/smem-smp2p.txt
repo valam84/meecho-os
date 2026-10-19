@@ -1,0 +1,7 @@
+# sh -c ls -l /sys/bus/platform/drivers/qcom-smp2p /sys/bus/platform/drivers/qcom_smsm /sys/bus/platform/drivers/qcom-smem 2>&1
+ls: /sys/bus/platform/drivers/qcom-smp2p: No such file or directory
+ls: /sys/bus/platform/drivers/qcom_smsm: No such file or directory
+/sys/bus/platform/drivers/qcom-smem:
+total 0
+lrwxrwxrwx    1 root     root             0 Oct 19 22:08 smem -> ../../../../devices/platform/smem
+--w-------    1 root     root          4096 Oct 19 21:38 uevent

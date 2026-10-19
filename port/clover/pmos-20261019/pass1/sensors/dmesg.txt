@@ -1,0 +1,19 @@
+# sh -c dmesg | grep -i -E "slpi|smgr|sns|iio|sensor|accel|gyro|prox|mag"
+[    0.000000] [Firmware Bug]: Kernel image misaligned at boot, please fix your bootloader!
+[    0.718926] Trying to unpack rootfs image as initramfs...
+[    1.093247] input: gpio-hall-sensor as /devices/platform/gpio-hall-sensor/input/input3
+[    3.756931] fb0: sys_imageblit: framebuffer is not in virtual address space.
+[   14.794185] systemd[1]: Reached target Image Downloads.
+[   22.651131] remoteproc remoteproc1: Booting fw image adsp.mdt, size 8028
+[   22.861683] remoteproc remoteproc2: Booting fw image cdsp.mdt, size 7068
+[   23.584222] qcom_sns_reg.qcom-sns-reg qcom_common.sns-reg.1: Direct firmware load for qcom/sensors/sns.reg-xiaomi,clover-lte failed with error -2
+[   23.585116] qcom_sns_reg.qcom-sns-reg qcom_common.sns-reg.1: firmware loaded, error above can be ignored.
+[   24.019390] qcom_smgr 5-55: 0x00,0: BOSCH BMI120 Accelerometer
+[   24.022014] qcom_smgr 5-55: 0x00,1: BOSCH BMI120 Temperature
+[   24.027971] qcom_smgr 5-55: 0x0a,0: BOSCH BMI120 Gyroscope
+[   24.027989] qcom_smgr 5-55: 0x0a,1: BOSCH BMI120 Temperature
+[   24.031151] qcom_smgr 5-55: 0x14,0: AKM AK09918 Magnetometer
+[   24.043326] qcom_smgr 5-55: 0x28,0: Capella CM3232 ALS
+[   24.046076] qcom_smgr 5-55: 0x50,0: ROHM_SEMICONDUCTOR BU52061NVX ROHM_Hall_Effect
+[   30.329572] remoteproc remoteproc0: Booting fw image mba.mbn, size 238256
+[   32.813283] ath10k_snoc 18800000.wifi: qmi fw_version 0x101f81f0 fw_build_timestamp 2018-08-31 21:42 fw_build_id QC_IMAGE_VERSION_STRING=WLAN.HL.1.0.1.c2-00496-QCAHLSWMTPLZ-1

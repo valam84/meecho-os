@@ -1,0 +1,7 @@
+# sh -c for r in /sys/class/remoteproc/*; do echo "== $r $(cat $r/name) $(cat $r/state) $(cat $r/firmware 2>/dev/null)"; readlink -f $r; done
+== /sys/class/remoteproc/remoteproc0 4080000.remoteproc running mba.mbn
+/sys/devices/platform/soc@0/4080000.remoteproc/remoteproc/remoteproc0
+== /sys/class/remoteproc/remoteproc1 adsp running adsp.mdt
+/sys/devices/platform/soc@0/15700000.remoteproc/remoteproc/remoteproc1
+== /sys/class/remoteproc/remoteproc2 cdsp running cdsp.mdt
+/sys/devices/platform/soc@0/1a300000.remoteproc/remoteproc/remoteproc2

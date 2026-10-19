@@ -1,0 +1,81 @@
+00100000-00193fff : 100000.clock-controller clock-controller@100000
+00290000-0029ffff : 290000.sram sram@290000
+00780000-0078621b : 780000.qfprom qfprom@780000
+00793000-00793fff : 793000.rng rng@793000
+01008000-0107ffff : 1008000.interconnect interconnect@1008000
+010ac000-010ac003 : 10ac000.restart restart@10ac000
+010ad000-010adfff : 10ae000.thermal-sensor thermal-sensor@10ae000
+010ae000-010aefff : 10ae000.thermal-sensor thermal-sensor@10ae000
+01500000-0150ffff : 1500000.interconnect interconnect@1500000
+01626000-0162d08f : 1626000.interconnect interconnect@1626000
+016c0000-016fffff : 16c0000.iommu iommu@16c0000
+01704000-017100ff : 1704000.interconnect interconnect@1704000
+01745000-0174f00f : 1745000.interconnect interconnect@1745000
+01f40000-01f5ffff : 1f40000.hwlock hwlock@1f40000
+03100000-034fffff : 3100000.pinctrl south
+03500000-038fffff : 3100000.pinctrl center
+03900000-03cfffff : 3100000.pinctrl north
+04080000-040800ff : 4080000.remoteproc qdsp6
+04180000-0418003f : 4080000.remoteproc rmb
+05040000-0504ffff : 5040000.iommu iommu@5040000
+05065000-0506e037 : 5065000.clock-controller clock-controller@5065000
+05100000-0513ffff : 5100000.iommu iommu@5100000
+05180000-051bffff : 5180000.iommu iommu@5180000
+0800a000-0800cfff : 800f000.spmi cnfg
+08400000-093fffff : 800f000.spmi chnls
+09400000-0a3fffff : 800f000.spmi obsrvr
+0a400000-0a61ffff : 800f000.spmi intr
+0a80c100-0a80c8cf : a800000.usb usb@a800000
+0a8f8800-0a8f8bff : a8f8800.usb usb@a8f8800
+0c012000-0c01217f : c012000.phy phy@c012000
+0c084000-0c084fff : c084000.mmc hc
+0c0c4000-0c0c4fff : c0c4000.mmc hc
+0c144000-0c162fff : c144000.dma-controller dma-controller@c144000
+0c177000-0c1775ff : c177000.i2c i2c@c177000
+0c184000-0c1a2fff : c184000.dma-controller dma-controller@c184000
+0c1af000-0c1af1ff : msm_serial
+0c8c0000-0c8fffff : c8c0000.clock-controller clock-controller@c8c0000
+0c900000-0c900fff : c900000.display-subsystem mdss_phys
+0c9b0000-0c9b103f : c901000.display-controller vbif_phys
+0cc00000-0ccfefff : cc00000.video-codec video-codec@cc00000
+0cd00000-0cd3ffff : cd00000.iommu iommu@cd00000
+14780000-147cefff : 14780000.ipa ipa@14780000
+15070000-1508ffff : 15070000.pinctrl pinctrl@15070000
+152c0000-152c03ff : 152c0000.audio-codec audio-codec@152c0000
+17900000-1790dfff : 17900000.interconnect interconnect@17900000
+17911000-17911fff : 17911000.mailbox mailbox@17911000
+17921000-17921fff : arch_mem_timer
+17a00000-17a0ffff : GICD
+17b00000-17bfffff : GICR
+80000000-855fffff : System RAM
+  80080000-8156ffff : Kernel code
+  81570000-816effff : reserved
+  816f0000-819cffff : Kernel data
+  83200000-8320ffff : reserved
+  83400000-83eddfff : reserved
+85600000-894fffff : reserved
+89500000-8abfffff : System RAM
+8ac00000-950fffff : reserved
+  92a00000-948fffff : 15700000.remoteproc adsp@92a00000
+  94b00000-950fffff : 1a300000.remoteproc cdsp@94b00000
+95100000-9cbfffff : System RAM
+9cc00000-9dcc9fff : reserved
+9dcca000-bfffbfff : System RAM
+  9fe00000-9fefffff : reserved
+bfffc000-bfffffff : reserved
+  bfffc000-bfffffff : reserved
+c0000000-f0afffff : System RAM
+f0b00000-f0b01fff : reserved
+f0b02000-f5ffffff : System RAM
+f6000000-f7bfffff : reserved
+f7c00000-17e4bffff : System RAM
+  fa000000-ffffffff : reserved
+  179500000-17dbfffff : reserved
+  17dc1f000-17dcdefff : reserved
+  17dcdf000-17dcdffff : reserved
+  17dce2000-17dce2fff : reserved
+  17dce3000-17dce4fff : reserved
+  17dce5000-17dce5fff : reserved
+  17dce6000-17dcf6fff : reserved
+  17dcf7000-17dd57fff : reserved
+  17dd58000-17e4bffff : reserved

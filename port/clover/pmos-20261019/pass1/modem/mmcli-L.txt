@@ -1,0 +1,2 @@
+# mmcli -L
+    /org/freedesktop/ModemManager1/Modem/0 [QUALCOMM INCORPORATED] 0

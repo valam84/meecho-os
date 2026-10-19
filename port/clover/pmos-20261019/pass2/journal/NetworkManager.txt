@@ -1,0 +1,102 @@
+# journalctl -b -u NetworkManager --no-pager -o short-monotonic
+[   30.306024] xiaomi-clover systemd[1]: Starting Network Manager...
+[   30.494754] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.3144] NetworkManager (version 1.52.2) is starting... (boot:c703921b-8675-48b8-85f3-75504a42a493)
+[   30.494810] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.3145] Read config: /etc/NetworkManager/NetworkManager.conf, /usr/lib/NetworkManager/conf.d/{50-connectivity.conf,50-hostname-mode.conf,50-nftables.conf,50-random-mac.conf,50-tethering.conf,50-use-dnsmasq.conf}
+[   30.558057] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.3777] manager[0xffff9e85f5f0]: monitoring kernel firmware directory '/lib/firmware'.
+[   30.876411] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.6961] hostname: hostname: using hostnamed
+[   30.876484] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.6962] hostname: static hostname changed from (none) to "xiaomi-clover"
+[   30.878010] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.6977] dns-mgr: init: dns=dnsmasq,systemd-resolved rc-manager=symlink (auto), plugin=dnsmasq
+[   30.885106] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7048] manager[0xffff9e85f5f0]: rfkill: Wi-Fi hardware radio set enabled
+[   30.885198] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7049] manager[0xffff9e85f5f0]: rfkill: WWAN hardware radio set enabled
+[   30.928928] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7486] Loaded device plugin: NMWifiFactory (/usr/lib/NetworkManager/1.52.2/libnm-device-plugin-wifi.so)
+[   30.941808] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7614] Loaded device plugin: NMBluezManager (/usr/lib/NetworkManager/1.52.2/libnm-device-plugin-bluetooth.so)
+[   30.943905] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7635] Loaded device plugin: NMWwanFactory (/usr/lib/NetworkManager/1.52.2/libnm-device-plugin-wwan.so)
+[   30.944635] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7643] manager: rfkill: Wi-Fi enabled by radio killswitch; enabled by state file
+[   30.944839] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7645] manager: rfkill: WWAN enabled by radio killswitch; enabled by state file
+[   30.944997] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7647] manager: Networking is enabled by state file
+[   30.952170] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7718] settings: Loaded settings plugin: ifupdown ("/usr/lib/NetworkManager/1.52.2/libnm-settings-plugin-ifupdown.so")
+[   30.952299] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7720] settings: Loaded settings plugin: keyfile (internal)
+[   30.952360] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7721] ifupdown: management mode: unmanaged
+[   30.953756] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7735] ifupdown: interfaces file /etc/network/interfaces doesn't exist
+[   30.977030] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7967] dhcp: init: Using DHCP client 'internal'
+[   30.978145] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.7978] manager: (lo): new Loopback device (/org/freedesktop/NetworkManager/Devices/1)
+[   30.984522] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8042] device (lo): state change: unmanaged -> unavailable (reason 'connection-assumed', managed-type: 'external')
+[   30.986118] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8057] device (lo): state change: unavailable -> disconnected (reason 'connection-assumed', managed-type: 'external')
+[   30.988805] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8085] device (lo): Activation: starting connection 'lo' (134d35ef-0604-49ba-a130-37226b16e39d)
+[   30.992264] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8119] manager: (ipa_lan0): new Generic device (/org/freedesktop/NetworkManager/Devices/2)
+[   30.995389] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8151] device (usb0): carrier: link connected
+[   30.998730] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8184] manager: (usb0): new Ethernet device (/org/freedesktop/NetworkManager/Devices/3)
+[   31.000526] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8202] device (usb0): state change: unmanaged -> unavailable (reason 'managed', managed-type: 'external')
+[   31.023338] xiaomi-clover systemd[1]: Started Network Manager.
+[   31.024655] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8443] bus-manager: acquired D-Bus service "org.freedesktop.NetworkManager"
+[   31.042740] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8624] device (lo): state change: disconnected -> prepare (reason 'none', managed-type: 'external')
+[   31.043954] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8636] device (lo): state change: prepare -> config (reason 'none', managed-type: 'external')
+[   31.044901] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8646] device (lo): state change: config -> ip-config (reason 'none', managed-type: 'external')
+[   31.049156] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8688] device (lo): state change: ip-config -> ip-check (reason 'none', managed-type: 'external')
+[   31.052410] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8720] device (usb0): state change: unavailable -> disconnected (reason 'none', managed-type: 'full')
+[   31.054791] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8744] policy: auto-activating connection 'USB Networking' (83bd1823-feca-4c2b-9205-4b83dc792e1f)
+[   31.062275] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8819] device (usb0): Activation: starting connection 'USB Networking' (83bd1823-feca-4c2b-9205-4b83dc792e1f)
+[   31.062532] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8822] modem-manager: oFono is not available
+[   31.063405] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8831] device (usb0): state change: disconnected -> prepare (reason 'none', managed-type: 'full')
+[   31.065659] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8853] manager: NetworkManager state is now CONNECTING
+[   31.068638] xiaomi-clover NetworkManager[2559]: <warn>  [1792435127.8883] platform-linux: do-change-link[2]: failure 16 (Resource busy)
+[   31.076987] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8966] device (usb0): set-hw-addr: set-cloned MAC address to 9A:AC:C5:FC:24:97 (stable)
+[   31.079043] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.8987] device (usb0): state change: prepare -> config (reason 'none', managed-type: 'full')
+[   31.082458] xiaomi-clover NetworkManager[2559]: <info>  [1792435127.9021] device (usb0): state change: config -> ip-config (reason 'none', managed-type: 'full')
+[   31.206660] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.0263] device (lo): state change: ip-check -> secondaries (reason 'none', managed-type: 'external')
+[   31.207404] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.0270] device (lo): state change: secondaries -> activated (reason 'none', managed-type: 'external')
+[   31.209354] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.0290] device (lo): Activation: successful, device activated.
+[   31.246158] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.0658] device (usb0): state change: ip-config -> ip-check (reason 'none', managed-type: 'full')
+[   31.352109] xiaomi-clover NetworkManager[2559]: <warn>  [1792435128.1716] dispatcher: (4) /usr/lib/NetworkManager/dispatcher.d/50-dns-filter.sh failed (failed): Script '/usr/lib/NetworkManager/dispatcher.d/50-dns-filter.sh' exited with status 1
+[   31.393271] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.2129] device (usb0): state change: ip-check -> secondaries (reason 'none', managed-type: 'full')
+[   31.394209] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.2139] device (usb0): state change: secondaries -> activated (reason 'none', managed-type: 'full')
+[   31.395526] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.2152] manager: NetworkManager state is now CONNECTED_LOCAL
+[   31.396499] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.2162] device (usb0): Activation: successful, device activated.
+[   31.398389] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.2181] manager: startup complete
+[   31.415244] xiaomi-clover NetworkManager[2559]: ((../src/libnm-systemd-core/src/libsystemd/sd-event/sd-event.c:4488)): assertion '<dropped>' failed
+[   31.703375] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.5230] audit: op="connection-update" uuid="83bd1823-feca-4c2b-9205-4b83dc792e1f" name="USB Networking" args="connection.timestamp" pid=2718 uid=0 result="success"
+[   31.789325] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.6090] audit: op="connection-update" uuid="83bd1823-feca-4c2b-9205-4b83dc792e1f" name="USB Networking" pid=2724 uid=0 result="success"
+[   31.894206] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.7138] audit: op="connection-update" uuid="83bd1823-feca-4c2b-9205-4b83dc792e1f" name="USB Networking" pid=2736 uid=0 result="success"
+[   31.984713] xiaomi-clover NetworkManager[2559]: <info>  [1792435128.8043] audit: op="connection-update" uuid="83bd1823-feca-4c2b-9205-4b83dc792e1f" name="USB Networking" pid=2743 uid=0 result="success"
+[   33.085707] xiaomi-clover NetworkManager[2559]: <warn>  [1792435129.9053] dispatcher: (6) /usr/lib/NetworkManager/dispatcher.d/50-dns-filter.sh failed (failed): Script '/usr/lib/NetworkManager/dispatcher.d/50-dns-filter.sh' exited with status 1
+[   33.462251] xiaomi-clover NetworkManager[2559]: <info>  [1792435130.2818] device (usb0): carrier: link connected
+[   34.302075] xiaomi-clover NetworkManager[2559]: <info>  [1792435131.1217] modem-manager: ModemManager not available
+[   35.043893] xiaomi-clover NetworkManager[2559]: <info>  [1792435131.8635] modem-manager: ModemManager now available
+[   36.098384] xiaomi-clover NetworkManager[2559]: <info>  [1792435132.9180] device (wlan0): driver supports Access Point (AP) mode
+[   36.101099] xiaomi-clover NetworkManager[2559]: <info>  [1792435132.9207] manager: (wlan0): new 802.11 Wi-Fi device (/org/freedesktop/NetworkManager/Devices/4)
+[   36.120295] xiaomi-clover NetworkManager[2559]: <info>  [1792435132.9400] rfkill1: found Wi-Fi radio killswitch (at /sys/devices/platform/soc@0/18800000.wifi/ieee80211/phy0/rfkill1) (driver ath10k_snoc)
+[   36.139515] xiaomi-clover NetworkManager[2559]: <info>  [1792435132.9592] device (wlan0): state change: unmanaged -> unavailable (reason 'managed', managed-type: 'external')
+[   36.563008] xiaomi-clover NetworkManager[2559]: <info>  [1792435133.3827] device (wlan0): set-hw-addr: set MAC address to 4A:65:02:57:E8:F2 (scanning)
+[   37.030152] xiaomi-clover NetworkManager[2559]: <info>  [1792435133.8498] device (wlan0): supplicant interface state: internal-starting -> disconnected
+[   37.030439] xiaomi-clover NetworkManager[2559]: <info>  [1792435133.8501] Wi-Fi P2P device controlled by interface wlan0 created
+[   37.031356] xiaomi-clover NetworkManager[2559]: <info>  [1792435133.8510] manager: (p2p-dev-wlan0): new 802.11 Wi-Fi P2P device (/org/freedesktop/NetworkManager/Devices/5)
+[   37.032219] xiaomi-clover NetworkManager[2559]: <info>  [1792435133.8519] device (p2p-dev-wlan0): state change: unmanaged -> unavailable (reason 'managed', managed-type: 'external')
+[   37.034292] xiaomi-clover NetworkManager[2559]: <info>  [1792435133.8540] device (wlan0): state change: unavailable -> disconnected (reason 'supplicant-available', managed-type: 'full')
+[   37.036079] xiaomi-clover NetworkManager[2559]: <info>  [1792435133.8557] device (p2p-dev-wlan0): state change: unavailable -> disconnected (reason 'none', managed-type: 'full')
+[   39.350492] xiaomi-clover NetworkManager[2559]: <info>  [1792435136.1701] manager: (qrtr0): new Broadband device (/org/freedesktop/NetworkManager/Devices/6)
+[   39.351412] xiaomi-clover NetworkManager[2559]: <info>  [1792435136.1711] device (qrtr0): state change: unmanaged -> unavailable (reason 'managed', managed-type: 'external')
+[   39.352479] xiaomi-clover NetworkManager[2559]: <info>  [1792435136.1721] device (qrtr0): modem state 'enabling'
+[   39.354003] xiaomi-clover NetworkManager[2559]: <info>  [1792435136.1737] device (qrtr0): state change: unavailable -> disconnected (reason 'none', managed-type: 'full')
+[   54.169110] xiaomi-clover NetworkManager[2559]: <info>  [1792435150.9886] agent-manager: agent[1baabbe47a8fe0a2,:1.47/mobi.phosh.Shell.NetworkAgent/113]: agent registered
+[  194.996116] xiaomi-clover NetworkManager[2559]: <info>  [1792435291.8157] agent-manager: agent[d058751f4826ea98,:1.94/mobi.phosh.Shell.NetworkAgent/10000]: agent registered
+[  449.054841] xiaomi-clover NetworkManager[2559]: <info>  [1792435545.8745] device (wlan0): set-hw-addr: set MAC address to 8E:04:04:C6:7A:19 (scanning)
+[  449.178372] xiaomi-clover NetworkManager[2559]: <info>  [1792435545.9980] device (wlan0): supplicant interface state: disconnected -> interface_disabled
+[  449.178432] xiaomi-clover NetworkManager[2559]: <info>  [1792435545.9981] device (p2p-dev-wlan0): supplicant management interface state: disconnected -> interface_disabled
+[  449.194427] xiaomi-clover NetworkManager[2559]: <info>  [1792435546.0141] device (wlan0): supplicant interface state: interface_disabled -> inactive
+[  449.194499] xiaomi-clover NetworkManager[2559]: <info>  [1792435546.0142] device (p2p-dev-wlan0): supplicant management interface state: interface_disabled -> inactive
+[  570.089408] xiaomi-clover NetworkManager[2559]: <info>  [1792435666.9091] device (usb0): carrier: link connected
+[  861.028418] xiaomi-clover NetworkManager[2559]: <info>  [1792435957.8480] device (wlan0): set-hw-addr: set MAC address to 16:5E:B5:87:77:A5 (scanning)
+[  861.142600] xiaomi-clover NetworkManager[2559]: <info>  [1792435957.9622] device (wlan0): supplicant interface state: inactive -> interface_disabled
+[  861.142693] xiaomi-clover NetworkManager[2559]: <info>  [1792435957.9624] device (p2p-dev-wlan0): supplicant management interface state: inactive -> interface_disabled
+[  861.155077] xiaomi-clover NetworkManager[2559]: <info>  [1792435957.9747] device (wlan0): supplicant interface state: interface_disabled -> inactive
+[  861.155300] xiaomi-clover NetworkManager[2559]: <info>  [1792435957.9749] device (p2p-dev-wlan0): supplicant management interface state: interface_disabled -> inactive
+[ 1270.134435] xiaomi-clover NetworkManager[2559]: <info>  [1792436366.9541] device (wlan0): set-hw-addr: set MAC address to BE:6E:92:ED:D6:CD (scanning)
+[ 1270.251286] xiaomi-clover NetworkManager[2559]: <info>  [1792436367.0709] device (wlan0): supplicant interface state: inactive -> interface_disabled
+[ 1270.251389] xiaomi-clover NetworkManager[2559]: <info>  [1792436367.0711] device (p2p-dev-wlan0): supplicant management interface state: inactive -> interface_disabled
+[ 1270.267010] xiaomi-clover NetworkManager[2559]: <info>  [1792436367.0866] device (wlan0): supplicant interface state: interface_disabled -> inactive
+[ 1270.267128] xiaomi-clover NetworkManager[2559]: <info>  [1792436367.0868] device (p2p-dev-wlan0): supplicant management interface state: interface_disabled -> inactive
+[ 1676.046759] xiaomi-clover NetworkManager[2559]: <info>  [1792436772.8664] device (wlan0): set-hw-addr: set MAC address to B6:47:69:9A:43:02 (scanning)
+[ 1676.156807] xiaomi-clover NetworkManager[2559]: <info>  [1792436772.9765] device (wlan0): supplicant interface state: inactive -> interface_disabled
+[ 1676.156867] xiaomi-clover NetworkManager[2559]: <info>  [1792436772.9766] device (p2p-dev-wlan0): supplicant management interface state: inactive -> interface_disabled
+[ 1676.174337] xiaomi-clover NetworkManager[2559]: <info>  [1792436772.9940] device (wlan0): supplicant interface state: interface_disabled -> inactive
+[ 1676.174415] xiaomi-clover NetworkManager[2559]: <info>  [1792436772.9941] device (p2p-dev-wlan0): supplicant management interface state: interface_disabled -> inactive

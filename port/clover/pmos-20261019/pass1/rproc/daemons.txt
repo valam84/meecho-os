@@ -1,0 +1,11 @@
+# sh -c for p in rmtfs tqftpserv pd-mapper qrtr-ns ModemManager iwd wpa_supplicant NetworkManager hexagonrpcd msm-modem-uim-selection; do echo "== $p: $(pidof $p)"; done
+== rmtfs: 2553
+== tqftpserv: 2527
+== pd-mapper: 
+== qrtr-ns: 
+== ModemManager: 2822
+== iwd: 
+== wpa_supplicant: 2534
+== NetworkManager: 2559
+== hexagonrpcd: 
+== msm-modem-uim-selection: 

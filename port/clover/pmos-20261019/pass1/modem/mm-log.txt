@@ -1,0 +1,1 @@
+# sh -c tail -n 400 /var/log/messages 2>&1 | grep -i -E "modemmanager|qmi|mm-|rmtfs"

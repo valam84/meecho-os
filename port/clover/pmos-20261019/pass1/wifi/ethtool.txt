@@ -1,0 +1,11 @@
+# sh -c for i in /sys/class/net/wlan*; do ethtool -i $(basename $i); done
+driver: ath10k_snoc
+version: 6.19.10-sdm660-ipa
+firmware-version: 1.0.0.571
+expansion-rom-version: 
+bus-info: 18800000.wifi
+supports-statistics: yes
+supports-test: no
+supports-eeprom-access: no
+supports-register-dump: no
+supports-priv-flags: no

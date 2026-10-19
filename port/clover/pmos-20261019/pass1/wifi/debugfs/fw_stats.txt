@@ -1,0 +1,63 @@
+
+             ath10k PDEV stats
+             =================
+
+           Channel noise floor          0
+              Channel TX power         63
+                TX frame count          0
+                RX frame count          0
+                RX clear count          0
+                   Cycle count          0
+               PHY error count        183
+
+          ath10k PDEV TX stats
+             =================
+
+            HTT cookies queued          0
+             HTT cookies disp.          0
+                   MSDU queued        220
+                   MPDU queued        220
+                 MSDUs dropped          0
+                  Local enqued        220
+                   Local freed        220
+                     HW queued       1254
+                  PPDUs reaped       1254
+                 Num underruns          0
+                 PPDUs cleaned          0
+                MPDUs requeued          0
+             Excessive retries          0
+                       HW rate       1254
+           Sched self triggers          0
+     Dropped due to SW retries          3
+       Illegal rate phy errors          0
+        Pdev continuous xretry          0
+                    TX timeout          0
+                   PDEV resets          0
+                  PHY underrun          0
+  MPDU is more than txop limit          0
+
+          ath10k PDEV RX stats
+             =================
+
+         Mid PPDU route change          0
+       Tot. number of statuses          0
+        Extra frags on rings 0       1254
+        Extra frags on rings 1          0
+        Extra frags on rings 2       1254
+        Extra frags on rings 3          0
+        MSDUs delivered to HTT          0
+        MPDUs delivered to HTT          0
+      MSDUs delivered to stack          0
+      MPDUs delivered to stack          0
+              Oversized AMSDUs          0
+                    PHY errors          0
+              PHY errors drops          0
+   MPDU errors (FCS, MIC, ENC)       1868
+
+             ath10k VDEV stats (0)
+             =================
+
+
+             ath10k PEER stats (0)
+             =================
+

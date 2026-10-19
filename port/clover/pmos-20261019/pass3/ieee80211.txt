@@ -1,0 +1,5 @@
+phy0/address_mask = 00:00:00:00:00:00 
+phy0/addresses = b6:ae:57:0d:0c:92 
+phy0/index = 0 
+phy0/macaddress = b6:ae:57:0d:0c:92 
+phy0/name = phy0 

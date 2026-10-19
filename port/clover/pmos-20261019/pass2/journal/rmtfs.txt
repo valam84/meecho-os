@@ -1,0 +1,4 @@
+# journalctl -b -u rmtfs --no-pager -o short-monotonic
+[   30.298093] xiaomi-clover systemd[1]: Started Qualcomm remotefs service.
+[   31.856307] xiaomi-clover rmtfs[2553]: [RMTFS storage] request for unknown partition '/boot/modem_fsg_oem_1', rejecting
+[   31.858273] xiaomi-clover rmtfs[2553]: [RMTFS storage] request for unknown partition '/boot/modem_fsg_oem_2', rejecting

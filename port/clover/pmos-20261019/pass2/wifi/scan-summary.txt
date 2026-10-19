@@ -1,0 +1,1 @@
+networks seen: 21 (2.4 GHz: 13, 5 GHz: 8); names not kept

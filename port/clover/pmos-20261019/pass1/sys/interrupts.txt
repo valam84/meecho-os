@@ -1,0 +1,107 @@
+           CPU0       CPU1       CPU2       CPU3       CPU4       CPU5       CPU6       CPU7       
+ 11:      26394      26435      20416      21147      19171      19489      19563      16083    GICv3  19 Level     arch_timer
+ 14:      10144          0          0          0          0          0          0          0    GICv3 200 Edge      glink-rpm
+ 15:          0          0          0          0          0          0          0          0    GICv3 270 Level     bam_dma
+ 16:        475          0          0          0          0          0          0          0    GICv3 271 Level     bam_dma
+ 17:          3          0          0          0          0          0          0          0    GICv3 190 Edge      smp2p-adsp
+ 18:          3          0          0          0          0          0          0          0    GICv3 483 Edge      smp2p-mpss
+ 19:          4          0          0          0          0          0          0          0    GICv3 546 Edge      smp2p-cdsp
+ 20:        309          0          0          0          0          0          0          0    GICv3 145 Level     msm_serial1
+ 21:          0          0          0          0          0          0          0          0    GICv3 261 Level     arm-smmu global fault, arm-smmu global fault, arm-smmu global fault, arm-smmu global fault, arm-smmu global fault
+ 22:          0          0          0          0          0          0          0          0    GICv3 263 Level     arm-smmu global fault, arm-smmu global fault, arm-smmu global fault, arm-smmu global fault, arm-smmu global fault
+ 23:          0          0          0          0          0          0          0          0    GICv3 405 Level     arm-smmu-context-fault
+ 52:          0          0          0          0          0          0          0          0    GICv3 361 Level     arm-smmu-context-fault
+ 60:          0          0          0          0          0          0          0          0    GICv3 258 Level     arm-smmu-context-fault
+ 61:          0          0          0          0          0          0          0          0    GICv3 425 Level     arm-smmu-context-fault
+ 62:          0          0          0          0          0          0          0          0    GICv3 426 Level     arm-smmu-context-fault
+ 63:          0          0          0          0          0          0          0          0    GICv3 427 Level     arm-smmu-context-fault
+ 64:          0          0          0          0          0          0          0          0    GICv3 428 Level     arm-smmu-context-fault
+ 77:          0          0          0          0          0          0          0          0    GICv3 295 Level     arm-smmu-context-fault
+ 78:          0          0          0          0          0          0          0          0    GICv3 298 Level     arm-smmu-context-fault
+101:          0          0          0          0          0          0          0          0    GICv3 565 Level     arm-smmu-context-fault
+102:          0          0          0          0          0          0          0          0    GICv3 566 Level     arm-smmu-context-fault
+103:          0          0          0          0          0          0          0          0    GICv3 567 Level     arm-smmu-context-fault
+104:          0          0          0          0          0          0          0          0    GICv3 568 Level     arm-smmu-context-fault
+105:          0          0          0          0          0          0          0          0    GICv3 569 Level     arm-smmu-context-fault
+106:          0          0          0          0          0          0          0          0    GICv3 570 Level     arm-smmu-context-fault
+107:          0          0          0          0          0          0          0          0    GICv3 571 Level     arm-smmu-context-fault
+108:          0          0          0          0          0          0          0          0    GICv3 572 Level     arm-smmu-context-fault
+109:          0          0          0          0          0          0          0          0    GICv3 573 Level     arm-smmu-context-fault
+119:          0          0          0          0          0          0          0          0    GICv3 275 Level     ss_phy_irq
+120:          0          0          0          0          0          0          0          0    GICv3 379 Level     qusb2_phy
+121:          0          0          0          0          0          0          0          0 pmic_arb 101777459 Edge      pm8xxx_rtc_alarm
+122:        725          0          0          0          0          0          0          0    GICv3 129 Level     i2c_qup
+123:          4          0          0          0          0          0          0          0 pmic_arb 8388612 Edge      pm8941_pwrkey
+124:          0          0          0          0          0          0          0          0 pmic_arb 8454148 Edge      pm8941_resin
+125:          0          0          0          0          0          0          0          0    GICv3 216 Level     10ae000.thermal-sensor
+126:          0          0          0          0          0          0          0          0    GICv3 462 Level     10ae000.thermal-sensor
+128:      25410      25929      16352      12761      13207      15452      21633      17786    GICv3  39 Level     arch_mem_timer
+129:          0          0          0          0          0          0          0          0    GICv3  22 Level     arm-pmu
+130:          0          0          0          0          0          0          0          0 pmic_arb 1031929908 Edge      wled_short_irq
+131:          0          0          0          0          0          0          0          0 pmic_arb 1031864372 Edge      wled_ovp_irq
+132:      10798          0          0          0          0          0          0          0    GICv3 163 Level     dwc3
+133:         26          0          0          0          0          0          0          0    GICv3 157 Level     mmc2
+134:      17089          0          0          0          0          0          0          0    GICv3 142 Level     mmc1
+135:          0          0          0          0          0          0          0          0 spmi-gpio   6 Edge      Volume Up
+136:          0          0          0          0          0          0          0          0  msmgpio  75 Edge      Hall Effect Sensor
+137:          2          0          0          0          0          0          0          0    GICv3 144 Level     c0c4000.mmc
+138:          4          0          0          0          0          0          0          0    GICv3 253 Level     c084000.mmc
+139:          2          0          0          0          0          0          0          0  msmgpio  54 Edge      c084000.mmc cd
+140:        235          0          0          0          0          0          0          0  msmgpio  67 Edge      edt-ft5406
+141:          0          0          0          0          0          0          0          0 pmic_arb 19005449 Edge      bat-ov
+142:          3          0          0          0          0          0          0          0 pmic_arb 20185098 Edge      usb-plugin
+143:          0          0          0          0          0          0          0          0 pmic_arb 20316170 Edge      usbin-icl-change
+144:          0          0          0          0          0          0          0          0 pmic_arb 23134221 Edge      wdog-bark
+145:          0          0          0          0          0          0          0          0 pmic_arb 67305502 Edge      soc-delta
+147:       4401          0          0          0          0          0          0          0 msm_mdss   0 Edge      msm
+148:        789          0          0          0          0          0          0          0 msm_mdss   4 Edge      dsi_isr
+149:       2972          0          0          0          0          0          0          0    GICv3 332 Level     gpu-irq
+150:          1          0          0          0          0          0          0          0    GICv3 365 Level     ipa
+151:          0          0          0          0          0          0          0          0    GICv3 464 Level     ipa-dma
+152:          0          0          0          0          0          0          0          0    GICv3 480 Edge      q6v5 wdog
+153:          1          0          0          0          0          0          0          0 pmic_arb 51380246 Edge      pm-adc5
+154:          0          0          0          0          0          0          0          0 smp2p-mpss   0 Edge      q6v5 fatal
+155:          1          0          0          0          0          0          0          0 smp2p-mpss   1 Edge      q6v5 ready
+156:          1          0          0          0          0          0          0          0 smp2p-mpss   2 Edge      q6v5 handover
+157:          0          0          0          0          0          0          0          0 smp2p-mpss   3 Edge      q6v5 stop
+158:          0          0          0          0          0          0          0          0 smp2p-mpss   7 Edge      q6v5 shutdown-ack
+159:          0          0          0          0          0          0          0          0    GICv3 194 Edge      q6v5 wdog
+160:          0          0          0          0          0          0          0          0 smp2p-adsp   0 Edge      q6v5 fatal
+161:          1          0          0          0          0          0          0          0 smp2p-adsp   1 Edge      q6v5 ready
+162:          1          0          0          0          0          0          0          0 smp2p-adsp   2 Edge      q6v5 handover
+163:          0          0          0          0          0          0          0          0 smp2p-adsp   3 Edge      q6v5 stop
+164:          0          0          0          0          0          0          0          0    GICv3 550 Edge      q6v5 wdog
+165:          0          0          0          0          0          0          0          0 smp2p-cdsp   0 Edge      q6v5 fatal
+166:          1          0          0          0          0          0          0          0 smp2p-cdsp   1 Edge      q6v5 ready
+167:          1          0          0          0          0          0          0          0 smp2p-cdsp   2 Edge      q6v5 handover
+168:          0          0          0          0          0          0          0          0 smp2p-cdsp   3 Edge      q6v5 stop
+169:          0          0          0          0          0          0          0          0 pmic_arb 37748755 Edge      temp-alarm
+170:          9          0          0          0          0          0          0          0    GICv3 445 Level     WLAN_CE_0
+171:          3          0          0          0          0          0          0          0    GICv3 446 Level     WLAN_CE_1
+172:       5431          0          0          0          0          0          0          0    GICv3 447 Level     WLAN_CE_2
+173:        394          0          0          0          0          0          0          0    GICv3 448 Level     WLAN_CE_3
+174:          0          0          0          0          0          0          0          0    GICv3 449 Level     WLAN_CE_4
+175:          0          0          0          0          0          0          0          0    GICv3 450 Level     WLAN_CE_5
+176:          0          0          0          0          0          0          0          0    GICv3 452 Level     WLAN_CE_6
+177:          0          0          0          0          0          0          0          0    GICv3 453 Level     WLAN_CE_7
+178:          0          0          0          0          0          0          0          0    GICv3 454 Level     WLAN_CE_8
+179:          0          0          0          0          0          0          0          0    GICv3 455 Level     WLAN_CE_9
+180:          0          0          0          0          0          0          0          0    GICv3 456 Level     WLAN_CE_10
+181:          0          0          0          0          0          0          0          0    GICv3 457 Level     WLAN_CE_11
+182:          0          0          0          0          0          0          0          0 pmic_arb 574619709 Edge      temp-alarm
+183:      77574          0          0          0          0          0          0          0    GICv3 189 Edge      glink-smem
+184:          0          0          0          0          0          0          0          0 pmic_arb 1057423405 Edge      mbhc switch irq
+185:          0          0          0          0          0          0          0          0 pmic_arb 1057292333 Edge      mbhc btn press irq
+186:        118          0          0          0          0          0          0          0    GICv3 545 Edge      glink-smem
+187:          0          0          0          0          0          0          0          0 pmic_arb 1057226797 Edge      mbhc btn release irq
+188:         10          0          0          0          0          0          0          0    GICv3 319 Level     venus
+189:       1582          0          0          0          0          0          0          0    GICv3 484 Edge      glink-smem
+IPI0:      2754       1559       1616       1226       1721       2794       3034       2492       Rescheduling interrupts
+IPI1:     40998      35884      35901      30951      29230      45744      34658      32826       Function call interrupts
+IPI2:         0          0          0          0          0          0          0          0       CPU stop interrupts
+IPI3:         0          0          0          0          0          0          0          0       CPU stop NMIs
+IPI4:      7596      18040      13838      13771      12263      10083      13891      11557       Timer broadcast interrupts
+IPI5:         0          0          0          0          0          0          0          0       IRQ work interrupts
+IPI6:         0          0          0          0          0          0          0          0       CPU backtrace interrupts
+IPI7:         0          0          0          0          0          0          0          0       KGDB roundup interrupts
+Err:          1

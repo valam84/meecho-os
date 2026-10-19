@@ -1,0 +1,32 @@
+# sh -c ls -lR /sys/kernel/debug/ieee80211 2>&1 | head -200
+/sys/kernel/debug/ieee80211:
+total 0
+drwxr-xr-x    3 root     root             0 Oct 19 21:38 phy0
+
+/sys/kernel/debug/ieee80211/phy0:
+total 0
+drwxr-xr-x    2 root     root             0 Oct 19 21:38 ath10k
+
+/sys/kernel/debug/ieee80211/phy0/ath10k:
+total 0
+-rw-------    1 root     root             0 Oct 19 21:38 ani_enable
+-r--------    1 root     root             0 Oct 19 21:38 chip_id
+-r--------    1 root     root             0 Oct 19 21:38 fw_checksums
+-rw-------    1 root     root             0 Oct 19 21:38 fw_dbglog
+-r--------    1 root     root             0 Oct 19 21:38 fw_reset_stats
+-r--------    1 root     root             0 Oct 19 21:38 fw_stats
+-rw-------    1 root     root             0 Oct 19 21:38 htt_max_amsdu_ampdu
+-rw-------    1 root     root             0 Oct 19 21:38 htt_stats_mask
+-rw-------    1 root     root             0 Oct 19 21:38 mem_value
+-rw-r--r--    1 root     root             0 Oct 19 21:38 pktlog_filter
+-rw-------    1 root     root             0 Oct 19 21:38 ps_state_enable
+-rw-------    1 root     root             0 Oct 19 21:38 reg_addr
+-rw-------    1 root     root             0 Oct 19 21:38 reg_value
+--w-------    1 root     root             0 Oct 19 21:38 reset_htt_stats
+-rw-------    1 root     root             0 Oct 19 21:38 simulate_fw_crash
+-rw-------    1 root     root             0 Oct 19 21:38 spectral_bins
+-rw-------    1 root     root             0 Oct 19 21:38 spectral_count
+-r--------    1 root     root             0 Oct 19 21:38 spectral_scan0
+-rw-------    1 root     root             0 Oct 19 21:38 spectral_scan_ctl
+-r--------    1 root     root             0 Oct 19 21:38 tpc_stats
+-r--------    1 root     root             0 Oct 19 21:38 wmi_services

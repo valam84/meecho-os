@@ -1,0 +1,6 @@
+firmware-N.bin		022c9087
+athwlan			00000000
+otp			00000000
+codeswap		00000000
+board-N.bin		ecd45d37
+board			380d3b6d

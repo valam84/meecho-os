@@ -1,0 +1,18 @@
+# sh -c ls -l /dev/qcom_rmtfs* /sys/class/rmtfs 2>&1; cat /proc/$(pidof rmtfs)/cmdline 2>/dev/null | tr "\0" " "; echo; ls -l /dev/disk/by-partlabel | grep -i -E "modemst|fsg|fsc|persist|modem|dsp|bluetooth"
+crw-------    1 root     root      236,   1 Oct 19 21:42 /dev/qcom_rmtfs_mem1
+
+/sys/class/rmtfs:
+total 0
+lrwxrwxrwx    1 root     root             0 Oct 19 22:08 qcom_rmtfs_mem1 -> ../../devices/platform/85e00000.memory/rmtfs/qcom_rmtfs_mem1
+/usr/bin/rmtfs -r -P -s 
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 bluetooth -> ../../mmcblk1p42
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 bluetoothbak -> ../../mmcblk1p43
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 dsp -> ../../mmcblk1p27
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 dspbak -> ../../mmcblk1p28
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 fsc -> ../../mmcblk1p44
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 fsg -> ../../mmcblk1p11
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 modem -> ../../mmcblk1p25
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 modembak -> ../../mmcblk1p26
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 modemst1 -> ../../mmcblk1p46
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 modemst2 -> ../../mmcblk1p47
+lrwxrwxrwx    1 root     root            16 Jan  1  1970 persist -> ../../mmcblk1p48

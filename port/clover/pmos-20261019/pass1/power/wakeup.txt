@@ -1,0 +1,3 @@
+# sh -c cat /sys/power/state /sys/power/mem_sleep 2>&1
+freeze mem disk
+[s2idle]

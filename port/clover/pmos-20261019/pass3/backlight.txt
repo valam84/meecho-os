@@ -1,0 +1,6 @@
+backlight/actual_brightness = 160 
+backlight/bl_power = 4 
+backlight/brightness = 160 
+backlight/max_brightness = 4095 
+backlight/scale = unknown 
+backlight/type = raw 

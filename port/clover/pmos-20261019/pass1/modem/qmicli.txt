@@ -1,0 +1,2 @@
+# sh -c for d in /dev/wwan*qmi* /dev/cdc-wdm*; do [ -e $d ] && { echo "== $d"; qmicli -d $d --dms-get-ids; qmicli -d $d --dms-get-revision; qmicli -d $d --dms-get-capabilities; qmicli -d $d --nas-get-serving-system; }; done; qmicli --help-all >/dev/null 2>&1 && echo qmicli-present
+qmicli-present

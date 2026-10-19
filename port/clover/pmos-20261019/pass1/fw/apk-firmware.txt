@@ -1,0 +1,33 @@
+# sh -c apk info -v | grep -i -E "firmware|msm|qcom|clover|rmtfs|tqftp|pd-mapper|qrtr|modem"
+WARNING: updating and opening http://mirror.postmarketos.org/postmarketos/extra-repos/systemd/v26.06/aarch64/APKINDEX.tar.gz: DNS: transient error (try again later)
+WARNING: updating and opening http://mirror.postmarketos.org/postmarketos/v26.06/aarch64/APKINDEX.tar.gz: DNS: transient error (try again later)
+WARNING: updating and opening http://cdn.alpinelinux.org/v3.24/main/aarch64/APKINDEX.tar.gz: DNS: transient error (try again later)
+WARNING: updating and opening http://cdn.alpinelinux.org/v3.24/community/aarch64/APKINDEX.tar.gz: DNS: transient error (try again later)
+alsa-ucm-conf-qcom-sdm660-1.2.15_git20260401-r0
+device-xiaomi-clover-11-r0
+device-xiaomi-clover-kernel-cloverlte-11-r0
+firmware-qcom-adreno-a530-20260110-r1
+firmware-xiaomi-clover-2-r1
+libqrtr-glib-1.4.0-r0
+linux-postmarketos-qcom-sdm660-6.19.10-r0
+modemmanager-1.25.95_git20260527-r1
+modemmanager-lang-1.25.95_git20260527-r1
+modemmanager-systemd-1.25.95_git20260527-r1
+modemmanager-udev-1.25.95_git20260527-r1
+msm-firmware-loader-1.8.0-r2
+msm-firmware-loader-systemd-1.8.0-r2
+msm-modem-13-r1
+msm-modem-uim-selection-13-r1
+msm-modem-uim-selection-systemd-13-r1
+postmarketos-base-ui-modemmanager-51-r0
+postmarketos-base-ui-modemmanager-systemd-51-r0
+qcom-diag-0_git20250324-r1
+qcom-diag-systemd-0_git20250324-r1
+qrtr-libs-1.2-r1
+rmtfs-1.3-r0
+rmtfs-systemd-1.3-r0
+rmtfs-udev-1.3-r0
+soc-qcom-sdm660-5-r0
+soc-qcom-sdm660-rproc-5-r0
+tqftpserv-1.1.1-r0
+tqftpserv-systemd-1.1.1-r0

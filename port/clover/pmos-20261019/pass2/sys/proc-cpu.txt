@@ -1,0 +1,4 @@
+# sh -c cat /sys/devices/system/cpu/possible /sys/devices/system/cpu/online; for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "== $p"; grep . $p/scaling_driver $p/scaling_cur_freq $p/scaling_available_frequencies $p/scaling_governor $p/related_cpus 2>/dev/null; done
+0-7
+0-7
+== /sys/devices/system/cpu/cpufreq/policy*

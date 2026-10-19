@@ -1,0 +1,3 @@
+# sh -c for d in /sys/bus/i2c/devices/*; do echo "$(basename $d) $(cat $d/name 2>/dev/null) $(basename $(readlink $d/driver) 2>/dev/null)"; done
+0-0038 edt-ft5406 edt_ft5x06
+i2c-0 QUP I2C adapter 

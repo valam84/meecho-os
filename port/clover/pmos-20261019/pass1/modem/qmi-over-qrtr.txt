@@ -1,0 +1,48 @@
+# sh -c qmicli -d qrtr://0 --dms-get-revision; qmicli -d qrtr://0 --dms-get-ids; qmicli -d qrtr://0 --dms-get-capabilities; qmicli -d qrtr://0 --dms-get-operating-mode; qmicli -d qrtr://0 --nas-get-serving-system; qmicli -d qrtr://0 --nas-get-signal-info; qmicli -d qrtr://0 --wda-get-data-format
+[qrtr://0] Device revision retrieved:
+	Revision: 'MPSS.AT.3.1-00729.1-SDM660_GEN_PACK-1.214729.1.215613.1  1  [Jul 30 2019 14:00:00]'
+[qrtr://0] Device IDs retrieved:
+	    ESN: '11223344'
+	   IMEI: '<imei>'
+	   MEID: 'unknown'
+[qrtr://0] Device capabilities retrieved:
+	Max TX channel rate: '50000000'
+	Max RX channel rate: '100000000'
+	       Data Service: 'non-simultaneous-cs-ps'
+	                SIM: 'supported'
+	           Networks: 'lte'
+[qrtr://0] Operating mode retrieved:
+	Mode: 'online'
+	HW restricted: 'no'
+[qrtr://0] Successfully got serving system:
+	Registration state: 'not-registered-searching'
+	CS: 'detached'
+	PS: 'detached'
+	Selected network: '3gpp'
+	Radio interfaces: '1'
+		[0]: 'lte'
+	Roaming status: 'on'
+	Data service capabilities: '0'
+	Current PLMN:
+		MCC: '250'
+		MNC: '1'
+		Description: ''
+	Roaming indicators: '1'
+		[0]: 'on' (lte)
+	Detailed status:
+		Status: 'limited'
+		Capability: 'cs-ps'
+		HDR Status: 'none'
+		HDR Hybrid: 'no'
+		Forbidden: 'no'
+	Full operator code info:
+		MCC: '250'
+		MNC: '1'
+		MNC with PCS digit: 'no'
+[qrtr://0] Successfully got signal info
+LTE:
+	RSSI: '-58 dBm'
+	RSRQ: '-20 dB'
+	RSRP: '-102 dBm'
+	SNR: '-10.4 dB'
+error: couldn't get data format: QMI protocol error (48): 'InvalidArgument'

@@ -1,0 +1,19 @@
+# sh -c for r in /sys/kernel/debug/remoteproc/*; do echo "== $r"; for f in name resource_table carveout_memories; do [ -e $r/$f ] && { echo "-- $f"; cat $r/$f; }; done; done
+== /sys/kernel/debug/remoteproc/remoteproc0
+-- name
+4080000.remoteproc
+-- resource_table
+No resource table found
+-- carveout_memories
+== /sys/kernel/debug/remoteproc/remoteproc1
+-- name
+adsp
+-- resource_table
+No resource table found
+-- carveout_memories
+== /sys/kernel/debug/remoteproc/remoteproc2
+-- name
+cdsp
+-- resource_table
+No resource table found
+-- carveout_memories

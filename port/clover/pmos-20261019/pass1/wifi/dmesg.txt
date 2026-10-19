@@ -1,0 +1,16 @@
+# sh -c dmesg | grep -i -E "ath10k|wcn|wlan|wlfw|snoc|qmi|80211|cfg80211"
+[    0.000000] OF: reserved mem: 0x0000000085600000..0x00000000856fffff (1024 KiB) nomap non-reusable wlan-msa-guard@85600000
+[    0.000000] OF: reserved mem: 0x0000000085700000..0x00000000857fffff (1024 KiB) nomap non-reusable wlan-msa-mem@85700000
+[   22.634872] cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[   23.140106] ath10k_snoc 18800000.wifi: supply vdd-3.3-ch1 not found, using dummy regulator
+[   23.628032] Bluetooth: hci0: setting up wcn399x
+[   30.229209] Bluetooth: hci0: setting up wcn399x
+[   32.038303] ipa 14780000.ipa: modem IPA QMI service found (node 0 port 35)
+[   32.813153] ath10k_snoc 18800000.wifi: qmi chip_id 0x30214 chip_family 0x4001 board_id 0xff soc_id 0x40050000
+[   32.813283] ath10k_snoc 18800000.wifi: qmi fw_version 0x101f81f0 fw_build_timestamp 2018-08-31 21:42 fw_build_id QC_IMAGE_VERSION_STRING=WLAN.HL.1.0.1.c2-00496-QCAHLSWMTPLZ-1
+[   32.813372] ath10k_snoc 18800000.wifi: qmi not waiting for msa_ready indicator
+[   35.962263] ath10k_snoc 18800000.wifi: wcn3990 hw1.0 target 0x00000008 chip_id 0x00000000 sub 0000:0000
+[   35.962368] ath10k_snoc 18800000.wifi: kconfig debug 1 debugfs 1 tracing 0 dfs 0 testmode 0
+[   35.962419] ath10k_snoc 18800000.wifi: firmware ver  api 5 features wowlan,no-4addr-pad,allows-mesh-bcast,mgmt-tx-by-reference,non-bmi,single-chan-info-per-channel crc32 022c9087
+[   36.008232] ath10k_snoc 18800000.wifi: htt-ver 3.56 wmi-op 4 htt-op 3 cal file max-sta 32 raw 0 hwcrypto 1
+[   36.097560] ath10k_snoc 18800000.wifi: invalid MAC address; choosing random

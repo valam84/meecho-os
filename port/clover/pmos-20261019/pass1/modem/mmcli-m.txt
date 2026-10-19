@@ -1,0 +1,54 @@
+# mmcli -m any
+  -----------------------------------
+  General  |                    path: /org/freedesktop/ModemManager1/Modem/0
+           |               device id: <device-id>
+  -----------------------------------
+  Hardware |            manufacturer: QUALCOMM INCORPORATED
+           |                   model: 0
+           |       firmware revision: MPSS.AT.3.1-00729.1-SDM660_GEN_PACK-1.214729.1.215613.1  1  [Jul 30 2019 14:00:00]
+           |          carrier config: ROW_Commercial
+           | carrier config revision: 08010809
+           |            h/w revision: 10000
+           |               supported: lte
+           |                 current: lte
+           |            equipment id: <imei>
+  -----------------------------------
+  System   |                  device: qcom-soc
+           |                 physdev: /sys/devices/platform/soc@0/14780000.ipa
+           |                 drivers: ipa, rpmsg_ctrl, qrtr
+           |                  plugin: qcom-soc
+           |            primary port: qrtr0
+           |                   ports: qrtr0 (qmi), rmnet_ipa0 (net)
+           |           ignored ports: rpmsg_ctrl3 (unknown)
+  -----------------------------------
+  Numbers  |                     own: <msisdn>
+  -----------------------------------
+  Status   |                    lock: sim-pin2
+           |          unlock retries: sim-pin (3), sim-puk (10), sim-pin2 (3), sim-puk2 (10)
+           |                   state: registered
+           |             power state: on
+           |             access tech: lte
+           |          signal quality: 86% (cached)
+  -----------------------------------
+  Modes    |               supported: allowed: 4g; preferred: none
+           |                 current: allowed: 4g; preferred: none
+  -----------------------------------
+  Bands    |               supported: eutran-1, eutran-3, eutran-5, eutran-7, eutran-8, 
+           |                          eutran-34, eutran-38, eutran-39, eutran-40, eutran-41
+           |                 current: eutran-1, eutran-3, eutran-5, eutran-7, eutran-8, 
+           |                          eutran-34, eutran-38, eutran-39, eutran-40, eutran-41
+  -----------------------------------
+  IP       |               supported: ipv4, ipv6, ipv4v6
+  -----------------------------------
+  3GPP     |                    imei: <imei>
+           |           enabled locks: fixed-dialing
+           |             operator id: 25001
+           |            registration: emergency-only
+           |    packet service state: detached
+  -----------------------------------
+  3GPP EPS |    ue mode of operation: csps-1
+           |     initial bearer path: /org/freedesktop/ModemManager1/Bearer/0
+           |      initial bearer apn: www.mova.pl
+           |  initial bearer ip type: ipv4
+  -----------------------------------
+  SIM      |        primary sim path: /org/freedesktop/ModemManager1/SIM/0

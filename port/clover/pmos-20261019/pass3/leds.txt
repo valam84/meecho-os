@@ -1,0 +1,13 @@
+mmc1::/brightness = 0 
+mmc1::/max_brightness = 255 
+mmc1::/trigger = none default usb-gadget usb-host kbd-scrolllock kbd-numlock kbd-capslock kbd-kanalock kbd-shiftlock kbd-altgrlock kbd-ctrllock kbd-altlock kbd-shiftllock kbd-shiftrlock kbd-ctrlllock kbd-ctrlrlock timer heartbeat cpu cpu0 cpu1 cpu2 cpu3 cpu4 cpu5 cpu6 cpu7 default-on panic mmc2 [mmc1] pm660-charger-online qcom-battery-charging-or-full qcom-battery-charging qcom-battery-full qcom-battery-charging-blink-full-solid qcom-battery-charging-orange-full-green rfkill-any rfkill-none bluetooth-power pattern hci0-power rfkill0 phy0rx phy0tx phy0assoc phy0radio rfkill1 
+mmc2::/brightness = 0 
+mmc2::/max_brightness = 255 
+mmc2::/trigger = none default usb-gadget usb-host kbd-scrolllock kbd-numlock kbd-capslock kbd-kanalock kbd-shiftlock kbd-altgrlock kbd-ctrllock kbd-altlock kbd-shiftllock kbd-shiftrlock kbd-ctrlllock kbd-ctrlrlock timer heartbeat cpu cpu0 cpu1 cpu2 cpu3 cpu4 cpu5 cpu6 cpu7 default-on panic [mmc2] mmc1 pm660-charger-online qcom-battery-charging-or-full qcom-battery-charging qcom-battery-full qcom-battery-charging-blink-full-solid qcom-battery-charging-orange-full-green rfkill-any rfkill-none bluetooth-power pattern hci0-power rfkill0 phy0rx phy0tx phy0assoc phy0radio rfkill1 
+white:status/brightness = 0 
+white:status/hr_pattern = 
+white:status/hw_pattern = 
+white:status/max_brightness = 511 
+white:status/pattern = 
+white:status/repeat = -1 
+white:status/trigger = none usb-gadget usb-host kbd-scrolllock kbd-numlock kbd-capslock kbd-kanalock kbd-shiftlock kbd-altgrlock kbd-ctrllock kbd-altlock kbd-shiftllock kbd-shiftrlock kbd-ctrlllock kbd-ctrlrlock timer heartbeat cpu cpu0 cpu1 cpu2 cpu3 cpu4 cpu5 cpu6 cpu7 default-on panic mmc2 mmc1 pm660-charger-online qcom-battery-charging-or-full qcom-battery-charging qcom-battery-full qcom-battery-charging-blink-full-solid qcom-battery-charging-orange-full-green rfkill-any rfkill-none bluetooth-power [pattern] hci0-power rfkill0 phy0rx phy0tx phy0assoc phy0radio rfkill1 

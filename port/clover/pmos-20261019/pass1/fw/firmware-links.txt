@@ -1,0 +1,1 @@
+# sh -c find /lib/firmware -type l -exec ls -l {} \;

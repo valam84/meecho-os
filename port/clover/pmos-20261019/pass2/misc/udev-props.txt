@@ -1,0 +1,29 @@
+# sh -c udevadm info /dev/qcom_rmtfs_mem1; udevadm info /sys/class/remoteproc/remoteproc0
+P: /devices/platform/85e00000.memory/rmtfs/qcom_rmtfs_mem1
+M: qcom_rmtfs_mem1
+R: 1
+J: c236:1
+U: rmtfs
+D: c 236:1
+N: qcom_rmtfs_mem1
+L: 0
+E: DEVPATH=/devices/platform/85e00000.memory/rmtfs/qcom_rmtfs_mem1
+E: DEVNAME=/dev/qcom_rmtfs_mem1
+E: MAJOR=236
+E: MINOR=1
+E: SUBSYSTEM=rmtfs
+E: USEC_INITIALIZED=22476762
+E: SYSTEMD_WANTS=rmtfs.service
+E: TAGS=:systemd:
+E: CURRENT_TAGS=:systemd:
+
+P: /devices/platform/soc@0/4080000.remoteproc/remoteproc/remoteproc0
+M: remoteproc0
+R: 0
+J: +remoteproc:remoteproc0
+U: remoteproc
+T: remoteproc
+E: DEVPATH=/devices/platform/soc@0/4080000.remoteproc/remoteproc/remoteproc0
+E: DEVTYPE=remoteproc
+E: SUBSYSTEM=remoteproc
+

@@ -1,0 +1,45 @@
+# sh -c for m in ipa2_lite ath10k_core ath10k_snoc qcom_q6v5_mss qcom_q6v5_pas rmtfs_mem qrtr qrtr_smd qcom_common qcom_sysmon qcom_glink_smem qcom_smd qcom_smp2p qcom_smem qcom_pd_mapper mac80211 cfg80211 hci_uart btqca qcom_smgr sns_smgr qcom_sns_reg fastrpc; do [ -d /sys/module/$m ] || continue; echo "== $m $(cat /sys/module/$m/version /sys/module/$m/srcversion 2>/dev/null)"; grep . /sys/module/$m/parameters/* 2>/dev/null; done
+== ipa2_lite 3E33F610C6254CF067ED89D
+/sys/module/ipa2_lite/parameters/clk_rate_active:40000000
+/sys/module/ipa2_lite/parameters/clk_rate_idle:9600000
+/sys/module/ipa2_lite/parameters/comp_cfg:17
+/sys/module/ipa2_lite/parameters/dump:N
+/sys/module/ipa2_lite/parameters/test_mode:N
+== ath10k_core 299F43BD14508B26F294FB9
+/sys/module/ath10k_core/parameters/coredump_mask:3
+/sys/module/ath10k_core/parameters/cryptmode:0
+/sys/module/ath10k_core/parameters/debug_mask:0
+/sys/module/ath10k_core/parameters/frame_mode:1
+/sys/module/ath10k_core/parameters/fw_diag_log:N
+/sys/module/ath10k_core/parameters/skip_otp:N
+/sys/module/ath10k_core/parameters/uart_print:N
+== ath10k_snoc B6845A379B7D01D0575AB87
+== qcom_q6v5_mss 303CEE39C5FF33766212CE9
+== qcom_q6v5_pas 1EAC1F007EE8FD96432EC64
+== rmtfs_mem DEB9A6EBF766F973B8F9FA6
+== qrtr F1E02496B51C5D42E19A656
+== qrtr_smd BAA338EC1847AE92E17F5C2
+== qcom_common BE53718B1D7FBBB7D669768
+== qcom_sysmon 145DB06277F83277CDA179E
+== qcom_pd_mapper 1602E30ADE0E71B878541F0
+== mac80211 1EC10C454BC32FB91311A30
+/sys/module/mac80211/parameters/beacon_loss_count:7
+/sys/module/mac80211/parameters/ieee80211_default_rc_algo:minstrel_ht
+/sys/module/mac80211/parameters/max_nullfunc_tries:2
+/sys/module/mac80211/parameters/max_probe_tries:5
+/sys/module/mac80211/parameters/minstrel_vht_only:Y
+/sys/module/mac80211/parameters/probe_wait_ms:500
+== cfg80211 2D4CAA9AAB11FBFCD4C11D5
+/sys/module/cfg80211/parameters/bss_entries_limit:1000
+/sys/module/cfg80211/parameters/cfg80211_disable_40mhz_24ghz:N
+/sys/module/cfg80211/parameters/ieee80211_regdom:00
+== hci_uart 2.3
+A445605F4DF5C883EF5F3F3
+/sys/module/hci_uart/parameters/hciextn:Y
+/sys/module/hci_uart/parameters/irq_polarity:-1
+/sys/module/hci_uart/parameters/txcrc:Y
+== btqca F474CFE79AA8BF5A792F4D6
+== qcom_smgr 7B7A2BC2AA88D13EF77636A
+== sns_smgr 3CB88D2F0C64AFACC330E07
+== qcom_sns_reg C0B8D349EF197B8A4AB5992
+== fastrpc 445506D1290F88B4D6A1E53

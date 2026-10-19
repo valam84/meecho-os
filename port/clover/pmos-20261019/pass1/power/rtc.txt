@@ -1,0 +1,16 @@
+# sh -c ls -l /sys/class/rtc; cat /sys/class/rtc/rtc0/name /proc/driver/rtc; hwclock -r
+total 0
+lrwxrwxrwx    1 root     root             0 Jan  1  1970 rtc0 -> ../../devices/platform/soc@0/800f000.spmi/spmi-0/0-00/800f000.spmi:pmic@0:rtc@6000/rtc/rtc0
+rtc-pm8xxx 800f000.spmi:pmic@0:rtc@6000
+rtc_time	: 00:30:45
+rtc_date	: 1970-01-01
+alrm_time	: 00:00:00
+alrm_date	: 1970-01-01
+alarm_IRQ	: no
+alrm_pending	: no
+update IRQ enabled	: no
+periodic IRQ enabled	: no
+periodic IRQ frequency	: 1
+max user IRQ frequency	: 64
+24hr		: yes
+1970-01-01 03:30:45.919006+03:00

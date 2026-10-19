@@ -1,0 +1,16 @@
+# sh -c cat /sys/module/firmware_class/parameters/path; echo; ls -l /lib/firmware; mount | grep -i -E "firmware|modem|vendor|persist|dsp|bt_firmware"; find / -xdev \( -name "*.mbn" -o -name "*.mdt" -o -name "*.b0[0-9]" -o -name "bdwlan*" -o -name "board-2.bin" -o -name "firmware-5.bin" -o -name "crnv*" -o -name "crbtfw*" -o -name "*.jsn" \) 2>/dev/null | head -300
+/run/msm-firmware-loader/target
+
+total 24
+drwxr-xr-x    3 root     root          4096 Oct 17 20:41 ath10k
+drwxr-xr-x    2 root     root          4096 Oct 17 20:41 postmarketos
+drwxr-xr-x    2 root     root          4096 Oct 17 20:41 qcom
+-rw-r--r--    1 root     root          6328 Dec  5  2025 regulatory.db
+-rw-r--r--    1 root     root          1085 Dec  5  2025 regulatory.db.p7s
+/dev/mmcblk1p14 on /run/msm-firmware-loader/mnt/vendor type ext4 (ro,nosuid,nodev,noexec,relatime)
+/dev/mmcblk1p25 on /run/msm-firmware-loader/mnt/modem type vfat (ro,nosuid,nodev,noexec,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,utf8,errors=remount-ro)
+/dev/mmcblk1p27 on /run/msm-firmware-loader/mnt/dsp type ext4 (ro,nosuid,nodev,noexec,relatime)
+/dev/mmcblk1p42 on /run/msm-firmware-loader/mnt/bluetooth type vfat (ro,nosuid,nodev,noexec,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,utf8,errors=remount-ro)
+/dev/mmcblk1p48 on /run/msm-firmware-loader/mnt/persist type ext4 (ro,nosuid,nodev,noexec,relatime)
+/usr/lib/firmware/ath10k/WCN3990/hw1.0/board-2.bin
+/usr/lib/firmware/ath10k/WCN3990/hw1.0/firmware-5.bin

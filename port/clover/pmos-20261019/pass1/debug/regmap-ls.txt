@@ -1,0 +1,21 @@
+# ls /sys/kernel/debug/regmap
+0-00
+0-0038
+0-01
+0-02
+0-03
+100000.clock-controller
+1008000.interconnect
+10ae000.thermal-sensor-srot
+10ae000.thermal-sensor-tm
+1500000.interconnect
+152c0000.audio-codec
+1626000.interconnect
+1704000.interconnect
+1745000.interconnect
+17900000.interconnect
+17911000.mailbox
+1f40000.hwlock
+5065000.clock-controller
+c8c0000.clock-controller
+dummy-syscon@0x0000000001f60000

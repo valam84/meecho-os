@@ -1,0 +1,81 @@
+# sh -c ls -lR /sys/kernel/debug/qcom* 2>&1 | head -80
+/sys/kernel/debug/qcom_socinfo:
+total 0
+-r--r--r--    1 root     root             0 Jan  1  1970 accessory_chip
+drwxr-xr-x    2 root     root             0 Jan  1  1970 adsp
+drwxr-xr-x    2 root     root             0 Jan  1  1970 adsp1
+drwxr-xr-x    2 root     root             0 Jan  1  1970 adsp2
+drwxr-xr-x    2 root     root             0 Jan  1  1970 apps
+drwxr-xr-x    2 root     root             0 Jan  1  1970 appsbl
+drwxr-xr-x    2 root     root             0 Jan  1  1970 audiopd
+drwxr-xr-x    2 root     root             0 Jan  1  1970 boot
+-r--r--r--    1 root     root             0 Jan  1  1970 build_id
+drwxr-xr-x    2 root     root             0 Jan  1  1970 cdsp
+drwxr-xr-x    2 root     root             0 Jan  1  1970 cdsp1
+drwxr-xr-x    2 root     root             0 Jan  1  1970 cdsp2
+drwxr-xr-x    2 root     root             0 Jan  1  1970 cdsp3
+drwxr-xr-x    2 root     root             0 Jan  1  1970 chargerpd
+drwxr-xr-x    2 root     root             0 Jan  1  1970 cnss
+drwxr-xr-x    2 root     root             0 Jan  1  1970 dsps
+-r--r--r--    1 root     root             0 Jan  1  1970 foundry_id
+drwxr-xr-x    2 root     root             0 Jan  1  1970 gearvm
+drwxr-xr-x    2 root     root             0 Jan  1  1970 gpdsp
+drwxr-xr-x    2 root     root             0 Jan  1  1970 gpdsp1
+-r--r--r--    1 root     root             0 Jan  1  1970 hardware_platform
+-r--r--r--    1 root     root             0 Jan  1  1970 hardware_platform_subtype
+drwxr-xr-x    2 root     root             0 Jan  1  1970 hyp
+-r--r--r--    1 root     root             0 Jan  1  1970 info_fmt
+drwxr-xr-x    2 root     root             0 Jan  1  1970 mpss
+drwxr-xr-x    2 root     root             0 Jan  1  1970 npu
+drwxr-xr-x    2 root     root             0 Jan  1  1970 oempd
+drwxr-xr-x    2 root     root             0 Jan  1  1970 oispd
+-r--r--r--    1 root     root             0 Jan  1  1970 platform_version
+-r--r--r--    1 root     root             0 Jan  1  1970 pmic_die_rev
+-r--r--r--    1 root     root             0 Jan  1  1970 pmic_model
+-r--r--r--    1 root     root             0 Jan  1  1970 pmic_model_array
+-r--r--r--    1 root     root             0 Jan  1  1970 raw_version
+drwxr-xr-x    2 root     root             0 Jan  1  1970 rpm
+drwxr-xr-x    2 root     root             0 Jan  1  1970 sdi
+drwxr-xr-x    2 root     root             0 Jan  1  1970 sensorpd
+drwxr-xr-x    2 root     root             0 Jan  1  1970 soccp
+drwxr-xr-x    2 root     root             0 Jan  1  1970 tme
+drwxr-xr-x    2 root     root             0 Jan  1  1970 tz
+drwxr-xr-x    2 root     root             0 Jan  1  1970 tzsecapp
+drwxr-xr-x    2 root     root             0 Jan  1  1970 uefi
+drwxr-xr-x    2 root     root             0 Jan  1  1970 video
+drwxr-xr-x    2 root     root             0 Jan  1  1970 wpss
+
+/sys/kernel/debug/qcom_socinfo/adsp:
+total 0
+-r--r--r--    1 root     root             0 Jan  1  1970 name
+-r--r--r--    1 root     root             0 Jan  1  1970 oem
+-r--r--r--    1 root     root             0 Jan  1  1970 variant
+
+/sys/kernel/debug/qcom_socinfo/adsp1:
+total 0
+-r--r--r--    1 root     root             0 Jan  1  1970 name
+-r--r--r--    1 root     root             0 Jan  1  1970 oem
+-r--r--r--    1 root     root             0 Jan  1  1970 variant
+
+/sys/kernel/debug/qcom_socinfo/adsp2:
+total 0
+-r--r--r--    1 root     root             0 Jan  1  1970 name
+-r--r--r--    1 root     root             0 Jan  1  1970 oem
+-r--r--r--    1 root     root             0 Jan  1  1970 variant
+
+/sys/kernel/debug/qcom_socinfo/apps:
+total 0
+-r--r--r--    1 root     root             0 Jan  1  1970 name
+-r--r--r--    1 root     root             0 Jan  1  1970 oem
+-r--r--r--    1 root     root             0 Jan  1  1970 variant
+
+/sys/kernel/debug/qcom_socinfo/appsbl:
+total 0
+-r--r--r--    1 root     root             0 Jan  1  1970 name
+-r--r--r--    1 root     root             0 Jan  1  1970 oem
+-r--r--r--    1 root     root             0 Jan  1  1970 variant
+
+/sys/kernel/debug/qcom_socinfo/audiopd:
+total 0
+-r--r--r--    1 root     root             0 Jan  1  1970 name
+-r--r--r--    1 root     root             0 Jan  1  1970 oem

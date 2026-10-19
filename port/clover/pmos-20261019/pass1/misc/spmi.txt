@@ -1,0 +1,6 @@
+# sh -c for d in /sys/bus/spmi/devices/*; do echo "$(basename $d) $(basename $(readlink $d/driver) 2>/dev/null)"; done
+0-00 pmic-spmi
+0-01 pmic-spmi
+0-02 pmic-spmi
+0-03 pmic-spmi
+spmi-0 

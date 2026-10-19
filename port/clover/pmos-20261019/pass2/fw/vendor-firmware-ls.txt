@@ -1,0 +1,135 @@
+# sh -c cd /run/msm-firmware-loader/mnt/vendor && ls -lR firmware firmware_mnt 2>&1; ls etc | head -200
+firmware:
+total 372
+-rw-r--r--    1 root     root           148 Jan  1  2009 a512_zap.b00
+-rw-r--r--    1 root     root          6536 Jan  1  2009 a512_zap.b01
+-rw-r--r--    1 root     root          4916 Jan  1  2009 a512_zap.b02
+-rw-r--r--    1 root     root         17204 Jan  1  2009 a512_zap.elf
+-rw-r--r--    1 root     root          6684 Jan  1  2009 a512_zap.mdt
+-rw-r--r--    1 root     root          8052 Jan  1  2009 a530_gpmu.fw2
+-rw-r--r--    1 root     root         17108 Jan  1  2009 a530_pfp.fw
+-rw-r--r--    1 root     root         19652 Jan  1  2009 a530_pm4.fw
+-rw-r--r--    1 root     root         11388 Jan  1  2009 a530v1_pfp.fw
+-rw-r--r--    1 root     root         15424 Jan  1  2009 a530v1_pm4.fw
+-rw-r--r--    1 root     root          2604 Jan  1  2009 a530v2_seq.fw2
+-rw-r--r--    1 root     root          8184 Jan  1  2009 a530v3_gpmu.fw2
+-rw-r--r--    1 root     root          2604 Jan  1  2009 a530v3_seq.fw2
+-rw-r--r--    1 root     root         11736 Jan  1  2009 a540_gpmu.fw2
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_10_0.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_12_0.fw
+-rw-r--r--    1 root     root         16128 Jan  1  2009 cpp_firmware_v1_1_1.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_1_6.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_2_0.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_4_0.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_5_0.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_5_1.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_5_2.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_6_0.fw
+-rw-r--r--    1 root     root         16384 Jan  1  2009 cpp_firmware_v1_8_0.fw
+-rw-r--r--    1 root     root         39615 Jan  1  2009 tas2557s_uCDSP.bin
+drwxr-xr-x    3 root     2000          4096 Jan  1  2009 wlan
+
+firmware/wlan:
+total 4
+drwxr-xr-x    2 root     2000          4096 Jan  1  2009 qca_cld
+
+firmware/wlan/qca_cld:
+total 0
+lrw-r--r--    1 root     root            35 Jan  1  2009 WCNSS_qcom_cfg.ini -> /vendor/etc/wifi/WCNSS_qcom_cfg.ini
+lrw-r--r--    1 root     root            35 Jan  1  2009 wlan_mac.bin -> /mnt/vendor/persist/wlan_mac.clover
+
+firmware_mnt:
+total 0
+IPACM_cfg.xml
+NOTICE.xml.gz
+a2dp_in_audio_policy_configuration_7_0.xml
+acdbdata
+aconfig_flags.pb
+aidl
+apdr.conf
+audio_effects.xml
+audio_output_policy.conf
+audio_platform_info.xml
+audio_platform_info_intcodec.xml
+audio_policy_configuration.xml
+audio_policy_volumes.xml
+audio_tuning_mixer.txt
+bluetooth_audio_policy_configuration_7_0.xml
+boringssl_self_test.no_zygote.rc
+boringssl_self_test.zygote32.rc
+boringssl_self_test.zygote64.rc
+boringssl_self_test.zygote64_32.rc
+bpf
+build_flags.json
+cacert_location.pem
+camera
+cgroups.json
+cne
+data
+default-permissions
+default_volume_tables.xml
+diracmobile.config
+diracvdd.bin
+displayconfig
+excluded-input-devices.xml
+flp.conf
+fs_config_dirs
+fs_config_files
+fstab.qcom
+gnss_antenna_info.conf
+gpfspath_oem_config.xml
+gps.conf
+graphite_ipc_platform_info.xml
+group
+hostapd
+init
+izat.conf
+linker.config.pb
+listen_platform_info.xml
+lowi.conf
+media_codecs.xml
+media_codecs_performance.xml
+media_codecs_performance_sdm660_v1.xml
+media_codecs_sdm660_v1.xml
+media_codecs_vendor.xml
+media_profiles.xml
+media_profiles_sdm660_v1.xml
+media_profiles_vendor.xml
+mixer_paths.xml
+mkshrc
+msm_irqbalance.conf
+passwd
+permissions
+powerhint.json
+public.libraries.txt
+qdcm_calib_data_NT51021_BOE_BOE.xml
+qdcm_calib_data_NT51021_BOE_BOE10.xml
+qmi_fw.conf
+r_submix_audio_policy_configuration.xml
+recovery.img
+res
+sap.conf
+sec_config
+seccomp_policy
+selinux
+sensors
+sound_trigger_mixer_paths.xml
+sound_trigger_platform_info.xml
+task_profiles.json
+thermal-engine-battery.conf
+thermal-engine-battery2.conf
+thermal-engine-default.conf
+thermal-engine-gameing.conf
+thermal-engine-high.conf
+thermal-engine-map.conf
+thermal-engine-nolimits.conf
+thermal-engine-normal.conf
+thermal-engine-performance.conf
+thermal-engine.conf
+ueventd.rc
+usb_audio_policy_configuration.xml
+usb_compositions.conf
+vintf
+wifi
+xtra_root_cert.pem
+xtwifi.conf

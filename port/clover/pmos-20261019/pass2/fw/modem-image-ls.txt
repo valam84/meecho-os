@@ -1,0 +1,2239 @@
+# sh -c cd /run/msm-firmware-loader/mnt/modem && find . -type f | sort | xargs sha256sum; ls -lR
+f68aeb6f0a1ec49c4462d878447ba5fe337a4fa0f36c661dd829b982c1541ced  ./image/a508_zap.b00
+c45731e0a198fd4168e06b10607d88d0c043bf6970e3eb7e586fd72c5d7ae348  ./image/a508_zap.b01
+656e2d4bde23ad99f4e2a949ff5b4eb5b73d58beef5dc9c7bfc63b994c67b109  ./image/a508_zap.b02
+4e978dd1a30007b61238761ad87846ccd547c16ddc78be787cd0efb921026b33  ./image/a508_zap.mdt
+1f384b70d68863407d66f2ba328b9b7729ab149b43bbb5d5f7da9e21f9221de2  ./image/a512_zap.b00
+67e57e6a7a90c3db91b116042b63f32e9cb277b1195f47e4c91aba21989ef179  ./image/a512_zap.b01
+c55a92430d150bf049a50aa95af83921c502d2bff151ba49a2d9056b30db9469  ./image/a512_zap.b02
+30e1189c444679f36e72bbb29deb0b2fdc5ac62f6225a3705ebac8480cd46f2d  ./image/a512_zap.mdt
+37a15bb16f2c0d41031c2854d66e79b57134d46b30a66bb9af79f5e6860ded78  ./image/adsp.b00
+bd9e81dd6c894e1cc864e60ec075312ab6b240c0304ef81b484320b8111e03b5  ./image/adsp.b01
+27d895cd13bcffb05c93056a790ee9a94624cd9d9c3ebb4c88073e7b4870c443  ./image/adsp.b02
+0e369709bd3a0fe40cf8c1c894ffb9284cd2c86c5179ed19dd69116ad2c83da4  ./image/adsp.b03
+bd0ea3dfee4f90a81eb63d987b4c9497dc2b53ab92a6669bf9e8b98a2f9f2622  ./image/adsp.b04
+271d6f4ffeb412608d6fc4735d8c09afb4be636988667e52777471f4c3e2deae  ./image/adsp.b05
+43a5073c07c5507591ffb3965c91e70a37f96e27083d6023444069e12a452820  ./image/adsp.b06
+7df3857f587a56ccb716018c5e6082f62775da69a64ebc29ba0cb7545ed60329  ./image/adsp.b07
+b2474a9f51d3655e2f661d92581810c294c47bde904cdb71141ae44e115f5bce  ./image/adsp.b08
+07655401cb5fd82273bf02b62049d97c5a301e06991fdcf54374ff4aee0ce6d8  ./image/adsp.b09
+cb0a3f0604a7728ebe664d0287d3e84c19b22872211364d7dddcc45976d88ab1  ./image/adsp.b10
+ebc1db508ade5ee2079bfd3cc2b85b7db8ecc60791d28f7e4e14d39949407bd2  ./image/adsp.b11
+92314ed26eecd38da8b45078039b1c87833ffaf996878cf00f9c8f6d80531d4e  ./image/adsp.b12
+f8613bdca85ef9d21228a0bf1c60982dd8d1bba12f5b42608d052a49d1c97d1f  ./image/adsp.b13
+196c4ad4925f76fe8ad71d735db6c4788c557fcd7e1b5a9673c7e77209788e11  ./image/adsp.b14
+27b3741d78b8e74a343e14426cada37bee45370f8cba7e6849d92562b5b3b743  ./image/adsp.b15
+23c0ef9d479a00733fedf4d0b7b6601078ebcfe3b124aba472107de7a207cfdd  ./image/adsp.b16
+0096cd0e5bfba8e390819dfc07dc3670021192d968481331e9b6a6ce26bd33b6  ./image/adsp.b17
+74f2a99fcb2862b35afbe40c736ae07513fae5a4fce849ab351937f15021f9d8  ./image/adsp.b18
+ea98395804e24220d9e64a502788fc10f3e1bd19109387e9e44278555a2e9441  ./image/adsp.b19
+75a79358f8bca4e7804cfbb3e44ff8a9bc5ce4141bc687ae5624b27c6e0c4814  ./image/adsp.b20
+2197c3edc6453dd0e5a2294312b8c5cff37847aad53c472d037b905064530ccc  ./image/adsp.b21
+4c6acb25cf73547cafcf5da99d4aef4847edc4dba5c1c4d1fc3fb47d6aa79455  ./image/adsp.b22
+31eabaf107810546caf6b846fd3791036cfd92e46a9c03b07372d68dd6bd2596  ./image/adsp.mdt
+4781dc9312fa017b0e611c752dae2183c0f205af8300b28417a496dae511b0a5  ./image/adspr.jsn
+9723d9873223f83464246a234bef61569c3d6a07112448e4e7da870d4ce5972a  ./image/adsps.jsn
+d6c6376f53e5449eb4f7b9e5a30679ebc2a9afaad28c13ff171f979e7b1af1f6  ./image/adspua.jsn
+657a388836ad13cb9fe2fe654003b215b7ac8f91bb45cfe4689577be5e557c94  ./image/bdwlan.102
+6709772c9104f65b840af4d6f53ec8581ba6b667abd5ad135d7daecf302946fd  ./image/bdwlan.104
+bb6d2dc29750cd1fb03205e8bf6ecd0349c3bdc1aff71dbeb343d36c52fd97fb  ./image/bdwlan.105
+9ab78986cbf1fe985f867708bdc170b41caf450baa683873822f61914262eb08  ./image/bdwlan.106
+09655f77fab3c4f52ce6e18944d5865bc1edc3987602633d0d70ebb18d162aaf  ./image/bdwlan.107
+cb22ae89166a76bf4fe552477cb63c056f7e105133bae54572f9bbfc48d934b5  ./image/bdwlan.108
+09655f77fab3c4f52ce6e18944d5865bc1edc3987602633d0d70ebb18d162aaf  ./image/bdwlan.109
+16c43a07339d8e18af94136e4f3ac4d842d8ff042df3e5ffbd98bbbbdf207e70  ./image/bdwlan.b04
+709a802dca79e67904db6162307a7389ec0b4bf742cde35ffdf06ffe44c27066  ./image/bdwlan.b07
+483ba7ef41594487a8878513dc8482e98105efce97b6775c293b8b3aad5e750f  ./image/bdwlan.b09
+ebbc9b648931517d7e07fd1fcd7b7fbfd39471bdb63640467874604bc2d88d88  ./image/bdwlan.b0a
+00ba979bc0c5bdd7c50ff8713985597bd3806f2df34837677a943ef58d1c87b3  ./image/bdwlan.b0b
+474c1aa485ff93e5f4c6fe4844a92d606f43158b5699aa0ac00ea3c43a33ce3b  ./image/bdwlan.b0d
+9abeed50b00aaa44c5b28e012713c7072020efac849ca01d1197df038df17265  ./image/bdwlan.b0e
+92f300d3e254b3cc11d15e6c311f9790d8fd195084f8e09fe544bc0c76eef346  ./image/bdwlan.b0f
+6a5fda9fb24da5b25f809b31401f49c87068d7f452ac71a52ce30a905362d676  ./image/bdwlan.b14
+709a802dca79e67904db6162307a7389ec0b4bf742cde35ffdf06ffe44c27066  ./image/bdwlan.b30
+474c1aa485ff93e5f4c6fe4844a92d606f43158b5699aa0ac00ea3c43a33ce3b  ./image/bdwlan.b31
+9abeed50b00aaa44c5b28e012713c7072020efac849ca01d1197df038df17265  ./image/bdwlan.b32
+483ba7ef41594487a8878513dc8482e98105efce97b6775c293b8b3aad5e750f  ./image/bdwlan.b33
+ebbc9b648931517d7e07fd1fcd7b7fbfd39471bdb63640467874604bc2d88d88  ./image/bdwlan.b34
+92f300d3e254b3cc11d15e6c311f9790d8fd195084f8e09fe544bc0c76eef346  ./image/bdwlan.b35
+054f58c82b8fa9c1728142a4fd1f45040c9a99e0b46363a34bf066ef9133216a  ./image/bdwlan.b36
+746d21b7cc39adab017435e387cbf28e968ed26d92c2339b0425d729ff6fe5a1  ./image/bdwlan.b37
+ecafee7a876832eb2980e43916d73e784a63daf69ae191fdc53b9aa3f1f04d30  ./image/bdwlan.bin
+5fc2479838cf1ac441c0c1a82e8b25b31cd17e1f8395d8683702a3b9030a1eac  ./image/bdwlanmi.bin
+abd1eeabf8a8e12aefe1e0d23ced5b9d5b5e27470846b9a0f9cef0d3884a5da0  ./image/bdwlanpl.bin
+69d5c5c631260b9c16ab41d8705fb6f959f7af0ccaa43a873c494b687854c384  ./image/cardapp.b00
+11be27f55e7dd24655ce8aa98bdb32fcf2f14edd2e41e320afe3e144266e22b6  ./image/cardapp.b01
+481335056d899193fdb59f309f20820a4fab4c451ee794fecea92ea318a29c21  ./image/cardapp.b02
+2ee0b8e6fd775f865c3ac0ccdc309ba32628d91c3ad6d45a8152ed25fdbdd83d  ./image/cardapp.b03
+7bc16d57b178a2129f496baf875b0163f98d5e8edad1f460192d7a3b8be735a4  ./image/cardapp.b04
+59425a098e8ca5c7796ecf7188f784a14fabd1a7528b35afe433199d74e59392  ./image/cardapp.b05
+59425a098e8ca5c7796ecf7188f784a14fabd1a7528b35afe433199d74e59392  ./image/cardapp.b06
+178c59a3c052e28586e8174d7559f5e2afeb2da83156fb193ca073525e27018f  ./image/cardapp.b07
+ad2a3baa5af870604e9c30b42d31148edce9bfd3e3b0ad8860d033dc3363a303  ./image/cardapp.mdt
+8758c8f42e9c43dac215e3463374144628199df61a93d5667898f29c6296e1ef  ./image/cdsp.b00
+f5fdd901389104fe405e0194103a272148d8b9983e495b5b6d23def9d4b474ef  ./image/cdsp.b01
+ace62f024634fd91bc5fdc301a0cb54885e826ab2dbbce5da0778548d243ae2c  ./image/cdsp.b02
+5285c736c4af651b732bfdcd77ff15fceffbe64349746b755d1752bd1db4ffe4  ./image/cdsp.b03
+9af28cd733f3ad3a379dca03f11c8f5eb673a4c8a2e2e7df396c04a60506b0bd  ./image/cdsp.b04
+288ccab8bfe4e6ce1dabccf3a59a44715cb1558bde71abe22c469da3af1355ce  ./image/cdsp.b05
+c205afce1911298e5658ab4d788d9ee30710eb696c99894701294397d7b10e74  ./image/cdsp.b06
+e90b3b58cc2a2fb95800660177965fb3f04559f906fbfa9888cd2e173d7bd4c8  ./image/cdsp.b07
+02bd5b42be667cd2b73049f907153ff77627262d88ec529748d08c201950bb42  ./image/cdsp.mdt
+15e148599165b38f68e62302d63c87caa5f0b164deb81aa419bbb4ecf920bc4b  ./image/cdspr.jsn
+71782a15e12e3a08bea7775ab28a8634e35529d20a5dca98ae3b6a3e8c4b189b  ./image/cmnlib.b00
+b05d4ac9636fe3a01a80c5dbae45300e1ef2bbc51fe5d2ac6e7be1074eb5c9cc  ./image/cmnlib.b01
+00eaa13ef7e08f0a08eec797eef3904627d62cbe068899f1c9733f7a6a8364e9  ./image/cmnlib.b02
+2d66190a46a585f1e96895708150ea4935d821d39181c1aee9ba12a3753b33b2  ./image/cmnlib.b03
+847cdb28dd40e5fdd069f8b1beca7024287d141cb0a134e82f28cbb129a857fd  ./image/cmnlib.b04
+847cdb28dd40e5fdd069f8b1beca7024287d141cb0a134e82f28cbb129a857fd  ./image/cmnlib.b05
+58e55a59b2df6d235f07d42974b326b1c8d8fb98f045660aa98191b7307d18d6  ./image/cmnlib.b06
+3fb33583294e80c628072befe0c7d1da34308631dad0dc02e6a70a4c15a6e42b  ./image/cmnlib.mdt
+0ff44dbb3219c1ce5bcabf9028484fa39f64af7b0e2555aa24c724aca1024f41  ./image/cmnlib64.b00
+9c11a84e43f7942d55fcb1584e42358d3a19d938bdeff769bb46ac5925c02cc1  ./image/cmnlib64.b01
+9088d6b9414ccdb39a2affa56abe52982cc56c6c97d8e6844a5603bfbb89f1a7  ./image/cmnlib64.b02
+b5ffda3a30083e1b6984a963d7747c2d10887e7d0a8bc52e265b0a48809817e8  ./image/cmnlib64.b03
+86aee40487c8efb1171d3fd1d3e724b6eb9e259ccfebc8f2dd71ac40cf7cd2e8  ./image/cmnlib64.b04
+86aee40487c8efb1171d3fd1d3e724b6eb9e259ccfebc8f2dd71ac40cf7cd2e8  ./image/cmnlib64.b05
+6f44466e58ced2793998e2c3240508dc0fcfc544342d1386a09ef56a97841dcc  ./image/cmnlib64.b06
+3f8d9aa624da27a59ff2d5c9f340b1fa4bcaf05e7ebd744046659228c36648ee  ./image/cmnlib64.mdt
+fddcf87c3f24edfa3a689f7a743eeed9cef87089be3197e65c4c8db430c6d9f6  ./image/cpe_9335.b00
+54990bb9dfeae55d81a07ab784e8f23686b8a5411c9fa7e7c1a4f55743d43a66  ./image/cpe_9335.b01
+47f0149b43961165c5fa224dbd2d1e956cf0a26b86d15ee3e12652c2a6e013ca  ./image/cpe_9335.b10
+aec172b58d9a96ca3054bf524c2334e57339d06946dd2b121a368d49bf4359af  ./image/cpe_9335.b11
+8a8ccce5685e75950313d79697db8eecac6dfbdb4471feea53a0bc15c3c7b55c  ./image/cpe_9335.b13
+027fa236ddcb4dcdce88d4af21e16c60d50879c33f5f70152e6f5e42e810c980  ./image/cpe_9335.b16
+b1e8213d28599949a21c8a4c0b6f6c2b198b12eaebfc206081f96956939b75e6  ./image/cpe_9335.b18
+34d986d63881b5fa6b0626dcde9590a5be2757ae7627f23cd971b8efa49233f2  ./image/cpe_9335.b20
+ae60706925dd262614ca71de8225b497e3e78ae2a4408e7820999e7cd29bb48b  ./image/cpe_9335.b21
+9ff86f76f092990758a53eb6d5dbe55a8b379e6e31b8a441a684764ad60e60cb  ./image/cpe_9335.b22
+a14c1480ffb19421714ae089ac033fd9f3ea6ab6b4531e47057c1f49148ac135  ./image/cpe_9335.b24
+0928317bf93b4bae29045e513a920f90cdc05f041ada9fc4b3a0eb903018159a  ./image/cpe_9335.b26
+9e2dea277854efee7e65e198fcbd73c1ef95e0662ff3a480ec9645c5ab0359b9  ./image/cpe_9335.b28
+e3430129e467ae260dc0298fd8b44b175bf1a8fa922ae1930b800a97325a1dd3  ./image/cpe_9335.b30
+a1da0bf1e58b049092804076386ee31f735d2547ebbfe78376efd7932ddea63c  ./image/cpe_9335.b31
+387b450e6a23ec750eec7bf1034feb1cb09b366bdbc8f787bd9d522946094cd1  ./image/cpe_9335.mdt
+c237f3f11ba429fc5b4eca8e2a40ec96526f32483f91e898ca1e12273f22360e  ./image/cpe_9340.b00
+d25576ac3296488f8334ef7ce1c1439d589d7c7cf96d4e445711614d0f41c3a4  ./image/cpe_9340.b01
+ecda6c7437129dffe0ba94869029116a0ef34b845b8af587c515a0fb6a3f426c  ./image/cpe_9340.b03
+2907f26c257bcd94b20aeb2a436c35a276d821361fb8139896901330f64a7a61  ./image/cpe_9340.b05
+7b88a86cf56ace1ae12bcddd33e3a6a0bfc390b81b3dda1157d5c81f1e55a208  ./image/cpe_9340.b07
+5797273abee4afdac27cd0025dfea70df552034af56c112d1d4b1b05d2bc09e3  ./image/cpe_9340.b08
+87896f1e8e18c0ac1ea50ea09e08f88f6948e17bcc39df1a51cd780eef657b63  ./image/cpe_9340.b09
+cff949bd07010091d93fa9e4971b3625940a0a2ab1afdeb1553773aae248d19a  ./image/cpe_9340.b11
+630eb9c967cead2f0e7d91e40546121256a3253ee12dd8f491342767a7ab4b2c  ./image/cpe_9340.b13
+addb7df44ab7c2b21bbcdc61429338cbb62613b9a7f2f2b06e5237a84a20a3b5  ./image/cpe_9340.b15
+b2055403d24d27f43527c84892659b41f6dd67c17a0499d34af870122bb7b1b2  ./image/cpe_9340.b17
+26da37f3e7b666a7136587c58a4e24e1e265510dc6ababb3e4949964ae921b35  ./image/cpe_9340.b18
+3e342cdfa9fb7f722ea343b0513294ac10b37f90c80ae021069314cf9fa0b801  ./image/cpe_9340.b20
+2dba055c7be15b14fe1cfbd82ad24ef72483fc829c1cd224c5f174359d11fa0e  ./image/cpe_9340.b22
+694239c7c91482a007072faf3e78236365dd00afc95a3ceac9ecddd0a250ac8e  ./image/cpe_9340.mdt
+bd791f1ae3a224eefa6351e3d9e887a1cd63c91b7cb88d2b3bfeb27cd19dbf41  ./image/cppf.b00
+80854cc13454dd6e99c2b05ce001467535d87a3c2f869cdbb9231c61d9f057ab  ./image/cppf.b01
+bded00e1765aef8d62736f76c30b505fc8148970fc451671bce0184de125b649  ./image/cppf.b02
+5f0ae46dfca80cc4e81eae15800dc496aedbc614c9c582cf7e9df92aff85ed87  ./image/cppf.b03
+282a907a484b1044ab898f8e7b074585f065d74e91f2f37a7e9c2f5a6745d6ce  ./image/cppf.b04
+ceaea96e0925dd61713d918d3f368eb93fe03a9c815a8ac84f4c60e4cb6fa353  ./image/cppf.b05
+ceaea96e0925dd61713d918d3f368eb93fe03a9c815a8ac84f4c60e4cb6fa353  ./image/cppf.b06
+322c375306a2f3b9329f7205a7793d039fc3bee99355e2968ffae7cb779171ff  ./image/cppf.b07
+87f11980235a0ae76e3f59e8c4c89797da09001444d37c3f27d247d192da1640  ./image/cppf.mdt
+3bb2f84e3637d3fb7d29d6653f63b610afe577ccd3c9844a204e6a30f1e9f363  ./image/data.msc
+576413ded43338750b5a6f1a0ad76607377e7aa0d5dd8377f73caba81a54df22  ./image/dhsecapp.b00
+f8c8d9cdebd338b5a533743887ee02bbae7fe7d9e2cf08269221cf375fc0906b  ./image/dhsecapp.b01
+14871f53488c30172f522135d2fa2536b5ebc7991602bc91061f601ec8f064a9  ./image/dhsecapp.b02
+b6b7541075d872fb8aea3bdd75ceeff715eb860b6c42eff206116176f250e1cc  ./image/dhsecapp.b03
+3162045203ca4bf24ef00e632f80989e46a8e795c24043ca6e6e9ab941191629  ./image/dhsecapp.b04
+98cc72ae97e9ce3189f36f27c26dedb3c053267cefd26fd6e49abd05068bc9e6  ./image/dhsecapp.b05
+98cc72ae97e9ce3189f36f27c26dedb3c053267cefd26fd6e49abd05068bc9e6  ./image/dhsecapp.b06
+daa4cccd2b653481175c24c6d04281428535556a047baf8df2a42f78e8771931  ./image/dhsecapp.b07
+d1d6a3d80a3f73971d6d58d4be17f57bb0fb5169b07932bddb8373669f897cc6  ./image/dhsecapp.mdt
+3699d8fdda38834c133614e2e99a9d236e835720fe36c4e6f81223338eaecbca  ./image/fpctzapp.b00
+780ce2422fa78b23bd72ab348906078829c31039f026d52ebc8413f3448f6669  ./image/fpctzapp.b01
+646abd17a41aeb86fde7fe4c9e866d5b9b5276d8219177fe5082f156817a9845  ./image/fpctzapp.b02
+837916236b505dc889d5196f7c79cfc1b2225048018acf1f4fe17d283416a0ea  ./image/fpctzapp.b03
+dce653a022e004582fbdd4436732b87ac049387f3f5022b1f45232aad167ca5a  ./image/fpctzapp.b04
+32c85930f88038eb2cbeb42cefa83a3d5b5ed07f3d8d50ecabfb6c403fa30825  ./image/fpctzapp.b05
+32c85930f88038eb2cbeb42cefa83a3d5b5ed07f3d8d50ecabfb6c403fa30825  ./image/fpctzapp.b06
+7bfe53da613d64b080d37987c428f78f77aa642c91064ea5562b3f9981475382  ./image/fpctzapp.b07
+aec537f97cbeb2d0393ff36d952a0d66e41a2072841cd24d2e793ca6e9f8cf72  ./image/fpctzapp.mdt
+390c67b30b6ce70bb9d90d699fecf631a83207b5d809a550ed0e91942b8a327b  ./image/gptauuid.xml
+523a32fbbdd070ec19de65a399ace703ddcc599f083f73cbcd77b321e383894d  ./image/gptest.b00
+8e49db4d134136395219974d6f429e2f55c6f7b245d9501573e74def41442573  ./image/gptest.b01
+c23416af26ecb6c6abab663d58372abbf5f68a5a99d69465789e250f44eca5fc  ./image/gptest.b02
+e4752de9177678e2b3421f552706c35a17c96e6c84601a5009816ada87ea6396  ./image/gptest.b03
+8527bbe8b7bd006bf566ff24b1b106e2e0d569776c0fa9a334bf613f71240a5c  ./image/gptest.b04
+6504451b86ef21bc1e98471246f88e45de7a9b33452e6d921dc8a156a486ffd6  ./image/gptest.b05
+6504451b86ef21bc1e98471246f88e45de7a9b33452e6d921dc8a156a486ffd6  ./image/gptest.b06
+b8e3520a0e30c2a7663538b5746b39998bdd1568248e4ca167b4eb42de8ffac8  ./image/gptest.b07
+eaeb3339af4a1fce4eb2ff7073c887d28687163b311a24e282e7f1d66de13b13  ./image/gptest.mdt
+1e7a545598858a5546ff7982a01ffbe86e956c604691e5ade9c2fe80aebb16cc  ./image/haventkn.b00
+eb79acc5f2958c38a44dbbe44df2f7a49edda89e2f80d0c4070f1657f364f227  ./image/haventkn.b01
+8e056fa6f20e95141d436972a50ce9be2766ba5429b48108eb038612cf985894  ./image/haventkn.b02
+62e80d1e40294cb5430d64f2ecb98cd805469da5f939a9708aba933870f047ca  ./image/haventkn.b03
+add8fceb7b672a72d4624b6cc7f4930aa5bdd40e7398bad4225d1466100eff3e  ./image/haventkn.b04
+10cfaff59e67f0a8f342a11e337bbe9f5266e3e3038d4cfbda79282c528ec466  ./image/haventkn.b05
+10cfaff59e67f0a8f342a11e337bbe9f5266e3e3038d4cfbda79282c528ec466  ./image/haventkn.b06
+2103df08cf5528becc740303ebbd9268c8f13ec87d648b44196a1f216292882f  ./image/haventkn.b07
+46949151a1d87b5baf3fcfce64ccf597e52022dc4ba7cab0784d6be86d1bdad1  ./image/haventkn.mdt
+d48e24dee5202bd853f2a7f44cacb3eaba9359ef30f5c2f9e31a90b9e11a6c8b  ./image/iris.b00
+a6070128eb65bc455f28dc169c509cfb3724bc2da332ffc70b97fe34e7780b85  ./image/iris.b01
+d6280c91ea3b236cbd853aad7edee948697b59ca2906562e08df5fe161e95a08  ./image/iris.b02
+afc4016d0b41cd2b8d630f415b9f63df1548e118234efd937109cb26ae224ec2  ./image/iris.b03
+1cd2ebd84b19267cb5d0337b4a0c50c323f3f169bdaf884ed2c214fcff3e93b7  ./image/iris.b04
+fe02af3a4048ca4226d3f7ded09220fd8b4d7863940777277e482813ae26b37b  ./image/iris.b05
+fe02af3a4048ca4226d3f7ded09220fd8b4d7863940777277e482813ae26b37b  ./image/iris.b06
+5bc9dc994afb5594ef577d636b0d56fa63dbea9e80d44227a12992ec45a4424f  ./image/iris.b07
+8223e5cd88be4a6df5c62aa89a486ebff7e681e4196eb827517555392f854110  ./image/iris.mdt
+1138c708e2f122e02873867ba0471d5631225548c209f580630a5925b8bd255a  ./image/isdbtmm.b00
+64ac11cb2b7c77ad8e17795fc4c46d426f2c65d935033dbf4c7774039271bdcc  ./image/isdbtmm.b01
+e533f29d98b442edb9e2266d74e1c7de7a32c6e043596834c7f3622d9550633c  ./image/isdbtmm.b02
+1f0c119ca8857ccf7439ec92828ea32581c0d0e7a928fdd6bb4d797ee441f440  ./image/isdbtmm.b03
+bfe22eaacae3d12cfa2863720fdda1161ef1bb14674f1ed77383658600694381  ./image/isdbtmm.b04
+5d817a0be5a5ac261bb7d47955841aa3d1eff6baf74193652e1eee4a10926a70  ./image/isdbtmm.b05
+5d817a0be5a5ac261bb7d47955841aa3d1eff6baf74193652e1eee4a10926a70  ./image/isdbtmm.b06
+17c388e8bfbd260cdb355e719edf7b51890b8c2ba041049fad3050d99331e296  ./image/isdbtmm.b07
+e3e159ea76503163863ce94d62a31116021ae0286dccc819d2964d1c84400020  ./image/isdbtmm.mdt
+f4d9233c5c0dc7a7cd2cdc8cdf8ed050ddb2a3bbff8abeacf2b11035bcd71385  ./image/keymaste.b00
+c7784895d953b28e7947e76e2cd60192cbeb1e36f7b04d13294bd50b3f853744  ./image/keymaste.b01
+ea7ec37029ff94ce5f75fefffab94bbeafc8f425a6c78c8446fab8903fbfb54b  ./image/keymaste.b02
+fa9cc8fb8df2a4778806bb0c935f88a7ac0be612a76bcf498dc29999511e1e77  ./image/keymaste.b03
+78e94d6fb7ce144d1221b58f8985719f0acca40875cf5b8505c7a2dce877f791  ./image/keymaste.b04
+15af2c5e0df49ddd0b327dad1aee4a5dcf125a967fac69886ed2f8c37f8aaf93  ./image/keymaste.b05
+15af2c5e0df49ddd0b327dad1aee4a5dcf125a967fac69886ed2f8c37f8aaf93  ./image/keymaste.b06
+da8b099a3b34d93330ddb1d81e76ae7e533baaef162477348db830e0acd7adec  ./image/keymaste.b07
+0bab69df610ebe9c8017d5082e056651defe466d5d6283f87f20353c34927871  ./image/keymaste.mdt
+07a67a2c99d9d5bbf60b852d2e7a826acf83b500c127dfe6ca191110946a5098  ./image/mba.mbn
+c920226564fd737c97a5c14f93ba73b471a451813fa14dc8f63824daadaf97c4  ./image/mdtpseca.b00
+a2296f24c55d32959efc66c464991ab43a45003ec7225868de661226d7eb643a  ./image/mdtpseca.b01
+f0b2eb7fde99c333e6f48f92eeca5e3cdf842459b342f04e6b888b8dd71b6b18  ./image/mdtpseca.b02
+a49b5c186336e0b76d0a5e2e9b9c1450226b3247bdb2eba7a879b750ff663143  ./image/mdtpseca.b03
+89006eaf1dee0b561e43e16923ecf5c882f8fd36b293511747f29dbe60d48230  ./image/mdtpseca.b04
+8bfd89da9c3862dfcb815d24a397e5ea696286fbf72b71eb6494bfda77ad755b  ./image/mdtpseca.b05
+8bfd89da9c3862dfcb815d24a397e5ea696286fbf72b71eb6494bfda77ad755b  ./image/mdtpseca.b06
+dac3e39859a77e6a220a84ec4ab57de09574deb0290ceef8cf70f6d2b4407523  ./image/mdtpseca.b07
+996ee6f01cea8d7752fac40905411ee8467d167dbd9e7df828d00dfde7d8711d  ./image/mdtpseca.mdt
+d5b060e56b26006cb2f7fbe431d67f7355d2c4b6f4507770a08f68cca0439f52  ./image/mfido.b00
+78b5f3639a789888c3610426466c92af9d2c90012b5bf3698464fa5b3afd93a3  ./image/mfido.b01
+0f048e1f65ed97ff96197f62f531f577492b0b63830c0ed0df9e0bee9b62b05a  ./image/mfido.b02
+50ecbb379d7ec7db310511725b437ef9f9edb5c9c45c4a9ea8e75a967fc14078  ./image/mfido.b03
+c1fb599decb9750f968fede3d50107eb7a7a3070ef114ffba8beb91914f1bf96  ./image/mfido.b04
+58af06aa530e820b0bf166bcb641b0a444893af16276446a00ee95be8238843f  ./image/mfido.b05
+58af06aa530e820b0bf166bcb641b0a444893af16276446a00ee95be8238843f  ./image/mfido.b06
+f4d4880866edfba73fa83f187086b7916a9f03341bfb5ecbc497d904b5af3b86  ./image/mfido.b07
+cfc16ec90656bb03955c51ab2abb31d8be924698c5d5d3d3fd2388e5c83face2  ./image/mfido.mdt
+5cb54e75cc60d168176937ffeafe73cfe6b765efc073e309cb0c98aa6de15092  ./image/mlipay.b00
+bede90feaef5bcd44c5ccbeee7bf0e008fcaf5e9ce06d355fc170700ebac03aa  ./image/mlipay.b01
+18eb0b1ee6d579dfc510ff54f082beb340caa4c17670d220fc10f0e02eebf49f  ./image/mlipay.b02
+da6c85138fd48d00c066eac752209601b1adee57cbe756b1a6d607e0ba72352f  ./image/mlipay.b03
+f1efd129b510ce80641da9f4759ea6531862167e28f3cb97670fba207995a24e  ./image/mlipay.b04
+57f88dcc3b054bdfec727b1873610d8b05bdcdb1c79853fb61eb16851818b398  ./image/mlipay.b05
+57f88dcc3b054bdfec727b1873610d8b05bdcdb1c79853fb61eb16851818b398  ./image/mlipay.b06
+17b9df6d3c5d07682d2cd6ab40b7e0f54a0886a1309be2bd862bbdeb5597faf7  ./image/mlipay.b07
+7959e534cb56925b4957c75f834cde0eae7a26e38c07863d6921c59e8ad137ae  ./image/mlipay.mdt
+48ad0da926fac393f3f64fb5fc995e6ac3d0239d6a4cbc1d60cb22982b0be7de  ./image/modem.b00
+76c741abe4ee23ec87f747299ad9ec3408163776e5c9105a9a0548c03594da49  ./image/modem.b01
+fc7b435dd4254e765f08d0eae24f1aadf7b22ee8ce25c197052badfcf8c619f8  ./image/modem.b02
+39aad8e03aed3df085012dde7d630f54c5ff747675beb295f4695365519d211b  ./image/modem.b03
+df05462bcefb352334c16d9af8f0d42cc62ec8160bc7a0157b9d603492b4ebaf  ./image/modem.b04
+85dc9fc7e7cfb06abe7512f44e1619bd0a28a70937a8259b9ab897b8b6d97f37  ./image/modem.b05
+cb4f8a4c38d194f1b28ee5c096a9520aeb8de4aed1c300c6ff087b3275ed02e9  ./image/modem.b06
+ba69d1097ee6b1b58f6bde426ea88793ecf4bae689865f98ea5f78c8e4c527fb  ./image/modem.b07
+895372ac42e919a4909d53129dae411e236302980d7c031dc150449b1f78821b  ./image/modem.b08
+2ce91a44566a3259184af7cca0525d6411cc0694ea76ef24076c361b9f5f6217  ./image/modem.b09
+6cc9ef45a000b46ce4b5364c4f2bf2d8a981a871de0d09c47cdcdbabb85397a6  ./image/modem.b10
+845654cc55bf719d53590bc635bc68174390736a13ed7ceeb5ed74032058ecdd  ./image/modem.b11
+2886858cac1f5320ed9dbb40bbadf6df5fc7601b55ca53a738c3e6b5c4f0d2df  ./image/modem.b12
+032194c5a03388b71b463cbdef47ffebcb610e9a80b6df1b5ad3b0d3f251ae3f  ./image/modem.b13
+508bbc2dc7271bcec580c9fe381bb211e853e97b66105488712a90340bbb9121  ./image/modem.b14
+3328f89ff290d10ddd671695862e73c11202e72001aae16326917f70faa19d9b  ./image/modem.b16
+46ee3e624a89189c2b43472b11989cb3bc75ded29dd5db1b914a20063aa46d7c  ./image/modem.b17
+443f53d25e497dd095ea02211aa81502418882db6b2dbd65be0082d4d164810d  ./image/modem.b18
+d6c0fc80a827a2402648ef2c255964c3f2b60c6e4e04ed5d2abe734c5ec3fc43  ./image/modem.b20
+c149427e9323cb61b3e5001635236c77c83a8163097eb5318ced50bb32ae9f4a  ./image/modem.b21
+b82ff0cee2212119dd5c783fb30b3bfda09cc199e7f515976b974f0f00cb2e0f  ./image/modem.b22
+7a2586b82d05518760f3e87f42e3b4c551a0473a7a5c540c407438fc23173261  ./image/modem.b23
+3359341acaeecb436baaa16c92033dc15fbec0a950db3c6779d0faf222eb24b6  ./image/modem.b24
+c26561870e54a1f17eebf27a91673f22d7e08a56a6ec3ddf449a2feef5c83870  ./image/modem.b25
+21373f3ac456b9dd34f033e850e72f8698a78eaeef9afd1536aced37412b6256  ./image/modem.b26
+df5070de3d1094f04b83187570d70375a08d95b57fa5b61e35750c06380a0cc5  ./image/modem.b27
+d1fd1001bc1dd5af2d300cc35b83d2ccbb5f9fc607f41634983b77ab28fe7011  ./image/modem.b28
+5ca5e2e3cfccca935ae00949a00b293a26b9ec9f93fb281934d2eec035f39455  ./image/modem.mdt
+c7766665de109578c0d9e012ee2d48108d4a7c98703391b35a436ba0ff0428af  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/default/cust_def/mcfg_hw.mbn
+4881333595263ed7f625c418760054e17a0b39d13a9e7d6bb30a96795547e9e7  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55/7+7_mode/dr_dsds/mcfg_hw.mbn
+03d794c059a6e264a16ca9af54283661c652d8435f88058696d4ea3ccbd2ae5a  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55/7+7_mode/sr_dsds/mcfg_hw.mbn
+e523a7fed438044a366b7138d5760e578cf04d4c9d21058c02fac278ad7362a2  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55/ss/mcfg_hw.mbn
+cfdcb3d91859a239b49c19c9589e4a171d21f07603c9edbe34700da8b3809e24  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55_/7+7_mode/dr_dsds/mcfg_hw.mbn
+192dea27a2fb8ef11aa9584be920b76f4fb7045042845a6e85ce86c159945a3f  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55_/7+7_mode/sr_dsds/mcfg_hw.mbn
+05ca9ac0d9bea21b6e8207d54071a6c90e7f383b6936a4c0bf5d3efd9c1d0a37  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55_/ss/mcfg_hw.mbn
+e49c3e55c97f00f7eb7ae86f37677e966e8cd7505a672b860769b3e8c7765ce7  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/cmcc_sub/sr_dsds/mcfg_hw.mbn
+038460eb0b8078de3ee10c4bc7c347995c9c3e164262732e09b5cc45fbabe3e9  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/la/7+7_mode/dr_dsds/mcfg_hw.mbn
+a687f861f2488f745bc4e3371f11b2fcb708c8cdafb89fe090b0b0d5777c38f3  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/la/7+7_mode/sr_dsds/mcfg_hw.mbn
+214b3ff1997ebb2a20bc1b07d98698bedb20f5f89d649e5595fddc0ac7455137  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/la/ss/mcfg_hw.mbn
+7a6f3b4e08eaf730c34b33b04f4d3ef270593cedc3e9b35f157b456c44ab3909  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wd/7+7_mode/sr_dsds/mcfg_hw.mbn
+4b00c4c1f8ec32f8e7e14738a260098f7dab07fa37cc327d5bdb11c7471e3deb  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wd/ss/mcfg_hw.mbn
+b14343ef2cc8c1cc9a3cb9ce5c49153e11fe5fc263e8ca7033cd4af90c538111  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wp8/7+7_mode/dr_dsds/mcfg_hw.mbn
+baa9036525d7c8f0f293ff6d69c28881a7cc07b72f646c92f37ad5df15526260  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wp8/7+7_mode/sr_dsds/mcfg_hw.mbn
+22c5dac043eacde324905dd35e688f2c85aac3c6d1305c0a71a84a2656d6c1e1  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wp8/ss/mcfg_hw.mbn
+1c7852132ccb404aab88d405742e55ecd76f150a512576f48329675e68cbfda9  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/cmcc_sub/sr_dsds/mcfg_hw.mbn
+dca01f038678fef84903a652ec0e5908b8368d8db154337915465eca7dcfeef5  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/la/7+7_mode/sr_dsds/mcfg_hw.mbn
+c9c1fd98155f2febe2f619ccbbbb230987cd2437c02afa064814a5463e27a11b  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/la/ss/mcfg_hw.mbn
+5bd5e4e87543f885f2931310b6cba9bb38b3c3d3ac9bbc4760adab614fdad79e  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/cmcc_sub/sr_dsds/mcfg_hw.mbn
+091aaf2fe13260993499633a97ce1fc36320a87597b7ad02d1146b38712e31bb  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/la/7+7_mode/sr_dsds/mcfg_hw.mbn
+74de119fb01d664a65943aa9447c2fda5d2be06ce6cb4bd7e543502d50bd381f  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/la/ss/mcfg_hw.mbn
+01b01ce88e46c1d441ebf89baacf3aa1d69bc9a15470cdf78bf41bfa898d808d  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/wp8/7+7_mode/sr_dsds/mcfg_hw.mbn
+68eb3591c6772aadffc194adc3cd9f6e40720e68bf792d86dac9669696f83387  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/wp8/ss/mcfg_hw.mbn
+0184d81ce90425a6a46d3f8e21b01de692cc326d9dbab6acaf38eea76b7ffbb2  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20/7+7_mode/sr_dsds/mcfg_hw.mbn
+877c2e91d4e6fcb95b3feeef8f1ecbf0fc84656e45edd3621f2ed4952a494b17  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20/ss/mcfg_hw.mbn
+7348c3bc9928514a0b762c55c80bafd95b598a10b4060fd3926d2596d38dd17a  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20m_f/7+7_mode/dr_dsds/mcfg_hw.mbn
+aa989f0950d0a8eb17354616ef472364639d62914f80f8b6cf609396518ef4c4  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20m_f/7+7_mode/sr_dsds/mcfg_hw.mbn
+29a41ded9717687324d070874c0545126e164ab308e3aada55a200867c4a792b  ./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20m_f/ss/mcfg_hw.mbn
+5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456  ./image/modem_pr/mcfg/configs/mcfg_hw/mbn_hw.dig
+ef4ea9b75038b9f736246d977e0bbc73c5bd34f4ba5da6f674ca74d285130d97  ./image/modem_pr/mcfg/configs/mcfg_hw/mbn_hw.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./image/modem_pr/mcfg/configs/mcfg_hw/oem_hw.txt
+84f7b5e59e064ad48fb9013aa43c058a4690eb178a6bdfce9aecb329da20d0ce  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/af/cellc/commerci/safrica/mcfg_sw.mbn
+4e0ed7f242940d56bfb626f40aa39e093d564b2602dc396121c8972effde3311  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/af/moroccot/commerci/ma/mcfg_sw.mbn
+ead8c608cc5023a2d0321edf0161b14b00fba569347ea81ccf3d67a30bc30508  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/dcm/commerci/mcfg_sw.mbn
+5497bb6a5dc9bb32dc2cc9e1e98c9461a1abf34f695dd1ec7050ce5ac80757cd  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/kddi/commerci/mcfg_sw.mbn
+7f219eb3b05385afa704de9384404a7db905232a02ccd91321a4de19e75d8d0c  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/reliance/commerci/mcfg_sw.mbn
+75d151f14e156699bbde595345c519aec36c819d783b437ae80f8984dd560e1b  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/sbm/commerci/mcfg_sw.mbn
+dfa7c6fac34dc16a6f1d431e60a0d99b7b9db6bbd0d4194b965bf797ccbf3fb5  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/optus/commerci/au/mcfg_sw.mbn
+aa5ba73ee8958ac4a070c1cc57c145f8b5cce81298ac3d0fc716f7553b175bc5  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/telstra/commerci/mcfg_sw.mbn
+dc599e36ae54e11d1971672f20a022b473fe62ce5601f2bcec18e9e4b203e3dd  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/vodafone/commerci/mcfg_sw.mbn
+dbb38ebec95953a568335dabc4a3bbaa54c558f695ed7bd64219a0391fb6d15f  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/commerci/volte_op/mcfg_sw.mbn
+0b04206dc2c843da9bbdb95e6ff20e4f8c24e34a44eee2ea8f9c843d4648ed8a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/agnss_lo/mcfg_sw.mbn
+0c4a6e89d83b8d44f9eda523173505a43c4601e27b18a4fa262f0062455c6335  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/conf_vol/mcfg_sw.mbn
+03c01a933c8a0771de6046ff5074a5adfe71468957b3785ce7f32bdd7fb7e2d5  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/eps_only/mcfg_sw.mbn
+c760d1e3dbc81f4d32c83864ac5238e7e665831c479e2d4ed004feec3c3cf9cc  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/lpp_loct/mcfg_sw.mbn
+91d83dcbca158288233cd9818d66be6400be6fde4938d81f11c9dae11be8a0ab  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/nsiot_vo/mcfg_sw.mbn
+de923a7f8947a130c6c397a581da3ad510466fbff33879bcfe85a3a99b5e1363  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/rrlp_loc/mcfg_sw.mbn
+4c2e4380e0ae5d29e159aafe18e7082be461b89535d28c7f3ec7483d63424d4e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/tgl_comb/mcfg_sw.mbn
+466d929f44dc372a3d3378af34c491c6ee6da6552e3487d0a8e2981895cf8264  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/w_irat_c/mcfg_sw.mbn
+0768ba496f90ffc2b6a43dcee974e28c3ffba7f6a6ea0a7324eadb743b302940  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/commerci/hvolte_o/mcfg_sw.mbn
+b418789bde28d34242462ba80618e006b0f528eb856d32b47960b7b0ca1698a2  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/commerci/openmkt/mcfg_sw.mbn
+f5f2ae1b9c2e132eb58f43f1abe202c38c875402113ccf9bf554b76f15a42504  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/commerci/volte_op/mcfg_sw.mbn
+2b2d8433e9fef03078c7ddc0fd029a524582e91eed9fd1b03b2e25ca68b7dbe8  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/cta/mcfg_sw.mbn
+3951acecec09d5b2c71e1e7eda5589440133f0f5fea0cbbe23ae65dd70dd102f  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/test/mcfg_sw.mbn
+08c5214aff6c0a01279f321bde27f1bce7476d35a5df0fcc5d51fa63e9459f77  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/test_eps/mcfg_sw.mbn
+f6e1fe27639828f3891614ed20aafecb482df6e4f6b40c0309084e9eb449315b  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/test_no_/mcfg_sw.mbn
+1b48bc40e393fa02aa0a4f871528ee9042216091299827a82ddcb500be493e3f  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/volte_co/mcfg_sw.mbn
+30eabf2dc1c5cbfba50b3c1644b9db7c94fa188195cbba435d2c4842a3ec8487  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu/commerci/openmkt/mcfg_sw.mbn
+cdb9029fd0d95f25cd3bd7cd1f1957a622dc893855f19d2e8fb861eca465446e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu/commerci/volte/mcfg_sw.mbn
+6bc09b2ec32f7d2ec120d656e7fbd4eb6b9d7f54a333cb9480aea4f69daa915a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu/lab/test/mcfg_sw.mbn
+5f109ad0df749d77b57a83d19109d3deca511bf871364372e96603a6bd555aba  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/default/cust_def/mcfg_sw.mbn
+51792b7d83ac670c68dfd7ef6480837c97c13e60aeb3b19d732032c58daa3854  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/row/commerci/mcfg_sw.mbn
+e8b4f5018e9c7a6af0510650183e26f9c5421a5ea564d573d2d5a9de6b5c2abb  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/w_one/commerci/mcfg_sw.mbn
+f199d4eaef23f7ab6f4cbcec4d8c6df57a77c77c2dc406ec3c19fd5924574a6e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/bouygues/commerci/france/mcfg_sw.mbn
+26461130e28e4c10887f52f515f711e0d1e8c6eacb2d8b182874f653f37a3fcb  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci/croatia/mcfg_sw.mbn
+8f5a465c7aef42d23e163e773c136e93af4f5e093c18dbd6092efee50ad4187a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci/cz/mcfg_sw.mbn
+276216558f188eeddf826b9acdeb1e19cdf96930f98d8339fc27e300ac13013c  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci/greece/mcfg_sw.mbn
+d22ac8f6573bc59797dd2c60b52105f45f97993b7f4088d94850606dfe281715  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci/pl/mcfg_sw.mbn
+be2528ce895784d6b0fdf4dcbab59224e8686760e5070ad24f1a451ab3f88be9  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/non_volt/commerci/mcfg_sw.mbn
+5cb1c14c7d2c6b2daa665edb573bbd375dcdabba8fd9fb20a8572d719aa25504  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/volte/commerci/mcfg_sw.mbn
+832df42ca6fda2725b9e8d62318c8d2364b15f1cc16e9419c8d587092389aa03  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/ee/commerci/mcfg_sw.mbn
+37c0e5f85098c5d40757a2b2faf643dd108af80cf0e6098d53f8d2b401d55ec1  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/elisa/commerci/fi/mcfg_sw.mbn
+2c373e868f5336b4d3fa4b2f5cc314221a167a8e90419da06f31cba41b361efd  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci/denmark/mcfg_sw.mbn
+582497cb5cf914994314816b2a1c1db5d8047c3575e3646a4d8ead049fdd0881  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci/italy/mcfg_sw.mbn
+8258ce55a6a8ec0d928f9fa441d0f9387a59e9e467f962cce6ebc43ba54fdacc  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci/se/mcfg_sw.mbn
+34865f245b6de3f651cd89ef4c526410ccb3f11f2e2e325dde726390c5d90304  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci/uk/mcfg_sw.mbn
+e203e2fc613043c731dc6beb558dc3dbacba0c310b3efb4bd5c5f4c154c8bf8d  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/france/mcfg_sw.mbn
+3f40acbfdb2195ca4e75645e0e216dd196e946f2eee30693ac3270fb11b9b0c5  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/group_no/mcfg_sw.mbn
+fc2aec404664f4529f7a2142b3ef4d2bf481800b59c7399a1c1ab64c749221d8  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/poland/mcfg_sw.mbn
+22dec1aa64ec1bd3b0950a81e980f3c079bda4ffb7fdb39c4bc111ae347c408c  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/romania/mcfg_sw.mbn
+ce9fcdd6dd9c441c82eb4a4c5b8ebf73f9c23b082b7d0f7044fa661272843f0a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/spain/mcfg_sw.mbn
+5c26d7e349b401a8d7868c448966ef25af4a0e5c4eda9a05af52fdc1e248654a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/sfr/commerci/fr/mcfg_sw.mbn
+a8cc63103a5cadf545490b0f1c114ba0271e7c63808d91541b7f39f374d24505  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/swisscom/commerci/swiss/mcfg_sw.mbn
+6ea1f55a4d9125ece15ad1577929830901d28f15a43d417dd9a47b59fc9d7a99  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tdc/commerci/denmark/mcfg_sw.mbn
+724527db0c2845076ab354198b77a8c50fd3479a2f1cc6b1abe0f7ef1e21901b  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tele2/commerci/nl/mcfg_sw.mbn
+c466c63f9c27d0a480b01524cea35579fa69fc62684ef48cf62c2e8b9f15deaf  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tele2/commerci/sweden/mcfg_sw.mbn
+1d872ae94733cff48b28ea0c23f6a647db55594e22707df54e07fa16c5312f53  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni/commerci/de/mcfg_sw.mbn
+d10f87ef06321bd82ebf3aecfbcdaf688d57495d1bda0d74fff8d6fafe08423e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni/commerci/uk/mcfg_sw.mbn
+673e3ddecb97c00b0618f5c8d9d7219ce0a5b0d83283f2ad8c95c478ec108c47  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni/non_volt/spain/mcfg_sw.mbn
+c76f725e93d89878cc0d595cc8c5a285d13c1beb5d44c3c7f048f0509d89a792  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telenor/commerci/denmark/mcfg_sw.mbn
+8653236a80c973bd283909f36e5da615955d260180b1cf96f91d660019ad54e2  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telenor/commerci/norway/mcfg_sw.mbn
+6e26f6fc6be4984562c491e2a028eb37c69351e6961aa79b906dd85ab750f9e7  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telia/commerci/norway/mcfg_sw.mbn
+002d005ea4b14e4a1e28533ac761ab2c096a0a4e17148ba6e2e6ad51f136e248  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telia/commerci/sweden/mcfg_sw.mbn
+790e9af26123437e387b015166237d2d4482c7120380ee27751a75315a134c1b  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tim/commerci/italy/mcfg_sw.mbn
+0fb972f6b32f961f4b8d03c8527023a6d451c4dbe645cf52b6053c371e7ef75e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/non_volt/mcfg_sw.mbn
+3a518bc43f56954dec4d036d802c43778a0149dff23caf468d3288d566f5d057  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/cz/mcfg_sw.mbn
+63c2c5c6ce155ae76a851daf4618a503f25842ed1e721dfa88514b1e9faec6ad  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/germany/mcfg_sw.mbn
+e15bdc8b574b33e12efdb28cd302b781f13a5b4592714b8fc5e15947a305f531  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/italy/mcfg_sw.mbn
+99c99d9757296735110587cf1e487211efc6edef9195fd1f05e12a400284789e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/netherla/mcfg_sw.mbn
+3f7e8deac5807a6fa6ab7ed7c6d119ca3ad05bf7d2dd9b544b8b6d96416d1976  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/portugal/mcfg_sw.mbn
+d85f274bed1765e4544ae37732a2db585e263a57537f9aec0037840fba5b95f3  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/safrica/mcfg_sw.mbn
+6fd63a8279278765149a918f695c6c31b1a935357840a0c756e499b51172d2c0  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/spain/mcfg_sw.mbn
+2010116eae67053884da8c77300968b18390119a2d6b005780f8efbe83e9c771  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/turkey/mcfg_sw.mbn
+11a68919cf08e70148114ef3fb960fa11b0c9e69637ef7ace91e68d851994d44  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/uk/mcfg_sw.mbn
+2fe9c8c7a8d7432b580c6471dfc0e6f7107b28d871764dc330858ade39b8a504  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/kt/commerci/mcfg_sw.mbn
+3cbef6025422892be98d5e22d1d89cb3d1b4cbd12c743471f3fac1cf92c77ddd  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/lgu/commerci/mcfg_sw.mbn
+67daacca404bc64caecfbfffa1f062be3e23ba4bb1b0962c58a5af201f44e77c  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/skt/commerci/mcfg_sw.mbn
+bd3eaa3daa92de7ed028af9a4c73966bee807570a75acd400ff81a1eae96f281  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/tta/commerci/mcfg_sw.mbn
+12828965053bfb345d643d24c349085369a2dd132d8c42decd75964e7bb43d23  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/amx/commerci/mx/mcfg_sw.mbn
+fbfad43627bc316f7f403e7cec77c50b8da92bb2541e91abd2beca0d43b7ba78  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/amx/non_volt/mcfg_sw.mbn
+46b1ec35399c8ed01c4c8bf5cd9f4232252a0740b39a93cf45ad5bd13c1685e2  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/amx/volte/mcfg_sw.mbn
+48d47a7f3e73b508f0fb5288cf75c016e780365f8c82e32d682c97086751a959  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/claro/commerci/colombia/mcfg_sw.mbn
+1ddc0e07e00790183ad3a13f3c1affabc8555197343d162f15e330b89bafbb64  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/telefoni/commerci/peru/mcfg_sw.mbn
+86a37ff1b57b663954373a7c7b407beb108110f60068860d5f014289553a8294  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/mea/stc/commerci/sa/mcfg_sw.mbn
+6aec8419208a8b8ce38f1f111f61a6e73801776c8a7e3408e4800097d89a269a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/att/firstnet/mcfg_sw.mbn
+701c99a99ba64ddfc016b96cb71468f7a799f4731c6c34cf3fe17ff372b4b5e9  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/att/non_volt/mcfg_sw.mbn
+d8cc18cf000bba8c94adc788dc65fbc8c39b6b0b2149a2870b5c62871a36d33f  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/att/volte/mcfg_sw.mbn
+42e09bb2c88bcfcb8a87ddd49b6ee43004ed90fe07e70b83cac45ecf30d2fd51  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/bell/commerci/ca/mcfg_sw.mbn
+b66f15c601647f529f7f74b76c68d086bf1220b3d71a0232811dc3c91b756e1a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/rogers/commerci/ca/mcfg_sw.mbn
+d81795e69faf598b749f65e893677e54a0a5917df36b7152b323f05150cb75ee  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/sprint/commerci/mcfg_sw.mbn
+0bda160aafd58cb6a1d490568407f3a2cf1953cbe354bae3d26f86b188574cc5  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/sprint/vowifi/mcfg_sw.mbn
+2eaa5efaa4b0f2a758f9b2b8df1182bfd9bfc70db788c2bb62cc7da943ee511e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/telus/commerci/ca/mcfg_sw.mbn
+8b3dba05170b3ff846cc6ba170a6fa63184f2324a309518a6d767d3056bc880b  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/tmo/commerci/mcfg_sw.mbn
+ec037a92fc4aac3e2c635928f128282293fd6a001d782acb95a1a8d94f052f17  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/uscc/commerci/mcfg_sw.mbn
+fe4ce4cf273bc30798686b94757c2bdaf4542a792fb010ee98dcac1914d98a10  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/verizon/cdmaless/mcfg_sw.mbn
+3d9dba8d4977f35f4d1fcf6e16ead64ba77c8a6182b0c9e442c5c3a28fa0cccc  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/verizon/hvolte/mcfg_sw.mbn
+0ac2cfa5366654f687db6b08039b0cda24f3d641b21e73c8f26317780812ffb6  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/verizon/imsless/mcfg_sw.mbn
+fa615bb12f3c1408a03e82dd1432aa2d06773c2fe471731b6be5e536489b3c1c  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/russia/beeline/gen_3gpp/mcfg_sw.mbn
+d8b46e1c4170cdc106c70fa27c4e50ba1e85118611df429c6c441a908cd257cb  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/russia/megafon/commerci/ru/mcfg_sw.mbn
+b348c922a012b2817914e5ee0fa04fc8162c7d32b826647ecb1a9f628c849fa3  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sa/brazil/commerci/mcfg_sw.mbn
+875d7332b4847eda6af889d3a2e249cdc3f50f24761682b3a96aa92df9bbed0e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/3hk/commerci/hk/mcfg_sw.mbn
+532160e79de992fd800532f17247e6c99c0839e236461b2cf5a10a83978f2da5  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/ais/commerci/thailand/mcfg_sw.mbn
+090cc19bbabaee6d101a01a27898410889d2937394c82f33740289d57c46b1da  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/apt/commerci/mcfg_sw.mbn
+35738c65514b215f04dd4d52c7603fbbb95a30e129fa664377b68a4da7cc38fb  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/chunghwa/commerci/tw/mcfg_sw.mbn
+a2abab479fbeb84b85e3c26cf6a52207df6a234b0226ba77b669e04f48597601  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/dtac/commerci/volte/mcfg_sw.mbn
+811a0c19cd985b8fbe9e2ecc581cf0d87f35a8a72a148df5c268885dd30cb6b8  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/fareasto/commerci/mcfg_sw.mbn
+08650d62de5cf0ecc431cb1dbbdfecf52f5f314db35c2abd872105adba0cca7c  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/globe/commerci/ph/mcfg_sw.mbn
+9f050964c773409b7df4217446f139c913b4008cc456d49cb2a6ba944b5af83d  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/hkt/commerci/hk/mcfg_sw.mbn
+0f20200ffbaf287356a5af4c1eb5858870fd1b27c3af97d2f103abcc5391f6a3  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/m1/commerci/sg/mcfg_sw.mbn
+ce6d30be7ffaac39b3976eb924da512628b45b29bf951b226539240fe78aced1  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/p1/commerci/malaysia/mcfg_sw.mbn
+3c21ec6b03f24fa8af4244a4e797142da40095be3c35b6eef29df0062be6898a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/singtel/commerci/singapor/mcfg_sw.mbn
+35a2422951229830d8a8aa11c41ebd6a05d7e4fd3f1f389a0e71bb2da14680a0  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartfre/commerci/mcfg_sw.mbn
+e0520a17cfc92657fecf4aa909b07cd80426d7fb45b0ffa892c2a42059f49128  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartfre/commerci/vowifi/mcfg_sw.mbn
+9d09c8330f23d70a18b2e6f1d958d5f1e05377b2ec264f3ea1d9e608e19ed787  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartone/commerci/hk/mcfg_sw.mbn
+7e964e9210792cbe680a97b3e367af65b194912899d9c5c05608c3f7d039014e  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/starhub/commerci/sg/mcfg_sw.mbn
+f258f849207feea084c9997cf1956c162e7cc56eca40527063fc9e105c869124  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/tm/commerci/mcfg_sw.mbn
+44e8bb5bdfabee23e0c422e23ed394f4fccc18d31721c65cbe09b178864752dc  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/truemove/commerci/volte/mcfg_sw.mbn
+92e92a85557cde1ba2a4ae2c57a57d6f5aa5d61f37b8b487a37e5edf8dda008a  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/tstar/commerci/tw/mcfg_sw.mbn
+f28dd1097c6b4c2dde2e34e000fdadb90a59d7aa9f6b37e944b4dbf6646c72d1  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/umobile/commerci/malaysia/mcfg_sw.mbn
+ed0af720a92843d5445e5e85f1bdf7dd75df7adfce044bf102c100b0da163cdc  ./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/ytl/commerci/mcfg_sw.mbn
+f2b99d381cdd46603fff1e8d5f08b708cf55c58dd03e3c548a4f10bbb86482ba  ./image/modem_pr/mcfg/configs/mcfg_sw/mbn_sw.dig
+889d326731410a2e9a92db3ac47d090e6ca1c5854bb1b290b9a788c2c9aa4afc  ./image/modem_pr/mcfg/configs/mcfg_sw/mbn_sw.txt
+773f6b6726f1dcc8b6f0219257342f1423345a6d5508e997f6fad0085ba2b9e5  ./image/modem_pr/mcfg/configs/mcfg_sw/oem_sw.txt
+60096a133174ff15c0c974aa3fb7853d870a163401df94411e9951f6fb6290e9  ./image/modemnm.b00
+6c7d260e2a3b7f549a9a0e8a010cf4929b8279dd5f5e653c05bbc063ce5cb75d  ./image/modemnm.b01
+9b05796745995099224cc36d1c6d9fc22a307fb3aaeb0f11387391ac87b0547b  ./image/modemnm.b02
+39aad8e03aed3df085012dde7d630f54c5ff747675beb295f4695365519d211b  ./image/modemnm.b03
+a8370b7974f923935bdade5b094df003aaeea7524c7853f9faa2f627a99b2f3c  ./image/modemnm.b04
+1cd13dd6344582ad60549bfa734a78b06d3dff5ccd6987bde74ad68a77f35d73  ./image/modemnm.b05
+65630b83629e9797baa00890171e378cec1a9562e95742b30f7396851d71f51d  ./image/modemnm.b06
+f43c125c191c14c3889579c8d380a7cbf4c6c9e459f9b44ecab4fff6f09ed808  ./image/modemnm.b07
+fb447c3b6f11757a536b85c33cbb69316ed2246cab6642a2b3cbafbeffc01faa  ./image/modemnm.b08
+e6d966b6b21a4f05b856ef37b5a91ed8f05f42a25d562237346c4c89b4090ee7  ./image/modemnm.b09
+508bbc2dc7271bcec580c9fe381bb211e853e97b66105488712a90340bbb9121  ./image/modemnm.b10
+f82793bffd5648558f0ed319f31b85eca458a5f82825e23f6251fefe6c36a8c1  ./image/modemnm.b11
+b1c4c6ea315d6ba2c994700437051961d9bc0c14e29f8db608565817b975c896  ./image/modemnm.b13
+864760fcd59bf3e30dedd65a5af3eb1bb1346235124080a485e699c044fb1926  ./image/modemnm.b14
+a8278b8f327a386e6973b8f5e8f913a8dcb95675a1257a8aef4cd8760f8d3ccd  ./image/modemnm.b15
+3e4359a9ba0938aae2b137bdded32f3ea4da4f3cae8a650ab13abf54598c4130  ./image/modemnm.b17
+0589ab1997dc0a30cf384dfc357b03560c1b11d45993468c89e3588dc5c11579  ./image/modemnm.b18
+21373f3ac456b9dd34f033e850e72f8698a78eaeef9afd1536aced37412b6256  ./image/modemnm.b19
+df5070de3d1094f04b83187570d70375a08d95b57fa5b61e35750c06380a0cc5  ./image/modemnm.b20
+d1fd1001bc1dd5af2d300cc35b83d2ccbb5f9fc607f41634983b77ab28fe7011  ./image/modemnm.b21
+d05d7751233bc68c1e87bf8cb2b8f922ca241d887c15df5c6c4c26bd0aa01e15  ./image/modemnm.b22
+cdf1918fc45b3ec04321528a372d4a80cd47bd958c80ac9dd35057580e19ca41  ./image/modemnm.mdt
+44ebb965dd299e798c69914718ae23525db343b5f2169b81e686bdd7db841e3d  ./image/modemr.jsn
+e75d94b61df3e86c5b3f7a976d93f726cb85f2b897a8ea80a0924b9bb9c1a3bf  ./image/modemuw.jsn
+f36fb9652dc58c71c36d6ea5be1f90c43b4c6d544bd11b0743e7f8d244605d2c  ./image/qdsp6m.qdb
+735d16342e424c0464c6d6b387f18a7dc2c3cdf99cc98e4200eac2103f7d6fb0  ./image/securemm.b00
+73657270cd10dcf5e92b1c386d39883696c760564c57586bcb52dc0c8122c519  ./image/securemm.b01
+0678c4988bb345c09ffd1b372479294c752bbfaa2ff954815117ed01c3471adc  ./image/securemm.b02
+54c1df868a0131e205745a132fa9be17109cd210b5fecc57967b1092b6ffd416  ./image/securemm.b03
+278ce19d81b4418578998639b31575d073fdd0637eed0482e854dbda70319494  ./image/securemm.b04
+65e829cd7db69bec2d82ec0f31756073b98a6413d2438252a2203949e6c766be  ./image/securemm.b05
+65e829cd7db69bec2d82ec0f31756073b98a6413d2438252a2203949e6c766be  ./image/securemm.b06
+4429491f4aca985ca2dccb601beb51d981de60c3d9e2d839d05a78afcacc1143  ./image/securemm.b07
+022992eca697a2d1ebea707c14d93bb8ee990b745c124010662508528babb745  ./image/securemm.mdt
+8e70c573ee5dda072b7b49c9e8a6b39366000c236be0d14bd056b2a9f4a7bc4d  ./image/smplap32.b00
+31b619765665bbdb1f9d2927faa2e64acdafad5693f59bd623f7d5e83d72bb50  ./image/smplap32.b01
+6a03b4528b0a14830a74aa5e98f0c76a5f3cf9f18b43a078a18c4c48c2b25659  ./image/smplap32.b02
+5011592028bcb0678fb5489f6fdf3b2c23d54fcc6a1d7dd00f2be8d3aebd2ef7  ./image/smplap32.b03
+6d2285e303b06197028677bc5a0178f432ae2f3a30e907147499f307dbdd85a8  ./image/smplap32.b04
+0d401ac0dead1d5f406d27e164c614648b53e5be6b96cce07c1d4a20e43d4a5f  ./image/smplap32.b05
+0d401ac0dead1d5f406d27e164c614648b53e5be6b96cce07c1d4a20e43d4a5f  ./image/smplap32.b06
+2b725446ce868800da357bd11cf2f6b02ecce6560b00d9c9702f0af8233008d2  ./image/smplap32.b07
+312585b208a827a5c55a5ddd277960c0bfd6980b849ae1c42057219331851f02  ./image/smplap32.mdt
+11ae8d80ab486e7a38d56046707618a674f54dd157094a04aaa66d785fcfea26  ./image/smplap64.b00
+8b4dd6d2884eb549c42cdb7257d318039162fe1212dcce779a1dc835d96c2955  ./image/smplap64.b01
+a130005a08398295c8d57f6be1fbce08fe730914fc4856db5d3de975216134cb  ./image/smplap64.b02
+0bfb43d95443141b3c755e5a346124ae4cfbb3526900b738666f947399512eb1  ./image/smplap64.b03
+23c828b459fb322f01077901007c8d41f1a516267d56a72aaf7d361b2b750630  ./image/smplap64.b04
+008520358f302372da346db7733762207730c6f8559be0e6b8a578225b1c3795  ./image/smplap64.b05
+008520358f302372da346db7733762207730c6f8559be0e6b8a578225b1c3795  ./image/smplap64.b06
+4ba2c1723ce7640ba5914df75188cf6f973e404ca97f2e1b7c673e430b1ed2c7  ./image/smplap64.b07
+94a0b67eb95a526a615bce4e127251ac178f73f19eefdb1dbf967b6cd2541d84  ./image/smplap64.mdt
+dd0456dd3a6659b0bd8bd79a841d9e6b5b777d6836248198ae092c8922019af7  ./image/venus.b00
+1163bc80986257ec9ad3906467f885dbd0bd4b8a77f5daf64431609a4c079343  ./image/venus.b01
+a795e905a7d578e566bf7befa325b718226ebe2e07a50027365778a9c519b53a  ./image/venus.b02
+47d8c9835903393205b8ca2de7651f3a644cbaa3f54ab3ef09fffa9ba2107759  ./image/venus.b03
+43b09596e1496809aaa964b34c146580f0566c86bc9d7218a1288fd15fb93424  ./image/venus.b04
+d953e777563a6f0485c25179b2b00094d982e6d3f904957036b839eb0af29b14  ./image/venus.mdt
+88c495b677510c638b5a01b811c4448b66ff122d3df000efefc4f4721e0d3431  ./image/vsimapp.b00
+3da73c18e1777cbe3575981870c1e76488379e286ef694b7eb39889f3b01d3c6  ./image/vsimapp.b01
+1270d888e14c2d3787ba08cea4cba0cc372d823ed3dfdcfb38037c71efa0aa5b  ./image/vsimapp.b02
+a6ed34a6013e4f73bfc0f374bed61e294fdcba4c0adf6bc08f21bbeeb807198e  ./image/vsimapp.b03
+c5ac074d5a9b322aedff7b37cca5df779cb59a7a91dc702357553e72ffbc0e7c  ./image/vsimapp.b04
+ae71b49f2e5792df5914f7128b68f8cc04db74a73e5bf625ee5b9af8b2aa413a  ./image/vsimapp.b05
+ae71b49f2e5792df5914f7128b68f8cc04db74a73e5bf625ee5b9af8b2aa413a  ./image/vsimapp.b06
+d370bd72cc4995d1830b595adf83ddb360628637ac23bc62ae3dc44e289a3e04  ./image/vsimapp.b07
+3130b8c52109faa38b384dd4ce050677c252faf215f323c7d71f4ce7937b2997  ./image/vsimapp.mdt
+8d0f0c64dc5ba244084f5dd307ebdefd1f03aa66b32e1b2955752360bb40cae2  ./image/widevine.b00
+2a473c1b221395c3e42189e7518315f5903b288198220edab41bc1a88c7480a7  ./image/widevine.b01
+148de5428c1cc748cfccf24802f6a8cc9257e8dfe1f2fb53ac091d17a56eb6e0  ./image/widevine.b02
+8603bcc0e7a4603cc9eaadda96d09221ab4a7abbb2e201ef4644f7ddc661916b  ./image/widevine.b03
+52c5a57d92e8e4deab1a72a7d1c12171e5068302d5d910ab59fe89dd0a6510ab  ./image/widevine.b04
+ca86965377c954767c42b1fb313d86aacab78a33451b24a2aed27dfeb99bfc0e  ./image/widevine.b05
+ca86965377c954767c42b1fb313d86aacab78a33451b24a2aed27dfeb99bfc0e  ./image/widevine.b06
+6dc58065cf2b2dbcdabe921cf7ebb1ef8594a7c02db191775606eafcc53b1207  ./image/widevine.b07
+bb1496ed0d84f7ee14913ba10a16f35db43ef7ada035edada9086270a4c25a05  ./image/widevine.mdt
+dce999bdb4727e36208d658b45ffb3b96b38d58a3b555f5713dff3b46bd74405  ./image/wlanmdsp.mbn
+bf7223fb746612be40c5b55f26e6bd2d30253a55cda82feb026dfffb1fc25588  ./verinfo/ver_info.txt
+.:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 image
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 verinfo
+
+./image:
+total 99952
+-rwxr-xr-x    1 root     root           148 Aug 29  2019 a508_zap.b00
+-rwxr-xr-x    1 root     root          6536 Aug 29  2019 a508_zap.b01
+-rwxr-xr-x    1 root     root          5188 Aug 29  2019 a508_zap.b02
+-rwxr-xr-x    1 root     root          6684 Aug 29  2019 a508_zap.mdt
+-rwxr-xr-x    1 root     root           148 Aug 29  2019 a512_zap.b00
+-rwxr-xr-x    1 root     root          6536 Aug 29  2019 a512_zap.b01
+-rwxr-xr-x    1 root     root          4900 Aug 29  2019 a512_zap.b02
+-rwxr-xr-x    1 root     root          6684 Aug 29  2019 a512_zap.mdt
+-rwxr-xr-x    1 root     root           820 Aug 29  2019 adsp.b00
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 adsp.b01
+-rwxr-xr-x    1 root     root          9320 Aug 29  2019 adsp.b02
+-rwxr-xr-x    1 root     root        114944 Aug 29  2019 adsp.b03
+-rwxr-xr-x    1 root     root       1633420 Aug 29  2019 adsp.b04
+-rwxr-xr-x    1 root     root       1145816 Aug 29  2019 adsp.b05
+-rwxr-xr-x    1 root     root          2152 Aug 29  2019 adsp.b06
+-rwxr-xr-x    1 root     root         69835 Aug 29  2019 adsp.b07
+-rwxr-xr-x    1 root     root         97304 Aug 29  2019 adsp.b08
+-rwxr-xr-x    1 root     root         42468 Aug 29  2019 adsp.b09
+-rwxr-xr-x    1 root     root        466944 Aug 29  2019 adsp.b10
+-rwxr-xr-x    1 root     root        687460 Aug 29  2019 adsp.b11
+-rwxr-xr-x    1 root     root         16388 Aug 29  2019 adsp.b12
+-rwxr-xr-x    1 root     root         50720 Aug 29  2019 adsp.b13
+-rwxr-xr-x    1 root     root         22640 Aug 29  2019 adsp.b14
+-rwxr-xr-x    1 root     root        155040 Aug 29  2019 adsp.b15
+-rwxr-xr-x    1 root     root        189408 Aug 29  2019 adsp.b16
+-rwxr-xr-x    1 root     root        123648 Aug 29  2019 adsp.b17
+-rwxr-xr-x    1 root     root           124 Aug 29  2019 adsp.b18
+-rwxr-xr-x    1 root     root       6333992 Aug 29  2019 adsp.b19
+-rwxr-xr-x    1 root     root        593464 Aug 29  2019 adsp.b20
+-rwxr-xr-x    1 root     root          1808 Aug 29  2019 adsp.b21
+-rwxr-xr-x    1 root     root        110720 Aug 29  2019 adsp.b22
+-rwxr-xr-x    1 root     root          8028 Aug 29  2019 adsp.mdt
+-rwxr-xr-x    1 root     root           403 Aug 29  2019 adspr.jsn
+-rwxr-xr-x    1 root     root           405 Aug 29  2019 adsps.jsn
+-rwxr-xr-x    1 root     root           555 Aug 29  2019 adspua.jsn
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.102
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.104
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.105
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.106
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.107
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.108
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.109
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b04
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b07
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b09
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b0a
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b0b
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b0d
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b0e
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b0f
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b14
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b30
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b31
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b32
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b33
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b34
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b35
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b36
+-rwxr-xr-x    1 root     root         19152 May 13  2019 bdwlan.b37
+-rwxr-xr-x    1 root     root         19152 Jun 13  2018 bdwlan.bin
+-rwxr-xr-x    1 root     root         19152 Aug 22  2018 bdwlanmi.bin
+-rwxr-xr-x    1 root     root         19152 Aug 22  2018 bdwlanpl.bin
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 cardapp.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 cardapp.b01
+-rwxr-xr-x    1 root     root         82640 Aug 29  2019 cardapp.b02
+-rwxr-xr-x    1 root     root         25504 Aug 29  2019 cardapp.b03
+-rwxr-xr-x    1 root     root           124 Aug 29  2019 cardapp.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 cardapp.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 cardapp.b06
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 cardapp.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 cardapp.mdt
+-rwxr-xr-x    1 root     root           340 Aug 29  2019 cdsp.b00
+-rwxr-xr-x    1 root     root          6728 Aug 29  2019 cdsp.b01
+-rwxr-xr-x    1 root     root          6592 Aug 29  2019 cdsp.b02
+-rwxr-xr-x    1 root     root        170700 Aug 29  2019 cdsp.b03
+-rwxr-xr-x    1 root     root       1313212 Aug 29  2019 cdsp.b04
+-rwxr-xr-x    1 root     root        673788 Aug 29  2019 cdsp.b05
+-rwxr-xr-x    1 root     root          2056 Aug 29  2019 cdsp.b06
+-rwxr-xr-x    1 root     root         54611 Aug 29  2019 cdsp.b07
+-rwxr-xr-x    1 root     root          7068 Aug 29  2019 cdsp.mdt
+-rwxr-xr-x    1 root     root           403 Aug 29  2019 cdspr.jsn
+-rwxr-xr-x    1 root     root           276 Aug 29  2019 cmnlib.b00
+-rwxr-xr-x    1 root     root          6664 Aug 29  2019 cmnlib.b01
+-rwxr-xr-x    1 root     root        197592 Aug 29  2019 cmnlib.b02
+-rwxr-xr-x    1 root     root           776 Aug 29  2019 cmnlib.b03
+-rwxr-xr-x    1 root     root           128 Aug 29  2019 cmnlib.b04
+-rwxr-xr-x    1 root     root           128 Aug 29  2019 cmnlib.b05
+-rwxr-xr-x    1 root     root          1256 Aug 29  2019 cmnlib.b06
+-rwxr-xr-x    1 root     root          6940 Aug 29  2019 cmnlib.mdt
+-rwxr-xr-x    1 root     root           456 Aug 29  2019 cmnlib64.b00
+-rwxr-xr-x    1 root     root          6664 Aug 29  2019 cmnlib64.b01
+-rwxr-xr-x    1 root     root        246296 Aug 29  2019 cmnlib64.b02
+-rwxr-xr-x    1 root     root          1496 Aug 29  2019 cmnlib64.b03
+-rwxr-xr-x    1 root     root           256 Aug 29  2019 cmnlib64.b04
+-rwxr-xr-x    1 root     root           256 Aug 29  2019 cmnlib64.b05
+-rwxr-xr-x    1 root     root          3768 Aug 29  2019 cmnlib64.b06
+-rwxr-xr-x    1 root     root          7120 Aug 29  2019 cmnlib64.mdt
+-rwxr-xr-x    1 root     root          1076 Aug 29  2019 cpe_9335.b00
+-rwxr-xr-x    1 root     root          7464 Aug 29  2019 cpe_9335.b01
+-rwxr-xr-x    1 root     root           364 Aug 29  2019 cpe_9335.b10
+-rwxr-xr-x    1 root     root         20388 Aug 29  2019 cpe_9335.b11
+-rwxr-xr-x    1 root     root            20 Aug 29  2019 cpe_9335.b13
+-rwxr-xr-x    1 root     root           122 Aug 29  2019 cpe_9335.b16
+-rwxr-xr-x    1 root     root           362 Aug 29  2019 cpe_9335.b18
+-rwxr-xr-x    1 root     root            12 Aug 29  2019 cpe_9335.b20
+-rwxr-xr-x    1 root     root             4 Aug 29  2019 cpe_9335.b21
+-rwxr-xr-x    1 root     root            23 Aug 29  2019 cpe_9335.b22
+-rwxr-xr-x    1 root     root             6 Aug 29  2019 cpe_9335.b24
+-rwxr-xr-x    1 root     root             6 Aug 29  2019 cpe_9335.b26
+-rwxr-xr-x    1 root     root             6 Aug 29  2019 cpe_9335.b28
+-rwxr-xr-x    1 root     root             6 Aug 29  2019 cpe_9335.b30
+-rwxr-xr-x    1 root     root         52348 Aug 29  2019 cpe_9335.b31
+-rwxr-xr-x    1 root     root          8540 Aug 29  2019 cpe_9335.mdt
+-rwxr-xr-x    1 root     root           788 Aug 29  2019 cpe_9340.b00
+-rwxr-xr-x    1 root     root          7176 Aug 29  2019 cpe_9340.b01
+-rwxr-xr-x    1 root     root           240 Aug 29  2019 cpe_9340.b03
+-rwxr-xr-x    1 root     root           368 Aug 29  2019 cpe_9340.b05
+-rwxr-xr-x    1 root     root            20 Aug 29  2019 cpe_9340.b07
+-rwxr-xr-x    1 root     root             4 Aug 29  2019 cpe_9340.b08
+-rwxr-xr-x    1 root     root            24 Aug 29  2019 cpe_9340.b09
+-rwxr-xr-x    1 root     root            20 Aug 29  2019 cpe_9340.b11
+-rwxr-xr-x    1 root     root             8 Aug 29  2019 cpe_9340.b13
+-rwxr-xr-x    1 root     root             8 Aug 29  2019 cpe_9340.b15
+-rwxr-xr-x    1 root     root             8 Aug 29  2019 cpe_9340.b17
+-rwxr-xr-x    1 root     root        137632 Aug 29  2019 cpe_9340.b18
+-rwxr-xr-x    1 root     root         99344 Aug 29  2019 cpe_9340.b20
+-rwxr-xr-x    1 root     root         18560 Aug 29  2019 cpe_9340.b22
+-rwxr-xr-x    1 root     root          7964 Aug 29  2019 cpe_9340.mdt
+-rwxr-xr-x    1 root     root           512 Aug 29  2019 cppf.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 cppf.b01
+-rwxr-xr-x    1 root     root         15554 Aug 29  2019 cppf.b02
+-rwxr-xr-x    1 root     root          6208 Aug 29  2019 cppf.b03
+-rwxr-xr-x    1 root     root           264 Aug 29  2019 cppf.b04
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 cppf.b05
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 cppf.b06
+-rwxr-xr-x    1 root     root          1968 Aug 29  2019 cppf.b07
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 cppf.mdt
+-rwxr-xr-x    1 root     root        404486 May 13  2019 data.msc
+-rwxr-xr-x    1 root     root           512 Aug 29  2019 dhsecapp.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 dhsecapp.b01
+-rwxr-xr-x    1 root     root        103333 Aug 29  2019 dhsecapp.b02
+-rwxr-xr-x    1 root     root         27232 Aug 29  2019 dhsecapp.b03
+-rwxr-xr-x    1 root     root           304 Aug 29  2019 dhsecapp.b04
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 dhsecapp.b05
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 dhsecapp.b06
+-rwxr-xr-x    1 root     root          2256 Aug 29  2019 dhsecapp.b07
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 dhsecapp.mdt
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 fpctzapp.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 fpctzapp.b01
+-rwxr-xr-x    1 root     root        582665 Aug 29  2019 fpctzapp.b02
+-rwxr-xr-x    1 root     root         42504 Aug 29  2019 fpctzapp.b03
+-rwxr-xr-x    1 root     root           348 Aug 29  2019 fpctzapp.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 fpctzapp.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 fpctzapp.b06
+-rwxr-xr-x    1 root     root         17992 Aug 29  2019 fpctzapp.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 fpctzapp.mdt
+-rwxr-xr-x    1 root     root           484 Jun 13  2018 gptauuid.xml
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 gptest.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 gptest.b01
+-rwxr-xr-x    1 root     root        290895 Aug 29  2019 gptest.b02
+-rwxr-xr-x    1 root     root         62984 Aug 29  2019 gptest.b03
+-rwxr-xr-x    1 root     root           836 Aug 29  2019 gptest.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 gptest.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 gptest.b06
+-rwxr-xr-x    1 root     root          4984 Aug 29  2019 gptest.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 gptest.mdt
+-rwxr-xr-x    1 root     root           512 Aug 29  2019 haventkn.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 haventkn.b01
+-rwxr-xr-x    1 root     root        104426 Aug 29  2019 haventkn.b02
+-rwxr-xr-x    1 root     root         33120 Aug 29  2019 haventkn.b03
+-rwxr-xr-x    1 root     root           264 Aug 29  2019 haventkn.b04
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 haventkn.b05
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 haventkn.b06
+-rwxr-xr-x    1 root     root          3768 Aug 29  2019 haventkn.b07
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 haventkn.mdt
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 iris.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 iris.b01
+-rwxr-xr-x    1 root     root       2739486 Aug 29  2019 iris.b02
+-rwxr-xr-x    1 root     root         53872 Aug 29  2019 iris.b03
+-rwxr-xr-x    1 root     root           788 Aug 29  2019 iris.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 iris.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 iris.b06
+-rwxr-xr-x    1 root     root          1656 Aug 29  2019 iris.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 iris.mdt
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 isdbtmm.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 isdbtmm.b01
+-rwxr-xr-x    1 root     root         73189 Aug 29  2019 isdbtmm.b02
+-rwxr-xr-x    1 root     root         32112 Aug 29  2019 isdbtmm.b03
+-rwxr-xr-x    1 root     root           204 Aug 29  2019 isdbtmm.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 isdbtmm.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 isdbtmm.b06
+-rwxr-xr-x    1 root     root           432 Aug 29  2019 isdbtmm.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 isdbtmm.mdt
+-rwxr-xr-x    1 root     root           512 Aug 29  2019 keymaste.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 keymaste.b01
+-rwxr-xr-x    1 root     root        253755 Aug 29  2019 keymaste.b02
+-rwxr-xr-x    1 root     root         30632 Aug 29  2019 keymaste.b03
+-rwxr-xr-x    1 root     root           328 Aug 29  2019 keymaste.b04
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 keymaste.b05
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 keymaste.b06
+-rwxr-xr-x    1 root     root          4584 Aug 29  2019 keymaste.b07
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 keymaste.mdt
+-rwxr-xr-x    1 root     root        238256 Aug 29  2019 mba.mbn
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 mdtpseca.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 mdtpseca.b01
+-rwxr-xr-x    1 root     root        878400 Aug 29  2019 mdtpseca.b02
+-rwxr-xr-x    1 root     root        132256 Aug 29  2019 mdtpseca.b03
+-rwxr-xr-x    1 root     root          1024 Aug 29  2019 mdtpseca.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 mdtpseca.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 mdtpseca.b06
+-rwxr-xr-x    1 root     root         46920 Aug 29  2019 mdtpseca.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 mdtpseca.mdt
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 mfido.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 mfido.b01
+-rwxr-xr-x    1 root     root        231244 Aug 29  2019 mfido.b02
+-rwxr-xr-x    1 root     root         83176 Aug 29  2019 mfido.b03
+-rwxr-xr-x    1 root     root           236 Aug 29  2019 mfido.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 mfido.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 mfido.b06
+-rwxr-xr-x    1 root     root          2104 Aug 29  2019 mfido.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 mfido.mdt
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 mlipay.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 mlipay.b01
+-rwxr-xr-x    1 root     root         65033 Aug 29  2019 mlipay.b02
+-rwxr-xr-x    1 root     root          7968 Aug 29  2019 mlipay.b03
+-rwxr-xr-x    1 root     root           144 Aug 29  2019 mlipay.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 mlipay.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 mlipay.b06
+-rwxr-xr-x    1 root     root           336 Aug 29  2019 mlipay.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 mlipay.mdt
+-rwxr-xr-x    1 root     root          1012 Aug 29  2019 modem.b00
+-rwxr-xr-x    1 root     root          7400 Aug 29  2019 modem.b01
+-rwxr-xr-x    1 root     root         45104 Aug 29  2019 modem.b02
+-rwxr-xr-x    1 root     root          8760 Aug 29  2019 modem.b03
+-rwxr-xr-x    1 root     root        219584 Aug 29  2019 modem.b04
+-rwxr-xr-x    1 root     root        303579 Aug 29  2019 modem.b05
+-rwxr-xr-x    1 root     root         51368 Aug 29  2019 modem.b06
+-rwxr-xr-x    1 root     root        133260 Aug 29  2019 modem.b07
+-rwxr-xr-x    1 root     root        356436 Aug 29  2019 modem.b08
+-rwxr-xr-x    1 root     root          1140 Aug 29  2019 modem.b09
+-rwxr-xr-x    1 root     root       2556124 Aug 29  2019 modem.b10
+-rwxr-xr-x    1 root     root       1253376 Aug 29  2019 modem.b11
+-rwxr-xr-x    1 root     root      21531312 Aug 29  2019 modem.b12
+-rwxr-xr-x    1 root     root        304460 Aug 29  2019 modem.b13
+-rwxr-xr-x    1 root     root            45 Aug 29  2019 modem.b14
+-rwxr-xr-x    1 root     root        501136 Aug 29  2019 modem.b16
+-rwxr-xr-x    1 root     root      13660337 Aug 29  2019 modem.b17
+-rwxr-xr-x    1 root     root       2918992 Aug 29  2019 modem.b18
+-rwxr-xr-x    1 root     root         70336 Aug 29  2019 modem.b20
+-rwxr-xr-x    1 root     root        682768 Aug 29  2019 modem.b21
+-rwxr-xr-x    1 root     root      10510336 Aug 29  2019 modem.b22
+-rwxr-xr-x    1 root     root        131072 Aug 29  2019 modem.b23
+-rwxr-xr-x    1 root     root       1048576 Aug 29  2019 modem.b24
+-rwxr-xr-x    1 root     root        434144 Aug 29  2019 modem.b25
+-rwxr-xr-x    1 root     root         81476 Aug 29  2019 modem.b26
+-rwxr-xr-x    1 root     root          4872 Aug 29  2019 modem.b27
+-rwxr-xr-x    1 root     root           224 Aug 29  2019 modem.b28
+-rwxr-xr-x    1 root     root          8412 Aug 29  2019 modem.mdt
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 modem_pr
+-rwxr-xr-x    1 root     root           820 Aug 29  2019 modemnm.b00
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 modemnm.b01
+-rwxr-xr-x    1 root     root         45104 Aug 29  2019 modemnm.b02
+-rwxr-xr-x    1 root     root          8760 Aug 29  2019 modemnm.b03
+-rwxr-xr-x    1 root     root           900 Aug 29  2019 modemnm.b04
+-rwxr-xr-x    1 root     root        219584 Aug 29  2019 modemnm.b05
+-rwxr-xr-x    1 root     root         83803 Aug 29  2019 modemnm.b06
+-rwxr-xr-x    1 root     root          3832 Aug 29  2019 modemnm.b07
+-rwxr-xr-x    1 root     root         40876 Aug 29  2019 modemnm.b08
+-rwxr-xr-x    1 root     root        356436 Aug 29  2019 modemnm.b09
+-rwxr-xr-x    1 root     root            45 Aug 29  2019 modemnm.b10
+-rwxr-xr-x    1 root     root       1466064 Aug 29  2019 modemnm.b11
+-rwxr-xr-x    1 root     root          4112 Aug 29  2019 modemnm.b13
+-rwxr-xr-x    1 root     root        366000 Aug 29  2019 modemnm.b14
+-rwxr-xr-x    1 root     root       1878288 Aug 29  2019 modemnm.b15
+-rwxr-xr-x    1 root     root         34752 Aug 29  2019 modemnm.b17
+-rwxr-xr-x    1 root     root         32253 Aug 29  2019 modemnm.b18
+-rwxr-xr-x    1 root     root         81476 Aug 29  2019 modemnm.b19
+-rwxr-xr-x    1 root     root          4872 Aug 29  2019 modemnm.b20
+-rwxr-xr-x    1 root     root           224 Aug 29  2019 modemnm.b21
+-rwxr-xr-x    1 root     root        434144 Aug 29  2019 modemnm.b22
+-rwxr-xr-x    1 root     root          8028 Aug 29  2019 modemnm.mdt
+-rwxr-xr-x    1 root     root           405 Aug 29  2019 modemr.jsn
+-rwxr-xr-x    1 root     root           713 Jun 13  2018 modemuw.jsn
+-rwxr-xr-x    1 root     root       5273862 Aug 29  2019 qdsp6m.qdb
+-rwxr-xr-x    1 root     root           512 Aug 29  2019 securemm.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 securemm.b01
+-rwxr-xr-x    1 root     root        139706 Aug 29  2019 securemm.b02
+-rwxr-xr-x    1 root     root         35480 Aug 29  2019 securemm.b03
+-rwxr-xr-x    1 root     root           296 Aug 29  2019 securemm.b04
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 securemm.b05
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 securemm.b06
+-rwxr-xr-x    1 root     root          2952 Aug 29  2019 securemm.b07
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 securemm.mdt
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 smplap32.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 smplap32.b01
+-rwxr-xr-x    1 root     root        249982 Aug 29  2019 smplap32.b02
+-rwxr-xr-x    1 root     root       1285020 Aug 29  2019 smplap32.b03
+-rwxr-xr-x    1 root     root           424 Aug 29  2019 smplap32.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 smplap32.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 smplap32.b06
+-rwxr-xr-x    1 root     root          4632 Aug 29  2019 smplap32.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 smplap32.mdt
+-rwxr-xr-x    1 root     root           512 Aug 29  2019 smplap64.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 smplap64.b01
+-rwxr-xr-x    1 root     root        303540 Aug 29  2019 smplap64.b02
+-rwxr-xr-x    1 root     root       1289576 Aug 29  2019 smplap64.b03
+-rwxr-xr-x    1 root     root           848 Aug 29  2019 smplap64.b04
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 smplap64.b05
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 smplap64.b06
+-rwxr-xr-x    1 root     root         14880 Aug 29  2019 smplap64.b07
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 smplap64.mdt
+-rwxr-xr-x    1 root     root           212 Aug 29  2019 venus.b00
+-rwxr-xr-x    1 root     root          6600 Aug 29  2019 venus.b01
+-rwxr-xr-x    1 root     root        924140 Aug 29  2019 venus.b02
+-rwxr-xr-x    1 root     root         29456 Aug 29  2019 venus.b03
+-rwxr-xr-x    1 root     root            32 Aug 29  2019 venus.b04
+-rwxr-xr-x    1 root     root          6812 Aug 29  2019 venus.mdt
+-rwxr-xr-x    1 root     root           308 Aug 29  2019 vsimapp.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 vsimapp.b01
+-rwxr-xr-x    1 root     root        198321 Aug 29  2019 vsimapp.b02
+-rwxr-xr-x    1 root     root         26480 Aug 29  2019 vsimapp.b03
+-rwxr-xr-x    1 root     root           216 Aug 29  2019 vsimapp.b04
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 vsimapp.b05
+-rwxr-xr-x    1 root     root           136 Aug 29  2019 vsimapp.b06
+-rwxr-xr-x    1 root     root          1440 Aug 29  2019 vsimapp.b07
+-rwxr-xr-x    1 root     root          7004 Aug 29  2019 vsimapp.mdt
+-rwxr-xr-x    1 root     root           512 Aug 29  2019 widevine.b00
+-rwxr-xr-x    1 root     root          6696 Aug 29  2019 widevine.b01
+-rwxr-xr-x    1 root     root        347472 Aug 29  2019 widevine.b02
+-rwxr-xr-x    1 root     root         39232 Aug 29  2019 widevine.b03
+-rwxr-xr-x    1 root     root           576 Aug 29  2019 widevine.b04
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 widevine.b05
+-rwxr-xr-x    1 root     root           272 Aug 29  2019 widevine.b06
+-rwxr-xr-x    1 root     root          4704 Aug 29  2019 widevine.b07
+-rwxr-xr-x    1 root     root          7208 Aug 29  2019 widevine.mdt
+-rwxr-xr-x    1 root     root       3711944 Aug 29  2019 wlanmdsp.mbn
+
+./image/modem_pr:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 mcfg
+
+./image/modem_pr/mcfg:
+total 16
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 configs
+
+./image/modem_pr/mcfg/configs:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 mcfg_hw
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 mcfg_sw
+
+./image/modem_pr/mcfg/configs/mcfg_hw:
+total 48
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 generic
+-rwxr-xr-x    1 root     root            32 Aug 29  2019 mbn_hw.dig
+-rwxr-xr-x    1 root     root          1660 Aug 29  2019 mbn_hw.txt
+-rwxr-xr-x    1 root     root             0 Jun 13  2018 oem_hw.txt
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic:
+total 16
+drwxr-xr-x   10 root     root         16384 Jul  5  2011 common
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common:
+total 128
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 default
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 mdm9x55
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 mdm9x55_
+drwxr-xr-x    6 root     root         16384 Jul  5  2011 msm8998
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 sdm660
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 sdm845
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 sdx20
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 sdx20m_f
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/default:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 cust_def
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/default/cust_def:
+total 16
+-rwxr-xr-x    1 root     root         12440 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55:
+total 32
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55/7+7_mode:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 dr_dsds
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55/7+7_mode/dr_dsds:
+total 32
+-rwxr-xr-x    1 root     root         16432 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55/7+7_mode/sr_dsds:
+total 32
+-rwxr-xr-x    1 root     root         16432 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55/ss:
+total 16
+-rwxr-xr-x    1 root     root         15736 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55_:
+total 32
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55_/7+7_mode:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 dr_dsds
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55_/7+7_mode/dr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16292 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55_/7+7_mode/sr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16292 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/mdm9x55_/ss:
+total 16
+-rwxr-xr-x    1 root     root         15576 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998:
+total 64
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 cmcc_sub
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 la
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 wd
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 wp8
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/cmcc_sub:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/cmcc_sub/sr_dsds:
+total 32
+-rwxr-xr-x    1 root     root         22048 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/la:
+total 32
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/la/7+7_mode:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 dr_dsds
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/la/7+7_mode/dr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16100 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/la/7+7_mode/sr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16100 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/la/ss:
+total 16
+-rwxr-xr-x    1 root     root         15340 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wd:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wd/7+7_mode:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wd/7+7_mode/sr_dsds:
+total 32
+-rwxr-xr-x    1 root     root         18336 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wd/ss:
+total 32
+-rwxr-xr-x    1 root     root         17652 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wp8:
+total 32
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wp8/7+7_mode:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 dr_dsds
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wp8/7+7_mode/dr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16068 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wp8/7+7_mode/sr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16068 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/msm8998/wp8/ss:
+total 16
+-rwxr-xr-x    1 root     root         15488 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 cmcc_sub
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 la
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/cmcc_sub:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/cmcc_sub/sr_dsds:
+total 32
+-rwxr-xr-x    1 root     root         22048 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/la:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/la/7+7_mode:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/la/7+7_mode/sr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16100 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm660/la/ss:
+total 16
+-rwxr-xr-x    1 root     root         15340 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845:
+total 48
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 cmcc_sub
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 la
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 wp8
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/cmcc_sub:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/cmcc_sub/sr_dsds:
+total 32
+-rwxr-xr-x    1 root     root         22048 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/la:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/la/7+7_mode:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/la/7+7_mode/sr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16100 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/la/ss:
+total 16
+-rwxr-xr-x    1 root     root         15340 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/wp8:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/wp8/7+7_mode:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/wp8/7+7_mode/sr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16068 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdm845/wp8/ss:
+total 16
+-rwxr-xr-x    1 root     root         15488 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20/7+7_mode:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20/7+7_mode/sr_dsds:
+total 32
+-rwxr-xr-x    1 root     root         16432 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20/ss:
+total 16
+-rwxr-xr-x    1 root     root         15732 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20m_f:
+total 32
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 7+7_mode
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ss
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20m_f/7+7_mode:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 dr_dsds
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sr_dsds
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20m_f/7+7_mode/dr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16296 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20m_f/7+7_mode/sr_dsds:
+total 16
+-rwxr-xr-x    1 root     root         16296 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_hw/generic/common/sdx20m_f/ss:
+total 16
+-rwxr-xr-x    1 root     root         15584 Aug 29  2019 mcfg_hw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw:
+total 64
+drwxr-xr-x   15 root     root         16384 Jul  5  2011 generic
+-rwxr-xr-x    1 root     root            32 Aug 29  2019 mbn_sw.dig
+-rwxr-xr-x    1 root     root          6125 Aug 29  2019 mbn_sw.txt
+-rwxr-xr-x    1 root     root           214 Jun 13  2018 oem_sw.txt
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic:
+total 208
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 af
+drwxr-xr-x    6 root     root         16384 Jul  5  2011 apac
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 aunz
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 china
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 common
+drwxr-xr-x   17 root     root         16384 Jul  5  2011 eu
+drwxr-xr-x    6 root     root         16384 Jul  5  2011 korea
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 latam
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 mea
+drwxr-xr-x   10 root     root         16384 Jul  5  2011 na
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 russia
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 sa
+drwxr-xr-x   21 root     root         16384 Jul  5  2011 sea
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/af:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 cellc
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 moroccot
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/af/cellc:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/af/cellc/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 safrica
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/af/cellc/commerci/safrica:
+total 48
+-rwxr-xr-x    1 root     root         44668 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/af/moroccot:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/af/moroccot/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ma
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/af/moroccot/commerci/ma:
+total 48
+-rwxr-xr-x    1 root     root         44700 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac:
+total 64
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 dcm
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 kddi
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 reliance
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 sbm
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/dcm:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/dcm/commerci:
+total 48
+-rwxr-xr-x    1 root     root         41984 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/kddi:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/kddi/commerci:
+total 64
+-rwxr-xr-x    1 root     root         57292 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/reliance:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/reliance/commerci:
+total 64
+-rwxr-xr-x    1 root     root         59488 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/sbm:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/apac/sbm/commerci:
+total 48
+-rwxr-xr-x    1 root     root         43944 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz:
+total 48
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 optus
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 telstra
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 vodafone
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/optus:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/optus/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 au
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/optus/commerci/au:
+total 48
+-rwxr-xr-x    1 root     root         47220 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/telstra:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/telstra/commerci:
+total 48
+-rwxr-xr-x    1 root     root         48148 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/vodafone:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/aunz/vodafone/commerci:
+total 48
+-rwxr-xr-x    1 root     root         47164 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china:
+total 48
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 cmcc
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 ct
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 cu
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+drwxr-xr-x   10 root     root         16384 Jul  5  2011 lab
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 volte_op
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/commerci/volte_op:
+total 64
+-rwxr-xr-x    1 root     root         51124 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab:
+total 128
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 agnss_lo
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 conf_vol
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 eps_only
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 lpp_loct
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 nsiot_vo
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 rrlp_loc
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 tgl_comb
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 w_irat_c
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/agnss_lo:
+total 32
+-rwxr-xr-x    1 root     root         25108 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/conf_vol:
+total 48
+-rwxr-xr-x    1 root     root         45984 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/eps_only:
+total 32
+-rwxr-xr-x    1 root     root         20852 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/lpp_loct:
+total 32
+-rwxr-xr-x    1 root     root         25112 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/nsiot_vo:
+total 48
+-rwxr-xr-x    1 root     root         44944 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/rrlp_loc:
+total 32
+-rwxr-xr-x    1 root     root         25104 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/tgl_comb:
+total 32
+-rwxr-xr-x    1 root     root         20932 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cmcc/lab/w_irat_c:
+total 32
+-rwxr-xr-x    1 root     root         20672 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct:
+total 32
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 commerci
+drwxr-xr-x    7 root     root         16384 Jul  5  2011 lab
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/commerci:
+total 48
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 hvolte_o
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 openmkt
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 volte_op
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/commerci/hvolte_o:
+total 80
+-rwxr-xr-x    1 root     root         66412 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/commerci/openmkt:
+total 48
+-rwxr-xr-x    1 root     root         39312 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/commerci/volte_op:
+total 80
+-rwxr-xr-x    1 root     root         68828 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab:
+total 80
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 cta
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 test
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 test_eps
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 test_no_
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 volte_co
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/cta:
+total 48
+-rwxr-xr-x    1 root     root         38248 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/test:
+total 48
+-rwxr-xr-x    1 root     root         38584 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/test_eps:
+total 48
+-rwxr-xr-x    1 root     root         38712 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/test_no_:
+total 48
+-rwxr-xr-x    1 root     root         38056 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/ct/lab/volte_co:
+total 64
+-rwxr-xr-x    1 root     root         54476 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu:
+total 32
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 commerci
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 lab
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu/commerci:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 openmkt
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 volte
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu/commerci/openmkt:
+total 32
+-rwxr-xr-x    1 root     root         22568 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu/commerci/volte:
+total 64
+-rwxr-xr-x    1 root     root         49748 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu/lab:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 test
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/china/cu/lab/test:
+total 32
+-rwxr-xr-x    1 root     root         18792 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/common:
+total 48
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 default
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 row
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 w_one
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/default:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 cust_def
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/default/cust_def:
+total 16
+-rwxr-xr-x    1 root     root         14432 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/row:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/row/commerci:
+total 48
+-rwxr-xr-x    1 root     root         45232 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/w_one:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/common/w_one/commerci:
+total 48
+-rwxr-xr-x    1 root     root         41440 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu:
+total 240
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 bouygues
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 dt
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 ee
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 elisa
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 h3g
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 orange
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 sfr
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 swisscom
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 tdc
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 tele2
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 telefoni
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 telenor
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 telia
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 tim
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 vodafone
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/bouygues:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/bouygues/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 france
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/bouygues/commerci/france:
+total 48
+-rwxr-xr-x    1 root     root         40128 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt:
+total 48
+drwxr-xr-x    6 root     root         16384 Jul  5  2011 commerci
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 non_volt
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 volte
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci:
+total 64
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 croatia
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 cz
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 greece
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 pl
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci/croatia:
+total 48
+-rwxr-xr-x    1 root     root         40680 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci/cz:
+total 48
+-rwxr-xr-x    1 root     root         48008 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci/greece:
+total 48
+-rwxr-xr-x    1 root     root         48152 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/commerci/pl:
+total 48
+-rwxr-xr-x    1 root     root         48632 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/non_volt:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/non_volt/commerci:
+total 32
+-rwxr-xr-x    1 root     root         21768 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/volte:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/dt/volte/commerci:
+total 48
+-rwxr-xr-x    1 root     root         47512 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/ee:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/ee/commerci:
+total 48
+-rwxr-xr-x    1 root     root         49052 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/elisa:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/elisa/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 fi
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/elisa/commerci/fi:
+total 48
+-rwxr-xr-x    1 root     root         47052 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g:
+total 16
+drwxr-xr-x    6 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci:
+total 64
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 denmark
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 italy
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 se
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 uk
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci/denmark:
+total 48
+-rwxr-xr-x    1 root     root         46104 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci/italy:
+total 16
+-rwxr-xr-x    1 root     root         14620 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci/se:
+total 48
+-rwxr-xr-x    1 root     root         48140 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/h3g/commerci/uk:
+total 48
+-rwxr-xr-x    1 root     root         46192 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange:
+total 16
+drwxr-xr-x    7 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci:
+total 80
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 france
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 group_no
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 poland
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 romania
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 spain
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/france:
+total 48
+-rwxr-xr-x    1 root     root         48504 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/group_no:
+total 32
+-rwxr-xr-x    1 root     root         21924 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/poland:
+total 48
+-rwxr-xr-x    1 root     root         47944 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/romania:
+total 48
+-rwxr-xr-x    1 root     root         46924 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/orange/commerci/spain:
+total 48
+-rwxr-xr-x    1 root     root         47732 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/sfr:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/sfr/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 fr
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/sfr/commerci/fr:
+total 48
+-rwxr-xr-x    1 root     root         45420 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/swisscom:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/swisscom/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 swiss
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/swisscom/commerci/swiss:
+total 48
+-rwxr-xr-x    1 root     root         46824 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tdc:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tdc/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 denmark
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tdc/commerci/denmark:
+total 48
+-rwxr-xr-x    1 root     root         46732 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tele2:
+total 16
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tele2/commerci:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 nl
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sweden
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tele2/commerci/nl:
+total 48
+-rwxr-xr-x    1 root     root         40324 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tele2/commerci/sweden:
+total 48
+-rwxr-xr-x    1 root     root         40200 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni:
+total 32
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 commerci
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 non_volt
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni/commerci:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 de
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 uk
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni/commerci/de:
+total 48
+-rwxr-xr-x    1 root     root         47116 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni/commerci/uk:
+total 48
+-rwxr-xr-x    1 root     root         46224 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni/non_volt:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 spain
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telefoni/non_volt/spain:
+total 16
+-rwxr-xr-x    1 root     root         14976 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telenor:
+total 16
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telenor/commerci:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 denmark
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 norway
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telenor/commerci/denmark:
+total 48
+-rwxr-xr-x    1 root     root         47328 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telenor/commerci/norway:
+total 48
+-rwxr-xr-x    1 root     root         47312 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telia:
+total 16
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telia/commerci:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 norway
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sweden
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telia/commerci/norway:
+total 48
+-rwxr-xr-x    1 root     root         47584 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/telia/commerci/sweden:
+total 48
+-rwxr-xr-x    1 root     root         46592 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tim:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tim/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 italy
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/tim/commerci/italy:
+total 48
+-rwxr-xr-x    1 root     root         39732 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 non_volt
+drwxr-xr-x   11 root     root         16384 Jul  5  2011 volte
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/non_volt:
+total 32
+-rwxr-xr-x    1 root     root         22108 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte:
+total 144
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 cz
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 germany
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 italy
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 netherla
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 portugal
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 safrica
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 spain
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 turkey
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 uk
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/cz:
+total 48
+-rwxr-xr-x    1 root     root         45956 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/germany:
+total 48
+-rwxr-xr-x    1 root     root         47676 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/italy:
+total 48
+-rwxr-xr-x    1 root     root         40308 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/netherla:
+total 48
+-rwxr-xr-x    1 root     root         46764 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/portugal:
+total 48
+-rwxr-xr-x    1 root     root         40424 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/safrica:
+total 48
+-rwxr-xr-x    1 root     root         45752 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/spain:
+total 48
+-rwxr-xr-x    1 root     root         40532 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/turkey:
+total 48
+-rwxr-xr-x    1 root     root         45396 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/eu/vodafone/volte/uk:
+total 48
+-rwxr-xr-x    1 root     root         47272 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea:
+total 64
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 kt
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 lgu
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 skt
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 tta
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/kt:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/kt/commerci:
+total 48
+-rwxr-xr-x    1 root     root         37104 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/lgu:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/lgu/commerci:
+total 48
+-rwxr-xr-x    1 root     root         38324 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/skt:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/skt/commerci:
+total 48
+-rwxr-xr-x    1 root     root         38400 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/tta:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/korea/tta/commerci:
+total 48
+-rwxr-xr-x    1 root     root         37576 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam:
+total 48
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 amx
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 claro
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 telefoni
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/amx:
+total 48
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 non_volt
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 volte
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/amx/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 mx
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/amx/commerci/mx:
+total 48
+-rwxr-xr-x    1 root     root         45572 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/amx/non_volt:
+total 16
+-rwxr-xr-x    1 root     root         14368 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/amx/volte:
+total 48
+-rwxr-xr-x    1 root     root         45444 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/claro:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/claro/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 colombia
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/claro/commerci/colombia:
+total 48
+-rwxr-xr-x    1 root     root         45432 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/telefoni:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/telefoni/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 peru
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/latam/telefoni/commerci/peru:
+total 48
+-rwxr-xr-x    1 root     root         40216 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/mea:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 stc
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/mea/stc:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/mea/stc/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sa
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/mea/stc/commerci/sa:
+total 48
+-rwxr-xr-x    1 root     root         44676 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na:
+total 128
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 att
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 bell
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 rogers
+drwxr-xr-x    4 root     root         16384 Jul  5  2011 sprint
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 telus
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 tmo
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 uscc
+drwxr-xr-x    5 root     root         16384 Jul  5  2011 verizon
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/att:
+total 48
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 firstnet
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 non_volt
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 volte
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/att/firstnet:
+total 64
+-rwxr-xr-x    1 root     root         50840 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/att/non_volt:
+total 32
+-rwxr-xr-x    1 root     root         24400 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/att/volte:
+total 64
+-rwxr-xr-x    1 root     root         50948 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/bell:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/bell/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ca
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/bell/commerci/ca:
+total 48
+-rwxr-xr-x    1 root     root         47928 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/rogers:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/rogers/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ca
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/rogers/commerci/ca:
+total 48
+-rwxr-xr-x    1 root     root         47560 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/sprint:
+total 32
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 vowifi
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/sprint/commerci:
+total 64
+-rwxr-xr-x    1 root     root         59232 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/sprint/vowifi:
+total 64
+-rwxr-xr-x    1 root     root         59228 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/telus:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/telus/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ca
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/telus/commerci/ca:
+total 48
+-rwxr-xr-x    1 root     root         48488 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/tmo:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/tmo/commerci:
+total 64
+-rwxr-xr-x    1 root     root         51532 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/uscc:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/uscc/commerci:
+total 48
+-rwxr-xr-x    1 root     root         42988 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/verizon:
+total 48
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 cdmaless
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 hvolte
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 imsless
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/verizon/cdmaless:
+total 80
+-rwxr-xr-x    1 root     root         66932 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/verizon/hvolte:
+total 80
+-rwxr-xr-x    1 root     root         72948 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/na/verizon/imsless:
+total 48
+-rwxr-xr-x    1 root     root         34732 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/russia:
+total 32
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 beeline
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 megafon
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/russia/beeline:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 gen_3gpp
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/russia/beeline/gen_3gpp:
+total 48
+-rwxr-xr-x    1 root     root         40020 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/russia/megafon:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/russia/megafon/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ru
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/russia/megafon/commerci/ru:
+total 48
+-rwxr-xr-x    1 root     root         40092 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sa:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 brazil
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sa/brazil:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sa/brazil/commerci:
+total 16
+-rwxr-xr-x    1 root     root         13488 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea:
+total 304
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 3hk
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 ais
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 apt
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 chunghwa
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 dtac
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 fareasto
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 globe
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 hkt
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 m1
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 p1
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 singtel
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 smartfre
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 smartone
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 starhub
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 tm
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 truemove
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 tstar
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 umobile
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 ytl
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/3hk:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/3hk/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 hk
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/3hk/commerci/hk:
+total 48
+-rwxr-xr-x    1 root     root         45760 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/ais:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/ais/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 thailand
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/ais/commerci/thailand:
+total 48
+-rwxr-xr-x    1 root     root         44780 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/apt:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/apt/commerci:
+total 48
+-rwxr-xr-x    1 root     root         45868 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/chunghwa:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/chunghwa/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 tw
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/chunghwa/commerci/tw:
+total 48
+-rwxr-xr-x    1 root     root         40404 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/dtac:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/dtac/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 volte
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/dtac/commerci/volte:
+total 48
+-rwxr-xr-x    1 root     root         45020 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/fareasto:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/fareasto/commerci:
+total 48
+-rwxr-xr-x    1 root     root         46120 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/globe:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/globe/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 ph
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/globe/commerci/ph:
+total 48
+-rwxr-xr-x    1 root     root         46408 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/hkt:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/hkt/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 hk
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/hkt/commerci/hk:
+total 48
+-rwxr-xr-x    1 root     root         44168 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/m1:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/m1/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sg
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/m1/commerci/sg:
+total 48
+-rwxr-xr-x    1 root     root         40472 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/p1:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/p1/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 malaysia
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/p1/commerci/malaysia:
+total 48
+-rwxr-xr-x    1 root     root         40040 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/singtel:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/singtel/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 singapor
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/singtel/commerci/singapor:
+total 48
+-rwxr-xr-x    1 root     root         47296 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartfre:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartfre/commerci:
+total 64
+-rwxr-xr-x    1 root     root         47332 Aug 29  2019 mcfg_sw.mbn
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 vowifi
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartfre/commerci/vowifi:
+total 48
+-rwxr-xr-x    1 root     root         46348 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartone:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartone/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 hk
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/smartone/commerci/hk:
+total 48
+-rwxr-xr-x    1 root     root         45676 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/starhub:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/starhub/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 sg
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/starhub/commerci/sg:
+total 48
+-rwxr-xr-x    1 root     root         40064 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/tm:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/tm/commerci:
+total 48
+-rwxr-xr-x    1 root     root         40068 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/truemove:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/truemove/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 volte
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/truemove/commerci/volte:
+total 48
+-rwxr-xr-x    1 root     root         44824 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/tstar:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/tstar/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 tw
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/tstar/commerci/tw:
+total 48
+-rwxr-xr-x    1 root     root         40208 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/umobile:
+total 16
+drwxr-xr-x    3 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/umobile/commerci:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 malaysia
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/umobile/commerci/malaysia:
+total 48
+-rwxr-xr-x    1 root     root         47192 Aug 29  2019 mcfg_sw.mbn
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/ytl:
+total 16
+drwxr-xr-x    2 root     root         16384 Jul  5  2011 commerci
+
+./image/modem_pr/mcfg/configs/mcfg_sw/generic/sea/ytl/commerci:
+total 48
+-rwxr-xr-x    1 root     root         45456 Aug 29  2019 mcfg_sw.mbn
+
+./verinfo:
+total 16
+-rwxr-xr-x    1 root     root          1073 Aug 29  2019 ver_info.txt

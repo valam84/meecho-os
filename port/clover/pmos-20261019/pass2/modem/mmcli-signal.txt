@@ -1,0 +1,17 @@
+# sh -c mmcli -m any --signal-setup=5; sleep 6; mmcli -m any --signal-get; mmcli -m any --3gpp-scan --timeout=60 2>&1 | head -20
+Successfully setup signal quality information polling
+  ------------------------------
+  Signal |         refresh rate: 5 seconds
+         |       rssi threshold: 0 dBm
+         | error rate threshold: no
+  ------------------------------
+  LTE    |                 rssi: -61.00 dBm
+         |                 rsrq: -20.00 dB
+         |                 rsrp: -102.00 dBm
+         |                  s/n: -9.20 dB
+  ---------------------
+  3GPP scan | networks: 25001 - MTS RUS (lte, current)
+            |           25002 - MegaFon (lte, available)
+            |           25099 - Beeline (lte, available)
+            |           25020 - Tele2 (lte, available)
+            |           25011 - 250 11 (lte, available)

@@ -1,0 +1,17 @@
+# sh -c for f in $(command -v msm-firmware-loader msm-firmware-loader-unpack 2>/dev/null) /usr/libexec/msm-firmware-loader* /usr/lib/msm-firmware-loader* /usr/share/msm-firmware-loader*; do [ -f "$f" ] && { echo "==== $f"; cat "$f"; }; done; ls -la /run/msm-firmware-loader /run/msm-firmware-loader/mnt
+/run/msm-firmware-loader:
+total 0
+drwxr-xr-x    4 root     root            80 Oct 19 21:42 .
+drwxr-xr-x   21 root     root           480 Oct 19 21:41 ..
+drwxr-xr-x    7 root     root           140 Oct 19 21:38 mnt
+drwxr-xr-x    4 root     root          7980 Oct 19 21:42 target
+
+/run/msm-firmware-loader/mnt:
+total 48
+drwxr-xr-x    7 root     root           140 Oct 19 21:38 .
+drwxr-xr-x    4 root     root            80 Oct 19 21:42 ..
+drwxr-xr-x    3 root     root         16384 Jan  1  1970 bluetooth
+drwxr-xr-x    5 root     root          4096 Jan  1  1970 dsp
+drwxr-xr-x    4 root     root         16384 Jan  1  1970 modem
+drwxrwx--x   29 root     1000          4096 Feb 15  1972 persist
+drwxr-xr-x   20 root     2000          4096 Jan  1  2009 vendor

@@ -1,0 +1,87 @@
+# sh -c qmicli -d qrtr://0 --nas-get-system-info; qmicli -d qrtr://0 --nas-get-rf-band-info; qmicli -d qrtr://0 --nas-get-cell-location-info | head -40; qmicli -d qrtr://0 --uim-get-card-status; qmicli -d qrtr://0 --wds-get-packet-service-status; qmicli -d qrtr://0 --wda-get-data-format; qmicli -d qrtr://0 --dms-get-software-version; qmicli -d qrtr://0 --dms-get-band-capabilities
+[qrtr://0] Successfully got system info:
+	LTE service:
+		Status: 'limited'
+		True Status: 'available'
+		Preferred data path: 'no'
+		Domain: 'none'
+		Service capability: 'cs-ps'
+		Roaming status: 'on'
+		Forbidden: 'no'
+		Cell ID: '<redacted>'
+		MCC: '250'
+		MNC: '01'
+		Tracking Area Code: '<redacted>'
+		eMBMS coverage info support: 'no'
+		eMBMS coverage info trace ID: '65535'
+		Cell access: 'all-calls'
+		Registration restriction: 'unrestricted'
+		Registration domain: 'not-applicable'
+	SIM reject info: 'available'
+[qrtr://0] Successfully got RF band info
+Band Information:
+	Radio Interface:   'lte'
+	Active Band Class: 'eutran-3'
+	Active Channel:    '1802'
+Band Information (Extended):
+	Radio Interface:   'lte'
+	Active Band Class: 'eutran-3'
+	Active Channel:    '1802'
+[qrtr://0] Successfully got cell location info
+Intrafrequency LTE Info
+	UE In Idle: 'yes'
+	PLMN: '25001'
+	Tracking Area Code: '<redacted>'
+	Global Cell ID: '<redacted>'
+	EUTRA Absolute RF Channel Number: '1802' (E-UTRA band 3: 1800+)
+	Serving Cell ID: '<redacted>'
+	Cell Reselection Priority: '255'
+	S Non Intra Search Threshold: '10'
+	Serving Cell Low Threshold: '4'
+	S Intra Search Threshold: '62'
+	Cell [0]:
+		Physical Cell ID: '<redacted>'
+		RSRQ: '-20.0' dB
+		RSRP: '-101.6' dBm
+		RSSI: '-58.8' dBm
+		Cell Selection RX Level: '22'
+	Cell [1]:
+		Physical Cell ID: '<redacted>'
+		RSRQ: '-20.0' dB
+		RSRP: '-102.1' dBm
+		RSSI: '-67.3' dBm
+		Cell Selection RX Level: '21'
+	Cell [2]:
+		Physical Cell ID: '<redacted>'
+		RSRQ: '-20.0' dB
+		RSRP: '-99.5' dBm
+		RSSI: '-67.4' dBm
+		Cell Selection RX Level: '24'
+	Cell [3]:
+		Physical Cell ID: '<redacted>'
+		RSRQ: '-20.0' dB
+		RSRP: '-99.4' dBm
+		RSSI: '-66.8' dBm
+		Cell Selection RX Level: '24'
+	Cell [4]:
+		Physical Cell ID: '<redacted>'
+		RSRQ: '-20.0' dB
+		RSRP: '-103.1' dBm
+[qrtr://0] Successfully got card status
+Provisioning applications:
+	Primary GW:   session doesn't exist
+	Primary 1X:   session doesn't exist
+	Secondary GW: session doesn't exist
+	Secondary 1X: session doesn't exist
+Slot [1]:
+	Card state: 'error: no-atr-received (3)'
+	UPIN state: 'not-initialized'
+		UPIN retries: '0'
+		UPUK retries: '0'
+[qrtr://0] Connection status: 'disconnected'
+error: couldn't get data format: QMI protocol error (48): 'InvalidArgument'
+[qrtr://0] Software version: 660_GEN_PACK-1.214729.1.215613.1
+[qrtr://0] Device band capabilities retrieved:
+	Bands: 'none'
+	LTE bands: '1, 3, 5, 7, 8, 34, 38, 39, 40, 41'
+	LTE bands (extended): '1, 3, 5, 7, 8, 34, 38, 39, 40, 41'

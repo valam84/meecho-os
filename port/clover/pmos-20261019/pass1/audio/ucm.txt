@@ -1,0 +1,21 @@
+# sh -c ls -lR /usr/share/alsa/ucm2 2>/dev/null | grep -i -E "sdm660|clover|xiaomi" ; find /usr/share/alsa/ucm2 -ipath "*clover*" -o -ipath "*sdm660*" | head
+drwxr-sr-x    5 root     root          4096 Oct 17 20:41 Xiaomi
+/usr/share/alsa/ucm2/Xiaomi:
+drwxr-sr-x    2 root     root          4096 Oct 17 20:41 clover
+/usr/share/alsa/ucm2/Xiaomi/clover:
+-rw-r--r--    1 root     root           415 May 28 07:32 clover.conf
+/usr/share/alsa/ucm2/Xiaomi/lavender:
+/usr/share/alsa/ucm2/Xiaomi/tulip:
+drwxr-sr-x    2 root     root          4096 Oct 17 20:41 sdm660-internal
+/usr/share/alsa/ucm2/conf.d/sdm660-internal:
+lrwxrwxrwx    1 root     root            31 Oct 17 20:43 Xiaomi Mi Pad 4.conf -> ../../Xiaomi/clover/clover.conf
+lrwxrwxrwx    1 root     root            28 Oct 17 20:43 Xiaomi Redmi Note 6 Pro.conf -> ../../Xiaomi/tulip/HiFi.conf
+lrwxrwxrwx    1 root     root            35 Oct 17 20:43 Xiaomi Redmi Note 7.conf -> ../../Xiaomi/lavender/lavender.conf
+/usr/share/alsa/ucm2/conf.d/sdm660-internal
+/usr/share/alsa/ucm2/conf.d/sdm660-internal/Xiaomi Redmi Note 6 Pro.conf
+/usr/share/alsa/ucm2/conf.d/sdm660-internal/Xiaomi Mi Pad 4.conf
+/usr/share/alsa/ucm2/conf.d/sdm660-internal/Xiaomi Redmi Note 7.conf
+/usr/share/alsa/ucm2/conf.d/sdm660-internal/Asus Zenfone Max Pro M1.conf
+/usr/share/alsa/ucm2/Xiaomi/clover
+/usr/share/alsa/ucm2/Xiaomi/clover/HiFi.conf
+/usr/share/alsa/ucm2/Xiaomi/clover/clover.conf

@@ -1,0 +1,15 @@
+remoteproc0/coredump = disabled 
+remoteproc0/firmware = mba.mbn 
+remoteproc0/name = 4080000.remoteproc 
+remoteproc0/recovery = enabled 
+remoteproc0/state = running 
+remoteproc1/coredump = disabled 
+remoteproc1/firmware = adsp.mdt 
+remoteproc1/name = adsp 
+remoteproc1/recovery = enabled 
+remoteproc1/state = running 
+remoteproc2/coredump = disabled 
+remoteproc2/firmware = cdsp.mdt 
+remoteproc2/name = cdsp 
+remoteproc2/recovery = enabled 
+remoteproc2/state = running 

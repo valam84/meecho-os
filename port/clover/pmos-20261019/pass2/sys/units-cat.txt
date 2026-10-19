@@ -1,0 +1,151 @@
+# sh -c for u in rmtfs tqftpserv pd-mapper qrtr-ns ModemManager msm-firmware-loader msm-firmware-loader-unpack hexagonrpcd q6voiced feedbackd iio-sensor-proxy bluetooth; do systemctl cat $u --no-pager 2>/dev/null; done
+# /usr/lib/systemd/system/rmtfs.service
+[Unit]
+Description=Qualcomm remotefs service
+Before=NetworkManager.service
+ConditionPathExists=/dev/qcom_rmtfs_mem1
+
+[Service]
+ExecStart=/usr/bin/rmtfs -r -P -s
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
+
+# /usr/lib/systemd/system/rmtfs.service.d/msm-modem-uim-selection.override.conf
+[Unit]
+Before=msm-modem-uim-selection.service
+# /usr/lib/systemd/system/tqftpserv.service
+[Unit]
+Description=QRTR TFTP service
+
+[Service]
+ExecStart=/usr/bin/tqftpserv
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+# /usr/lib/systemd/system/ModemManager.service
+[Unit]
+Description=Modem Manager
+After=polkit.service
+Requires=polkit.service
+ConditionVirtualization=!container
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.ModemManager1
+ExecStart=/usr/sbin/ModemManager
+StandardError=null
+Restart=on-abort
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN
+ProtectSystem=true
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_NETLINK AF_UNIX AF_QIPCRTR
+NoNewPrivileges=true
+User=root
+
+[Install]
+WantedBy=multi-user.target
+Alias=dbus-org.freedesktop.ModemManager1.service
+
+# /usr/lib/systemd/system/ModemManager.service.d/quick-suspend-resume.conf
+[Service]
+# Force the new quick suspend/resume mode until it's the default upstream,
+# see: https://gitlab.freedesktop.org/mobile-broadband/ModemManager/-/issues/1039
+ExecStart=
+ExecStart=/usr/sbin/ModemManager --test-quick-suspend-resume
+# /usr/lib/systemd/system/msm-firmware-loader.service
+[Unit]
+Description=Load firmware that is located on dedicated partitions of qcom devices
+Before=systemd-udevd.service
+DefaultDependencies=no
+RequiresMountsFor=/sys /dev
+
+[Service]
+ExecStart=/usr/sbin/msm-firmware-loader.sh
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+# /usr/lib/systemd/system/msm-firmware-loader-unpack.service
+[Unit]
+Description=Unpack dynamically loaded firmware
+Before=rmtfs.service
+
+[Service]
+ExecStart=/usr/sbin/msm-firmware-loader-unpack.sh
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+# /usr/lib/systemd/system/iio-sensor-proxy.service
+[Unit]
+Description=IIO Sensor Proxy service
+
+[Service]
+Type=dbus
+BusName=net.hadess.SensorProxy
+ExecStart=/usr/libexec/iio-sensor-proxy
+#Uncomment this to enable debug
+#Environment="G_MESSAGES_DEBUG=all"
+
+# Lockdown
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_LOCAL AF_NETLINK AF_QIPCRTR
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+
+# /usr/lib/systemd/system/iio-sensor-proxy.service.d/shutdown.conf
+[Service]
+# Reduce timeout to be killed until patch is upstream
+# See https://gitlab.freedesktop.org/hadess/iio-sensor-proxy/-/merge_requests/410
+TimeoutStopSec=3
+# /usr/lib/systemd/system/bluetooth.service
+[Unit]
+Description=Bluetooth service
+Documentation=man:bluetoothd(8)
+ConditionPathIsDirectory=/sys/class/bluetooth
+
+[Service]
+Type=dbus
+BusName=org.bluez
+ExecStart=/usr/lib/bluetooth/bluetoothd
+NotifyAccess=main
+#WatchdogSec=10
+#Restart=on-failure
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+LimitNPROC=1
+
+# Filesystem lockdown
+ProtectHome=true
+ProtectSystem=strict
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+StateDirectory=bluetooth
+StateDirectoryMode=0700
+ConfigurationDirectory=bluetooth
+ConfigurationDirectoryMode=0555
+
+# Execute Mappings
+MemoryDenyWriteExecute=true
+
+# Privilege escalation
+NoNewPrivileges=true
+
+# Real-time
+RestrictRealtime=true
+
+[Install]
+WantedBy=bluetooth.target
+Alias=dbus-org.bluez.service

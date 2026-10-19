@@ -1,0 +1,108 @@
+# sh -c cat /proc/asound/cards /proc/asound/pcm; ls /usr/share/alsa/ucm2/conf.d; find /usr/share/alsa/ucm2 -iname "*clover*" -o -iname "*sdm660*" | while read f; do echo "== $f"; ls -l "$f"; done
+ 0 [X4             ]: sdm660-internal - Xiaomi Mi Pad 4
+                      Xiaomi Mi Pad 4
+00-00: MultiMedia1 (*) :  : playback 1 : capture 1
+00-01: MultiMedia2 (*) :  : playback 1 : capture 1
+DB410c
+DB820c
+HDA-Intel
+SC7180
+SOF
+USB-Audio
+VEYRON-I2S
+acp
+acp-pdm-mach
+acp3x-es83xx
+acp3xalc5682101
+acp3xalc5682m98
+acp5x
+acp62
+acp63
+acp6x
+acpd7219m98357
+amd-soundwire
+apq8096
+avs_da7219
+avs_dmic
+avs_max98357a
+avs_max98373
+avs_max98927
+avs_nau8825
+avs_rt5514
+avs_rt5663
+avs_ssm4567
+bdw-rt5677
+broadwell-rt286
+broxton-rt298
+bytcht-cx2072x
+bytcht-es8316
+bytcr-rt5640
+bytcr-rt5651
+bytcr-wm5102
+cht-bsw-rt5672
+chtmax98090
+chtnau8824
+chtrt5645
+chtrt5650
+fsl-asoc-card
+glymur
+gx-sound-card
+hda-dsp
+hdaudioB0D2
+kaanapali
+kblrt5660
+mt8183_da7219_r
+mt8183_mt6358_t
+mt8192_mt6359
+mt8195_demo
+mt8365-evk
+mt8370-evk
+mt8390-evk
+mt8391-evk
+mt8395-evk
+mtk-rt5650
+qcm6490
+qcs615
+qcs6490
+qcs8300
+rk3399-gru-soun
+rk3588-es8316
+rockchip_es8316
+sa8775p
+sc8280xp
+sdm660-internal
+sdm845
+simple-card
+skylake-rt286
+sm8250
+sm8550
+sm8650
+sm8750
+sof-ehl-rt5660
+sof-essx8336
+sof-glkda7219ma
+sof-hda-dsp
+sof-m8195_r1019
+sof-mt8195_r101
+sof-mt8196-nau8
+sof-mt8365-evk
+sof-mt8390-evk
+sof-mt8395-evk
+sof-skl_hda_card
+sof-soundwire
+sun4i-codec
+tegra
+tegra-hda
+x1e80100
+== /usr/share/alsa/ucm2/conf.d/sdm660-internal
+total 0
+lrwxrwxrwx    1 root     root            27 Oct 17 20:43 Asus Zenfone Max Pro M1.conf -> ../../Asus/x00td/x00td.conf
+lrwxrwxrwx    1 root     root            31 Oct 17 20:43 Xiaomi Mi Pad 4.conf -> ../../Xiaomi/clover/clover.conf
+lrwxrwxrwx    1 root     root            28 Oct 17 20:43 Xiaomi Redmi Note 6 Pro.conf -> ../../Xiaomi/tulip/HiFi.conf
+lrwxrwxrwx    1 root     root            35 Oct 17 20:43 Xiaomi Redmi Note 7.conf -> ../../Xiaomi/lavender/lavender.conf
+== /usr/share/alsa/ucm2/Xiaomi/clover
+total 8
+-rw-r--r--    1 root     root          1559 May 28 07:32 HiFi.conf
+-rw-r--r--    1 root     root           415 May 28 07:32 clover.conf
+== /usr/share/alsa/ucm2/Xiaomi/clover/clover.conf
+-rw-r--r--    1 root     root           415 May 28 07:32 /usr/share/alsa/ucm2/Xiaomi/clover/clover.conf

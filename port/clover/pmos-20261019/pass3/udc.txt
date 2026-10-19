@@ -1,0 +1,12 @@
+a800000.usb/a_alt_hnp_support = 0 
+a800000.usb/a_hnp_support = 0 
+a800000.usb/b_hnp_enable = 0 
+a800000.usb/current_speed = high-speed 
+a800000.usb/function = g1 
+a800000.usb/is_a_peripheral = 0 
+a800000.usb/is_otg = 0 
+a800000.usb/is_selfpowered = 0 
+a800000.usb/maximum_speed = high-speed 
+a800000.usb/soft_connect = 
+a800000.usb/srp = 
+a800000.usb/state = configured 

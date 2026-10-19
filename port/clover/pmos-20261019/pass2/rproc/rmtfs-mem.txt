@@ -1,0 +1,15 @@
+# sh -c cat /proc/iomem | grep -i -E "rmtfs|85e0|wlan|msa|mpss|mba|adsp|cdsp|ipa|smem|removed"; ls -l /sys/devices/platform/85e00000.memory/rmtfs/qcom_rmtfs_mem1/; cat /sys/devices/platform/85e00000.memory/rmtfs/qcom_rmtfs_mem1/phys_addr /sys/devices/platform/85e00000.memory/rmtfs/qcom_rmtfs_mem1/size 2>&1
+14780000-147cefff : 14780000.ipa ipa@14780000
+  92a00000-948fffff : 15700000.remoteproc adsp@92a00000
+  94b00000-950fffff : 1a300000.remoteproc cdsp@94b00000
+total 0
+-r--r--r--    1 root     root          4096 Oct 19 22:10 client_id
+-r--r--r--    1 root     root          4096 Oct 19 22:10 dev
+lrwxrwxrwx    1 root     root             0 Oct 19 22:10 device -> ../../../85e00000.memory
+-r--r--r--    1 root     root          4096 Oct 19 21:38 phys_addr
+drwxr-xr-x    2 root     root             0 Oct 19 22:10 power
+-r--r--r--    1 root     root          4096 Oct 19 21:38 size
+lrwxrwxrwx    1 root     root             0 Oct 19 21:38 subsystem -> ../../../../../class/rmtfs
+-rw-r--r--    1 root     root          4096 Oct 19 21:42 uevent
+0x0000000085e00000
+0x0000000000200000

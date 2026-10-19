@@ -1,0 +1,53 @@
+# sh -c dmesg | grep -i -E "mss|modem|q6v5|ipa|rmnet|qmi|rmtfs|wwan|mba|remoteproc|pil|smp2p|sysmon|pdr|qrtr"
+[    0.000000] Linux version 6.19.10-sdm660-ipa (pmos@nura-build) (Alpine clang version 22.1.3, LLD 22.1.3) #1-postmarketos-qcom-sdm660 SMP PREEMPT Sat Oct 17 19:23:09 UTC 
+[    0.000000] OF: reserved mem: 0x0000000094900000..0x0000000094afffff (2048 KiB) nomap non-reusable mba@94900000
+[    0.814569] arm-smmu 16c0000.iommu: 	Stage-1: 36-bit VA -> 36-bit IPA
+[    0.815716] platform 14780000.ipa: Adding to iommu group 0
+[    0.817802] arm-smmu 5040000.iommu: 	Stage-1: 48-bit VA -> 36-bit IPA
+[    0.821236] arm-smmu 5100000.iommu: 	Stage-1: 36-bit VA -> 36-bit IPA
+[    0.825482] arm-smmu cd00000.iommu: 	Stage-1: 32-bit VA -> 36-bit IPA
+[    0.832541] arm-smmu 5180000.iommu: 	Stage-1: 36-bit VA -> 36-bit IPA
+[    1.028603] Loading compiled-in X.509 certificates
+[   14.049032] gcc-sdm660 100000.clock-controller: sync_state() pending due to 4080000.remoteproc
+[   22.593693] ipa 14780000.ipa: IPA version 0x1030300 (hw 0x20060001), BAM revision 0x674427, 8192 bytes SRAM
+[   22.634872] cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[   22.646450] remoteproc remoteproc0: 4080000.remoteproc is available
+[   22.649889] remoteproc remoteproc1: adsp is available
+[   22.651043] remoteproc remoteproc1: powering up adsp
+[   22.651131] remoteproc remoteproc1: Booting fw image adsp.mdt, size 8028
+[   22.860888] remoteproc remoteproc2: cdsp is available
+[   22.861616] remoteproc remoteproc2: powering up cdsp
+[   22.861683] remoteproc remoteproc2: Booting fw image cdsp.mdt, size 7068
+[   23.160360] remoteproc remoteproc1: remote processor adsp is now up
+[   23.160587] remoteproc remoteproc2: remote processor cdsp is now up
+[   23.632323] qcom,fastrpc 15700000.remoteproc:glink-edge.fastrpcglink-apps-dsp.-1.-1: no reserved DMA memory for FASTRPC
+[   23.633614] platform 15700000.remoteproc:glink-edge:fastrpc:compute-cb@1: Adding to iommu group 5
+[   23.636707] platform 15700000.remoteproc:glink-edge:fastrpc:compute-cb@2: Adding to iommu group 6
+[   23.638583] platform 15700000.remoteproc:glink-edge:fastrpc:compute-cb@3: Adding to iommu group 7
+[   23.639763] platform 15700000.remoteproc:glink-edge:fastrpc:compute-cb@4: Adding to iommu group 8
+[   23.641456] qcom,fastrpc 1a300000.remoteproc:glink-edge.fastrpcglink-apps-dsp.-1.-1: no reserved DMA memory for FASTRPC
+[   23.644062] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@5: Adding to iommu group 9
+[   23.645426] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@6: Adding to iommu group 10
+[   23.646745] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@7: Adding to iommu group 11
+[   23.647836] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@8: Adding to iommu group 12
+[   23.653527] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@9: Adding to iommu group 13
+[   23.654717] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@10: Adding to iommu group 14
+[   23.656048] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@11: Adding to iommu group 15
+[   23.657357] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@12: Adding to iommu group 16
+[   23.658731] platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@13: Adding to iommu group 17
+[   23.747749] qcom,apr 15700000.remoteproc:glink-edge.apr_audio_svc.-1.-1: Adding APR/GPR dev: aprsvc:service:4:3
+[   23.750809] qcom,apr 15700000.remoteproc:glink-edge.apr_audio_svc.-1.-1: Adding APR/GPR dev: aprsvc:service:4:4
+[   23.779803] qcom,apr 15700000.remoteproc:glink-edge.apr_audio_svc.-1.-1: Adding APR/GPR dev: aprsvc:service:4:7
+[   23.800799] qcom,apr 15700000.remoteproc:glink-edge.apr_audio_svc.-1.-1: Adding APR/GPR dev: aprsvc:service:4:8
+[   24.064994] platform 15700000.remoteproc:glink-edge:apr:service@7:dais: Adding to iommu group 18
+[   30.319941] remoteproc remoteproc0: powering up 4080000.remoteproc
+[   30.329572] remoteproc remoteproc0: Booting fw image mba.mbn, size 238256
+[   30.420793] qcom-q6v5-mss 4080000.remoteproc: MBA booted without debug policy, loading mpss
+[   31.805738] remoteproc remoteproc0: remote processor 4080000.remoteproc is now up
+[   32.038303] ipa 14780000.ipa: modem IPA QMI service found (node 0 port 35)
+[   32.048919] ipa 14780000.ipa: microcontroller initialized
+[   32.051179] ipa 14780000.ipa: modem accepted INIT_DRIVER (skip_uc_load=0)
+[   32.051493] ipa 14780000.ipa: modem handshake complete, data path enabled
+[   32.813153] ath10k_snoc 18800000.wifi: qmi chip_id 0x30214 chip_family 0x4001 board_id 0xff soc_id 0x40050000
+[   32.813283] ath10k_snoc 18800000.wifi: qmi fw_version 0x101f81f0 fw_build_timestamp 2018-08-31 21:42 fw_build_id QC_IMAGE_VERSION_STRING=WLAN.HL.1.0.1.c2-00496-QCAHLSWMTPLZ-1
+[   32.813372] ath10k_snoc 18800000.wifi: qmi not waiting for msa_ready indicator

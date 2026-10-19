@@ -1,0 +1,4 @@
+# journalctl -b -u wpa_supplicant --no-pager -o short-monotonic
+[   30.190213] xiaomi-clover systemd[1]: Starting WPA supplicant...
+[   30.283366] xiaomi-clover wpa_supplicant[2534]: Successfully initialized wpa_supplicant
+[   30.332947] xiaomi-clover systemd[1]: Started WPA supplicant.

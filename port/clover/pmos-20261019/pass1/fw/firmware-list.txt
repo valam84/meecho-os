@@ -1,0 +1,9 @@
+# sh -c find /lib/firmware -type f -o -type l | sort | while read f; do printf "%s %s %s\n" "$(sha256sum "$f" 2>/dev/null | cut -c1-64)" "$(stat -L -c %s "$f" 2>/dev/null)" "$f"; done
+bb1e9a351d1bd649ce92c7d5f89872c9ab612db2bff29bb3b9b6889a298cc359 480048 /lib/firmware/ath10k/WCN3990/hw1.0/board-2.bin
+0be6a6d15a00a98363d655c60a7c725b64b8f2af8416e216e5bcace1900914f1 60 /lib/firmware/ath10k/WCN3990/hw1.0/firmware-5.bin
+25a3fc839cf66bb88cc3c626960f375454fccea78e48d4944764bd03c74a9085 186 /lib/firmware/postmarketos/goodix_9110_cfg.bin
+7ab3cd917e1f875f6a8387f8bc5efcf11ce9c88542ef2fc3cbda7d4b7b163286 16144 /lib/firmware/qcom/a530_pfp.fw
+6419f35956ec7307af83723fedfba752520bacd8389eda0d0120e185e4cb1d3f 19572 /lib/firmware/qcom/a530_pm4.fw
+3124b0c8cf84fd6db5cb063b37c51386dc64b5416c4ba2713e12106d9ffa5daf 8184 /lib/firmware/qcom/a530v3_gpmu.fw2
+5560f4f0fdac7d1bb2adf8d4d083f39e3bee5ba55192feadadc091df55a813eb 6328 /lib/firmware/regulatory.db
+5dd27969661bed1e021ce435f535a53f201705bda14c2dba0db6353d1cdc6fff 1085 /lib/firmware/regulatory.db.p7s

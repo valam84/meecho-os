@@ -1,0 +1,102 @@
+# sh -c mmcli -m any --output-keyvalue
+modem.dbus-path                                 : /org/freedesktop/ModemManager1/Modem/0
+modem.generic.device-identifier                 : <device-id>
+modem.generic.manufacturer                      : QUALCOMM INCORPORATED
+modem.generic.model                             : 0
+modem.generic.revision                          : MPSS.AT.3.1-00729.1-SDM660_GEN_PACK-1.214729.1.215613.1  1  [Jul 30 2019 14:00:00]
+modem.generic.carrier-configuration             : ROW_Commercial
+modem.generic.carrier-configuration-revision    : 08010809
+modem.generic.hardware-revision                 : 10000
+modem.generic.supported-capabilities.length     : 1
+modem.generic.supported-capabilities.value[1]   : lte
+modem.generic.current-capabilities.length       : 1
+modem.generic.current-capabilities.value[1]     : lte
+modem.generic.equipment-identifier              : <imei>
+modem.generic.device                            : qcom-soc
+modem.generic.physdev                           : /sys/devices/platform/soc@0/14780000.ipa
+modem.generic.drivers.length                    : 3
+modem.generic.drivers.value[1]                  : ipa
+modem.generic.drivers.value[2]                  : rpmsg_ctrl
+modem.generic.drivers.value[3]                  : qrtr
+modem.generic.plugin                            : qcom-soc
+modem.generic.primary-port                      : qrtr0
+modem.generic.ports.length                      : 2
+modem.generic.ports.value[1]                    : qrtr0 (qmi)
+modem.generic.ports.value[2]                    : rmnet_ipa0 (net)
+modem.generic.ignored-ports.length              : 1
+modem.generic.ignored-ports.value[1]            : rpmsg_ctrl3 (unknown)
+modem.generic.own-numbers.length                : 1
+modem.generic.own-numbers.value[1]              : <msisdn>
+modem.generic.unlock-required                   : sim-pin2
+modem.generic.unlock-retries.length             : 4
+modem.generic.unlock-retries.value[1]           : sim-pin (3)
+modem.generic.unlock-retries.value[2]           : sim-puk (10)
+modem.generic.unlock-retries.value[3]           : sim-pin2 (3)
+modem.generic.unlock-retries.value[4]           : sim-puk2 (10)
+modem.generic.state                             : registered
+modem.generic.state-failed-reason               : --
+modem.generic.power-state                       : on
+modem.generic.access-technologies.length        : 1
+modem.generic.access-technologies.value[1]      : lte
+modem.generic.signal-quality.value              : 86
+modem.generic.signal-quality.recent             : no
+modem.generic.supported-modes.length            : 1
+modem.generic.supported-modes.value[1]          : allowed: 4g; preferred: none
+modem.generic.current-modes                     : allowed: 4g; preferred: none
+modem.generic.supported-bands.length            : 10
+modem.generic.supported-bands.value[1]          : eutran-1
+modem.generic.supported-bands.value[2]          : eutran-3
+modem.generic.supported-bands.value[3]          : eutran-5
+modem.generic.supported-bands.value[4]          : eutran-7
+modem.generic.supported-bands.value[5]          : eutran-8
+modem.generic.supported-bands.value[6]          : eutran-34
+modem.generic.supported-bands.value[7]          : eutran-38
+modem.generic.supported-bands.value[8]          : eutran-39
+modem.generic.supported-bands.value[9]          : eutran-40
+modem.generic.supported-bands.value[10]         : eutran-41
+modem.generic.current-bands.length              : 10
+modem.generic.current-bands.value[1]            : eutran-1
+modem.generic.current-bands.value[2]            : eutran-3
+modem.generic.current-bands.value[3]            : eutran-5
+modem.generic.current-bands.value[4]            : eutran-7
+modem.generic.current-bands.value[5]            : eutran-8
+modem.generic.current-bands.value[6]            : eutran-34
+modem.generic.current-bands.value[7]            : eutran-38
+modem.generic.current-bands.value[8]            : eutran-39
+modem.generic.current-bands.value[9]            : eutran-40
+modem.generic.current-bands.value[10]           : eutran-41
+modem.generic.supported-ip-families.length      : 3
+modem.generic.supported-ip-families.value[1]    : ipv4
+modem.generic.supported-ip-families.value[2]    : ipv6
+modem.generic.supported-ip-families.value[3]    : ipv4v6
+modem.3gpp.imei                                 : <imei>
+modem.3gpp.enabled-locks.length                 : 1
+modem.3gpp.enabled-locks.value[1]               : fixed-dialing
+modem.3gpp.operator-code                        : 25001
+modem.3gpp.operator-name                        : --
+modem.3gpp.registration-state                   : emergency-only
+modem.3gpp.packet-service-state                 : detached
+modem.3gpp.network-rejection-error              : --
+modem.3gpp.network-rejection-operator-id        : --
+modem.3gpp.network-rejection-operator-name      : --
+modem.3gpp.network-rejection-access-technology  : --
+modem.3gpp.pco                                  : --
+modem.3gpp.eps.ue-mode-operation                : csps-1
+modem.3gpp.eps.initial-bearer.dbus-path         : /org/freedesktop/ModemManager1/Bearer/0
+modem.3gpp.eps.initial-bearer.settings.apn      : www.mova.pl
+modem.3gpp.eps.initial-bearer.settings.ip-type  : ipv4
+modem.3gpp.eps.initial-bearer.settings.user     : --
+modem.3gpp.eps.initial-bearer.settings.password : --
+modem.3gpp.5gnr.registration-settings.mico-mode : --
+modem.3gpp.5gnr.registration-settings.drx-cycle : --
+modem.cdma.meid                                 : --
+modem.cdma.esn                                  : --
+modem.cdma.sid                                  : --
+modem.cdma.nid                                  : --
+modem.cdma.cdma1x-registration-state            : --
+modem.cdma.evdo-registration-state              : --
+modem.cdma.activation-state                     : --
+modem.generic.sim                               : /org/freedesktop/ModemManager1/SIM/0
+modem.generic.primary-sim-slot                  : --
+modem.generic.sim-slots                         : --
+modem.generic.bearers                           : --

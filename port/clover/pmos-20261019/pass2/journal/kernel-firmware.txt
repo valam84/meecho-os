@@ -1,0 +1,75 @@
+# sh -c journalctl -b -k --no-pager -o short-monotonic | grep -i -E "firmware|remoteproc|q6v5|mss|mba|rmtfs|tqftp|pil|wlfw|ath10k|ipa"
+[   15.414714] xiaomi-clover kernel: Linux version 6.19.10-sdm660-ipa (pmos@nura-build) (Alpine clang version 22.1.3, LLD 22.1.3) #1-postmarketos-qcom-sdm660 SMP PREEMPT Sat Oct 17 19:23:09 UTC 
+[   15.415634] xiaomi-clover kernel: [Firmware Bug]: Kernel image misaligned at boot, please fix your bootloader!
+[   15.416956] xiaomi-clover kernel: OF: reserved mem: 0x0000000094900000..0x0000000094afffff (2048 KiB) nomap non-reusable mba@94900000
+[   15.419990] xiaomi-clover kernel: psci: PSCIv1.0 detected in firmware.
+[   15.420539] xiaomi-clover kernel: psci: [Firmware Bug]: failed to set PC mode: -3
+[   15.445494] xiaomi-clover kernel: qcom_scm firmware:scm: qseecom: found qseecom with version 0x1001000
+[   15.446891] xiaomi-clover kernel: qcom_scm firmware:scm: qseecom: untested machine, skipping
+[   15.477355] xiaomi-clover kernel: arm-smmu 16c0000.iommu:         Stage-1: 36-bit VA -> 36-bit IPA
+[   15.480928] xiaomi-clover kernel: platform 14780000.ipa: Adding to iommu group 0
+[   15.501084] xiaomi-clover kernel: arm-smmu 5040000.iommu:         Stage-1: 48-bit VA -> 36-bit IPA
+[   15.522186] xiaomi-clover kernel: arm-smmu 5100000.iommu:         Stage-1: 36-bit VA -> 36-bit IPA
+[   15.540707] xiaomi-clover kernel: arm-smmu cd00000.iommu:         Stage-1: 32-bit VA -> 36-bit IPA
+[   15.556679] xiaomi-clover kernel: arm-smmu 5180000.iommu:         Stage-1: 36-bit VA -> 36-bit IPA
+[   15.567623] xiaomi-clover kernel: Loading compiled-in X.509 certificates
+[   15.589369] xiaomi-clover kernel: msm_dpu c901000.display-controller: Direct firmware load for qcom/a530_pm4.fw failed with error -2
+[   15.599783] xiaomi-clover kernel: gcc-sdm660 100000.clock-controller: sync_state() pending due to 4080000.remoteproc
+[   15.606284] xiaomi-clover systemd[1]: Starting Load firmware that is located on dedicated partitions of qcom devices...
+[   15.606784] xiaomi-clover systemd[1]: Clear SysFail Entry If The Boot Is Successful skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/LoaderEntrySysFail-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
+[   22.592297] xiaomi-clover kernel: ipa 14780000.ipa: IPA version 0x1030300 (hw 0x20060001), BAM revision 0x674427, 8192 bytes SRAM
+[   22.632149] xiaomi-clover kernel: cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[   22.644084] xiaomi-clover kernel: remoteproc remoteproc0: 4080000.remoteproc is available
+[   22.690218] xiaomi-clover kernel: remoteproc remoteproc1: adsp is available
+[   22.726119] xiaomi-clover kernel: remoteproc remoteproc1: powering up adsp
+[   22.769411] xiaomi-clover kernel: remoteproc remoteproc1: Booting fw image adsp.mdt, size 8028
+[   22.860226] xiaomi-clover kernel: remoteproc remoteproc2: cdsp is available
+[   22.894358] xiaomi-clover kernel: remoteproc remoteproc2: powering up cdsp
+[   22.895196] xiaomi-clover kernel: remoteproc remoteproc2: Booting fw image cdsp.mdt, size 7068
+[   23.136466] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: supply vdd-3.3-ch1 not found, using dummy regulator
+[   23.163456] xiaomi-clover kernel: remoteproc remoteproc1: remote processor adsp is now up
+[   23.165093] xiaomi-clover kernel: remoteproc remoteproc2: remote processor cdsp is now up
+[   23.580064] xiaomi-clover kernel: qcom_sns_reg.qcom-sns-reg qcom_common.sns-reg.1: Direct firmware load for qcom/sensors/sns.reg-xiaomi,clover-lte failed with error -2
+[   23.590921] xiaomi-clover kernel: qcom_sns_reg.qcom-sns-reg qcom_common.sns-reg.1: firmware loaded, error above can be ignored.
+[   23.628100] xiaomi-clover kernel: qcom,fastrpc 15700000.remoteproc:glink-edge.fastrpcglink-apps-dsp.-1.-1: no reserved DMA memory for FASTRPC
+[   23.632091] xiaomi-clover kernel: platform 15700000.remoteproc:glink-edge:fastrpc:compute-cb@1: Adding to iommu group 5
+[   23.633375] xiaomi-clover kernel: platform 15700000.remoteproc:glink-edge:fastrpc:compute-cb@2: Adding to iommu group 6
+[   23.634212] xiaomi-clover kernel: platform 15700000.remoteproc:glink-edge:fastrpc:compute-cb@3: Adding to iommu group 7
+[   23.636114] xiaomi-clover kernel: platform 15700000.remoteproc:glink-edge:fastrpc:compute-cb@4: Adding to iommu group 8
+[   23.636940] xiaomi-clover kernel: qcom,fastrpc 1a300000.remoteproc:glink-edge.fastrpcglink-apps-dsp.-1.-1: no reserved DMA memory for FASTRPC
+[   23.640104] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@5: Adding to iommu group 9
+[   23.641042] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@6: Adding to iommu group 10
+[   23.644093] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@7: Adding to iommu group 11
+[   23.645968] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@8: Adding to iommu group 12
+[   23.652221] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@9: Adding to iommu group 13
+[   23.652866] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@10: Adding to iommu group 14
+[   23.653431] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@11: Adding to iommu group 15
+[   23.653979] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@12: Adding to iommu group 16
+[   23.654543] xiaomi-clover kernel: platform 1a300000.remoteproc:glink-edge:fastrpc:compute-cb@13: Adding to iommu group 17
+[   23.744342] xiaomi-clover kernel: qcom,apr 15700000.remoteproc:glink-edge.apr_audio_svc.-1.-1: Adding APR/GPR dev: aprsvc:service:4:3
+[   23.748073] xiaomi-clover kernel: qcom,apr 15700000.remoteproc:glink-edge.apr_audio_svc.-1.-1: Adding APR/GPR dev: aprsvc:service:4:4
+[   23.776181] xiaomi-clover kernel: qcom,apr 15700000.remoteproc:glink-edge.apr_audio_svc.-1.-1: Adding APR/GPR dev: aprsvc:service:4:7
+[   23.797535] xiaomi-clover kernel: qcom,apr 15700000.remoteproc:glink-edge.apr_audio_svc.-1.-1: Adding APR/GPR dev: aprsvc:service:4:8
+[   24.064067] xiaomi-clover kernel: platform 15700000.remoteproc:glink-edge:apr:service@7:dais: Adding to iommu group 18
+[   30.320105] xiaomi-clover kernel: remoteproc remoteproc0: powering up 4080000.remoteproc
+[   30.328251] xiaomi-clover kernel: remoteproc remoteproc0: Booting fw image mba.mbn, size 238256
+[   30.420089] xiaomi-clover kernel: qcom-q6v5-mss 4080000.remoteproc: MBA booted without debug policy, loading mpss
+[   31.804097] xiaomi-clover kernel: remoteproc remoteproc0: remote processor 4080000.remoteproc is now up
+[   32.036144] xiaomi-clover kernel: ipa 14780000.ipa: modem IPA QMI service found (node 0 port 35)
+[   32.048088] xiaomi-clover kernel: ipa 14780000.ipa: microcontroller initialized
+[   32.050437] xiaomi-clover kernel: ipa 14780000.ipa: modem accepted INIT_DRIVER (skip_uc_load=0)
+[   32.052268] xiaomi-clover kernel: ipa 14780000.ipa: modem handshake complete, data path enabled
+[   32.812107] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: qmi chip_id 0x30214 chip_family 0x4001 board_id 0xff soc_id 0x40050000
+[   32.813630] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: qmi fw_version 0x101f81f0 fw_build_timestamp 2018-08-31 21:42 fw_build_id QC_IMAGE_VERSION_STRING=WLAN.HL.1.0.1.c2-00496-QCAHLSWMTPLZ-1
+[   32.814658] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: qmi not waiting for msa_ready indicator
+[   35.960123] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: wcn3990 hw1.0 target 0x00000008 chip_id 0x00000000 sub 0000:0000
+[   35.961526] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: kconfig debug 1 debugfs 1 tracing 0 dfs 0 testmode 0
+[   35.962483] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: firmware ver  api 5 features wowlan,no-4addr-pad,allows-mesh-bcast,mgmt-tx-by-reference,non-bmi,single-chan-info-per-channel crc32 022c9087
+[   36.004475] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: htt-ver 3.56 wmi-op 4 htt-op 3 cal file max-sta 32 raw 0 hwcrypto 1
+[   36.096070] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: invalid MAC address; choosing random
+[ 1834.600084] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: received unsolicited stats update event
+[ 1834.601865] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: received unsolicited stats update event
+[ 1834.602827] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: received unsolicited stats update event
+[ 1834.603772] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: received unsolicited stats update event
+[ 1834.612149] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: failed to request tpc config: -95
+[ 1834.613618] xiaomi-clover kernel: ath10k_snoc 18800000.wifi: failed to request tpc config stats: -95

@@ -1,0 +1,251 @@
+# sh -c for m in ipa2_lite ath10k_snoc ath10k_core qcom_q6v5_mss rmtfs_mem qrtr_smd qcom_pd_mapper btqca hci_uart qcom_smgr sns_smgr qcom_sns_reg; do modinfo $m; echo; done
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/net/ipa2-lite/ipa2-lite.ko.zst
+license:        GPL
+description:    Qualcomm IP Accelerator v2.X driver
+name:           ipa2_lite
+intree:         Y
+depends:        qcom_common,qmi_helpers
+alias:          of:N*T*Cqcom,ipa-v2.5
+alias:          of:N*T*Cqcom,ipa-v2.5C*
+alias:          of:N*T*Cqcom,ipa-lite-v2.6
+alias:          of:N*T*Cqcom,ipa-lite-v2.6C*
+srcversion:     3E33F610C6254CF067ED89D
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+parm:           comp_cfg:Value written to IPA_COMP_CFG at reset (uint)
+parm:           clk_rate_idle:IPA core clock rate in Hz while runtime suspended (uint)
+parm:           clk_rate_active:IPA core clock rate in Hz while in use (uint)
+parm:           dump:bool
+parm:           test_mode:bool
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/net/wireless/ath/ath10k/ath10k_snoc.ko.zst
+author:         Qualcomm
+license:        Dual BSD/GPL
+description:    Driver support for Atheros WCN3990 SNOC devices
+name:           ath10k_snoc
+intree:         Y
+depends:        ath10k_core,qmi_helpers,qcom_common
+alias:          of:N*T*Cqcom,wcn3990-wifi
+alias:          of:N*T*Cqcom,wcn3990-wifiC*
+srcversion:     B6845A379B7D01D0575AB87
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/net/wireless/ath/ath10k/ath10k_core.ko.zst
+author:         Qualcomm Atheros
+description:    Core module for Qualcomm Atheros 802.11ac wireless LAN cards.
+license:        Dual BSD/GPL
+name:           ath10k_core
+intree:         Y
+depends:        mac80211,cfg80211,ath
+srcversion:     299F43BD14508B26F294FB9
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+parm:           coredump_mask:Bitfield of what to include in firmware crash file (ulong)
+parm:           frame_mode:Datapath frame mode (0: raw, 1: native wifi (default), 2: ethernet) (uint)
+parm:           fw_diag_log:Diag based fw log debugging (bool)
+parm:           skip_otp:Skip otp failure for calibration in testmode (bool)
+parm:           uart_print:Uart target debugging (bool)
+parm:           cryptmode:Crypto mode: 0-hardware, 1-software (uint)
+parm:           debug_mask:Debugging mask (uint)
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/remoteproc/qcom_q6v5_mss.ko.zst
+description:    Qualcomm Self-authenticating modem remoteproc driver
+license:        GPL v2
+name:           qcom_q6v5_mss
+intree:         Y
+depends:        qcom_q6v5,qcom_common,qcom_sysmon,mdt_loader,qcom_pil_info
+alias:          of:N*T*Cqcom,q6v5-pil
+alias:          of:N*T*Cqcom,q6v5-pilC*
+alias:          of:N*T*Cqcom,msm8226-mss-pil
+alias:          of:N*T*Cqcom,msm8226-mss-pilC*
+alias:          of:N*T*Cqcom,msm8909-mss-pil
+alias:          of:N*T*Cqcom,msm8909-mss-pilC*
+alias:          of:N*T*Cqcom,msm8916-mss-pil
+alias:          of:N*T*Cqcom,msm8916-mss-pilC*
+alias:          of:N*T*Cqcom,msm8926-mss-pil
+alias:          of:N*T*Cqcom,msm8926-mss-pilC*
+alias:          of:N*T*Cqcom,msm8953-mss-pil
+alias:          of:N*T*Cqcom,msm8953-mss-pilC*
+alias:          of:N*T*Cqcom,msm8974-mss-pil
+alias:          of:N*T*Cqcom,msm8974-mss-pilC*
+alias:          of:N*T*Cqcom,msm8996-mss-pil
+alias:          of:N*T*Cqcom,msm8996-mss-pilC*
+alias:          of:N*T*Cqcom,msm8998-mss-pil
+alias:          of:N*T*Cqcom,msm8998-mss-pilC*
+alias:          of:N*T*Cqcom,sc7180-mss-pil
+alias:          of:N*T*Cqcom,sc7180-mss-pilC*
+alias:          of:N*T*Cqcom,sc7280-mss-pil
+alias:          of:N*T*Cqcom,sc7280-mss-pilC*
+alias:          of:N*T*Cqcom,sdm660-mss-pil
+alias:          of:N*T*Cqcom,sdm660-mss-pilC*
+alias:          of:N*T*Cqcom,sdm845-mss-pil
+alias:          of:N*T*Cqcom,sdm845-mss-pilC*
+srcversion:     303CEE39C5FF33766212CE9
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/soc/qcom/rmtfs_mem.ko.zst
+author:         Linaro Ltd
+description:    Qualcomm Remote Filesystem memory driver
+license:        GPL v2
+name:           rmtfs_mem
+intree:         Y
+depends:        
+alias:          of:N*T*Cqcom,rmtfs-mem
+alias:          of:N*T*Cqcom,rmtfs-memC*
+srcversion:     DEB9A6EBF766F973B8F9FA6
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/net/qrtr/qrtr-smd.ko.zst
+alias:          rpmsg:IPCRTR
+description:    Qualcomm IPC-Router SMD interface driver
+license:        GPL v2
+name:           qrtr_smd
+intree:         Y
+depends:        qrtr
+srcversion:     BAA338EC1847AE92E17F5C2
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/soc/qcom/qcom_pd_mapper.ko.zst
+description:    Qualcomm Protection Domain Mapper
+license:        GPL
+name:           qcom_pd_mapper
+intree:         Y
+depends:        qmi_helpers,qcom_pdr_msg
+alias:          auxiliary:qcom_common.pd-mapper
+srcversion:     1602E30ADE0E71B878541F0
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/bluetooth/btqca.ko.zst
+author:         Ben Young Tae Kim <ytkim@qca.qualcomm.com>
+description:    Bluetooth support for Qualcomm Atheros family
+license:        GPL
+name:           btqca
+intree:         Y
+depends:        bluetooth
+srcversion:     F474CFE79AA8BF5A792F4D6
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/bluetooth/hci_uart.ko.zst
+author:         Marcel Holtmann <marcel@holtmann.org>
+description:    Bluetooth HCI UART driver ver 2.3
+version:        2.3
+license:        GPL
+alias:          tty-ldisc-15
+name:           hci_uart
+intree:         Y
+depends:        bluetooth,btintel,btbcm,btrtl,crc-ccitt,btqca
+alias:          of:N*T*Cti,cc2560
+alias:          of:N*T*Cti,cc2560C*
+alias:          of:N*T*Cti,wl1271-st
+alias:          of:N*T*Cti,wl1271-stC*
+alias:          of:N*T*Cti,wl1273-st
+alias:          of:N*T*Cti,wl1273-stC*
+alias:          of:N*T*Cti,wl1281-st
+alias:          of:N*T*Cti,wl1281-stC*
+alias:          of:N*T*Cti,wl1283-st
+alias:          of:N*T*Cti,wl1283-stC*
+alias:          of:N*T*Cti,wl1285-st
+alias:          of:N*T*Cti,wl1285-stC*
+alias:          of:N*T*Cti,wl1801-st
+alias:          of:N*T*Cti,wl1801-stC*
+alias:          of:N*T*Cti,wl1805-st
+alias:          of:N*T*Cti,wl1805-stC*
+alias:          of:N*T*Cti,wl1807-st
+alias:          of:N*T*Cti,wl1807-stC*
+alias:          of:N*T*Cti,wl1831-st
+alias:          of:N*T*Cti,wl1831-stC*
+alias:          of:N*T*Cti,wl1835-st
+alias:          of:N*T*Cti,wl1835-stC*
+alias:          of:N*T*Cti,wl1837-st
+alias:          of:N*T*Cti,wl1837-stC*
+alias:          of:N*T*Crealtek,rtl8822cs-bt
+alias:          of:N*T*Crealtek,rtl8822cs-btC*
+alias:          of:N*T*Crealtek,rtl8723bs-bt
+alias:          of:N*T*Crealtek,rtl8723bs-btC*
+alias:          of:N*T*Crealtek,rtl8723cs-bt
+alias:          of:N*T*Crealtek,rtl8723cs-btC*
+alias:          of:N*T*Crealtek,rtl8723ds-bt
+alias:          of:N*T*Crealtek,rtl8723ds-btC*
+alias:          of:N*T*Cbrcm,bcm20702a1
+alias:          of:N*T*Cbrcm,bcm20702a1C*
+alias:          of:N*T*Cbrcm,bcm4329-bt
+alias:          of:N*T*Cbrcm,bcm4329-btC*
+alias:          of:N*T*Cbrcm,bcm4330-bt
+alias:          of:N*T*Cbrcm,bcm4330-btC*
+alias:          of:N*T*Cbrcm,bcm4334-bt
+alias:          of:N*T*Cbrcm,bcm4334-btC*
+alias:          of:N*T*Cbrcm,bcm4345c5
+alias:          of:N*T*Cbrcm,bcm4345c5C*
+alias:          of:N*T*Cbrcm,bcm43430a0-bt
+alias:          of:N*T*Cbrcm,bcm43430a0-btC*
+alias:          of:N*T*Cbrcm,bcm43430a1-bt
+alias:          of:N*T*Cbrcm,bcm43430a1-btC*
+alias:          of:N*T*Cbrcm,bcm43438-bt
+alias:          of:N*T*Cbrcm,bcm43438-btC*
+alias:          of:N*T*Cbrcm,bcm4349-bt
+alias:          of:N*T*Cbrcm,bcm4349-btC*
+alias:          of:N*T*Cbrcm,bcm43540-bt
+alias:          of:N*T*Cbrcm,bcm43540-btC*
+alias:          of:N*T*Cbrcm,bcm4335a0
+alias:          of:N*T*Cbrcm,bcm4335a0C*
+alias:          of:N*T*Ccypress,cyw4373a0-bt
+alias:          of:N*T*Ccypress,cyw4373a0-btC*
+alias:          of:N*T*Cinfineon,cyw55572-bt
+alias:          of:N*T*Cinfineon,cyw55572-btC*
+alias:          of:N*T*Cqcom,qca2066-bt
+alias:          of:N*T*Cqcom,qca2066-btC*
+alias:          of:N*T*Cqcom,qca6174-bt
+alias:          of:N*T*Cqcom,qca6174-btC*
+alias:          of:N*T*Cqcom,qca6390-bt
+alias:          of:N*T*Cqcom,qca6390-btC*
+alias:          of:N*T*Cqcom,qca9377-bt
+alias:          of:N*T*Cqcom,qca9377-btC*
+alias:          of:N*T*Cqcom,wcn3950-bt
+alias:          of:N*T*Cqcom,wcn3950-btC*
+alias:          of:N*T*Cqcom,wcn3988-bt
+alias:          of:N*T*Cqcom,wcn3988-btC*
+alias:          of:N*T*Cqcom,wcn3990-bt
+alias:          of:N*T*Cqcom,wcn3990-btC*
+alias:          of:N*T*Cqcom,wcn3991-bt
+alias:          of:N*T*Cqcom,wcn3991-btC*
+alias:          of:N*T*Cqcom,wcn3998-bt
+alias:          of:N*T*Cqcom,wcn3998-btC*
+alias:          of:N*T*Cqcom,wcn6750-bt
+alias:          of:N*T*Cqcom,wcn6750-btC*
+alias:          of:N*T*Cqcom,wcn6855-bt
+alias:          of:N*T*Cqcom,wcn6855-btC*
+alias:          of:N*T*Cqcom,wcn7850-bt
+alias:          of:N*T*Cqcom,wcn7850-btC*
+srcversion:     A445605F4DF5C883EF5F3F3
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+parm:           irq_polarity:IRQ polarity 0: active-high 1: active-low (int)
+parm:           hciextn:Convert HCI Extensions into BCSP packets (bool)
+parm:           txcrc:Transmit CRC with every BCSP packet (bool)
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/iio/common/qcom_smgr/qcom_smgr.ko.zst
+author:         Yassine Oudjana <y.oudjana@protonmail.com>
+description:    Qualcomm Sensor Manager driver
+license:        GPL
+name:           qcom_smgr
+intree:         Y
+depends:        qrtr-smd,sns_smgr,qmi_helpers
+alias:          qrtr:100:3201
+srcversion:     7B7A2BC2AA88D13EF77636A
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/iio/common/qcom_smgr/qmi/sns_smgr.ko.zst
+license:        GPL
+name:           sns_smgr
+intree:         Y
+depends:        
+srcversion:     3CB88D2F0C64AFACC330E07
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+
+filename:       /lib/modules/6.19.10-sdm660-ipa/kernel/drivers/soc/qcom/qcom_sns_reg.ko.zst
+description:    Qualcomm Sensors Registry
+license:        GPL
+name:           qcom_sns_reg
+intree:         Y
+depends:        qcom_common,qmi_helpers
+alias:          auxiliary:qcom_common.sns-reg
+srcversion:     C0B8D349EF197B8A4AB5992
+vermagic:       6.19.10-sdm660-ipa SMP preempt mod_unload aarch64
+

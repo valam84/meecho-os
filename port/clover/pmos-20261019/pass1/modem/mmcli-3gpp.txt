@@ -1,0 +1,15 @@
+# sh -c mmcli -m any --location-status; mmcli -m any --signal-get
+  --------------------------------
+  Location |         capabilities: 3gpp-lac-ci, gps-raw, gps-nmea, agps-msa, agps-msb
+           |              enabled: 3gpp-lac-ci
+           |              signals: no
+  --------------------------------
+  GPS      |         refresh rate: 30 seconds
+           | supported assistance: xtra
+           |   assistance servers: https://xtrapath1.izatcloud.net/xtra3grcej.bin
+           |                       https://xtrapath2.izatcloud.net/xtra3grcej.bin
+           |                       https://xtrapath3.izatcloud.net/xtra3grcej.bin
+  ------------------------------
+  Signal |         refresh rate: 0 seconds
+         |       rssi threshold: 0 dBm
+         | error rate threshold: no

@@ -1,0 +1,29 @@
+== /sys/kernel/debug/pinctrl/15070000.pinctrl
+Pinmux settings per pin
+Format: pin (name): mux_owner gpio_owner hog?
+== /sys/kernel/debug/pinctrl/3100000.pinctrl
+Pinmux settings per pin
+Format: pin (name): mux_owner|gpio_owner (strict) hog?
+pin 10 (GPIO_10): device c177000.i2c function blsp_i2c3 group gpio10
+pin 11 (GPIO_11): device c177000.i2c function blsp_i2c3 group gpio11
+pin 16 (GPIO_16): device c1af000.serial function blsp_uart5 group gpio16
+pin 17 (GPIO_17): device c1af000.serial function blsp_uart5 group gpio17
+pin 18 (GPIO_18): device c1af000.serial function blsp_uart5 group gpio18
+pin 19 (GPIO_19): device c1af000.serial function blsp_uart5 group gpio19
+pin 54 (GPIO_54): device c084000.mmc function gpio group gpio54
+pin 59 (GPIO_59): device c994000.dsi.0 function mdp_vsync group gpio59
+pin 62 (GPIO_62): device c994000.dsi.0 function gpio group gpio62
+pin 66 (GPIO_66): device 0-0038 function gpio group gpio66
+pin 67 (GPIO_67): device 0-0038 function gpio group gpio67
+pin 75 (GPIO_75): device gpio-hall-sensor function gpio group gpio75
+== /sys/kernel/debug/pinctrl/800f000.spmi:pmic@0:gpio@c000
+Pinmux settings per pin
+Format: pin (name): mux_owner gpio_owner hog?
+== /sys/kernel/debug/pinctrl/800f000.spmi:pmic@2:gpio@c000
+Pinmux settings per pin
+Format: pin (name): mux_owner gpio_owner hog?
+pin 4 (gpio5): lcd-power-regulator 800f000.spmi:pmic@2:gpio@c000:643 function normal group gpio5
+pin 6 (gpio7): gpio-keys 800f000.spmi:pmic@2:gpio@c000:645 function normal group gpio7
+== /sys/kernel/debug/pinctrl/pinctrl-devices
+== /sys/kernel/debug/pinctrl/pinctrl-handles
+== /sys/kernel/debug/pinctrl/pinctrl-maps

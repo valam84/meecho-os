@@ -1,0 +1,3 @@
+# sh -c dmesg | grep -i -E "direct firmware|firmware: |loading.*firmware|request_firmware"
+[    3.653588] msm_dpu c901000.display-controller: Direct firmware load for qcom/a530_pm4.fw failed with error -2
+[   23.584222] qcom_sns_reg.qcom-sns-reg qcom_common.sns-reg.1: Direct firmware load for qcom/sensors/sns.reg-xiaomi,clover-lte failed with error -2

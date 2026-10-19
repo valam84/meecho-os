@@ -1,0 +1,4 @@
+# journalctl -b -u msm-firmware-loader --no-pager -o short-monotonic
+[   15.616050] xiaomi-clover msm-firmware-loader.sh[671]: mount: /run/msm-firmware-loader: mount point does not exist.
+[   15.616050] xiaomi-clover msm-firmware-loader.sh[671]:        dmesg(1) may have more information after failed mount system call.
+[   20.017266] xiaomi-clover systemd[1]: Finished Load firmware that is located on dedicated partitions of qcom devices.

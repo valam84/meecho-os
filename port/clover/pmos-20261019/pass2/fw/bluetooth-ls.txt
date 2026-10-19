@@ -1,0 +1,11 @@
+# sh -c cd /run/msm-firmware-loader/mnt/bluetooth && find . -type f | sort | xargs sha256sum
+07f0f45cff57347a73ada68bf2bd564e17998383388ef27bd2e9de5269c1986f  ./image/apbtfw10.tlv
+62241d220a9e42a3256055dc8cfe38e0e917deecbffa0d0f9a84c09a2173216c  ./image/apbtfw11.tlv
+4cb35fec741a3294f5c64d41aefba45cf899c42cc4c00800bba7029cca5919d9  ./image/apnv10.bin
+ada825e2634d857b32af43c929c1e765b4e9510e35178b087c1e24c16d46d970  ./image/apnv11.bin
+d6532b99875890fb7969874ff6e904939ca0d6f2d2bd1e1fd3ae86470bebc9f5  ./image/crbtfw11.tlv
+d9afa5d9facd528f437e83bcc8147681afd432296ebbba5e77904c13fab28209  ./image/crbtfw20.tlv
+62241d220a9e42a3256055dc8cfe38e0e917deecbffa0d0f9a84c09a2173216c  ./image/crbtfw21.tlv
+206deb651dcfd187d1fd39f1f064af20324d1b4e28dcd72f5ed23bb8ef605d00  ./image/crnv11.bin
+6c96fe067860a79813b466a1d4644dc2748a4191b21a986a44d2cc0fe6ccaca7  ./image/crnv20.bin
+7d3a5a66152c2b5f6631afd18047235271fa3dec90e8310cba9a9db6b43aff1a  ./image/crnv21.bin

@@ -1,0 +1,3 @@
+# sh -c for i in /sys/class/net/wlan*; do iw dev $(basename $i) link; iw dev $(basename $i) station dump; done
+sh: iw: not found
+sh: iw: not found

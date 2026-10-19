@@ -1,0 +1,410 @@
+# sh -c cat /proc/asound/cards; aplay -l; amixer -c0 contents 2>&1 | head -400
+ 0 [X4             ]: sdm660-internal - Xiaomi Mi Pad 4
+                      Xiaomi Mi Pad 4
+**** List of PLAYBACK Hardware Devices ****
+card 0: X4 [Xiaomi Mi Pad 4], device 0: MultiMedia1 (*) []
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+card 0: X4 [Xiaomi Mi Pad 4], device 1: MultiMedia2 (*) []
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+numid=50,iface=CARD,name='Headset Jack'
+  ; type=BOOLEAN,access=r-------,values=1
+  : values=off
+numid=1,iface=MIXER,name='ADC1 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=8,step=0
+  : values=0
+  | dBscale-min=0.00dB,step=6.00dB,mute=0
+numid=55,iface=MIXER,name='ADC2 MUX'
+  ; type=ENUMERATED,access=rw------,values=1,items=3
+  ; Item #0 'ZERO'
+  ; Item #1 'INP2'
+  ; Item #2 'INP3'
+  : values=0
+numid=2,iface=MIXER,name='ADC2 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=8,step=0
+  : values=8
+  | dBscale-min=0.00dB,step=6.00dB,mute=0
+numid=3,iface=MIXER,name='ADC3 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=8,step=0
+  : values=0
+  | dBscale-min=0.00dB,step=6.00dB,mute=0
+numid=82,iface=MIXER,name='DISPLAY_PORT_RX Audio Mixer MultiMedia1'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=83,iface=MIXER,name='DISPLAY_PORT_RX Audio Mixer MultiMedia2'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=84,iface=MIXER,name='DISPLAY_PORT_RX Audio Mixer MultiMedia3'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=85,iface=MIXER,name='DISPLAY_PORT_RX Audio Mixer MultiMedia4'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=86,iface=MIXER,name='DISPLAY_PORT_RX Audio Mixer MultiMedia5'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=87,iface=MIXER,name='DISPLAY_PORT_RX Audio Mixer MultiMedia6'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=88,iface=MIXER,name='DISPLAY_PORT_RX Audio Mixer MultiMedia7'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=89,iface=MIXER,name='DISPLAY_PORT_RX Audio Mixer MultiMedia8'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=68,iface=MIXER,name='Digital CIC1 MUX'
+  ; type=ENUMERATED,access=rw------,values=1,items=2
+  ; Item #0 'AMIC'
+  ; Item #1 'DMIC'
+  : values=0
+numid=69,iface=MIXER,name='Digital CIC2 MUX'
+  ; type=ENUMERATED,access=rw------,values=1,items=2
+  ; Item #0 'AMIC'
+  ; Item #1 'DMIC'
+  : values=0
+numid=70,iface=MIXER,name='Digital DEC1 MUX'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'ADC1'
+  ; Item #2 'ADC2'
+  ; Item #3 'ADC3'
+  ; Item #4 'DMIC1'
+  ; Item #5 'DMIC2'
+  : values=1
+numid=71,iface=MIXER,name='Digital DEC2 MUX'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'ADC1'
+  ; Item #2 'ADC2'
+  ; Item #3 'ADC3'
+  ; Item #4 'DMIC1'
+  ; Item #5 'DMIC2'
+  : values=0
+numid=32,iface=MIXER,name='Digital IIR1 Band1'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=22,iface=MIXER,name='Digital IIR1 Band1 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=33,iface=MIXER,name='Digital IIR1 Band2'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=23,iface=MIXER,name='Digital IIR1 Band2 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=34,iface=MIXER,name='Digital IIR1 Band3'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=24,iface=MIXER,name='Digital IIR1 Band3 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=35,iface=MIXER,name='Digital IIR1 Band4'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=25,iface=MIXER,name='Digital IIR1 Band4 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=36,iface=MIXER,name='Digital IIR1 Band5'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=26,iface=MIXER,name='Digital IIR1 Band5 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=72,iface=MIXER,name='Digital IIR1 INP1 MUX'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'DEC1'
+  ; Item #2 'DEC2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=42,iface=MIXER,name='Digital IIR1 INP1 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=43,iface=MIXER,name='Digital IIR1 INP2 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=44,iface=MIXER,name='Digital IIR1 INP3 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=45,iface=MIXER,name='Digital IIR1 INP4 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=37,iface=MIXER,name='Digital IIR2 Band1'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=27,iface=MIXER,name='Digital IIR2 Band1 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=38,iface=MIXER,name='Digital IIR2 Band2'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=28,iface=MIXER,name='Digital IIR2 Band2 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=39,iface=MIXER,name='Digital IIR2 Band3'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=29,iface=MIXER,name='Digital IIR2 Band3 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=40,iface=MIXER,name='Digital IIR2 Band4'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=30,iface=MIXER,name='Digital IIR2 Band4 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=41,iface=MIXER,name='Digital IIR2 Band5'
+  ; type=BYTES,access=rw------,values=20
+  : values=0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+numid=31,iface=MIXER,name='Digital IIR2 Band5 Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=73,iface=MIXER,name='Digital IIR2 INP1 MUX'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'DEC1'
+  ; Item #2 'DEC2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=46,iface=MIXER,name='Digital IIR2 INP1 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=47,iface=MIXER,name='Digital IIR2 INP2 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=48,iface=MIXER,name='Digital IIR2 INP3 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=49,iface=MIXER,name='Digital IIR2 INP4 Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=13,iface=MIXER,name='Digital RX1 DCB Cutoff'
+  ; type=ENUMERATED,access=rw------,values=1,items=3
+  ; Item #0 '4Hz'
+  ; Item #1 '75Hz'
+  ; Item #2 '150Hz'
+  : values=0
+numid=16,iface=MIXER,name='Digital RX1 DCB Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=4,iface=MIXER,name='Digital RX1 Digital Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=57,iface=MIXER,name='Digital RX1 MIX1 INP1'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=3
+numid=58,iface=MIXER,name='Digital RX1 MIX1 INP2'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=59,iface=MIXER,name='Digital RX1 MIX1 INP3'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=66,iface=MIXER,name='Digital RX1 MIX2 INP1'
+  ; type=ENUMERATED,access=rw------,values=1,items=3
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  : values=0
+numid=19,iface=MIXER,name='Digital RX1 Mute Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=14,iface=MIXER,name='Digital RX2 DCB Cutoff'
+  ; type=ENUMERATED,access=rw------,values=1,items=3
+  ; Item #0 '4Hz'
+  ; Item #1 '75Hz'
+  ; Item #2 '150Hz'
+  : values=0
+numid=17,iface=MIXER,name='Digital RX2 DCB Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=5,iface=MIXER,name='Digital RX2 Digital Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=60,iface=MIXER,name='Digital RX2 MIX1 INP1'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=4
+numid=61,iface=MIXER,name='Digital RX2 MIX1 INP2'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=62,iface=MIXER,name='Digital RX2 MIX1 INP3'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=67,iface=MIXER,name='Digital RX2 MIX2 INP1'
+  ; type=ENUMERATED,access=rw------,values=1,items=3
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  : values=0
+numid=20,iface=MIXER,name='Digital RX2 Mute Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=15,iface=MIXER,name='Digital RX3 DCB Cutoff'
+  ; type=ENUMERATED,access=rw------,values=1,items=3
+  ; Item #0 '4Hz'
+  ; Item #1 '75Hz'
+  ; Item #2 '150Hz'
+  : values=0
+numid=18,iface=MIXER,name='Digital RX3 DCB Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=6,iface=MIXER,name='Digital RX3 Digital Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=63,iface=MIXER,name='Digital RX3 MIX1 INP1'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=64,iface=MIXER,name='Digital RX3 MIX1 INP2'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=65,iface=MIXER,name='Digital RX3 MIX1 INP3'
+  ; type=ENUMERATED,access=rw------,values=1,items=6
+  ; Item #0 'ZERO'
+  ; Item #1 'IIR1'
+  ; Item #2 'IIR2'
+  ; Item #3 'RX1'
+  ; Item #4 'RX2'
+  ; Item #5 'RX3'
+  : values=0
+numid=21,iface=MIXER,name='Digital RX3 Mute Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=7,iface=MIXER,name='Digital TX1 Digital Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=9,iface=MIXER,name='Digital TX1 HPF Cutoff'
+  ; type=ENUMERATED,access=rw------,values=1,items=3
+  ; Item #0 '4Hz'
+  ; Item #1 '75Hz'
+  ; Item #2 '150Hz'
+  : values=2
+numid=11,iface=MIXER,name='Digital TX1 HPF Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=on
+numid=8,iface=MIXER,name='Digital TX2 Digital Volume'
+  ; type=INTEGER,access=rw---R--,values=1,min=0,max=124,step=0
+  : values=84
+  | dBscale-min=-84.00dB,step=1.00dB,mute=1
+numid=10,iface=MIXER,name='Digital TX2 HPF Cutoff'
+  ; type=ENUMERATED,access=rw------,values=1,items=3
+  ; Item #0 '4Hz'
+  ; Item #1 '75Hz'
+  ; Item #2 '150Hz'
+  : values=0
+numid=12,iface=MIXER,name='Digital TX2 HPF Switch'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=51,iface=MIXER,name='EAR_S'
+  ; type=ENUMERATED,access=rw------,values=1,items=2
+  ; Item #0 'ZERO'
+  ; Item #1 'Switch'
+  : values=0
+numid=74,iface=MIXER,name='HDMI Mixer MultiMedia1'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=75,iface=MIXER,name='HDMI Mixer MultiMedia2'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=76,iface=MIXER,name='HDMI Mixer MultiMedia3'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=77,iface=MIXER,name='HDMI Mixer MultiMedia4'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=78,iface=MIXER,name='HDMI Mixer MultiMedia5'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=79,iface=MIXER,name='HDMI Mixer MultiMedia6'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=80,iface=MIXER,name='HDMI Mixer MultiMedia7'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=81,iface=MIXER,name='HDMI Mixer MultiMedia8'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=52,iface=MIXER,name='HPHL'
+  ; type=ENUMERATED,access=rw------,values=1,items=2
+  ; Item #0 'ZERO'
+  ; Item #1 'Switch'
+  : values=1
+numid=53,iface=MIXER,name='HPHR'
+  ; type=ENUMERATED,access=rw------,values=1,items=2
+  ; Item #0 'ZERO'
+  ; Item #1 'Switch'
+  : values=1
+numid=594,iface=MIXER,name='INT0_MI2S_RX Audio Mixer MultiMedia1'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=on
+numid=595,iface=MIXER,name='INT0_MI2S_RX Audio Mixer MultiMedia2'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=596,iface=MIXER,name='INT0_MI2S_RX Audio Mixer MultiMedia3'
+  ; type=BOOLEAN,access=rw------,values=1
+  : values=off
+numid=597,iface=MIXER,name='INT0_MI2S_RX Audio Mixer MultiMedia4'
+  ; type=BOOLEAN,access=rw------,values=1

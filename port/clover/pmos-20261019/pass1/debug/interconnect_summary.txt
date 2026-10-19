@@ -1,0 +1,163 @@
+ node                                  tag          avg         peak
+--------------------------------------------------------------------
+mas_gnoc_bimc                                         0            0
+mas_oxili                                    2147483647   2147483647
+  5000000.gpu                            0            0      1200000
+mas_mnoc_bimc                                2147483647   2147483647
+  cc00000.video-codec                    0            0            0
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+mas_snoc_bimc                                2147483647   2147483647
+  14780000.ipa                           0        80000       640000
+mas_pimem                                             0            0
+slv_ebi                                      2147563647   2147483647
+  cc00000.video-codec                    0            0            0
+  14780000.ipa                           0        80000       640000
+  5000000.gpu                            0            0      1200000
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+slv_hmss_l3                                           0            0
+slv_bimc_snoc                                         0            0
+mas_snoc_cnoc                                2147483647   2147483647
+  cc00000.video-codec                    0            0            0
+  c901000.display-controller             0            0            0
+  c0c4000.mmc                            0            0            0
+  c084000.mmc                            0            0            0
+mas_qdss_dap                                          0            0
+slv_cnoc_a2noc                                        0            0
+slv_mpm                                               0            0
+slv_pmic_arb                                          0            0
+slv_tlmm_north                                        0            0
+slv_tcsr                                              0            0
+slv_pimem_cfg                                         0            0
+slv_imem_cfg                                          0            0
+slv_message_ram                                       0            0
+slv_glm                                               0            0
+slv_bimc_cfg                                          0            0
+slv_prng                                              0            0
+slv_spdm                                              0            0
+slv_qdss_cfg                                          0            0
+slv_cnoc_mnoc_cfg                                     0            0
+slv_snoc_cfg                                          0            0
+slv_qm_cfg                                            0            0
+slv_clk_ctl                                           0            0
+slv_mss_cfg                                           0            0
+slv_tlmm_south                                        0            0
+slv_ufs_cfg                                           0            0
+slv_a2noc_cfg                                         0            0
+slv_a2noc_smmu_cfg                                    0            0
+slv_gpuss_cfg                                         0            0
+slv_ahb2phy                                           0            0
+slv_blsp_1                                            0            0
+slv_sdcc_1                                   2147483647   2147483647
+  c0c4000.mmc                            0            0            0
+slv_sdcc_2                                   2147483647   2147483647
+  c084000.mmc                            0            0            0
+slv_tlmm_center                                       0            0
+slv_blsp_2                                            0            0
+slv_pdm                                               0            0
+slv_cnoc_mnoc_mmss_cfg                       2147483647   2147483647
+  cc00000.video-codec                    0            0            0
+  c901000.display-controller             0            0            0
+slv_usb_hs                                            0            0
+slv_usb3_0                                            0            0
+slv_srvc_cnoc                                         0            0
+mas_qdss_etr                                          0            0
+mas_qdss_bam                                          0            0
+mas_snoc_cfg                                          0            0
+mas_bimc_snoc                                         0            0
+mas_a2noc_snoc                               2147483647   2147483647
+  14780000.ipa                           0        80000       640000
+mas_gnoc_snoc                                2147563647   2147483647
+  cc00000.video-codec                    0            0            0
+  14780000.ipa                           0        80000        80000
+  c901000.display-controller             0            0            0
+  c0c4000.mmc                            0            0            0
+  c084000.mmc                            0            0            0
+slv_hmss                                              0            0
+slv_lpass                                             0            0
+slv_wlan                                              0            0
+slv_cdsp                                              0            0
+slv_ipa                                      2147483647   2147483647
+  14780000.ipa                           0        80000        80000
+slv_snoc_bimc                                2147483647   2147483647
+  14780000.ipa                           0        80000       640000
+slv_snoc_cnoc                                2147483647   2147483647
+  cc00000.video-codec                    0            0            0
+  c901000.display-controller             0            0            0
+  c0c4000.mmc                            0            0            0
+  c084000.mmc                            0            0            0
+slv_imem                                              0            0
+slv_pimem                                             0            0
+slv_qdss_stm                                          0            0
+slv_srvc_snoc                                         0            0
+mas_ipa                                      2147483647   2147483647
+  14780000.ipa                           0        80000       640000
+mas_cnoc_a2noc                                        0            0
+mas_sdcc_1                                   2147483647   2147483647
+  c0c4000.mmc                            0            0            0
+mas_sdcc_2                                   2147483647   2147483647
+  c084000.mmc                            0            0            0
+mas_blsp_1                                            0            0
+mas_blsp_2                                            0            0
+mas_ufs                                               0            0
+mas_usb_hs                                            0            0
+mas_usb3                                              0            0
+mas_crypto                                            0            0
+slv_a2noc_snoc                               2147483647   2147483647
+  14780000.ipa                           0        80000       640000
+  c0c4000.mmc                            0            0            0
+  c084000.mmc                            0            0            0
+mas_cpp                                               0            0
+mas_jpeg                                              0            0
+mas_mdp_p0                                   2147483647   2147483647
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+mas_mdp_p1                                   2147483647   2147483647
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+mas_venus                                    2147483647   2147483647
+  cc00000.video-codec                    0            0            0
+mas_vfe                                               0            0
+slv_mnoc_bimc                                2147483647   2147483647
+  cc00000.video-codec                    0            0            0
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+  c901000.display-controller             0            0            0
+mas_cnoc_mnoc_mmss_cfg                       2147483647   2147483647
+  cc00000.video-codec                    0            0            0
+  c901000.display-controller             0            0            0
+mas_cnoc_mnoc_cfg                                     0            0
+slv_camera_cfg                                        0            0
+slv_camera_throttle_cfg                               0            0
+slv_misc_cfg                                          0            0
+slv_venus_throttle_cfg                                0            0
+slv_venus_cfg                                2147483647   2147483647
+  cc00000.video-codec                    0            0            0
+slv_mmss_clk_xpu_cfg                                  0            0
+slv_mmss_clk_cfg                                      0            0
+slv_mnoc_mpu_cfg                                      0            0
+slv_display_cfg                              2147483647   2147483647
+  c901000.display-controller             0            0            0
+slv_csi_phy_cfg                                       0            0
+slv_display_throttle_cfg                              0            0
+slv_smmu_cfg                                          0            0
+slv_srvc_mnoc                                         0            0
+mas_apss_proc                                2147563647   2147483647
+  cc00000.video-codec                    0            0            0
+  14780000.ipa                           0        80000        80000
+  c901000.display-controller             0            0            0
+  c0c4000.mmc                            0            0            0
+  c084000.mmc                            0            0            0
+slv_gnoc_bimc                                         0            0
+slv_gnoc_snoc                                2147563647   2147483647
+  cc00000.video-codec                    0            0            0
+  14780000.ipa                           0        80000        80000
+  c901000.display-controller             0            0            0
+  c0c4000.mmc                            0            0            0
+  c084000.mmc                            0            0            0

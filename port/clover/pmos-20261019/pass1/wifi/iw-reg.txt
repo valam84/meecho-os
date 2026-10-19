@@ -1,0 +1,2 @@
+# iw reg get
+sh: iw: not found

@@ -1,0 +1,48 @@
+# journalctl -b -u ModemManager --no-pager -o short-monotonic
+[   34.017658] xiaomi-clover systemd[1]: Starting Modem Manager...
+[   34.144282] xiaomi-clover [2822]: <msg> ModemManager (version 1.25.95) starting in system bus...
+[   34.186924] xiaomi-clover [2822]: <wrn> [plugin-manager] could not load shared '/usr/lib/ModemManager/libmm-shared-mtk.so': Error relocating /usr/lib/ModemManager/libmm-shared-mtk.so: mm_shared_fibocom_get_type: symbol not found
+[   34.206660] xiaomi-clover [2822]: <wrn> [plugin-manager] could not load plugin '/usr/lib/ModemManager/libmm-plugin-rolling.so': Error relocating /usr/lib/ModemManager/libmm-plugin-rolling.so: mm_broadband_modem_mbim_mtk_fibocom_new: symbol not found
+[   34.254571] xiaomi-clover [2822]: <wrn> [plugin-manager] could not load plugin '/usr/lib/ModemManager/libmm-plugin-mtk.so': Error relocating /usr/lib/ModemManager/libmm-plugin-mtk.so: mm_broadband_modem_mbim_mtk_new: symbol not found
+[   34.285858] xiaomi-clover [2822]: <wrn> [plugin-manager] could not load plugin '/usr/lib/ModemManager/libmm-plugin-mtk-legacy.so': Error relocating /usr/lib/ModemManager/libmm-plugin-mtk-legacy.so: mm_shared_mtk_get_type: symbol not found
+[   34.302098] xiaomi-clover systemd[1]: Started Modem Manager.
+[   37.142256] xiaomi-clover [2822]: <msg> [qrtr0/probe] probe step: start
+[   37.142298] xiaomi-clover [2822]: <msg> [qrtr0/probe] probe step: QMI
+[   37.264356] xiaomi-clover [2822]: <msg> [qrtr0/probe] probe step: done
+[   39.141953] xiaomi-clover [2822]: <msg> [device qcom-soc] creating modem with plugin 'qcom-soc' and '3' ports
+[   39.154437] xiaomi-clover [2822]: <msg> [base-manager] modem for device 'qcom-soc' successfully created
+[   39.154632] xiaomi-clover [2822]: <msg> [base-manager] running setup for device 'qcom-soc'...
+[   39.156563] xiaomi-clover [2822]: <msg> [base-manager] couldn't check support for device '/sys/devices/platform/soc@0/a8f8800.usb/a800000.usb': not supported by any plugin
+[   39.158268] xiaomi-clover [2822]: <wrn> [modem0] couldn't reset QMI port 'qrtr0' with data interface 'rmnet_ipa0': Couldn't query file info: Error when getting information for file “/dev/qrtr0”: No such file or directory
+[   39.231627] xiaomi-clover [2822]: <wrn> [location-cache] Error loading cached location from /var/lib/ModemManager/location.ini: No such file or directory
+[   39.331390] xiaomi-clover [2822]: <wrn> [modem0] couldn't load SUPL server: QMI protocol error (1): 'MalformedMessage'
+[   39.335654] xiaomi-clover [2822]: <wrn> [modem0] couldn't build device ids: Unknown device subsystem
+[   39.335903] xiaomi-clover [2822]: <msg> [modem0] state changed (unknown -> disabled)
+[   39.361192] xiaomi-clover [2822]: <msg> [modem0] state changed (disabled -> enabling)
+[   39.364345] xiaomi-clover [2822]: <wrn> [modem0] failed checking whether autoconnect is disabled or not: QMI protocol error (70): 'InvalidOperation'
+[   39.373420] xiaomi-clover [2822]: <msg> [modem0] power state updated: on
+[   39.393658] xiaomi-clover [2822]: <msg> [modem0] 3GPP registration state changed (unknown -> searching)
+[   39.393772] xiaomi-clover [2822]: <msg> [modem0] 3GPP packet service state changed (unknown -> detached)
+[   39.394146] xiaomi-clover [2822]: <wrn> [modem0] couldn't load operator code: Current operator MCC/MNC is still unknown
+[   39.394237] xiaomi-clover [2822]: <wrn> [modem0] couldn't load operator name: Current operator id is still unknown
+[   39.412385] xiaomi-clover [2822]: <msg> [modem0] state changed (enabling -> searching)
+[   39.413322] xiaomi-clover [2822]: <wrn> [modem0] couldn't reload extended signal information: No way to load extended signal information
+[   39.413768] xiaomi-clover [2822]: <wrn> [modem0] couldn't load operator code: Current operator MCC/MNC is still unknown
+[   39.413875] xiaomi-clover [2822]: <wrn> [modem0] couldn't load operator name: Current operator id is still unknown
+[   40.139286] xiaomi-clover [2822]: <msg> [base-manager] couldn't check support for device '/sys/devices/platform/soc@0/18800000.wifi': not supported by any plugin
+[   51.110435] xiaomi-clover [2822]: <msg> [modem0] 3GPP registration state changed (searching -> registering)
+[   51.118589] xiaomi-clover [2822]: <msg> [modem0] 3GPP registration state changed (registering -> emergency-only)
+[   51.118727] xiaomi-clover [2822]: <msg> [modem0] state changed (searching -> registered)
+[   51.585249] xiaomi-clover [2822]: <msg> [modem0] 3GPP registration state changed (emergency-only -> registering)
+[   51.600812] xiaomi-clover [2822]: <msg> [modem0] 3GPP registration state changed (registering -> home)
+[   51.610596] xiaomi-clover [2822]: <msg> [modem0] 3GPP packet service state changed (detached -> attached)
+[  538.874746] xiaomi-clover [2822]: <msg> [modem0] 3GPP packet service state changed (attached -> detached)
+[  539.011848] xiaomi-clover [2822]: <msg> [modem0] 3GPP registration state changed (home -> searching)
+[  539.012139] xiaomi-clover [2822]: <msg> [modem0] state changed (registered -> searching)
+[  539.016289] xiaomi-clover [2822]: <wrn> [modem0] couldn't load operator name: QMI protocol error (37): 'UimUninitialized'
+[  558.987036] xiaomi-clover [2822]: <msg> [modem0] 3GPP registration state changed (searching -> registering)
+[  558.991833] xiaomi-clover [2822]: <wrn> [modem0] couldn't load operator name: QMI protocol error (37): 'UimUninitialized'
+[  558.991947] xiaomi-clover [2822]: <msg> [modem0] 3GPP registration state changed (registering -> emergency-only)
+[  558.992130] xiaomi-clover [2822]: <msg> [modem0] state changed (searching -> registered)
+[  558.992703] xiaomi-clover [2822]: <wrn> [modem0] couldn't load operator name: QMI protocol error (37): 'UimUninitialized'
+[  558.992830] xiaomi-clover [2822]: <wrn> [modem0] couldn't load operator name: QMI protocol error (37): 'UimUninitialized'

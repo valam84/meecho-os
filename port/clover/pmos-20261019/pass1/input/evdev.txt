@@ -1,0 +1,7 @@
+# sh -c for e in /sys/class/input/event*; do echo "$(basename $e) $(cat $e/device/name) $(readlink -f $e/device)"; done
+event0 pm8941_pwrkey /sys/devices/platform/soc@0/800f000.spmi/spmi-0/0-00/800f000.spmi:pmic@0:pon@800/800f000.spmi:pmic@0:pon@800:pwrkey/input/input0
+event1 pm8941_resin /sys/devices/platform/soc@0/800f000.spmi/spmi-0/0-00/800f000.spmi:pmic@0:pon@800/800f000.spmi:pmic@0:pon@800:resin/input/input1
+event2 gpio-keys /sys/devices/platform/gpio-keys/input/input2
+event3 gpio-hall-sensor /sys/devices/platform/gpio-hall-sensor/input/input3
+event4 generic ft5x06 (3b) /sys/devices/platform/soc@0/c177000.i2c/i2c-0/0-0038/input/input4
+event5 Xiaomi Mi Pad 4 Headset Jack /sys/devices/platform/sound/sound/card0/input5

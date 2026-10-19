@@ -1,0 +1,2 @@
+# qrtr-lookup
+sh: qrtr-lookup: not found

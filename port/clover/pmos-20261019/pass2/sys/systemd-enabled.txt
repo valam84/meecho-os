@@ -1,0 +1,55 @@
+# systemctl list-unit-files --no-pager --state=enabled
+UNIT FILE                          STATE   PRESET
+alsa-restore.service               enabled enabled
+alsa-state.service                 enabled enabled
+apk-polkit-server.service          enabled enabled
+avahi-daemon.service               enabled enabled
+bluetooth.service                  enabled enabled
+dbus-broker.service                enabled enabled
+diag-router.service                enabled enabled
+getty@.service                     enabled enabled
+greetd.service                     enabled enabled
+hkdm.service                       enabled enabled
+ModemManager.service               enabled enabled
+msm-firmware-loader-unpack.service enabled enabled
+msm-firmware-loader.service        enabled enabled
+msm-modem-uim-selection.service    enabled enabled
+NetworkManager-dispatcher.service  enabled disabled
+NetworkManager-wait-online.service enabled enabled
+NetworkManager.service             enabled enabled
+nftables.service                   enabled enabled
+postmarketos-zram-swap.service     enabled enabled
+rmtfs.service                      enabled enabled
+rtkit-daemon.service               enabled enabled
+sleep-inhibitor.service            enabled enabled
+sshd.service                       enabled enabled
+swclock-offset-boot.service        enabled enabled
+swclock-offset-shutdown.service    enabled enabled
+systemd-boot-clear-sysfail.service enabled enabled
+systemd-boot-update.service        enabled enabled
+systemd-confext.service            enabled enabled
+systemd-oomd.service               enabled enabled
+systemd-pstore.service             enabled enabled
+systemd-sysext.service             enabled enabled
+systemd-time-wait-sync.service     enabled enabled
+systemd-timesyncd.service          enabled enabled
+systemd-tpm2-clear.service         enabled enabled
+tqftpserv.service                  enabled enabled
+tuned-ppd.service                  enabled enabled
+tuned.service                      enabled enabled
+udisks2.service                    enabled enabled
+wpa_supplicant.service             enabled enabled
+avahi-daemon.socket                enabled disabled
+systemd-mountfsd.socket            enabled enabled
+systemd-nsresourced.socket         enabled enabled
+systemd-oomd.socket                enabled disabled
+systemd-report-basic.socket        enabled enabled
+systemd-report-cgroup.socket       enabled enabled
+machines.target                    enabled enabled
+reboot.target                      enabled enabled
+remote-cryptsetup.target           enabled enabled
+remote-fs.target                   enabled enabled
+remote-integritysetup.target       enabled enabled
+remote-veritysetup.target          enabled enabled
+
+51 unit files listed.

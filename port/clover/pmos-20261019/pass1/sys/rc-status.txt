@@ -1,0 +1,2 @@
+# rc-status -a
+sh: rc-status: not found

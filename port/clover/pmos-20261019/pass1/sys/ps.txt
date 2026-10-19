@@ -1,0 +1,316 @@
+# ps -o pid,user,args
+PID   USER     COMMAND
+    1 root     {systemd} /sbin/init
+    2 root     [kthreadd]
+    3 root     [pool_workqueue_]
+    4 root     [kworker/R-rcu_g]
+    5 root     [kworker/R-sync_]
+    6 root     [kworker/R-kvfre]
+    7 root     [kworker/R-slub_]
+    8 root     [kworker/R-netns]
+    9 root     [kworker/0:0-eve]
+   11 root     [kworker/0:0H-ev]
+   13 root     [kworker/R-mm_pe]
+   14 root     [ksoftirqd/0]
+   15 root     [rcu_preempt]
+   16 root     [rcu_exp_par_gp_]
+   17 root     [rcu_exp_gp_kthr]
+   18 root     [migration/0]
+   19 root     [cpuhp/0]
+   20 root     [cpuhp/1]
+   21 root     [migration/1]
+   22 root     [ksoftirqd/1]
+   24 root     [kworker/1:0H-ev]
+   25 root     [cpuhp/2]
+   26 root     [migration/2]
+   27 root     [ksoftirqd/2]
+   28 root     [kworker/2:0-cgr]
+   29 root     [kworker/2:0H-ev]
+   30 root     [cpuhp/3]
+   31 root     [migration/3]
+   32 root     [ksoftirqd/3]
+   34 root     [kworker/3:0H-ev]
+   35 root     [cpuhp/4]
+   36 root     [migration/4]
+   37 root     [ksoftirqd/4]
+   38 root     [kworker/4:0-cgr]
+   39 root     [kworker/4:0H-ev]
+   40 root     [cpuhp/5]
+   41 root     [migration/5]
+   42 root     [ksoftirqd/5]
+   43 root     [kworker/5:0-eve]
+   44 root     [kworker/5:0H-ev]
+   45 root     [cpuhp/6]
+   46 root     [migration/6]
+   47 root     [ksoftirqd/6]
+   49 root     [kworker/6:0H-ev]
+   50 root     [cpuhp/7]
+   51 root     [migration/7]
+   52 root     [ksoftirqd/7]
+   54 root     [kworker/7:0H-ev]
+   57 root     [kdevtmpfs]
+   58 root     [kworker/R-inet_]
+   59 root     [rcu_tasks_kthre]
+   60 root     [rcu_tasks_rude_]
+   61 root     [rcu_tasks_trace]
+   62 root     [kauditd]
+   63 root     [kworker/u35:0-h]
+   64 root     [oom_reaper]
+   66 root     [kworker/R-write]
+   67 root     [kcompactd0]
+   68 root     [ksmd]
+   69 root     [khugepaged]
+   70 root     [kworker/R-kbloc]
+   71 root     [kworker/R-blkcg]
+   72 root     [kworker/R-kinte]
+   75 root     [kworker/R-md_bi]
+   76 root     [kworker/R-md]
+   78 root     [kworker/2:2-eve]
+   79 root     [kworker/R-devfr]
+   81 root     [watchdogd]
+   82 root     [kworker/6:1-eve]
+   83 root     [kworker/R-quota]
+   85 root     [kworker/u33:2-e]
+   86 root     [kworker/1:1H-kb]
+   87 root     [kswapd0]
+   88 root     [kworker/R-xfsal]
+   89 root     [kworker/R-xfs_m]
+   90 root     [kworker/R-crypt]
+   91 root     [kworker/3:1-eve]
+   92 root     [kworker/R-kthro]
+   95 root     [kworker/5:1-eve]
+   96 root     [kworker/7:1-ino]
+   97 root     [kworker/u34:3-e]
+   98 root     [kworker/u36:0]
+   99 root     [kworker/u37:0]
+  100 root     [kworker/R-nbd0-]
+  101 root     [kworker/R-nbd1-]
+  102 root     [kworker/R-nbd2-]
+  103 root     [kworker/R-nbd3-]
+  104 root     [kworker/R-nbd4-]
+  105 root     [kworker/R-nbd5-]
+  106 root     [kworker/R-nbd6-]
+  107 root     [kworker/R-nbd7-]
+  108 root     [kworker/R-nbd8-]
+  109 root     [kworker/R-nbd9-]
+  110 root     [kworker/R-nbd10]
+  111 root     [kworker/R-nbd11]
+  112 root     [kworker/R-nbd12]
+  113 root     [kworker/R-nbd13]
+  114 root     [kworker/R-nbd14]
+  115 root     [kworker/R-nbd15]
+  118 root     [kworker/1:4-mm_]
+  119 root     [irq/119-ss_phy_]
+  120 root     [irq/120-qusb2_p]
+  121 root     [irq/123-pm8941_]
+  122 root     [irq/124-pm8941_]
+  123 root     [irq/125-10ae000]
+  124 root     [irq/126-10ae000]
+  125 root     [kworker/R-raid5]
+  126 root     [kworker/R-kstrp]
+  127 root     [irq/17-smp2p-ad]
+  128 root     [irq/18-smp2p-mp]
+  129 root     [irq/19-smp2p-cd]
+  130 root     [irq/130-wled_sh]
+  131 root     [irq/131-wled_ov]
+  133 root     [kworker/4:1H-kb]
+  134 root     [irq/137-c0c4000]
+  135 root     [kworker/R-sdhci]
+  136 root     [irq/134-mmc1]
+  138 root     [irq/138-c084000]
+  139 root     [kworker/R-sdhci]
+  140 root     [irq/133-mmc2]
+  143 root     [irq/139-c084000]
+  151 root     [kworker/6:1H-kb]
+  159 root     [kworker/5:1H-kb]
+  164 root     [kworker/2:1H-kb]
+  169 root     [kworker/7:1H-kb]
+  170 root     [kworker/R-mmc_c]
+  173 root     [kworker/3:1H-kb]
+  179 root     [kworker/0:1H-kb]
+  202 root     [irq/141-bat-ov]
+  203 root     [irq/142-usb-plu]
+  204 root     [irq/143-usbin-i]
+  205 root     [irq/144-wdog-ba]
+  206 root     [irq/145-soc-del]
+  207 root     [irq/140-edt-ft5]
+  209 root     [kworker/4:3-eve]
+  212 root     [gpu-worker]
+  213 root     [irq/52-arm-smmu]
+  214 root     [kworker/R-ring0]
+  215 root     [kworker/R-ring1]
+  216 root     [kworker/R-ring2]
+  217 root     [kworker/R-ring3]
+  218 root     [kworker/7:3-mm_]
+  219 root     [disp_snapshot]
+  222 root     [atomic-worker-0]
+  223 root     [atomic-worker-1]
+  224 root     [atomic-worker-2]
+  225 root     [atomic-worker-3]
+  226 root     [atomic-worker-4]
+  227 root     [atomic-worker-5]
+  228 root     [atomic-worker-6]
+  229 root     [atomic-worker-7]
+  230 root     [crtc_event:65]
+  231 root     [card1-crtc0]
+  232 root     [kworker/u32:1-q]
+  607 root     [jbd2/loop0p2-8]
+  608 root     [kworker/R-ext4-]
+  622 root     [kworker/R-mld]
+  623 root     [kworker/R-ipv6_]
+  675 root     /usr/lib/systemd/systemd-journald
+  712 root     /usr/lib/systemd/systemd-time-wait-sync
+  726 root     [kworker/R-ext4-]
+  836 root     [jbd2/mmcblk1p27]
+  837 root     [kworker/R-ext4-]
+ 1004 systemd- /usr/lib/systemd/systemd-timesyncd
+ 1006 root     [jbd2/mmcblk1p48]
+ 1007 root     [kworker/R-ext4-]
+ 1332 systemd- /usr/lib/systemd/systemd-oomd
+ 2348 root     /usr/lib/systemd/systemd-udevd
+ 2351 root     /usr/lib/systemd/systemd-nsresourced
+ 2357 root     [psimon]
+ 2358 root     [psimon]
+ 2402 root     [irq/150-ipa]
+ 2404 root     [irq/152-q6v5 wd]
+ 2406 root     [irq/159-q6v5 wd]
+ 2411 root     [kworker/R-cfg80]
+ 2412 root     [irq/164-q6v5 wd]
+ 2414 root     [kworker/R-ath10]
+ 2415 root     [kworker/R-ath10]
+ 2416 root     [kworker/R-ath10]
+ 2417 root     [irq/169-temp-al]
+ 2418 root     [irq/182-temp-al]
+ 2419 root     [irq/184-mbhc sw]
+ 2420 root     [irq/185-mbhc bt]
+ 2421 root     [irq/187-mbhc bt]
+ 2422 root     [irq/188-venus]
+ 2431 root     [kworker/0:3-eve]
+ 2433 root     [kworker/u35:1-h]
+ 2434 root     [kworker/u33:4-e]
+ 2438 root     [kworker/R-qcom_]
+ 2439 root     [kworker/R-pdr_n]
+ 2449 root     [kworker/R-ext4-]
+ 2475 messageb /usr/bin/dbus-broker-launch --scope system --audit
+ 2476 messageb dbus-broker --log 10 --controller 9 --machine-id f6a63b59838a496bb49029ac8dff3092 --max-bytes 536870912 --max-fds 4096 --max-matches 131072 --audit
+ 2478 root     /usr/libexec/apk-polkit/apk-polkit-server
+ 2479 avahi    avahi-daemon: running [xiaomi-clover.local]
+ 2480 root     /usr/lib/bluetooth/bluetoothd
+ 2482 root     /usr/bin/diag-router
+ 2484 root     /usr/sbin/hkdm
+ 2485 root     /usr/libexec/iio-sensor-proxy
+ 2503 polkitd  /usr/lib/polkit-1/polkitd --no-debug --log-level=notice
+ 2509 rtkit    /usr/libexec/rtkit-daemon
+ 2510 root     {sleep-inhibitor} /usr/bin/python3 /usr/bin/sleep-inhibitor
+ 2520 root     /usr/lib/systemd/systemd-logind
+ 2527 root     /usr/bin/tqftpserv
+ 2530 root     /usr/libexec/udisks2/udisksd
+ 2534 root     /sbin/wpa_supplicant -u
+ 2553 root     /usr/bin/rmtfs -r -P -s
+ 2559 root     /usr/sbin/NetworkManager --no-daemon
+ 2574 avahi    avahi-daemon: chroot helper
+ 2620 root     sshd.pam: /usr/sbin/sshd.pam -D [listener] 0 of 10-100 startups
+ 2626 root     {tuned} /usr/bin/python3 -Es /usr/sbin/tuned -l -P
+ 2654 root     greetd -c /etc/phrog/greetd-config.toml
+ 2702 root     [kworker/u32:3-i]
+ 2753 root     unudhcpd -i usb0 -s 172.16.42.1 -c 172.16.42.2
+ 2774 root     [irq/132-dwc3]
+ 2790 root     {tuned-ppd} /usr/bin/python3 -Es /usr/sbin/tuned-ppd -l
+ 2822 root     /usr/sbin/ModemManager --test-quick-suspend-resume
+ 2830 root     /usr/libexec/upowerd
+ 2841 root     [kworker/u34:4-e]
+ 2843 root     [napi/dummy#-0]
+ 2883 root     /usr/libexec/qmi-proxy
+ 3138 root     [krfcommd]
+ 4233 root     /usr/libexec/accounts-daemon
+ 4585 root     /usr/sbin/greetd --session-worker 12
+ 4911 user     /usr/lib/systemd/systemd --user
+ 4914 user     (sd-pam)
+ 5034 user     /usr/libexec/cellbroadcastd
+ 5035 user     /usr/bin/gnome-keyring-daemon --foreground --components=pkcs11,secrets --control-directory=/run/user/10000/keyring
+ 5037 user     /usr/bin/mmsdtng
+ 5046 user     /usr/bin/dbus-broker-launch --scope user
+ 5047 user     dbus-broker --log 10 --controller 9 --machine-id f6a63b59838a496bb49029ac8dff3092 --max-bytes 100000000000000 --max-fds 25000000000000 --max-matches 5000000000
+ 5054 user     /usr/bin/phoc -v -S -C /usr/share/phosh/phoc.ini -E gnome-session --session=phosh
+ 5059 user     /usr/libexec/gvfs/gvfsd
+ 5070 user     /usr/libexec/gvfs/gvfsd-fuse /run/user/10000/gvfs -f
+ 5101 user     /usr/libexec/gnome-session-init-worker phosh
+ 5113 user     /usr/libexec/gnome-session-ctl --monitor
+ 5114 user     {udiskie} /usr/bin/python3 /usr/bin/udiskie
+ 5124 user     /usr/libexec/gnome-session-service --session=phosh
+ 5130 user     /usr/libexec/phosh
+ 5141 user     /usr/libexec/at-spi-bus-launcher
+ 5147 user     /usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 11 --address=unix:path=/run/user/10000/at-spi/bus_1
+ 5148 user     /usr/libexec/feedbackd
+ 5154 user     /usr/libexec/dconf-service
+ 5161 user     /usr/bin/pulseaudio --start --log-target=syslog
+ 5170 user     /usr/libexec/pulse/gsettings-helper
+ 5177 user     /usr/bin/callaudiod
+ 5202 user     /usr/libexec/at-spi2-registryd --use-gnome-session
+ 5305 user     /usr/libexec/gvfs/gvfsd-metadata
+ 5506 user     /usr/libexec/gvfs/gvfs-udisks2-volume-monitor
+ 5512 user     /usr/libexec/gvfs/gvfs-afc-volume-monitor
+ 5518 user     /usr/libexec/gvfs/gvfs-mtp-volume-monitor
+ 5523 user     /usr/libexec/gvfs/gvfs-gphoto2-volume-monitor
+ 5528 user     /usr/libexec/gvfs/gvfs-goa-volume-monitor
+ 5532 user     /usr/libexec/goa-daemon
+ 5538 user     /usr/libexec/goa-identity-service
+ 5547 user     /usr/bin/phosh-osk-stevia --allow-replacement
+ 5548 user     /usr/libexec/gsd-a11y-settings
+ 5552 user     /usr/libexec/gsd-color
+ 5555 user     /usr/libexec/gsd-datetime
+ 5556 user     /usr/libexec/gsd-housekeeping
+ 5558 user     /usr/libexec/gcr-ssh-agent --base-dir /run/user/10000/gcr
+ 5561 user     /usr/bin/mpris-proxy
+ 5562 user     /usr/libexec/gsd-keyboard
+ 5565 user     /usr/libexec/gsd-media-keys
+ 5566 user     {udiskie} /usr/bin/python3 /usr/bin/udiskie -N
+ 5569 user     /usr/libexec/gsd-power
+ 5572 user     /usr/libexec/gsd-print-notifications
+ 5581 user     /usr/libexec/gsd-rfkill
+ 5587 user     /usr/libexec/gsd-screensaver-proxy
+ 5588 user     /usr/libexec/gsd-sharing
+ 5591 user     /usr/libexec/gsd-smartcard
+ 5598 user     /usr/libexec/gsd-sound
+ 5606 user     /usr/libexec/gsd-usb-protection
+ 5610 user     /usr/libexec/gsd-wwan
+ 5614 user     /usr/bin/chatty --gapplication-service
+ 5661 user     /usr/libexec/gsd-printer
+ 5860 user     /usr/libexec/xdg-desktop-portal
+ 5922 user     /usr/libexec/xdg-permission-store
+ 5936 user     /usr/libexec/xdg-document-portal
+ 5969 root     fusermount3 -o rw,nosuid,nodev,fsname=portal,auto_unmount,subtype=portal -- /run/user/10000/doc
+ 5987 user     /usr/libexec/xdg-desktop-portal-gtk
+ 6520 user     /usr/bin/gnome-calls --gapplication-service
+ 6659 user     /usr/libexec/xdg-desktop-portal-phosh
+ 6681 user     /usr/libexec/xdg-desktop-portal-phrosh
+ 6734 user     /usr/bin/pipewire
+ 6735 user     /usr/bin/wireplumber
+ 6736 root     [psimon]
+ 6759 user     /usr/libexec/xdg-desktop-portal-wlr
+ 6892 user     /usr/libexec/evolution-source-registry
+ 6931 user     /usr/libexec/evolution-addressbook-factory
+ 6932 user     /usr/lib/bluetooth/obexd -n --capability=!/usr/bin/obex-capabilities
+ 7460 root     [kworker/1:0]
+ 8026 root     [kworker/u34:0-e]
+ 8034 root     [kworker/6:2]
+ 8154 root     [kworker/3:0-eve]
+ 8532 root     [kworker/u33:1-e]
+ 8818 root     systemd-nsresourcework: waiting...
+ 8819 root     systemd-nsresourcework: waiting...
+ 8827 root     systemd-nsresourcework: waiting...
+ 8828 root     systemd-nsresourcework: waiting...
+ 8837 root     systemd-nsresourcework: waiting...
+ 8916 root     [kworker/2:1-mm_]
+ 8940 root     [kworker/u34:1-f]
+ 8955 root     sshd-session.pam: user [priv]
+ 8959 user     sshd-session.pam: user@pts/0
+ 8960 user     -ash
+ 8967 root     systemd-inhibit --what=sleep --who=sleep-inhibitor --why=Plugin SSH session open /usr/bin/sleep-inhibitor -s 6.0 -i /usr/lib/python3.14/site-packages/sleep_inhibitor/plugins/ssh-session-open
+ 8968 root     {sleep-inhibitor} /usr/bin/python3 /usr/bin/sleep-inhibitor -s 6.0 -i /usr/lib/python3.14/site-packages/sleep_inhibitor/plugins/ssh-session-open
+ 9068 root     [kworker/3:2]
+ 9079 root     sshd-session.pam: user [priv]
+ 9083 user     sshd-session.pam: user@notty
+ 9084 root     sudo -n sh -s
+ 9089 root     sh -s
+ 9124 root     ps -o pid,user,args

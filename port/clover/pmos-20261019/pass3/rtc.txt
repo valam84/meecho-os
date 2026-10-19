@@ -1,0 +1,9 @@
+rtc0/date = 1970-01-01 
+rtc0/dev = 249:0 
+rtc0/hctosys = 1 
+rtc0/max_user_freq = 64 
+rtc0/name = rtc-pm8xxx 800f000.spmi:pmic@0:rtc@6000 
+rtc0/range = [0,4294967295] 
+rtc0/since_epoch = 2082 
+rtc0/time = 00:34:42 
+rtc0/wakealarm = 

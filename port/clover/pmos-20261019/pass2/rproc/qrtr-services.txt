@@ -1,0 +1,8 @@
+# sh -c for s in 1 2 3 5 9 10 11 12 15 16 26 41 42 43 45 47 48 64 66 69 76; do :; done; qmicli -d qrtr://0 --get-service-version-info 2>&1; for n in 0 1 5; do echo "== node $n"; qmicli -d qrtr://$n --get-service-version-info 2>&1 | head -60; done
+error: couldn't get service version info: QMI protocol error (94): 'NotSupported'
+== node 0
+error: couldn't get service version info: QMI protocol error (94): 'NotSupported'
+== node 1
+error: couldn't get service version info: QMI protocol error (94): 'NotSupported'
+== node 5
+error: couldn't get service version info: QMI protocol error (94): 'NotSupported'

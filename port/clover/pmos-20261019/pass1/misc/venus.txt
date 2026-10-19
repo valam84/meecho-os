@@ -1,0 +1,3 @@
+# sh -c v4l2-ctl --list-devices 2>&1; dmesg | grep -i venus
+sh: v4l2-ctl: not found
+[    0.000000] OF: reserved mem: 0x000000009cc00000..0x000000009d3fffff (8192 KiB) nomap non-reusable venus@9cc00000

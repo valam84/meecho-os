@@ -35,6 +35,7 @@
 #define GCC_SRC_GPLL0		1
 
 #define PM660_SID_REGS		1	/* PM660's regulators (hw-rpm.md) */
+#define PM660L_SID_REGS		3	/* PM660L's: S5 is VDD_MX */
 
 struct look {
 	const char *compat;
@@ -141,13 +142,15 @@ cf_find(const void *dtb, struct cf *cf)
 	cl->id = CF_SILVER;
 	cl->name = "silver";
 	cl->rail[0] = (struct cf_rail){ "S1", PM660_SID_REGS, 0x1400 };
-	cl->nrail = 1;
+	cl->rail[1] = (struct cf_rail){ "MX", PM660L_SID_REGS, 0x2000 };
+	cl->nrail = 2;
 	cl = &cf->cl[CF_GOLD];
 	cl->id = CF_GOLD;
 	cl->name = "gold";
 	cl->rail[0] = (struct cf_rail){ "S2", PM660_SID_REGS, 0x1700 };
 	cl->rail[1] = (struct cf_rail){ "S3", PM660_SID_REGS, 0x1a00 };
-	cl->nrail = 2;
+	cl->rail[2] = (struct cf_rail){ "MX", PM660L_SID_REGS, 0x2000 };
+	cl->nrail = 3;
 
 	if ((r = look(dtb, &lk, "meecho,sdm660-cpu-dvfs")) != OK ||
 	    (r = map_named(&cf->cl[CF_SILVER].glb, &lk, "silver-glb")) != OK ||

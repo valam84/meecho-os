@@ -87,7 +87,10 @@ cf_rail.c@s/if (i == 0 || v < lo)/if (i == 0 || v > lo)/@gold's set point the hi
 cf_rail.c@s/if (!(en \& EN_CTL_ENABLE)) {/if (0) {/@a disabled regulator believed
 cf_rail.c@s/if (t\[0\] != FTS426_TYPE || t\[1\] != FTS426_SUBTYPE) {/if (0) {/@a regulator of another type read as an FTS426
 cf_rail.c@s/spmi_read(s, r->sid, r->base + REG_EN_CTL, \&en, 1)/spmi_write(s, r->sid, r->base + REG_EN_CTL, \&en, 1)/@a write to the PMIC
-cf_find.c@s/^\tcl->nrail = 2;/\tcl->nrail = 1;/@gold's second phase not read
+cf_find.c@s/^\tcl->nrail = 2;/\tcl->nrail = 1;/@VDD_MX not read for silver
+cf_find.c@s/^\tcl->nrail = 3;/\tcl->nrail = 2;/@VDD_MX not read for gold
+cf_find.c@s/(struct cf_rail){ "S3", PM660_SID_REGS, 0x1a00 }/(struct cf_rail){ "S3", PM660_SID_REGS, 0x1700 }/@gold's second phase read as the first
+cf_find.c@s/(struct cf_rail){ "MX", PM660L_SID_REGS, 0x2000 };$/(struct cf_rail){ "MX", PM660L_SID_REGS, 0x1a00 };/@MX read at PM660L S3 (VDD_CX)
 cf_find.c@s/(struct cf_rail){ "S2", PM660_SID_REGS, 0x1700 }/(struct cf_rail){ "S2", PM660_SID_REGS, 0x1400 }/@gold's rail read at S1
 # The blocks (cf_find.c).
 cf_find.c@s/map_named(\&cf->cl\[CF_SILVER\].pll, \&lk, "silver-pll")/map_named(\&cf->cl[CF_SILVER].pll, \&lk, "gold-pll")/@silver's PLL taken for gold's
@@ -99,6 +102,15 @@ cf_run.c@s/if (cl->c.khz\[i\] > from \&\& cl->c.khz\[i\] < khz \&\&/if (0 \&\&/@
 cf_run.c@s/(!has_frac || c->khz\[i\] % 1000 \/ 100 == frac)/(!has_frac || frac < 10)/@the decimal of a target ignored
 cf_run.c@s/if (khz != 0 \&\& khz != from \&\& (r = cf_held(cf, cl, khz, 0)) != OK)/if (0)/@a target the rail does not hold climbed towards
 cf_run.c@s/^\tif (stage == CF_PROBE)$/\tif (0)/@probe goes on to set
+# The governor (cf_gov.c).
+cf_gov.c@s/if (load >= p->up)/if (load > p->up)/@up% itself not taken as busy
+cf_gov.c@s/if (++g->low < p->downs)/if (++g->low <= p->downs)/@one period too many before going down
+cf_gov.c@s/^\t\t\t(void)cf_park(cf, cl);/\t\t\t(void)cl;/@the PLL left running at aux
+cf_gov.c@s/(r = cf_held(cf, cl, g->khz\[g->cur\], 1)) != EPERM)/(r = OK) != EPERM)/@a point that sits still never checked again
+cf_gov.c@s/^\t\tif (cf_held_mv(cl, cl->c.khz\[i\], mv) != OK)$/\t\tif (0)/@points the rails do not hold offered
+cf_gov.c@s/^\ts.mpidr\[i\] = s.mpidr\[0\];/\t;/@the boot core not swapped into place zero
+cf_gov.c@s/(uint64_t)g->khz\[want\] \* p->aim < need/(uint64_t)g->khz[want] * p->aim <= need/@a point exactly at aim% refused
+cf_gov.c@s/if (g->cap != 0 \&\& cl->c.khz\[i\] > g->cap)/if (0)/@the cap ignored
 EOF
 echo "$caught of $n caught"
 exit $rc

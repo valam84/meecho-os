@@ -235,22 +235,32 @@ model_log_dump(void)
  *    the reference: what a rate needs, what the rails give                  *
  *===========================================================================*/
 static unsigned
+reg_mv_sid(unsigned sid, unsigned base)
+{
+	return (unsigned)pmic[sid][base + 0x40] |
+	    (unsigned)pmic[sid][base + 0x41] << 8;
+}
+
+static unsigned
 reg_mv(unsigned base)
 {
-	return (unsigned)pmic[1][base + 0x40] | (unsigned)pmic[1][base + 0x41]
-	    << 8;
+	return reg_mv_sid(1, base);
 }
 
 unsigned
 model_setpoint(int cl)
 {
-	unsigned a, b;
+	unsigned a, b, mx = reg_mv_sid(3, 0x2000);
 
+	/* The cluster's own rail, and VDD_MX: the arrays are on it (APM). */
 	if (cl == M_SILVER)
-		return reg_mv(0x1400);
-	a = reg_mv(0x1700);
-	b = reg_mv(0x1a00);
-	return a < b ? a : b;
+		a = reg_mv(0x1400);
+	else {
+		a = reg_mv(0x1700);
+		b = reg_mv(0x1a00);
+		a = a < b ? a : b;
+	}
+	return a < mx ? a : mx;
 }
 
 static const char *
@@ -589,17 +599,45 @@ cf_pause(unsigned seconds)
 /*===========================================================================*
  *    the PMIC behind the arbiter                                            *
  *===========================================================================*/
+/* A rail set from the stand: 0 S1, 1 S2, 2 S3, 3 MX. */
+void
+model_set_rail(unsigned reg, unsigned mv)
+{
+	static const unsigned base[4] = { 0x1400, 0x1700, 0x1a00, 0x2000 };
+	unsigned sid = reg == 3 ? 3 : 1;
+
+	pmic[sid][base[reg] + 0x40] = (uint8_t)mv;
+	pmic[sid][base[reg] + 0x41] = (uint8_t)(mv >> 8);
+}
+
+/* The PLL's MODE, its low three bits. */
+unsigned
+model_pll_mode(int cl)
+{
+	return pl[cl].mode & 7;
+}
+
+/* A rate the rails do not hold is now a violation at the end too. */
+void
+model_hold_now(void)
+{
+	unsigned c;
+
+	for (c = 0; c < 2; c++)
+		held_at_start[c] = 1;
+}
+
 static void
 drop_rail(void)
 {
-	static const unsigned base[3] = { 0x1400, 0x1700, 0x1a00 };
-	unsigned b = base[sc->drop_reg];
+	static const unsigned base[4] = { 0x1400, 0x1700, 0x1a00, 0x2000 };
+	unsigned b = base[sc->drop_reg], sid = sc->drop_reg == 3 ? 3 : 1;
 
-	pmic[1][b + 0x40] = (uint8_t)sc->drop_mv;
-	pmic[1][b + 0x41] = (uint8_t)(sc->drop_mv >> 8);
+	pmic[sid][b + 0x40] = (uint8_t)sc->drop_mv;
+	pmic[sid][b + 0x41] = (uint8_t)(sc->drop_mv >> 8);
 	if (model_verbose)
-		printf("      model: S%u drops to %u mV\n", sc->drop_reg + 1,
-		    sc->drop_mv);
+		printf("      model: %s%u drops to %u mV\n", sid == 3 ? "MX, S" :
+		    "S", sc->drop_reg == 3 ? 5 : sc->drop_reg + 1, sc->drop_mv);
 }
 
 /* The tablet's channels for PM660's CPU rails (cpu-probe-20261018.txt). */
@@ -607,6 +645,7 @@ static const struct { unsigned ppid, apid; } chans[] = {
 	{ 0x114, 27 }, { 0x115, 62 }, { 0x116, 18 },	/* S1 */
 	{ 0x117, 53 }, { 0x118, 65 }, { 0x119, 21 },	/* S2 */
 	{ 0x11a, 66 }, { 0x11b, 23 }, { 0x11c, 67 },	/* S3 */
+	{ 0x320, 152 }, { 0x321, 153 }, { 0x322, 154 },	/* PM660L S5, VDD_MX */
 };
 
 int
@@ -627,7 +666,8 @@ spmi_init(struct spmi *s)
 	memset(s->owner, 0xff, sizeof(s->owner));
 	for (i = 0; i < sizeof(chans) / sizeof(chans[0]); i++) {
 		s->apid_of[chans[i].ppid] = (uint16_t)chans[i].apid;
-		s->owner[chans[i].apid] = 0;
+		/* MX's channels are the RPM's (EE 4), the rest the processor's. */
+		s->owner[chans[i].apid] = chans[i].ppid >> 8 == 3 ? 4 : 0;
 	}
 	return OK_SPMI;
 }
@@ -649,6 +689,17 @@ spmi_read(struct spmi *s, unsigned sid, unsigned addr, uint8_t *buf,
 		return ETIMEDOUT;
 	}
 	s->delay_us(1);
+	if (sc->spmi_flaky != 0) {
+		static unsigned long n;
+
+		n++;
+		if (n % sc->spmi_flaky == 0)
+			return EIO;
+		if (n % (sc->spmi_flaky + 3) == 0) {
+			memset(buf, 0, len);
+			return OK_SPMI;
+		}
+	}
 	memcpy(buf, &pmic[sid][addr], len);
 	return OK_SPMI;
 }
@@ -757,16 +808,23 @@ model_fuse_set_at(unsigned i)
  *    a scenario's start and end                                             *
  *===========================================================================*/
 static void
+rail_sid(unsigned sid, unsigned base, unsigned mv, uint8_t subtype,
+	int enabled)
+{
+	pmic[sid][base + 0x04] = 0x1c;
+	pmic[sid][base + 0x05] = subtype;
+	pmic[sid][base + 0x40] = (uint8_t)mv;
+	pmic[sid][base + 0x41] = (uint8_t)(mv >> 8);
+	pmic[sid][base + 0x45] = 0x06;
+	pmic[sid][base + 0x46] = enabled ? 0x80 : 0x00;
+	pmic[sid][base + 0x68] = 0x74;	/* ULS 1396 mV: what a careless */
+	pmic[sid][base + 0x69] = 0x05;	/* reader would take for a set point */
+}
+
+static void
 rail(unsigned base, unsigned mv, uint8_t subtype, int enabled)
 {
-	pmic[1][base + 0x04] = 0x1c;
-	pmic[1][base + 0x05] = subtype;
-	pmic[1][base + 0x40] = (uint8_t)mv;
-	pmic[1][base + 0x41] = (uint8_t)(mv >> 8);
-	pmic[1][base + 0x45] = 0x06;
-	pmic[1][base + 0x46] = enabled ? 0x80 : 0x00;
-	pmic[1][base + 0x68] = 0x74;	/* ULS 1396 mV: what a careless */
-	pmic[1][base + 0x69] = 0x05;	/* reader would take for a set point */
+	rail_sid(1, base, mv, subtype, enabled);
 }
 
 void
@@ -831,6 +889,8 @@ model_reset(const struct scenario *s)
 	    s->s1_subtype ? s->s1_subtype : 0x0a, 1);
 	rail(0x1700, s->mv[1] ? s->mv[1] : 868, 0x0a, 1);
 	rail(0x1a00, s->mv[2] ? s->mv[2] : 868, 0x0a, !s->s3_disabled);
+	/* VDD_MX as the tablet had it (cpu-probe-20261018.txt). */
+	rail_sid(3, 0x2000, s->mx_mv ? s->mx_mv : 884, 0x0a, 1);
 
 	for (c = 0; c < 2; c++)
 		held_at_start[c] = model_held((int)c, model_khz((int)c));

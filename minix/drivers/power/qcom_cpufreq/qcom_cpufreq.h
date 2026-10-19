@@ -100,7 +100,7 @@ struct cf_rail {
 	unsigned sid, base;
 };
 
-#define CF_MAX_RAILS	2
+#define CF_MAX_RAILS	3	/* the cluster's own, and VDD_MX for its arrays */
 
 /* What a cluster's mux and PLL say (cf_clk.c). */
 struct cf_state {
@@ -120,6 +120,41 @@ struct cf_cluster {
 	struct cf_corners c;
 };
 
+/*
+ * cf_gov.c: the governor (stage=gov).  Each cluster's points are aux and
+ * the points of its table a PLL makes that the rails hold now, up to a
+ * cap; every period the busiest core of the cluster decides which one.
+ */
+#define CF_GOV_PERFORMANCE	0	/* the top point, always */
+#define CF_GOV_POWERSAVE	1	/* aux, always; the PLL off */
+#define CF_GOV_ONDEMAND		2	/* by load */
+
+struct cf_govpol {
+	int policy;
+	unsigned up;		/* load %: at or above it, straight to the top */
+	unsigned aim;		/* load %: the lowest point that keeps it below */
+	unsigned downs;		/* periods in a row asking lower before going */
+};
+
+#define CF_GOV_MAXPTS	(CF_MAX_CORNERS + 1)
+
+struct cf_govcl {
+	unsigned n;			/* points; 0 is aux */
+	uint32_t khz[CF_GOV_MAXPTS];	/* ascending */
+	uint32_t cap;			/* the highest allowed; 0: no cap */
+	unsigned cur;			/* the point the cluster is at */
+	int off_point;			/* or not quite: below it, or on aux
+					 * with the PLL still on */
+	unsigned low;			/* periods in a row that asked lower */
+	unsigned fails;			/* changes in a row that failed */
+	int frozen;			/* gave up: left where it is */
+	unsigned switches;
+	uint64_t res[CF_GOV_MAXPTS];	/* time at each point, in ticks */
+};
+
+#define CF_MAX_CPUS	8
+#define CF_NO_CLUSTER	(-1)
+
 /* Everything the service found and mapped (cf_find.c). */
 struct cf {
 	struct cf_cluster cl[CF_NCLUSTER];
@@ -129,6 +164,8 @@ struct cf {
 	uint32_t aux_khz;		/* the clusters' "aux" source; 0: off */
 	unsigned steps;			/* climb through the table's points */
 	unsigned hold;			/* seconds at each point (cf_pause()) */
+	struct cf_govpol pol;		/* stage=gov */
+	struct cf_govcl gov[CF_NCLUSTER];
 };
 
 #define CF_XO_KHZ	19200		/* the PLLs' reference: L counts it */
@@ -152,9 +189,26 @@ int cf_go(struct cf *cf, struct cf_cluster *cl, uint32_t khz);
 int cf_highest(struct cf *cf, const struct cf_cluster *cl, uint32_t *khz);
 uint32_t cf_point_l(uint32_t khz);
 
+int cf_park(const struct cf *cf, const struct cf_cluster *cl);
+int cf_held_mv(const struct cf_cluster *cl, uint32_t khz, unsigned mv);
+
+int cf_gov_cpus(const void *dtb, uint64_t boot_mpidr,
+	int cluster_of[CF_MAX_CPUS], unsigned *ncpus);
+int cf_gov_points(struct cf *cf, const struct cf_cluster *cl,
+	struct cf_govcl *g);
+unsigned cf_gov_pick(const struct cf_govpol *p, struct cf_govcl *g,
+	unsigned load);
+int cf_gov_start(struct cf *cf, struct cf_cluster *cl, struct cf_govcl *g,
+	const struct cf_govpol *p);
+int cf_gov_step(struct cf *cf, struct cf_cluster *cl, struct cf_govcl *g,
+	const struct cf_govpol *p, unsigned load, unsigned ticks);
+int cf_gov_check(struct cf *cf, struct cf_cluster *cl, struct cf_govcl *g);
+void cf_gov_report(const struct cf_cluster *cl, const struct cf_govcl *g);
+
 /* cf_run.c */
 #define CF_PROBE	0	/* read everything, say what set would do */
 #define CF_SET		1	/* set the clusters named */
+#define CF_GOV		2	/* stay, and follow the load (cf_gov.c) */
 
 #define CF_TARGET_AUX	1	/* "aux": the cluster on GPLL0 aux */
 #define CF_TARGET_MAX	2	/* "max": the highest point the rail holds */

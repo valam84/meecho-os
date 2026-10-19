@@ -49,7 +49,7 @@ $CC -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Werror -O1 -g \
 	-DREAL_FDT_H="\"$INC/minix/fdt.h\"" \
 	"$HERE/cftest.c" "$HERE/model.c" \
 	"$SRC/cf_find.c" "$SRC/cf_volt.c" "$SRC/cf_rail.c" "$SRC/cf_clk.c" \
-	"$SRC/cf_run.c" "$TREE/minix/lib/libsys/fdt.c" \
+	"$SRC/cf_run.c" "$SRC/cf_gov.c" "$TREE/minix/lib/libsys/fdt.c" \
 	-o "$OUT/cf-test"
 
 "$OUT/cf-test" "$@" "$OUT/cf-tree.dtb" "$OUT/cf-volt-ref.txt"

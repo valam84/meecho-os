@@ -153,6 +153,15 @@ held_at(const struct cf_cluster *cl, uint32_t khz, unsigned mv,
 	return NULL;
 }
 
+/* The same at a set point already read (cf_gov.c: one read, many points). */
+int
+cf_held_mv(const struct cf_cluster *cl, uint32_t khz, unsigned mv)
+{
+	int32_t uv;
+
+	return held_at(cl, khz, mv, &uv) == NULL ? OK : EPERM;
+}
+
 /* The same, with the rail's set point read back now. */
 int
 cf_held(struct cf *cf, const struct cf_cluster *cl, uint32_t khz, int quiet)
@@ -271,6 +280,24 @@ pll_program(const struct cf_cluster *cl, uint32_t l)
 	}
 	log_debug(&cf_log, "%s: PLL locked at L 0x%x after %u us\n", cl->name,
 	    l, i);
+	return OK;
+}
+
+/*
+ * The PLL off while the cores run from aux - the governor's powersave and
+ * its lowest point: a PLL that runs for nobody still draws.  Only with the
+ * mux read settled on aux; cf_go() programs it from MODE 0 anyway.
+ */
+int
+cf_park(const struct cf *cf, const struct cf_cluster *cl)
+{
+	struct cf_state st;
+
+	if (cf_state(cf, cl, &st) != OK || st.on_pll)
+		return EPERM;
+	if ((st.mode & MODE_MASK) == MODE_OFF)
+		return OK;
+	cf_wr(&cl->pll, PLL_MODE, MODE_OFF);
 	return OK;
 }
 

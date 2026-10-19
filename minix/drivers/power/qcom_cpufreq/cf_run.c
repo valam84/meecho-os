@@ -12,6 +12,11 @@
  *          spent at it.  The first refusal or failure stops the run: what
  *          is set stays set, and the cluster that failed is left on aux
  *          or where it was.
+ *   gov    stay, and move each cluster between its points by load
+ *          (cf_gov.c): the stage here starts it - every cluster at the
+ *          point its policy starts from - and cpufreq.c runs the periods.
+ *          gold= and silver= are caps here: a point, "max" (none) or
+ *          "aux" (only aux).
  *
  * A target is a point of the cluster's table for this chip's speed bin
  * that a PLL makes ("1747", "1747.2", "1536"...), "max" - the highest
@@ -149,6 +154,46 @@ set(struct cf *cf, struct cf_cluster *cl, uint32_t khz)
 	return OK;
 }
 
+/* stage=gov: the caps understood, then every cluster to its start. */
+static int
+gov(struct cf *cf, const char *const target[CF_NCLUSTER])
+{
+	static const int order[CF_NCLUSTER] = { CF_GOLD, CF_SILVER };
+	static const char *const pname[] = { "performance", "powersave",
+	    "ondemand" };
+	struct cf_cluster *cl;
+	uint32_t khz;
+	unsigned k;
+	int id, r, started = 0;
+
+	for (id = 0; id < CF_NCLUSTER; id++) {
+		cl = &cf->cl[id];
+		memset(&cf->gov[id], 0, sizeof(cf->gov[id]));
+		if (target[id] == NULL)
+			continue;
+		if (cf_parse_target(&cl->c, target[id], &khz) != OK) {
+			log_warn(&cf_log, "%s=%s: not aux, max or a point of "
+			    "this chip's table a PLL makes\n", cl->name,
+			    target[id]);
+			return EINVAL;
+		}
+		cf->gov[id].cap = khz == CF_TARGET_MAX ? 0 :
+		    khz == CF_TARGET_AUX ? 1 : khz;
+	}
+	log_info(&cf_log, "governor: %s, up %u%%, aim %u%%, down after %u\n",
+	    pname[cf->pol.policy], cf->pol.up, cf->pol.aim, cf->pol.downs);
+	for (k = 0; k < CF_NCLUSTER; k++) {
+		id = order[k];
+		cl = &cf->cl[id];
+		if ((r = cf_gov_start(cf, cl, &cf->gov[id], &cf->pol)) != OK)
+			log_warn(&cf_log, "%s: not governed (%d)\n", cl->name, r);
+		else
+			started++;
+		report(cf, cl);
+	}
+	return started > 0 ? OK : EPERM;
+}
+
 int
 cf_run(struct cf *cf, int stage, const char *const target[CF_NCLUSTER])
 {
@@ -181,6 +226,8 @@ cf_run(struct cf *cf, int stage, const char *const target[CF_NCLUSTER])
 		report(cf, &cf->cl[id]);
 	if (stage == CF_PROBE)
 		return OK;
+	if (stage == CF_GOV)
+		return gov(cf, target);
 
 	/* Every target understood before anything is written. */
 	for (id = 0; id < CF_NCLUSTER; id++) {

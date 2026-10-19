@@ -13,6 +13,13 @@
  * How S2 and S3 share one set point (leader and follower, or each its own)
  * is not known yet (hw-cpu.md, section 6); the gold cluster's set point is
  * taken as the lower of the two, which is the safe answer either way.
+ *
+ * Every cluster also counts VDD_MX, PM660L S5 (SID 3, an FTS426 too, its
+ * channels the RPM's, read through the observer channels like the rest):
+ * with the APM in MX mode, as the boot loader leaves it, the clusters'
+ * memory arrays run from MX, not from their own rail, so a point must be
+ * held by both.  MX is the RPM's and voted by others - the adreno service
+ * among them - which is why it too is read anew before every change.
  */
 
 #include "qcom_cpufreq.h"
@@ -27,13 +34,13 @@
 #define FTS426_MIN_MV	320	/* the regulator's range (hw-cpu.md, section 6) */
 #define FTS426_MAX_MV	1352
 
-/*
- * One regulator's set point: it must be an FTS426 (the only layout this
- * file knows), enabled, inside the regulator's range, and read the same
- * twice.  Anything else is an error, not a guess.
- */
-int
-cf_rail_mv(struct spmi *s, const struct cf_rail *r, unsigned *mv)
+#define RAIL_TRIES	4	/* reads of one set point before giving up */
+#define RAIL_BACKOFF_US	50	/* times the try, between them */
+
+/* One try; why it failed in *why. */
+static int
+rail_once(struct spmi *s, const struct cf_rail *r, unsigned *mv, char *why,
+	size_t size)
 {
 	uint8_t t[2], v[2], w[2], en;
 	unsigned a, b;
@@ -42,27 +49,60 @@ cf_rail_mv(struct spmi *s, const struct cf_rail *r, unsigned *mv)
 	    spmi_read(s, r->sid, r->base + REG_EN_CTL, &en, 1) != OK_SPMI ||
 	    spmi_read(s, r->sid, r->base + REG_VSET, v, 2) != OK_SPMI ||
 	    spmi_read(s, r->sid, r->base + REG_VSET, w, 2) != OK_SPMI) {
-		log_warn(&cf_log, "%s: the PMIC did not answer\n", r->name);
+		snprintf(why, size, "the PMIC did not answer");
 		return EIO;
 	}
 	if (t[0] != FTS426_TYPE || t[1] != FTS426_SUBTYPE) {
-		log_warn(&cf_log, "%s: type 0x%02x subtype 0x%02x, not an "
-		    "FTS426\n", r->name, t[0], t[1]);
+		snprintf(why, size, "type 0x%02x subtype 0x%02x, not an FTS426",
+		    t[0], t[1]);
 		return ENODEV;
 	}
 	if (!(en & EN_CTL_ENABLE)) {
-		log_warn(&cf_log, "%s: not enabled (0x%02x)\n", r->name, en);
+		snprintf(why, size, "not enabled (0x%02x)", en);
 		return EPERM;
 	}
 	a = (unsigned)v[1] << 8 | v[0];
 	b = (unsigned)w[1] << 8 | w[0];
 	if (a != b || a < FTS426_MIN_MV || a > FTS426_MAX_MV) {
-		log_warn(&cf_log, "%s: set point %u mV, then %u mV: not one "
-		    "this service believes\n", r->name, a, b);
+		snprintf(why, size, "set point %u mV, then %u mV: not one this "
+		    "service believes", a, b);
 		return ERANGE;
 	}
 	*mv = a;
 	return OK;
+}
+
+/*
+ * One regulator's set point: it must be an FTS426 (the only layout this
+ * file knows), enabled, inside the regulator's range, and read the same
+ * twice.  Anything else is an error, not a guess.
+ *
+ * A try that fails is tried again, a few times: on the tablet a read now
+ * and then comes back failed or empty while qcom_pmic uses the arbiter -
+ * not seen at one run per boot, seen at the governor's rate (hw-cpu.md, the
+ * governor's section).  Linux holds one lock over the whole arbiter; two
+ * MINIX services cannot, so the answer is believed only when one try is
+ * whole.  Only a rail that gives no whole answer in RAIL_TRIES is an error.
+ */
+int
+cf_rail_mv(struct spmi *s, const struct cf_rail *r, unsigned *mv)
+{
+	char why[96];
+	unsigned i;
+	int res = EIO;
+
+	for (i = 0; i < RAIL_TRIES; i++) {
+		if (i > 0)
+			s->delay_us(RAIL_BACKOFF_US * i);
+		if ((res = rail_once(s, r, mv, why, sizeof(why))) == OK) {
+			if (i > 0)
+				log_debug(&cf_log, "%s: read at try %u\n",
+				    r->name, i + 1);
+			return OK;
+		}
+	}
+	log_warn(&cf_log, "%s: %s\n", r->name, why);
+	return res;
 }
 
 /* A cluster's set point: the lowest of its regulators'. */

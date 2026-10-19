@@ -38,6 +38,7 @@ struct scenario {
 	uint32_t cfg[2];		/* the muxes (0: 0x501, 0x401) */
 	uint32_t l[2];			/* the PLLs' L (0: 0x48, 0x20) */
 	unsigned mv[3];			/* S1, S2, S3 (0: 872, 868, 868) */
+	unsigned mx_mv;			/* PM660L S5, VDD_MX (0: 884) */
 	int aux_off;			/* HMSS_GPLL0's root off */
 	uint32_t aux_cfg;		/* its CFG (0: 0x100, GPLL0 / 1) */
 	int pll_dead[2];		/* never locks */
@@ -47,9 +48,12 @@ struct scenario {
 	uint8_t s1_subtype;		/* 0: 0x0a (FTS426) */
 	int s3_disabled;
 	int spmi_dead;			/* every read times out */
+	unsigned spmi_flaky;		/* every Nth read fails, every N+3th
+					 * comes back done but empty: what the
+					 * tablet's arbiter did under qcom_pmic */
 	/* The rail drops: when cluster drop_cl's PLL locks at L drop_l, or
 	 * when its mux has gone to the PLL drop_after times, regulator
-	 * drop_reg (0 S1, 1 S2, 2 S3) is set to drop_mv. */
+	 * drop_reg (0 S1, 1 S2, 2 S3, 3 MX) is set to drop_mv. */
 	int drop_cl;
 	uint32_t drop_l;
 	unsigned drop_after, drop_reg, drop_mv;
@@ -88,5 +92,8 @@ void model_log_reset(void);
 void model_log_dump(void);
 int model_held(int cl, uint32_t khz);	/* by the reference, the set points */
 unsigned model_setpoint(int cl);
+void model_set_rail(unsigned reg, unsigned mv);	/* 0 S1 .. 3 MX */
+unsigned model_pll_mode(int cl);
+void model_hold_now(void);
 
 #endif

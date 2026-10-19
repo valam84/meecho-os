@@ -153,6 +153,19 @@ adreno_gpu.c@s/^\tmx_release();$//@(clock) the VDDMX vote left when the GPU goes
 adreno_gpu.c@s/if (!(ad.dt.opp\[i\].hw \& bin_hw))/if (0)/@(clock) the speed bin not looked at
 adreno_gpu.c@s/{ 122, 3 }/{ 122, 4 }/@(clock) the bin table off by one
 adreno_run.c@s/^\tv >>= ad.dt.bin_shift;$//@(clock) the fuse's bits not shifted
+# The governor (adreno_gpu.c, gov= and sleep=).
+adreno_gpu.c@s/if (load >= ad_gov_up)/if (load > 100)/@a busy GPU not taken to the top
+adreno_gpu.c@s/if (++gov_low < ad_gov_downs)/if (0)/@down at the first quiet period
+adreno_gpu.c@s/^\t\tgov_busy(0);$/\t\t(void)0;/@the ring's end not counted: busy for ever
+adreno_gpu.c@s/^\t(void)smmu_load(NULL);\n\ton_ring = NULL;//;s/^\t(void)smmu_load(NULL);$/\t;/@asleep with a client's table in bank 0
+# "awake without the TLB invalidated" is not in the list: in the model the
+# SMMU loses its TLB with GX, as the tablet's does (smmumodel.c), so the
+# invalidation at wake-up changes nothing there - it is for a GX the boot
+# loader left on, which the tablet does not do.
+adreno_gpu.c@s/^\tif (asleep \&\& gpu_wake() != OK) {$/\tif (0) {/@a job given to a GPU that sleeps
+adreno_gpu.c@s/^\tif (asleep)$/\tif (0)/@the GPU's line read while it sleeps
+adreno_gpu.c@s/idle_ms += (long)ad_gov_ms;/idle_ms += 1000;/@idle time counted too fast
+adreno_drm.c@s/if (gpu_dead() || gpu_awake() != OK)/if (gpu_dead())/@a timestamp read from a sleeping GPU
 EOF
 echo "$caught of $n caught"
 exit $rc

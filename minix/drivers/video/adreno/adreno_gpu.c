@@ -41,6 +41,16 @@
  * every job in the ring fails, the GPU is powered off and brought up again
  * as at the start (the zap shader resumed, not loaded), and the jobs that
  * waited go on.
+ *
+ * The core's clock follows the work (gov=, hw-gpu.md, the governor's
+ * section): the points are the tree's operating points the bin allows, up
+ * to freq= (a cap now, "max" by default).  VDDMX is voted once, for the
+ * top point, and kept: the CPU clusters' memory arrays are on MX too (the
+ * APM in MX mode, hw-cpu.md), so the GPU going idle must not take MX from
+ * under them.  What a lower point saves is the GPU's clock itself.  With
+ * sleep=MS the GPU is powered off - the GDSCs, the clocks, the PLLs, as
+ * at the service's end - once nothing ran for that long, and brought up
+ * again as after a hang (the zap shader resumed) by the next job.
  */
 
 #include "adreno_drm.h"
@@ -67,6 +77,10 @@
 unsigned gpu_global_faults;
 long ad_hang_ms = 2000;
 unsigned ad_freq_mhz;
+int ad_gov = AD_GOV_ONDEMAND;
+unsigned ad_gov_ms = 50, ad_gov_up = 80, ad_gov_aim = 60, ad_gov_downs = 2;
+long ad_sleep_ms;
+long ad_report_s;
 
 static TAILQ_HEAD(, ad_job) pending = TAILQ_HEAD_INITIALIZER(pending);
 static TAILQ_HEAD(, ad_job) flight = TAILQ_HEAD_INITIALIZER(flight);
@@ -83,6 +97,11 @@ static unsigned hang_looks;
 static unsigned quiet_looks;		/* a switch of tables waiting: looks */
 
 static void kick(void);
+static void give_up(void);
+static int quiesce(unsigned us);
+static int gpu_wake(void);
+static void gov_busy(int busy);
+static void gov_arm(void);
 
 /*
  * The core's clock while serving (freq=, hw-gpu.md, §20).
@@ -187,6 +206,67 @@ core_point(void)
 	return best;
 }
 
+/*===========================================================================*
+ *    the governor's points                                                  *
+ *===========================================================================*/
+static unsigned pt_mhz[AD_MAXOPP];	/* ascending: the points it moves on */
+static unsigned npts, pt_cur;		/* npts 0: no governor, one clock */
+static unsigned gov_low;		/* periods in a row that asked lower */
+static minix_timer_t gov_timer;
+static int gov_armed, asleep;
+static u64_t busy_since, busy_acc, win_start;
+static int busy_on, ran;		/* jobs in the ring; any this period */
+static long idle_ms;
+static unsigned gov_switches, gov_sleeps;
+static u64_t pt_res[AD_MAXOPP];		/* time at each point, frclock */
+static u64_t asleep_res;		/* time powered off */
+static minix_timer_t report_timer;
+
+/*
+ * The points: every operating point the bin allows, no higher than the
+ * one freq= named (that one included; max: all), in ascending order.
+ */
+static void
+gov_points(int top)
+{
+	unsigned i, n = ad.dt.nopp < AD_MAXOPP ? ad.dt.nopp : AD_MAXOPP, k, t;
+
+	npts = 0;
+	for (i = 0; i < n; i++) {
+		if (!(ad.dt.opp[i].hw & bin_hw) || ad.dt.opp[i].mhz < 30 ||
+		    ad.dt.opp[i].mhz > ad.dt.opp[top].mhz)
+			continue;
+		for (k = 0; k < npts && pt_mhz[k] != ad.dt.opp[i].mhz; k++)
+			;
+		if (k == npts)
+			pt_mhz[npts++] = ad.dt.opp[i].mhz;
+	}
+	for (i = 1; i < npts; i++)
+		for (k = i; k > 0 && pt_mhz[k - 1] > pt_mhz[k]; k--) {
+			t = pt_mhz[k];
+			pt_mhz[k] = pt_mhz[k - 1];
+			pt_mhz[k - 1] = t;
+		}
+}
+
+/* The clock to a point the vote already covers; its own log line quiet. */
+static int
+gov_set(unsigned i)
+{
+	int save = ad_log.log_level, r;
+
+	if (save == LEVEL_INFO)
+		ad_log.log_level = LEVEL_WARN;
+	r = cc_gfx3d_set(pt_mhz[i]);
+	ad_log.log_level = save;
+	if (r != OK)
+		return r;
+	log_debug(&ad_log, "gpu: %u -> %u MHz\n", pt_mhz[pt_cur], pt_mhz[i]);
+	gov_switches += pt_cur != i;
+	pt_cur = i;
+	return OK;
+}
+
 static void
 core_clock(void)
 {
@@ -202,6 +282,13 @@ core_clock(void)
 	}
 	mhz = ad.dt.opp[i].mhz;
 	level = ad.dt.opp[i].level;
+	if (npts == 0)
+		gov_points(i);
+	/* The governor's start: the top, or for powersave the lowest. */
+	if (npts > 0 && ad_gov == AD_GOV_POWERSAVE)
+		mhz = pt_mhz[0];
+	for (pt_cur = 0; npts > 0 && pt_mhz[pt_cur] != mhz; pt_cur++)
+		;
 
 	/* Up: the rail first. */
 	if (level > mx_voted && (r = mx_vote(level)) != OK &&
@@ -213,11 +300,305 @@ core_clock(void)
 	if (cc_gfx3d_set(mhz) != OK) {
 		log_warn(&ad_log, "gpu: the core's clock stays at %u MHz\n",
 		    cc_gfx3d_mhz());
+		npts = 0;		/* no governor on a clock that would not go */
 		return;
 	}
 	/* Down: the rail after. */
 	if (mx_on && level < mx_voted && mhz < was)
 		(void)mx_vote(level);
+}
+
+/*===========================================================================*
+ *    the governor                                                           *
+ *===========================================================================*/
+/* The ring went busy or idle: what the period's load is made of. */
+static void
+gov_busy(int busy)
+{
+	u64_t now;
+
+	if (busy == busy_on)
+		return;
+	read_frclock_64(&now);
+	if (busy) {
+		busy_since = now;
+		ran = 1;
+		idle_ms = 0;
+	} else
+		busy_acc += delta_frclock_64(busy_since, now);
+	busy_on = busy;
+}
+
+static void gov_fired(int arg);
+
+static void
+gov_arm(void)
+{
+	clock_t t;
+	u64_t now;
+
+	/* Periods only for a load to follow or a sleep to wait for. */
+	if (gov_armed || asleep || dead || (ad_sleep_ms == 0 &&
+	    (npts < 2 || ad_gov != AD_GOV_ONDEMAND)))
+		return;
+	t = (clock_t)ad_gov_ms * sys_hz() / 1000;
+	/* A new window: the rest before it was spent at this point. */
+	read_frclock_64(&now);
+	if (win_start != 0 && npts > 0)
+		pt_res[pt_cur] += delta_frclock_64(win_start, now);
+	win_start = now;
+	busy_acc = 0;
+	if (busy_on)
+		busy_since = now;
+	set_timer(&gov_timer, t > 0 ? t : 1, gov_fired, 0);
+	gov_armed = 1;
+}
+
+/* The point this period's load asks for (as qcom_cpufreq's ondemand). */
+static unsigned
+gov_pick(unsigned load)
+{
+	unsigned top = npts - 1, want;
+
+	if (ad_gov == AD_GOV_PERFORMANCE)
+		return top;
+	if (ad_gov == AD_GOV_POWERSAVE)
+		return 0;
+	if (load >= ad_gov_up)
+		want = top;
+	else
+		for (want = 0; want < top && pt_mhz[want] * ad_gov_aim <
+		    pt_mhz[pt_cur] * load; want++)
+			;
+	if (want >= pt_cur) {
+		gov_low = 0;
+		return want;
+	}
+	if (++gov_low < ad_gov_downs)
+		return pt_cur;
+	gov_low = 0;
+	return want;
+}
+
+/* The GPU off: nothing in the ring and nothing waiting (gov_fired()). */
+static int
+gpu_sleep(void)
+{
+	int save = ad_log.log_level;
+	u64_t now;
+
+	/*
+	 * Bank 0 back on the service's own table first, while it can still
+	 * be told: a client may go while the GPU sleeps, and its table must
+	 * not be the one a bank left powered would walk.
+	 */
+	if (!quiesce(1000))
+		return 0;		/* not idle after all: next period */
+	(void)smmu_load(NULL);
+	on_ring = NULL;
+	if (cp_halt() != OK)
+		log_warn(&ad_log, "gpu: the VBIF's ports did not halt\n");
+	if (save == LEVEL_INFO)
+		ad_log.log_level = LEVEL_WARN;
+	cc_power_down();
+	ad_log.log_level = save;
+	read_frclock_64(&now);
+	if (win_start != 0 && npts > 0)
+		pt_res[pt_cur] += delta_frclock_64(win_start, now);
+	win_start = now;		/* from here: asleep_res */
+	up = 0;
+	asleep = 1;
+	gov_sleeps++;
+	log_debug(&ad_log, "gpu: asleep\n");
+	return 1;
+}
+
+static void
+gov_fired(int UNUSED(arg))
+{
+	u64_t now, win, busy;
+	unsigned load, want;
+
+	gov_armed = 0;
+	if (!up || asleep)
+		return;
+	read_frclock_64(&now);
+	win = delta_frclock_64(win_start, now);
+	busy = busy_acc + (busy_on ? delta_frclock_64(busy_since, now) : 0);
+	if (busy_on)
+		busy_since = now;
+	busy_acc = 0;
+	win_start = now;
+	load = win > 0 ? (unsigned)(busy * 100 / win) : 0;
+	if (load > 100)
+		load = 100;
+	if (npts > 0)
+		pt_res[pt_cur] += win;
+
+	if (npts > 1) {
+		want = gov_pick(load);
+		if (want != pt_cur && gov_set(want) != OK)
+			npts = 0;	/* the clock stays; so does the governor */
+	}
+	if (!ran && !busy_on && TAILQ_EMPTY(&flight) && TAILQ_EMPTY(&pending))
+		idle_ms += (long)ad_gov_ms;
+	ran = 0;
+	if (ad_sleep_ms > 0 && idle_ms >= ad_sleep_ms &&
+	    TAILQ_EMPTY(&flight) && TAILQ_EMPTY(&pending)) {
+		if (gpu_sleep())
+			return;
+	}
+	/* At rest at the lowest point with no sleep to wait for: no more
+	 * periods until a job comes. */
+	if (idle_ms > 0 && (npts < 2 || pt_cur == 0) && ad_sleep_ms == 0)
+		return;
+	gov_arm();
+}
+
+/* The GPU on again for a job, as after a hang (recover()). */
+static int
+gpu_wake(void)
+{
+	int save = ad_log.log_level, r;
+	u64_t now;
+
+	if (save == LEVEL_INFO)
+		ad_log.log_level = LEVEL_WARN;
+	if ((r = cc_power_up(AD_CP)) == OK && npts > 0)
+		r = cc_gfx3d_set(pt_mhz[pt_cur]);
+	/*
+	 * The bank as it was, and its TLB forgotten whatever the power did to
+	 * it: tables changed while the GPU slept, and nothing invalidated.
+	 */
+	if (r == OK && (r = smmu_check()) == OK &&
+	    (r = smmu_load(smmu_loaded())) == OK)
+		r = cp_boot();
+	ad_log.log_level = save;
+	asleep = 0;
+	if (r != OK) {
+		log_warn(&ad_log, "gpu: did not wake: %d; every job fails from "
+		    "now on\n", r);
+		give_up();
+		return r;
+	}
+	(void)cp_irq();
+	if (smmu_loaded() == NULL)
+		on_ring = NULL;
+	last_vm = NULL;
+	inval_due = 1;
+	tail = cp_wptr();
+	up = 1;
+	idle_ms = 0;
+	read_frclock_64(&now);
+	asleep_res += delta_frclock_64(win_start, now);
+	win_start = now;
+	log_debug(&ad_log, "gpu: awake\n");
+	return OK;
+}
+
+/* For a reader of the GPU's registers outside a job (adreno_drm.c). */
+int
+gpu_awake(void)
+{
+	if (dead)
+		return EIO;
+	if (asleep && gpu_wake() != OK)
+		return EIO;
+	gov_arm();
+	return OK;
+}
+
+/*
+ * Where the time went - each point's share, and off - and the clock now as
+ * the registers give it (cc_gfx3d_read_khz(); asleep, it is not read).
+ */
+void
+gpu_status(char *line, size_t size)
+{
+	u64_t all = 0, now, open = 0, res[AD_MAXOPP], off = asleep_res;
+	unsigned i;
+	int n;
+
+	if (npts == 0) {
+		snprintf(line, size, "gpu: no governor; %u MHz", cc_gfx3d_mhz());
+		return;
+	}
+	read_frclock_64(&now);
+	if (win_start != 0)
+		open = delta_frclock_64(win_start, now);
+	for (i = 0; i < npts; i++)
+		res[i] = pt_res[i] + (!asleep && i == pt_cur ? open : 0);
+	if (asleep)
+		off += open;
+	for (i = 0; i < npts; i++)
+		all += res[i];
+	all += off;
+	n = snprintf(line, size, "gpu: %u switches, %u sleeps;",
+	    gov_switches, gov_sleeps);
+	for (i = 0; i < npts && n > 0 && (size_t)n < size; i++)
+		n += snprintf(line + n, size - (size_t)n, " %u %u%%",
+		    pt_mhz[i], all ? (unsigned)(res[i] * 100 / all) : 0);
+	if (n > 0 && (size_t)n < size && (ad_sleep_ms > 0 || off > 0))
+		n += snprintf(line + n, size - (size_t)n, " off %u%%",
+		    all ? (unsigned)(off * 100 / all) : 0);
+	if (n > 0 && (size_t)n < size) {
+		if (asleep)
+			snprintf(line + n, size - (size_t)n, "; now off");
+		else
+			snprintf(line + n, size - (size_t)n, "; now %u kHz by the "
+			    "registers", cc_gfx3d_read_khz());
+	}
+}
+
+static void
+gov_report(void)
+{
+	char line[256];
+
+	if (npts == 0)
+		return;
+	gpu_status(line, sizeof(line));
+	log_info(&ad_log, "%s\n", line);
+}
+
+/*
+ * The policy changed while serving (sysctl minix.gpu, adreno.c): from now
+ * on, at once - performance to the top point, powersave to the lowest,
+ * ondemand from where it is; a sleep of 0 wakes a GPU that sleeps.
+ */
+int
+gpu_policy(int gov, long sleep_ms)
+{
+	unsigned want;
+
+	if (gov < AD_GOV_PERFORMANCE || gov > AD_GOV_ONDEMAND || sleep_ms < 0)
+		return EINVAL;
+	ad_gov = gov;
+	ad_sleep_ms = sleep_ms;
+	idle_ms = 0;
+	gov_low = 0;
+	if (dead)
+		return OK;
+	if (asleep) {
+		if (sleep_ms == 0 && gpu_wake() != OK)
+			return EIO;
+	} else if (up && npts > 1) {
+		want = gov == AD_GOV_PERFORMANCE ? npts - 1 :
+		    gov == AD_GOV_POWERSAVE ? 0 : pt_cur;
+		if (want != pt_cur && gov_set(want) != OK)
+			return EIO;
+	}
+	gov_arm();
+	return OK;
+}
+
+static void
+report_fired(int UNUSED(arg))
+{
+	gov_report();
+	if (ad_report_s > 0)
+		set_timer(&report_timer, (clock_t)ad_report_s * sys_hz(),
+		    report_fired, 0);
 }
 
 /*===========================================================================*
@@ -402,6 +783,7 @@ kick(void)
 		emit(j);
 		last_vm = j->vm;
 		TAILQ_INSERT_TAIL(&flight, j, link);
+		gov_busy(1);
 		hang_arm();
 	}
 }
@@ -428,6 +810,8 @@ retire(void)
 		tail = j->end;
 		finish(j);
 	}
+	if (TAILQ_EMPTY(&flight))
+		gov_busy(0);
 	kick();
 }
 
@@ -480,9 +864,14 @@ recover(const char *why)
 			j->result = EIO;
 		finish(j);
 	}
+	gov_busy(0);
 	cc_power_down();
-	if ((r = cc_power_up(AD_CP)) == OK)
-		core_clock();
+	if ((r = cc_power_up(AD_CP)) == OK) {
+		if (npts > 0)
+			r = cc_gfx3d_set(pt_mhz[pt_cur]);
+		else
+			core_clock();
+	}
 	if (r != OK || (r = smmu_check()) != OK || (r = cp_boot()) != OK) {
 		log_warn(&ad_log, "gpu: the GPU does not come back: %d; every "
 		    "job fails from now on\n", r);
@@ -565,7 +954,11 @@ smmu_line(void)
 static void
 gpu_line(void)
 {
-	uint32_t st = cp_irq();
+	uint32_t st;
+
+	if (asleep)
+		return;		/* not its line: the GPU is off */
+	st = cp_irq();
 
 	if (st & INT_ERRORS)
 		cp_say("gpu: an error interrupt");
@@ -599,8 +992,14 @@ gpu_submit(struct ad_job *j)
 		j->done(j);
 		return;
 	}
+	if (asleep && gpu_wake() != OK) {
+		j->result = EIO;
+		j->done(j);
+		return;
+	}
 	j->result = OK;
 	TAILQ_INSERT_TAIL(&pending, j, link);
+	gov_arm();
 	kick();
 }
 
@@ -652,6 +1051,10 @@ gpu_serve(void)
 
 	init_timer(&hang_timer);
 	init_timer(&retry_timer);
+	init_timer(&gov_timer);
+	init_timer(&report_timer);
+	npts = 0;
+	asleep = busy_on = 0;
 	bin_report();
 	if ((r = cc_power_up(AD_CP)) == OK)
 		core_clock();
@@ -673,6 +1076,27 @@ gpu_serve(void)
 	on_ring = last_vm = NULL;
 	up = 1;
 	dead = 0;
+	if (npts > 1 || ad_sleep_ms > 0) {
+		static const char *const gname[] = { "performance",
+		    "powersave", "ondemand" };
+		unsigned i;
+		char pts[64];
+		int n = 0;
+
+		for (i = 0; i < npts && n >= 0 && (size_t)n < sizeof(pts); i++)
+			n += snprintf(pts + n, sizeof(pts) - (size_t)n, "%s%u",
+			    i ? " " : "", pt_mhz[i]);
+		log_info(&ad_log, "Q27 governor: %s, points %s MHz, every %u "
+		    "ms; sleep %s\n", gname[ad_gov], npts ? pts : "none",
+		    ad_gov_ms, ad_sleep_ms > 0 ? "after idle" : "never");
+		if (ad_sleep_ms > 0)
+			log_info(&ad_log, "Q27 sleep after %ld ms idle\n",
+			    ad_sleep_ms);
+	}
+	gov_arm();
+	if (ad_report_s > 0 && npts > 0)
+		set_timer(&report_timer, (clock_t)ad_report_s * sys_hz(),
+		    report_fired, 0);
 	return OK;
 }
 
@@ -691,7 +1115,16 @@ gpu_stop(void)
 		cancel_timer(&hang_timer);
 	if (retry_armed)
 		cancel_timer(&retry_timer);
-	hang_armed = retry_armed = 0;
+	if (gov_armed)
+		cancel_timer(&gov_timer);
+	cancel_timer(&report_timer);
+	hang_armed = retry_armed = gov_armed = 0;
+	gov_report();
+	/* Asleep: powered up once more, so that the rest goes down as it
+	 * always does and finds everything as it expects. */
+	if (asleep && gpu_wake() != OK)
+		return;
+	gov_busy(0);
 	(void)cp_halt();
 	while ((j = TAILQ_FIRST(&flight)) != NULL) {
 		TAILQ_REMOVE(&flight, j, link);

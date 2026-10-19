@@ -66,6 +66,21 @@ static struct {
 } tlb[16];
 
 /*
+ * The GX domain off: the SMMU sits in it (power-domains of kgsl_smmu), and
+ * what it cached of the tables goes with the power.  Its registers are
+ * kept - whether they survive is what smmu_check() asks after power-up,
+ * and the stand has a scenario either way.
+ */
+void
+smmu_model_gx_off(void)
+{
+	unsigned i;
+
+	for (i = 0; i < 16; i++)
+		tlb[i].valid = 0;
+}
+
+/*
  * Memory: a piece of alloc_contig(), or one page of an mmap(2) region
  * (model_pages_new(): its pages scattered over physical memory, as VM
  * gives them).  cpu is what the processor sees - its caches included -

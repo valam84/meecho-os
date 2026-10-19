@@ -1329,6 +1329,198 @@ t_fences(void)
 	serve_down();
 }
 
+/*
+ * The governor (gov=, sleep=): the clock comes down when nothing runs, goes
+ * up under work, VDDMX stays voted for the top all along; with sleep= the
+ * GPU is powered off when idle and comes back for the next job - and in
+ * between not a register of it is touched (the model's bus hangs on that).
+ */
+static void
+gov_busy_job(int a, struct cbo *cmd, struct cbo *tgt, uint32_t v,
+	unsigned busy_ms)
+{
+	uint32_t f;
+
+	ibn = 0;
+	ib_mem_write(cmd, tgt->iova, v, 1);
+	check(job(a, USER_A, cmd, tgt, &f) == OK, "gov: a job");
+	/* The line comes when the job is over: busy until then. */
+	micro_delay(busy_ms * 1000ul);
+	expire_timers(osm_ticks());
+	deliver();
+	check(tgt->cpu[0] == v, "gov: the job ran: %x, not %x", tgt->cpu[0], v);
+}
+
+static unsigned
+core_mhz_now(void)
+{
+	return (model_core_khz() + 500) / 1000;
+}
+
+static void
+gov_buffers(int *a, int *fa, struct cbo *cmd, struct cbo *tgt)
+{
+	*a = open_ctx(USER_A, fa);
+	check(bo_new(*a, USER_A, 4096, MSM_BO_WC, cmd) == OK &&
+	    bo_new(*a, USER_A, 4096, MSM_BO_WC, tgt) == OK &&
+	    bo_map(*a, USER_A, cmd) == OK && bo_map(*a, USER_A, tgt) == OK,
+	    "gov: buffers");
+}
+
+static void
+t_gov(void)
+{
+	struct cbo cmd, tgt, b2;
+	unsigned was = ad_freq_mhz, i;
+	uint64_t x;
+	char why[160];
+	int a, fa;
+
+	printf("the governor\n");
+	ad_freq_mhz = 1;
+	ad_gov = AD_GOV_ONDEMAND;
+	ad_gov_ms = 50;
+	ad_gov_downs = 2;
+	ad_sleep_ms = 0;
+	serve_up();
+	check(model_saw("Q27 governor: ondemand, points 160 266 370 465 588 MHz"),
+	    "no Q27 line with the bin's points");
+	check(core_mhz_now() == 588 && model_rpm_level() == 256,
+	    "start: %u MHz, level %u", core_mhz_now(), model_rpm_level());
+	gov_buffers(&a, &fa, &cmd, &tgt);
+
+	/* Idle: down after two periods, to the lowest point; the vote stays. */
+	advance(50);
+	check(core_mhz_now() == 588, "idle one period: %u MHz", core_mhz_now());
+	advance(50);
+	check(core_mhz_now() == 160 && model_rpm_level() == 256,
+	    "idle two periods: %u MHz, level %u", core_mhz_now(),
+	    model_rpm_level());
+	advance(50);
+	check(!osm_timers_pending(), "at rest at the lowest point, a timer "
+	    "still armed");
+
+	/* Busy: up at once, as far as it needs. */
+	gov_busy_job(a, &cmd, &tgt, 0x601, 60);
+	check(core_mhz_now() == 588, "busy at 160: %u MHz", core_mhz_now());
+	/* Then quiet: down again. */
+	for (i = 0; i < 4; i++)
+		advance(50);
+	check(core_mhz_now() == 160 && model_rpm_level() == 256,
+	    "idle again: %u MHz, level %u", core_mhz_now(), model_rpm_level());
+	/* The report: the clock as the registers have it. */
+	ad_report_s = 1;
+	model_log_reset();
+	osm_proc_exit(USER_A);
+	serve_down();
+	serve_up();
+	gov_buffers(&a, &fa, &cmd, &tgt);
+	for (i = 0; i < 4; i++)
+		advance(500);
+	check(model_saw("; now 160000 kHz by the registers"),
+	    "no report with the registers' 160 MHz");
+	ad_report_s = 0;
+	osm_proc_exit(USER_A);
+	serve_down();
+	check(model_same_as_start(why, sizeof(why)), "gov: %s", why);
+
+	/* Sleep: off after sleep= ms with nothing, on for the next job. */
+	ad_sleep_ms = 200;
+	serve_up();
+	gov_buffers(&a, &fa, &cmd, &tgt);
+	gov_busy_job(a, &cmd, &tgt, 0x700, 0);
+	for (i = 0; i < 10 && model_gpu_powered(); i++)
+		advance(50);
+	check(!model_gpu_powered() && i >= 4 && i <= 6,
+	    "asleep after %u periods (powered %d)", i, model_gpu_powered());
+	check(model_rpm_level() == 256, "asleep: the vote moved: %u",
+	    model_rpm_level());
+	/* The hang check's last look comes and goes; then nothing wakes it. */
+	advance(2500);
+	check(!osm_timers_pending() && !model_gpu_powered(),
+	    "asleep, a timer still armed (powered %d)", model_gpu_powered());
+	/* A line while it sleeps - another's, shared, or late: not its. */
+	gpu_intr((uint64_t)1 << AD_GPU_HOOK);
+	check(!model_gpu_powered(), "a line woke it");
+	/* A buffer comes while it sleeps: no register touched. */
+	check(bo_new(a, USER_A, 8192, MSM_BO_WC, &b2) == OK &&
+	    bo_map(a, USER_A, &b2) == OK, "asleep: a new buffer");
+	gov_busy_job(a, &cmd, &tgt, 0x701, 0);
+	check(model_gpu_powered(), "the job did not wake it");
+	check(strstr(tz_trail(), "remote") != NULL, "woken: the zap shader not "
+	    "resumed: \"%s\"", tz_trail());
+	/* Asleep again; a timestamp wakes it. */
+	for (i = 0; i < 10 && model_gpu_powered(); i++)
+		advance(50);
+	check(!model_gpu_powered(), "not asleep the second time");
+	check(param(a, USER_A, MSM_PARAM_TIMESTAMP, &x) == OK &&
+	    model_gpu_powered(), "a timestamp while asleep");
+	for (i = 0; i < 10 && model_gpu_powered(); i++)
+		advance(50);
+	check(!model_gpu_powered(), "not asleep the third time");
+	/* The service goes while the GPU sleeps: everything as found. */
+	osm_proc_exit(USER_A);
+	check(smmu_loaded() == NULL, "asleep: bank 0 left on the table of a "
+	    "client that went");
+	serve_down();
+	check(model_saw("3 sleeps;"), "no report of three sleeps");
+	check(model_same_as_start(why, sizeof(why)), "sleep: %s", why);
+	check(!model_rpm_on(), "sleep: VDDMX still voted");
+
+	/* performance: the top, whatever the load; powersave: the lowest. */
+	ad_sleep_ms = 0;
+	ad_gov = AD_GOV_PERFORMANCE;
+	serve_up();
+	advance(50);
+	advance(50);
+	advance(50);
+	check(core_mhz_now() == 588 && !osm_timers_pending(),
+	    "performance: %u MHz", core_mhz_now());
+	serve_down();
+	ad_gov = AD_GOV_POWERSAVE;
+	serve_up();
+	check(core_mhz_now() == 160 && model_rpm_level() == 256,
+	    "powersave: %u MHz, level %u", core_mhz_now(), model_rpm_level());
+	serve_down();
+	/* A cap: freq=370 - the points up to it, the vote for it. */
+	ad_gov = AD_GOV_ONDEMAND;
+	ad_freq_mhz = 370;
+	serve_up();
+	check(model_saw("points 160 266 370 MHz") && core_mhz_now() == 370 &&
+	    model_rpm_level() == 128, "cap 370: %u MHz, level %u",
+	    core_mhz_now(), model_rpm_level());
+	serve_down();
+
+	/* Changed while serving (sysctl minix.gpu): at once. */
+	ad_freq_mhz = 1;
+	ad_sleep_ms = 0;
+	serve_up();
+	check(gpu_policy(AD_GOV_POWERSAVE, 0) == OK && core_mhz_now() == 160,
+	    "to powersave: %u MHz", core_mhz_now());
+	check(gpu_policy(AD_GOV_PERFORMANCE, 0) == OK && core_mhz_now() == 588,
+	    "to performance: %u MHz", core_mhz_now());
+	check(gpu_policy(AD_GOV_ONDEMAND + 1, 0) == EINVAL &&
+	    gpu_policy(AD_GOV_ONDEMAND, -1) == EINVAL, "a policy of nonsense");
+	check(gpu_policy(AD_GOV_ONDEMAND, 200) == OK, "to sleep=200");
+	for (i = 0; i < 20 && model_gpu_powered(); i++)
+		advance(50);
+	check(!model_gpu_powered(), "sleep=200 set while serving: not asleep");
+	check(gpu_policy(AD_GOV_ONDEMAND, 0) == OK && model_gpu_powered(),
+	    "sleep=0 does not wake it");
+	{
+		char st[256];
+
+		gpu_status(st, sizeof(st));
+		check(strstr(st, "kHz by the registers") != NULL, "status: %s",
+		    st);
+	}
+	serve_down();
+	check(model_same_as_start(why, sizeof(why)), "policy: %s", why);
+	ad_gov = AD_GOV_ONDEMAND;
+	ad_sleep_ms = 0;
+	ad_freq_mhz = was;
+}
+
 /* A job that never ends: the hang check, the GPU brought up again. */
 static void
 t_hang(void)
@@ -1569,6 +1761,9 @@ main(int argc, char **argv)
 	char dir[] = "/tmp/msmtest.XXXXXX";
 	int a = 1;
 
+	/* A line at a time: a FAIL written just before a crash must reach the
+	 * file mutate.sh reads. */
+	setvbuf(stdout, NULL, _IOLBF, 0);
 	if (argc > 1 && strcmp(argv[1], "-v") == 0) {
 		model_verbose = 1;
 		a = 2;
@@ -1606,6 +1801,7 @@ main(int argc, char **argv)
 		t_hang();
 		t_close();
 		t_down_busy();
+		t_gov();
 	}
 	if (osm_errors != 0) {
 		printf("  FAIL: %u errors of the environment (last: %s)\n",

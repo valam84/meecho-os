@@ -693,6 +693,29 @@ gfx3d_root(void)
 	return -1;
 }
 
+/*
+ * The core's clock as the registers say it - the gfx3d root's source and
+ * divider, the PLL's L and alpha - not as this file remembers setting it:
+ * what the governor's report gives (adreno_gpu.c).  0 if the root is off
+ * or its source unknown.
+ */
+uint32_t
+cc_gfx3d_read_khz(void)
+{
+	uint32_t cfg, khz, hid;
+	int r;
+
+	if ((r = gfx3d_root()) < 0)
+		return 0;
+	if (ad_rd(&ad.gpucc, sdm660_gpucc_rcg[r].cmd) & (1u << 31))
+		return 0;			/* ROOT_OFF */
+	cfg = ad_rd(&ad.gpucc, sdm660_gpucc_rcg[r].cmd + 4);
+	if ((khz = src_khz(sdm660_gpucc_rcg[r].src[RCG_CFG_SRC(cfg)])) == 0)
+		return 0;
+	hid = cfg & 0x1f;
+	return hid > 1 ? (uint32_t)((uint64_t)khz * 2 / (hid + 1)) : khz;
+}
+
 /* The source number of PLL p at root r, or -1. */
 static int
 pll_src(int r, unsigned p)

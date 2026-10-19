@@ -200,6 +200,7 @@ void cc_power_down(void);		/* Q11 */
 int cc_gpu_clocked(const char **why);
 int cc_smmu_clocked(const char **why);
 int cc_gfx3d_set(unsigned mhz);		/* Q24: the core's clock */
+uint32_t cc_gfx3d_read_khz(void);	/* the same, from the registers */
 unsigned cc_gfx3d_mhz(void);
 
 /* adreno_hw.c */

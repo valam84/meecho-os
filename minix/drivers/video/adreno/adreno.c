@@ -25,7 +25,19 @@
  *   freq=MHz the core's clock while serving: an operating point of the
  *            tree (opp-hz) the chip's speed bin allows, VDDMX voted for it
  *            through qcom_rpm (adreno_gpu.c); "max" the highest such point,
- *            0 the crystal's 19.2 MHz (the default yet; step 10)
+ *            0 the crystal's 19.2 MHz (the default yet; step 10).  For the
+ *            governor, the highest point it may take
+ *   gov=     ondemand (the default): the core's clock follows the load;
+ *            performance: the freq= point always; powersave: the lowest
+ *   period=MS, up=, aim=, downs=   ondemand's: every period (50 ms) a
+ *            load at or above up% (80) goes to the top, below it the
+ *            lowest point where it would be aim% (60) or less - down only
+ *            after downs (2) periods in a row asked
+ *   sleep=MS the GPU powered off after this long without a job, on again
+ *            for the next (0, the default: never)
+ *   report=S a line every S seconds: the governor's switches and sleeps,
+ *            the share of time at each point and off, and the clock now
+ *            as the registers give it (0: only when the service goes)
  *   memmb=, clientmb=   buffers in all and per client, MiB (768, 512)
  *   hold=N   stay N seconds before leaving a stage - to see where it runs
  *            (ps -o cpuid): the stand cannot check "cpu 1", only a machine
@@ -39,6 +51,8 @@
 
 #include "adreno_drm.h"
 
+#include <minix/rmib.h>
+#include <minix/sysctl.h>
 #include <minix/sysutil.h>
 #include <minix/timers.h>
 
@@ -85,6 +99,86 @@ parse_stage(void)
 }
 
 /*
+ * sysctl minix.gpu: the governor's policy and sleep while serving - so that
+ * one boot can compare them (port/clover/powerrun.sh) - and its report.
+ * Writing takes root, which the remote MIB library checks first.
+ */
+static const char *const gov_names[] = { "performance", "powersave",
+    "ondemand" };
+static char gov_str[16], status_str[256];
+static int sleep_val;
+
+static struct rmib_node gov_data = RMIB_STRING(RMIB_RW, gov_str, "gov",
+	"The core's clock: performance, powersave or ondemand");
+static struct rmib_node sleep_data = RMIB_INTPTR(RMIB_RW, &sleep_val,
+	"sleep", "Milliseconds without a job before the GPU is off; 0: never");
+static struct rmib_node status_data = RMIB_STRING(RMIB_RO, status_str,
+	"status", "Switches, sleeps, time at each point, the clock now");
+
+static ssize_t
+gov_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
+	struct rmib_oldp *oldp, struct rmib_newp *newp)
+{
+	ssize_t r;
+	int g, s;
+
+	strlcpy(gov_str, gov_names[ad_gov], sizeof(gov_str));
+	if ((r = rmib_readwrite(call, &gov_data, oldp, newp)) < 0 ||
+	    newp == NULL)
+		return r;
+	for (g = 0; g < (int)__arraycount(gov_names); g++)
+		if (strcmp(gov_str, gov_names[g]) == 0)
+			break;
+	if (g == (int)__arraycount(gov_names))
+		return EINVAL;
+	if ((s = gpu_policy(g, ad_sleep_ms)) != OK)
+		return s;
+	log_info(&ad_log, "gpu: gov=%s\n", gov_names[g]);
+	return r;
+}
+
+static ssize_t
+sleep_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
+	struct rmib_oldp *oldp, struct rmib_newp *newp)
+{
+	ssize_t r;
+	int s;
+
+	sleep_val = (int)ad_sleep_ms;
+	if ((r = rmib_readwrite(call, &sleep_data, oldp, newp)) < 0 ||
+	    newp == NULL)
+		return r;
+	if (sleep_val < 0 || (s = gpu_policy(ad_gov, sleep_val)) != OK)
+		return sleep_val < 0 ? EINVAL : s;
+	log_info(&ad_log, "gpu: sleep=%d\n", sleep_val);
+	return r;
+}
+
+static ssize_t
+status_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
+	struct rmib_oldp *oldp, struct rmib_newp *newp)
+{
+	gpu_status(status_str, sizeof(status_str));
+	return rmib_readwrite(call, &status_data, oldp, newp);
+}
+
+static struct rmib_node gpu_table[] = {
+/* 0*/	[0]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RW, sizeof(gov_str),
+		    gov_func, "gov", "The core's clock: performance, "
+		    "powersave or ondemand"),
+/* 1*/	[1]	= RMIB_FUNC(CTLTYPE_INT | RMIB_RW, sizeof(int), sleep_func,
+		    "sleep", "Milliseconds without a job before the GPU is "
+		    "off; 0: never"),
+/* 2*/	[2]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RO, sizeof(status_str),
+		    status_func, "status", "Switches, sleeps, time at each "
+		    "point, the clock now"),
+};
+
+static struct rmib_node gpu_node = RMIB_NODE(RMIB_RO, gpu_table, "gpu",
+	"The GPU's governor (adreno)");
+static int gpu_node_registered;
+
+/*
  * The render node: the tree, the clock blocks as found (Q1-Q3), then the
  * GPU up for good (adreno_gpu.c) - and only then the node announced.
  */
@@ -108,6 +202,15 @@ serve(const void *dtb)
 	adreno_drm_init();
 	chardriver_announce();
 	serving = 1;
+	{
+		static const int mib[] = { CTL_MINIX, MINIX_GPU };
+
+		if ((r = rmib_register(mib, __arraycount(mib), &gpu_node)) !=
+		    OK)
+			log_warn(&ad_log, "no sysctl minix.gpu: %d\n", r);
+		else
+			gpu_node_registered = 1;
+	}
 	return OK;
 }
 
@@ -152,6 +255,8 @@ adreno_signal(int signo)
 	if (signo != SIGTERM || !serving)
 		return;
 	log_info(&ad_log, "going down; the GPU off\n");
+	if (gpu_node_registered)
+		(void)rmib_deregister(&gpu_node);
 	gpu_stop();
 	adreno_drm_shutdown();
 	gpu_down();
@@ -164,7 +269,7 @@ main(int argc, char *argv[])
 	message m;
 	int ipc_status, r;
 	long v;
-	char fbuf[8];
+	char fbuf[16];
 
 	env_setargs(argc, argv);
 	if (env_parse("log", "d", 0, &v, LEVEL_NONE, LEVEL_TRACE) == EP_SET)
@@ -182,6 +287,29 @@ main(int argc, char *argv[])
 		ad_freq_mhz = 1;
 	else if (env_parse("freq", "d", 0, &v, 0, 2000) == EP_SET)
 		ad_freq_mhz = (unsigned)v;
+	if (env_get_param("gov", fbuf, sizeof(fbuf)) == 0) {
+		if (strcmp(fbuf, "performance") == 0)
+			ad_gov = AD_GOV_PERFORMANCE;
+		else if (strcmp(fbuf, "powersave") == 0)
+			ad_gov = AD_GOV_POWERSAVE;
+		else if (strcmp(fbuf, "ondemand") == 0)
+			ad_gov = AD_GOV_ONDEMAND;
+		else
+			log_warn(&ad_log, "gov=%s is none of performance, "
+			    "powersave, ondemand; ondemand\n", fbuf);
+	}
+	if (env_parse("period", "d", 0, &v, 10, 1000) == EP_SET)
+		ad_gov_ms = (unsigned)v;
+	if (env_parse("up", "d", 0, &v, 10, 100) == EP_SET)
+		ad_gov_up = (unsigned)v;
+	if (env_parse("aim", "d", 0, &v, 10, 100) == EP_SET)
+		ad_gov_aim = (unsigned)v;
+	if (env_parse("downs", "d", 0, &v, 1, 100) == EP_SET)
+		ad_gov_downs = (unsigned)v;
+	if (env_parse("sleep", "d", 0, &v, 0, 3600000) == EP_SET)
+		ad_sleep_ms = v;
+	if (env_parse("report", "d", 0, &v, 0, 86400) == EP_SET)
+		ad_report_s = v;
 	if (env_parse("memmb", "d", 0, &v, 16, 4096) == EP_SET)
 		mem_total_mb = v;
 	if (env_parse("clientmb", "d", 0, &v, 16, 4096) == EP_SET)
@@ -198,6 +326,10 @@ main(int argc, char *argv[])
 	for (;;) {
 		if ((r = sef_receive_status(ANY, &m, &ipc_status)) != OK)
 			panic("sef_receive failed: %d", r);
+		if (m.m_source == MIB_PROC_NR) {
+			rmib_process(&m, ipc_status);	/* minix.gpu */
+			continue;
+		}
 		if (is_ipc_notify(ipc_status)) {
 			if (_ENDPOINT_P(m.m_source) == HARDWARE)
 				gpu_intr(m.m_notify.interrupts);

@@ -97,6 +97,16 @@ int gpu_dead(void);			/* did not come back from a hang */
 extern unsigned gpu_global_faults;
 extern long ad_hang_ms;			/* hang= (adreno.c) */
 extern unsigned ad_freq_mhz;		/* freq= (adreno.c) */
+int gpu_awake(void);			/* powered, for a register read */
+#define AD_GOV_PERFORMANCE	0	/* gov=: the top point always */
+#define AD_GOV_POWERSAVE	1	/* the lowest */
+#define AD_GOV_ONDEMAND		2	/* by load (adreno_gpu.c) */
+extern int ad_gov;
+extern unsigned ad_gov_ms, ad_gov_up, ad_gov_aim, ad_gov_downs;
+extern long ad_sleep_ms;		/* sleep=: power off after idle */
+extern long ad_report_s;		/* report=: the governor's line */
+int gpu_policy(int gov, long sleep_ms);	/* gov= and sleep= while serving */
+void gpu_status(char *line, size_t size);	/* the report's line */
 #define AD_GPU_HOOK	1		/* the GPU's line (cp_first()) */
 #define AD_SMMU_HOOK	0		/* bank 0's (smmu_serve()) */
 

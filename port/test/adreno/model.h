@@ -87,6 +87,7 @@ void cp_expect(const void *pm4, size_t pm4_len, const void *pfp,
 int cp_model_rd(uint32_t dw, uint32_t *v);
 void cp_model_wr(uint32_t dw, uint32_t v);
 void cp_model_gx_off(void);
+void smmu_model_gx_off(void);		/* smmumodel.c: its TLB lost */
 int cp_model_busy(void);
 int cp_model_started(void);
 unsigned cp_model_packets(void);

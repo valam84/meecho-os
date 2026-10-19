@@ -54,6 +54,19 @@ osm_error(const char *fmt, ...)
 
 static minix_timer_t *timers;
 
+/* The free-running clock (read_frclock_64()): the model's microseconds. */
+void
+read_frclock_64(u64_t *frclk)
+{
+	*frclk = model_now_us();
+}
+
+u64_t
+delta_frclock_64(u64_t base, u64_t cur)
+{
+	return cur - base;
+}
+
 clock_t
 osm_ticks(void)
 {

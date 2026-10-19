@@ -375,7 +375,7 @@ do_get_param(struct drmdrv_call *c, void *arg)
 	 * raised (hw-gpu.md, step 10). */
 	case MSM_PARAM_MAX_FREQ:	p->value = 19200000; break;
 	case MSM_PARAM_TIMESTAMP:
-		if (gpu_dead())
+		if (gpu_dead() || gpu_awake() != OK)
 			return EIO;	/* its registers are not to be read */
 		p->value = cp_timestamp();
 		break;

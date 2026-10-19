@@ -446,6 +446,7 @@ gpucc_write(uint32_t off, uint32_t v)
 		} else if (!(old & GDSC_SW_COLLAPSE) &&
 		    (v & GDSC_SW_COLLAPSE)) {
 			cp_model_gx_off();
+			smmu_model_gx_off();
 			later(gpucc, P_GX, GDSC_PWR_ON, 0, 20);
 			bcr_pulsed = 0;
 		}

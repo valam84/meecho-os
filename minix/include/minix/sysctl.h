@@ -30,6 +30,7 @@
 #define MINIX_PROC	2
 #define MINIX_LWIP	3
 #define MINIX_PMIC	4	/* a PMIC driver's subtree (qcom_pmic) */
+#define MINIX_GPU	5	/* a GPU driver's subtree (adreno) */
 
 /*
  * These identifiers, under MINIX_TEST, are used by test87 to test the MIB

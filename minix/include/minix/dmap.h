@@ -78,8 +78,10 @@
 #define INPUT_MAJOR		  64	/* 64 = /dev/input (input)            */
 #define USB_BASE_MAJOR		  65	/* 65-133 = USB major range	      */
 #define PCI_MAJOR		 134	/* 134 = /dev/pci (pci)            */
+#define QCOM_RMTFS_MAJOR	 135	/* 135 = /dev/qcom_rmtfs_mem1 (the
+					 * modem's rmtfs shared memory)     */
 
-#define NR_DEVICES   		 135	/* number of (major) devices */
+#define NR_DEVICES   		 136	/* number of (major) devices */
 
 /* Minor device numbers for memory driver. */
 #  define RAM_DEV_OLD  		   0	/* minor device for /dev/ram */

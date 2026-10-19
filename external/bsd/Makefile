@@ -53,4 +53,10 @@ SUBDIR+= blacklist dhcp nvi
 SUBDIR+= nnn
 .endif
 
+# A Qualcomm modem's userland (port/clover/hw-modem.md): libqrtr, then the
+# two daemons on it that serve the modem its storage and its files.
+.if ${MACHINE_ARCH} == "aarch64"
+SUBDIR+= qrtr .WAIT rmtfs tqftpserv
+.endif
+
 .include <bsd.subdir.mk>

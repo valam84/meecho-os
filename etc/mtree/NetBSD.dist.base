@@ -113,6 +113,8 @@
 ./usr/include/krb5
 ./usr/include/libdrm
 ./usr/include/libepoll-shim
+./usr/include/libqrtr
+./usr/include/libqrtr/linux
 ./usr/include/libepoll-shim/epoll-shim
 ./usr/include/libepoll-shim/epoll-shim/detail
 ./usr/include/libepoll-shim/sys

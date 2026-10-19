@@ -84,19 +84,24 @@ static int open_count;
 static u64_t win_lo, win_hi;
 
 /*
- * The read-only windows, with gptroN=NAME[,NAME...]: up to four more
- * partitions, served as minors 4, 3, 2, 1 (/dev/c0d0p3, p2, p1, p0) in the
- * order named, and only ever read - to take a copy of something the
+ * The read-only windows, with gptroN=NAME[,NAME...]: up to eight more
+ * partitions, the first four served as minors 4, 3, 2, 1 (/dev/c0d0p3, p2,
+ * p1, p0) and the next four as the sub-partition minors 143, 142, 141, 140
+ * (/dev/c0d0p3s3, p3s2, p3s1, p3s0) in the order named, and only ever
+ * read - to take a copy of something the
  * machine's own system keeps there (the Mi Pad 4's vendor partition and
  * the GPU's zap shader in it, port/clover/hw-gpu.md, §14), or for rmtfs to
  * hand the modem its own storage - modemst1, modemst2, fsg, fsc - which
  * rmtfs reads whole and keeps the modem's writes to in memory, as
- * postmarketOS runs it (port/clover/hw-modem.md).  A window whose slot the
- * partition table inside the main window uses is not served.  None is
- * ever written, whatever minor a write comes by.
+ * postmarketOS runs it (port/clover/hw-modem.md) - and, with those four
+ * taken, for fwimport to copy the firmware off modem and vendor at the
+ * first boot (port/clover/rc.clover).  A window whose slot the partition
+ * table inside the main window uses is not served.  None is ever written,
+ * whatever minor a write comes by.
  */
-#define RO_MAX		4
-#define RO_MINOR(i)	(4 - (int)(i))
+#define RO_MAX		8
+#define RO_MINOR(i)	((i) < 4 ? 4 - (int)(i) : \
+			    MINOR_d0p0s0 + SUB_PER_DRIVE - 1 - ((int)(i) - 4))
 static struct { u64_t lo, hi; } ro[RO_MAX];
 static unsigned ro_n;
 
@@ -194,14 +199,17 @@ sdmmc_open(devminor_t minor, int access)
 			part[0].dv_size = card.sectors * SDMMC_SECTOR_SIZE;
 		partition(&sdmmc_dtab, 0, P_PRIMARY, 0 /* ATAPI */);
 		for (i = 0; i < ro_n; i++) {
-			if (part[RO_MINOR(i)].dv_size != 0) {
-				log_warn(&sdmmc_log, "p%d of the window is a "
-				    "partition of its own; read-only window %u "
-				    "is not served\n", RO_MINOR(i) - 1, i);
+			struct device *d = sdmmc_part(RO_MINOR(i));
+
+			if (d->dv_size != 0) {
+				log_warn(&sdmmc_log, "minor %d of the window "
+				    "is a partition of its own; read-only "
+				    "window %u is not served\n", RO_MINOR(i),
+				    i);
 				continue;
 			}
-			part[RO_MINOR(i)].dv_base = ro[i].lo;
-			part[RO_MINOR(i)].dv_size = ro[i].hi - ro[i].lo;
+			d->dv_base = ro[i].lo;
+			d->dv_size = ro[i].hi - ro[i].lo;
 		}
 	}
 

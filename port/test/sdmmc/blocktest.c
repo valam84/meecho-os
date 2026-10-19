@@ -886,6 +886,40 @@ test_ro_window(void)
 	check_i64(nops, before, "до карты не дошла");
 	(void)sdmmc_close(3);
 
+	/*
+	 * Окна с пятого по восьмое (gptro0=modemst1,modemst2,fsg,fsc,modem,
+	 * vendor — планшет, rc.clover) — миноры подразделов 143..140
+	 * (c0d0p3s3..p3s0), тоже только чтение.
+	 */
+	ro[4].lo = 500ULL * SDMMC_SECTOR_SIZE;
+	ro[4].hi = 600ULL * SDMMC_SECTOR_SIZE;
+	ro[7].lo = 700ULL * SDMMC_SECTOR_SIZE;
+	ro[7].hi = 800ULL * SDMMC_SECTOR_SIZE;
+	ro[5].lo = ro[5].hi = ro[6].lo = ro[6].hi = 0;
+	ro_n = 8;
+	open_count = 0;
+	check_i64(sdmmc_open(MINOR_d0p0s0 + 15, 0), OK, "открытие минора 143");
+	check_i64((long long)subpart[15].dv_base, (long long)ro[4].lo,
+	    "минор 143 (p3s3) — пятое окно");
+	check_i64((long long)subpart[12].dv_base, (long long)ro[7].lo,
+	    "минор 140 (p3s0) — восьмое окно");
+	check_i64(sdmmc_transfer(MINOR_d0p0s0 + 15, 0, 0, 42, &iov, 1, 0),
+	    sizeof(buf), "чтение пятого окна");
+	check(memcmp(buf, medium + 500 * SDMMC_SECTOR_SIZE, sizeof(buf)) == 0,
+	    "читается сектор 500", NULL);
+	check_i64(sdmmc_transfer(MINOR_d0p0s0 + 12, 0, 0, 42, &iov, 1, 0),
+	    sizeof(buf), "чтение восьмого окна");
+	check(memcmp(buf, medium + 700 * SDMMC_SECTOR_SIZE, sizeof(buf)) == 0,
+	    "читается сектор 700", NULL);
+	before = nops;
+	check_i64(sdmmc_transfer(MINOR_d0p0s0 + 15, 1, 0, 42, &iov, 1, 0),
+	    EROFS, "запись в пятое окно — EROFS");
+	check_i64(sdmmc_transfer(MINOR_d0p0s0 + 12, 1, 0, 42, &iov, 1, 0),
+	    EROFS, "запись в восьмое окно — EROFS");
+	check_i64(nops, before, "до карты не дошла");
+	(void)sdmmc_close(MINOR_d0p0s0 + 15);
+	ro_n = 2;
+
 	/* p3 окна — свой раздел: окно только на чтение не отдаётся. */
 	partition_p3 = 1;
 	open_count = 0;

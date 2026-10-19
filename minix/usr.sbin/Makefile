@@ -3,6 +3,7 @@
 SUBDIR+=	btrace
 SUBDIR+=	diskctl
 SUBDIR+=	fbdctl
+SUBDIR+=	fwimport
 SUBDIR+=	mkfs.mfs
 SUBDIR+=	mkproto
 SUBDIR+=	sntp

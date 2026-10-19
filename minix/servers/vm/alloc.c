@@ -446,24 +446,48 @@ void mem_sanitycheck(const char *file, int line)
 }
 #endif
 
+/*
+ * The free runs of the bitmap: how many, how many pages, the longest.
+ * Walked a chunk at a time - a chunk with no page free or every page free
+ * is one step - and bit by bit only where the two meet.  The bitmap covers
+ * the whole 32-bit physical space, a million pages, and the walk bit by bit
+ * cost VM 7 to 10 ms a call on the Mi Pad 4's little cores; /proc/meminfo
+ * asks for it on every read(2), and a shell's "read" reads a byte at a
+ * time - the desktop's panel read it so every two seconds, and that was
+ * most of VM's time on an idle desktop (port/clover/hw-cpu.md, "Фон на
+ * ядре 0").  Same answers; the chunks tile the bitmap exactly, and one
+ * past the end reads as all used, which ends the last run.
+ */
 void memstats(int *nodes, int *pages, int *largest)
 {
-	int i;
+	int c, b, run = 0;
+	bitchunk_t w;
+
 	*nodes = 0;
 	*pages = 0;
 	*largest = 0;
 
-	for(i = 0; i < NUMBER_PHYSICAL_PAGES; i++) {
-		int size = 0;
-		while(i < NUMBER_PHYSICAL_PAGES && page_isfree(i)) {
-			size++;
-			i++;
+	for (c = 0; c <= PAGE_BITMAP_CHUNKS; c++) {
+		w = c < PAGE_BITMAP_CHUNKS ? free_pages_bitmap[c] : 0;
+		if (w == (bitchunk_t)~(bitchunk_t)0) {
+			run += BITCHUNK_BITS;
+			continue;
 		}
-		if(size == 0) continue;
-		(*nodes)++;
-		(*pages)+= size;
-		if(size > *largest)
-			*largest = size;
+		for (b = 0; b < (int)BITCHUNK_BITS; b++) {
+			if (w & ((bitchunk_t)1 << b)) {
+				run++;
+				continue;
+			}
+			if (run > 0) {
+				(*nodes)++;
+				*pages += run;
+				if (run > *largest)
+					*largest = run;
+				run = 0;
+			}
+			if (w == 0)	/* nothing free in the chunk */
+				break;
+		}
 	}
 }
 

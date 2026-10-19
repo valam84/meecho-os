@@ -823,11 +823,14 @@ test_ro_window(void)
 	setup(0, CARD_SECTORS);
 	win_lo = 1024ULL * SDMMC_SECTOR_SIZE;
 	win_hi = (G_LAST + 1ULL) * SDMMC_SECTOR_SIZE;
-	ro_lo = 100ULL * SDMMC_SECTOR_SIZE;
-	ro_hi = 200ULL * SDMMC_SECTOR_SIZE;
+	ro[0].lo = 100ULL * SDMMC_SECTOR_SIZE;
+	ro[0].hi = 200ULL * SDMMC_SECTOR_SIZE;
+	ro[1].lo = 300ULL * SDMMC_SECTOR_SIZE;
+	ro[1].hi = 400ULL * SDMMC_SECTOR_SIZE;
+	ro_n = 2;
 	open_count = 0;
 	check_i64(sdmmc_open(4, 0), OK, "открытие минора 4");
-	check_i64((long long)part[4].dv_base, (long long)ro_lo,
+	check_i64((long long)part[4].dv_base, (long long)ro[0].lo,
 	    "минор 4 начинается с abl");
 	check_i64((long long)part[4].dv_size, 100LL * SDMMC_SECTOR_SIZE,
 	    "и равен ему");
@@ -868,6 +871,21 @@ test_ro_window(void)
 	    NULL);
 	(void)sdmmc_close(4);
 
+	/* Второе окно (gptro0=abl,второе) — минор 3, тоже только чтение. */
+	open_count = 0;
+	check_i64(sdmmc_open(3, 0), OK, "открытие минора 3");
+	check_i64((long long)part[3].dv_base, (long long)ro[1].lo,
+	    "минор 3 — второе окно");
+	check_i64(sdmmc_transfer(3, 0, 0, 42, &iov, 1, 0), sizeof(buf),
+	    "чтение второго окна");
+	check(memcmp(buf, medium + 300 * SDMMC_SECTOR_SIZE, sizeof(buf)) == 0,
+	    "читается сектор 300", NULL);
+	before = nops;
+	check_i64(sdmmc_transfer(3, 1, 0, 42, &iov, 1, 0), EROFS,
+	    "запись во второе окно — EROFS");
+	check_i64(nops, before, "до карты не дошла");
+	(void)sdmmc_close(3);
+
 	/* p3 окна — свой раздел: окно только на чтение не отдаётся. */
 	partition_p3 = 1;
 	open_count = 0;
@@ -876,7 +894,9 @@ test_ro_window(void)
 	    "p3 — раздел окна, не abl");
 	(void)sdmmc_close(4);
 	partition_p3 = 0;
-	win_lo = win_hi = ro_lo = ro_hi = 0;
+	win_lo = win_hi = 0;
+	memset(ro, 0, sizeof(ro));
+	ro_n = 0;
 }
 
 int

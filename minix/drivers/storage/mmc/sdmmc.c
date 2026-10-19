@@ -84,14 +84,45 @@ static int open_count;
 static u64_t win_lo, win_hi;
 
 /*
- * The read-only window, with gptroN=NAME: one more partition, served as
- * minor RO_MINOR (/dev/c0d0p3) and only ever read - to take a copy of
- * something the machine's own system keeps there (the Mi Pad 4's vendor
- * partition and the GPU's zap shader in it, port/clover/hw-gpu.md, §14).
- * ro_hi == 0: none.  It is never written, whatever minor a write comes by.
+ * The read-only windows, with gptroN=NAME[,NAME...]: up to four more
+ * partitions, served as minors 4, 3, 2, 1 (/dev/c0d0p3, p2, p1, p0) in the
+ * order named, and only ever read - to take a copy of something the
+ * machine's own system keeps there (the Mi Pad 4's vendor partition and
+ * the GPU's zap shader in it, port/clover/hw-gpu.md, §14), or for rmtfs to
+ * hand the modem its own storage - modemst1, modemst2, fsg, fsc - which
+ * rmtfs reads whole and keeps the modem's writes to in memory, as
+ * postmarketOS runs it (port/clover/hw-modem.md).  A window whose slot the
+ * partition table inside the main window uses is not served.  None is
+ * ever written, whatever minor a write comes by.
  */
-#define RO_MINOR	4
-static u64_t ro_lo, ro_hi;
+#define RO_MAX		4
+#define RO_MINOR(i)	(4 - (int)(i))
+static struct { u64_t lo, hi; } ro[RO_MAX];
+static unsigned ro_n;
+
+/* Does [lo, hi) touch any read-only window? */
+static int
+ro_touches(u64_t lo, u64_t hi)
+{
+	unsigned i;
+
+	for (i = 0; i < ro_n; i++)
+		if (lo < ro[i].hi && hi > ro[i].lo)
+			return 1;
+	return 0;
+}
+
+/* Does it lie wholly within one? */
+static int
+ro_within(u64_t lo, u64_t hi)
+{
+	unsigned i;
+
+	for (i = 0; i < ro_n; i++)
+		if (lo >= ro[i].lo && hi <= ro[i].hi)
+			return 1;
+	return 0;
+}
 
 /* One drive, its four partitions and their sub-partitions. */
 static struct device part[DEV_PER_DRIVE];
@@ -146,6 +177,7 @@ static int
 sdmmc_open(devminor_t minor, int access)
 {
 	struct device *dev = sdmmc_part(minor);
+	unsigned i;
 
 	if (dev == NULL)
 		return ENXIO;
@@ -161,12 +193,15 @@ sdmmc_open(devminor_t minor, int access)
 		} else
 			part[0].dv_size = card.sectors * SDMMC_SECTOR_SIZE;
 		partition(&sdmmc_dtab, 0, P_PRIMARY, 0 /* ATAPI */);
-		if (ro_hi != 0 && part[RO_MINOR].dv_size != 0)
-			log_warn(&sdmmc_log, "p3 of the window is a partition "
-			    "of its own; the read-only window is not served\n");
-		else if (ro_hi != 0) {
-			part[RO_MINOR].dv_base = ro_lo;
-			part[RO_MINOR].dv_size = ro_hi - ro_lo;
+		for (i = 0; i < ro_n; i++) {
+			if (part[RO_MINOR(i)].dv_size != 0) {
+				log_warn(&sdmmc_log, "p%d of the window is a "
+				    "partition of its own; read-only window %u "
+				    "is not served\n", RO_MINOR(i) - 1, i);
+				continue;
+			}
+			part[RO_MINOR(i)].dv_base = ro[i].lo;
+			part[RO_MINOR(i)].dv_size = ro[i].hi - ro[i].lo;
 		}
 	}
 
@@ -285,8 +320,7 @@ sdmmc_transfer(devminor_t minor, int write, u64_t position, endpoint_t endpt,
 			 * table inside the window is the user's, and nothing
 			 * it says may reach past the window's edges.
 			 */
-			if (write && ro_hi != 0 && pos < ro_hi &&
-			    pos + bytes > ro_lo) {
+			if (write && ro_touches(pos, pos + bytes)) {
 				log_warn(&sdmmc_log, "refused: write of %u "
 				    "sectors at %llu reaches the read-only "
 				    "window\n", count, (unsigned long long)
@@ -294,8 +328,8 @@ sdmmc_transfer(devminor_t minor, int write, u64_t position, endpoint_t endpt,
 				return (done > 0) ? (ssize_t)done : EROFS;
 			}
 			if (win_hi != 0 && (pos < win_lo ||
-			    pos + bytes > win_hi) && (write || ro_hi == 0 ||
-			    pos < ro_lo || pos + bytes > ro_hi)) {
+			    pos + bytes > win_hi) && (write ||
+			    !ro_within(pos, pos + bytes))) {
 				log_warn(&sdmmc_log, "refused: %s of %u sectors "
 				    "at %llu is outside the gptpart window\n",
 				    write ? "write" : "read", count,
@@ -470,7 +504,7 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 	 * to serve - never the whole card instead.
 	 */
 	{
-		char name[40], key[16];
+		char name[40], key[16], list[80];
 		u64_t first, count;
 		long inst = 0;
 
@@ -498,32 +532,48 @@ sef_cb_init_fresh(int type, sef_init_info_t *UNUSED(info))
 		}
 
 		/*
-		 * gptroN=NAME: one more partition, read only (ro_lo).  Unlike
-		 * the window, a name that is not there costs only itself: the
-		 * machine's root may be in the window, and a copy wanted from
-		 * elsewhere is no reason not to boot.
+		 * gptroN=NAME[,NAME...]: more partitions, read only (ro[]).
+		 * Unlike the window, a name that is not there costs only
+		 * itself: the machine's root may be in the window, and a copy
+		 * wanted from elsewhere is no reason not to boot.
 		 */
 		snprintf(key, sizeof(key), "gptro%ld", inst);
-		if (env_get_param(key, name, sizeof(name)) == OK) {
-			if (sdmmc_gpt_find(name, card.sectors, chunk,
-			    SDMMC_CHUNK_BYTES, chunk_phys, &first, &count) !=
-			    OK)
-				log_warn(&sdmmc_log, "%s=%s: no such partition; "
-				    "no read-only window\n", key, name);
-			else if (win_hi != 0 && first * SDMMC_SECTOR_SIZE <
-			    win_hi && (first + count) * SDMMC_SECTOR_SIZE >
-			    win_lo)
-				log_warn(&sdmmc_log, "%s=%s overlaps the window; "
-				    "no read-only window\n", key, name);
-			else {
-				ro_lo = first * SDMMC_SECTOR_SIZE;
-				ro_hi = (first + count) * SDMMC_SECTOR_SIZE;
-				log_info(&sdmmc_log, "%s: %llu sectors from %llu, "
-				    "read only, as minor %d\n", name,
-				    (unsigned long long)count,
-				    (unsigned long long)first, RO_MINOR);
-				window_identify(name, ro_lo);
+		if (env_get_param(key, list, sizeof(list)) == OK) {
+			char *next = list, *nm = NULL;
+
+			while ((nm = next) != NULL && ro_n < RO_MAX) {
+				if ((next = strchr(nm, ',')) != NULL)
+					*next++ = '\0';
+				if (*nm == '\0')
+					continue;
+				if (sdmmc_gpt_find(nm, card.sectors, chunk,
+				    SDMMC_CHUNK_BYTES, chunk_phys, &first,
+				    &count) != OK)
+					log_warn(&sdmmc_log, "%s: %s: no such "
+					    "partition; no read-only window\n",
+					    key, nm);
+				else if (win_hi != 0 && first *
+				    SDMMC_SECTOR_SIZE < win_hi && (first +
+				    count) * SDMMC_SECTOR_SIZE > win_lo)
+					log_warn(&sdmmc_log, "%s: %s overlaps "
+					    "the window; no read-only window\n",
+					    key, nm);
+				else {
+					ro[ro_n].lo = first * SDMMC_SECTOR_SIZE;
+					ro[ro_n].hi = (first + count) *
+					    SDMMC_SECTOR_SIZE;
+					log_info(&sdmmc_log, "%s: %llu sectors "
+					    "from %llu, read only, as minor %d\n",
+					    nm, (unsigned long long)count,
+					    (unsigned long long)first,
+					    RO_MINOR(ro_n));
+					window_identify(nm, ro[ro_n].lo);
+					ro_n++;
+				}
 			}
+			if (nm != NULL)
+				log_warn(&sdmmc_log, "%s: more than %d names; "
+				    "the rest are not served\n", key, RO_MAX);
 		}
 	}
 

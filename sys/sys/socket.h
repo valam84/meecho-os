@@ -220,7 +220,18 @@ struct	accept_filter_arg {
 #define	AF_IEEE80211	32		/* IEEE80211 */
 #define	AF_MPLS		33		/* MultiProtocol Label Switching */
 #define	AF_ROUTE	34		/* Internal Routing Protocol */
+#if defined(__minix)
+/*
+ * MEECHO: Qualcomm's IPC router (QRTR), the way to a Qualcomm modem's and
+ * DSPs' services (minix/net/qrtr, <netqrtr/qrtr.h>).  Linux's number, so
+ * that code written against Linux's AF_QIPCRTR needs no other; NetBSD's
+ * next numbers (AF_CAN 35, AF_ETHER 36) are left free.
+ */
+#define	AF_QIPCRTR	42		/* Qualcomm IPC router */
+#define	AF_MAX		43
+#else
 #define	AF_MAX		35
+#endif
 
 /*
  * Structure used by kernel to store most
@@ -329,6 +340,9 @@ struct sockaddr_storage {
 #define PF_BLUETOOTH	AF_BLUETOOTH
 #define	PF_MPLS		AF_MPLS
 #define	PF_ROUTE	AF_ROUTE
+#if defined(__minix)
+#define	PF_QIPCRTR	AF_QIPCRTR
+#endif
 
 #define	PF_MAX		AF_MAX
 

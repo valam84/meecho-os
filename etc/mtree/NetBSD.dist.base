@@ -129,6 +129,7 @@
 ./usr/include/netinet6
 ./usr/include/netmpls
 ./usr/include/netpgp
+./usr/include/netqrtr
 ./usr/include/openssl
 ./usr/include/pcap
 ./usr/include/pixman-1

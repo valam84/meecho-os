@@ -27,8 +27,8 @@ GLINK к модему, маршрутизатор QRTR и сервер имён 
 int s = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
 ```
 
-- `AF_QIPCRTR` / `PF_QIPCRTR` — **35** (у Linux 42; номер MEECHO,
-  `AF_MAX` стал 36). Только `SOCK_DGRAM`, протокол 0.
+- `AF_QIPCRTR` / `PF_QIPCRTR` — **42, как у Linux** (`AF_MAX` стал 43;
+  35 у NetBSD-current уже `AF_CAN`). Только `SOCK_DGRAM`, протокол 0.
 - `struct sockaddr_qrtr { uint8_t sq_len; sa_family_t sq_family;
   uint32_t sq_node; uint32_t sq_port; }` — 12 байт, поля и смысл как у
   Linux (`sq_len` по обычаю BSD, служба его не читает). Константы, `enum

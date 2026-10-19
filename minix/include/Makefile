@@ -13,6 +13,7 @@ SUBDIR+=	ddekit
 SUBDIR+=	libdde
 SUBDIR+=	minix
 SUBDIR+=	net
+SUBDIR+=	netqrtr
 SUBDIR+=	sys
 
 .include <bsd.prog.mk>

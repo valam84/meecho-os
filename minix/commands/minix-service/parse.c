@@ -1016,6 +1016,9 @@ static const struct {
 	/* There is no PF_IEEE80211. */
 	{ "MPLS",	PF_MPLS		},
 	{ "ROUTE",	PF_ROUTE	},
+#ifdef PF_QIPCRTR
+	{ "QIPCRTR",	PF_QIPCRTR	},
+#endif
 };
 
 /*

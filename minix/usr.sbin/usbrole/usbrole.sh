@@ -66,31 +66,44 @@ now() {
 	date +%s
 }
 
-# What the port should be for this policy and this Type-C state.
-decide() {	# policy typec
+# The daemon asks these every second, so they set a variable rather than
+# print: a function in $(...) is a forked shell, and with sysctl, cat
+# and sleep that was seven processes a second on an idle machine
+# (port/clover/hw-cpu.md, "Фон на ядре 0").  Now it is sysctl and sleep.
+
+# What the port should be for this policy and this Type-C state: dec.
+decide_is() {	# policy typec
 	case $1 in
-	host)	echo host ;;
-	device)	echo device ;;
+	host)	dec=host ;;
+	device)	dec=device ;;
 	*)	if [ "$2" = sink ]
-		then	echo host
-		else	echo device
+		then	dec=host
+		else	dec=device
 		fi ;;
 	esac
 }
 
-# The policy in force: what was asked for, unless it has run out.
-policy() {
+decide() {
+	decide_is "$@"
+	echo "$dec"
+}
+
+# The policy in force, pol: what was asked for, unless it has run out.
+policy_is() {
+	pol=$POLICY
 	if [ -f "$WANT" ]
 	then
-		read want until < "$WANT"
-		if [ -n "$want" ] &&
-		   { [ "${until:-0}" = 0 ] || [ "`now`" -lt "$until" ]; }
-		then
-			echo "$want"
-			return
+		read w_role w_until < "$WANT"
+		if [ -n "$w_role" ] &&
+		   { [ "${w_until:-0}" = 0 ] || [ "`now`" -lt "$w_until" ]; }
+		then	pol=$w_role
 		fi
 	fi
-	echo "$POLICY"
+}
+
+policy() {
+	policy_is
+	echo "$pol"
 }
 
 down() {	# label
@@ -154,7 +167,8 @@ device_up() {
 
 # Take the role that is up down, bring the other one up, write it down.
 become() {	# role why
-	cur=`cat "$ROLE" 2>/dev/null`
+	cur=
+	[ -f "$ROLE" ] && read cur < "$ROLE"
 	[ "$cur" = "$1" ] && return 0
 	say "$1 ($2)"
 	case $1 in
@@ -209,8 +223,11 @@ case ${1:-} in
 	last= seen=0
 	while :
 	do
-		t=$(typec)
-		want=$(decide "$(policy)" "$t")
+		t=$(sysctl -n minix.pmic.typec 2>/dev/null) || t=unknown
+		[ -n "$t" ] || t=unknown
+		policy_is
+		decide_is "$pol" "$t"
+		want=$dec
 		# Twice in a row before anything moves: the CC pins settle,
 		# and a cable is not plugged in all at once.
 		if [ "$want" = "$last" ]
@@ -218,7 +235,7 @@ case ${1:-} in
 		else	seen=1
 		fi
 		last=$want
-		[ $seen -ge 2 ] && become "$want" "type-c $t, policy $(policy)"
+		[ $seen -ge 2 ] && become "$want" "type-c $t, policy $pol"
 		sleep 1
 	done
 	;;

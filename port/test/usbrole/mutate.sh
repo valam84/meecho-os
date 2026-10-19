@@ -37,7 +37,7 @@ mutate "the controller before its clients" \
 mutate "auto without dual role" 's/	if \[ "$POLICY" = auto \] \&\&/	if false \&\&/'
 mutate "anything not a source is a host" \
     's/if \[ "$2" = sink \]/if [ "$2" != source ]/'
-mutate "a request never runs out" 's/|| \[ "`now`" -lt "$until" \]; }/|| true; }/'
+mutate "a request never runs out" 's/|| \[ "`now`" -lt "$w_until" \]; }/|| true; }/'
 mutate "a daemon with usbrole=device" \
     's/	\[ "$POLICY" = device \] \&\& exit 0/	:/'
 

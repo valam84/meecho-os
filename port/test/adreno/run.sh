@@ -65,9 +65,11 @@ $CC -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Werror -O1 -g \
 
 # The render node: the service's adreno_gpu.c and adreno_drm.c, libdrmdriver
 # beside them; mmap and vm_remap the model's, the encoding of ioctl and
-# drm.h the machine's, not the host's; msm_drm.h of the libdrm reachover.
+# drm.h the machine's, not the host's; msm_drm.h of the libdrm reachover;
+# meecho_drm.h (the scanout buffers' request) the mali service's.
 $CC -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Werror -O1 -g \
 	-I "$HERE/stubs-drm" -I "$HERE/stubs" -I "$HERE" -I "$SRC" \
+	-iquote "$TREE/minix/drivers/video/mali" \
 	-I "$QCOM" -I "$TREE/external/mit/libdrm/lib/libdrm/drm" \
 	-I "$TREE/minix/lib/libgfxcompat" -idirafter "$INC" \
 	-include "$HERE/shim/regs-hook.h" \

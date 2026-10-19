@@ -24,6 +24,10 @@ CPPFLAGS+=	-I${NETBSDSRCDIR}/external/mit/libdrm/lib/libdrm/drm \
 		-I${NETBSDSRCDIR}/external/mit/libdrm/dist/include/drm \
 		-I${NETBSDSRCDIR}/minix/lib/libgfxcompat
 
+# DRM_IOCTL_MEECHO_SCANOUT_IMPORT: the mali service's own request, taken
+# here by the same number (adreno_drm.c), in its header.
+CPPFLAGS.adreno_drm.c+=	-iquote ${.CURDIR}/../mali
+
 DPADD+=	${LIBDRMDRIVER} ${LIBCHARDRIVER} ${LIBSYS} ${LIBTIMERS}
 LDADD+=	-ldrmdriver -lchardriver -lsys -ltimers
 

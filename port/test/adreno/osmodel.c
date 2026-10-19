@@ -26,6 +26,8 @@
 #include "osmodel.h"
 
 #include <minix/chardriver.h>
+#include <minix/drmdriver.h>
+#include <minix/ds.h>
 #include <minix/timers.h>
 
 #include <fcntl.h>
@@ -329,6 +331,74 @@ model_vm_remap_ro(endpoint_t d, endpoint_t s, void *da, void *sa,
 	return remap(d, s, da, sa, size, 1);
 }
 
+/* ---- DS и SYS_UMAP_REMOTE: буферы развёртки fb (meecho_drm.h) ----------- */
+
+static struct {
+	char key[DS_MAX_KEYLEN];
+	u32_t val;
+} dskeys[16];
+static unsigned ndskeys;
+
+void
+osm_ds_set(const char *key, u32_t val)
+{
+	unsigned i;
+
+	for (i = 0; i < ndskeys; i++)
+		if (strcmp(dskeys[i].key, key) == 0)
+			break;
+	if (i == ndskeys) {
+		if (ndskeys == sizeof(dskeys) / sizeof(dskeys[0])) {
+			osm_error("DS: too many keys");
+			return;
+		}
+		snprintf(dskeys[ndskeys++].key, DS_MAX_KEYLEN, "%s", key);
+	}
+	dskeys[i].val = val;
+}
+
+int
+ds_retrieve_u32(const char *key, u32_t *val)
+{
+	unsigned i;
+
+	for (i = 0; i < ndskeys; i++)
+		if (strcmp(dskeys[i].key, key) == 0) {
+			*val = dskeys[i].val;
+			return OK;
+		}
+	return ESRCH;
+}
+
+/* Метки fb в DS нет: вида буфера у службы не будет, как без vm_remap. */
+int
+ds_retrieve_label_endpt(const char *label, endpoint_t *ep)
+{
+	(void)label;
+	(void)ep;
+	return ESRCH;
+}
+
+/*
+ * SYS_UMAP_REMOTE (drm_umap.c libdrmdriver на машине): физический адрес
+ * диапазона в памяти клиента - только того, кто сейчас зовёт, и только
+ * непрерывного (у модели - один кусок alloc_contig() или одна страница).
+ */
+int
+drmdrv_umap_remote(endpoint_t ep, vir_bytes vir, vir_bytes len,
+	phys_bytes *phys)
+{
+	uint64_t pa;
+
+	if (ep != osm_user)
+		osm_error("umap_remote of %d during a call of %d", ep,
+		    osm_user);
+	if (model_umap((const void *)vir, len, &pa) != 0)
+		return EFAULT;
+	*phys = (phys_bytes)pa;
+	return OK;
+}
+
 /* ---- дескрипторы: cdevfd(2) VFS, открытые minor libchardriver ------------ */
 
 #define MFILES		1024
@@ -570,4 +640,5 @@ osm_reset(void)
 	osm_nremaps = 0;
 	osm_cdev_close = NULL;
 	timers = NULL;
+	ndskeys = 0;
 }

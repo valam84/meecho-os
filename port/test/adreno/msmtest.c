@@ -53,6 +53,7 @@
 
 #include "drm.h"
 #include "msm_drm.h"
+#include "meecho_drm.h"
 #include <sys/ioc_mmap.h>
 #include <linux/dma-buf.h>
 #include <linux/sync_file.h>
@@ -1253,6 +1254,83 @@ t_prime(void)
 	serve_down();
 }
 
+/*
+ * fb's scanout buffers (meecho_drm.h, the compositor's DRM_IOCTL_MEECHO_
+ * SCANOUT_IMPORT): without fb's keys in DS - ENODEV; memory fb did not
+ * publish as its buffer, or a part of one - EPERM (the client would give
+ * the GPU anything of its own, and could free it under a job); the whole
+ * buffer - a handle at an address of the client's, and a job writes the
+ * very pages fb shows, in memory.  The pages are fb's: the context's end
+ * does not free them.
+ */
+static void
+t_scanout(void)
+{
+	struct drm_meecho_scanout_import si;
+	struct cbo cmd, sb;
+	phys_bytes pa;
+	uint32_t f, *ram;
+	void *buf;
+	int a, fda;
+
+	printf("scanout buffers\n");
+	serve_up();
+	a = open_ctx(USER_A, &fda);
+	buf = alloc_contig(0x10000, 0, &pa);	/* the client's fb mapping */
+	memset(&si, 0, sizeof(si));
+	si.addr = (uint64_t)(uintptr_t)buf;
+	si.size = 0x10000;
+	check(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == ENODEV,
+	    "no fb in DS");
+	osm_ds_set("fb.scanout.n", 1);
+	osm_ds_set("fb.scanout.size", 0x10000);
+	osm_ds_set("fb.scanout.0", (uint32_t)(pa + 0x10000));
+	check(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == EPERM,
+	    "memory fb did not publish");
+	osm_ds_set("fb.scanout.0", (uint32_t)pa);
+	si.size = 0x8000;
+	check(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == EPERM,
+	    "half a buffer");
+	si.size = 0x10000;
+	si.pad = 1;
+	check(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == EINVAL,
+	    "pad not checked");
+	si.pad = 0;
+	si.addr += 4;
+	check(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == EINVAL,
+	    "an address inside a page");
+	si.addr -= 4;
+	check(io(a, DRM_IOCTL_MEECHO_SCANOUT_IMPORT, &si, USER_A) == OK &&
+	    si.handle != 0 && si.offset >= AD_VA_START, "the buffer: handle "
+	    "%u at 0x%llx", si.handle, (unsigned long long)si.offset);
+
+	/* The GPU draws into it: the words are in fb's pages, in memory. */
+	check(bo_new(a, USER_A, 4096, MSM_BO_WC, &cmd) == OK &&
+	    bo_map(a, USER_A, &cmd) == OK, "commands");
+	memset(&sb, 0, sizeof(sb));
+	sb.handle = si.handle;
+	sb.iova = si.offset;
+	sb.size = 0x10000;
+	/* fb's region is not in DS here: the buffer is no client's to map. */
+	check(bo_map(a, USER_A, &sb) == EINVAL, "mapped without a view");
+	ibn = 0;
+	ib_mem_write(&cmd, si.offset + 0x8000, 0xf00d0000, 4);
+	check(job(a, USER_A, &cmd, &sb, &f) == OK, "a job on it");
+	deliver();
+	check(wait_fence(a, USER_A, 0, f, osm_mono_ns() + 1000000000LL) == OK,
+	    "wait_fence");
+	ram = (uint32_t *)model_ram_pa(pa + 0x8000, 16);
+	check(ram != NULL && ram[0] == 0xf00d0000 && ram[3] == 0xf00d0003,
+	    "the GPU's writes in fb's pages: %x %x", ram ? ram[0] : 0,
+	    ram ? ram[3] : 0);
+	check(gem_close(a, USER_A, si.handle) == OK, "gem close");
+	osm_proc_exit(USER_A);
+	check(model_ram_pa(pa, 4096) != NULL, "fb's pages went with the "
+	    "context");
+	free_contig(buf, 0x10000);
+	serve_down();
+}
+
 /* Fences across clients: a sync file in, sync objects in and out. */
 static void
 t_fences(void)
@@ -1796,6 +1874,7 @@ main(int argc, char **argv)
 		t_fault();
 		t_two();
 		t_prime();
+		t_scanout();
 		t_fences();
 		t_implicit();
 		t_hang();

@@ -21,6 +21,9 @@
  *   SUBMITQUEUE_NEW, _CLOSE, _QUERY
  *                             queues of priority (one ring: in order all
  *                             the same), and their faults
+ *   MEECHO_SCANOUT_IMPORT     fb's scanout buffers (meecho_drm.h, as the
+ *                             mali service has it): the compositor's GPU
+ *                             draws into what fb shows
  *
  * The version is 1.6 - what of Linux's list is here: softpin (1.4, no
  * relocations: Mesa writes the addresses itself), submit queues and their
@@ -57,8 +60,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <minix/ds.h>
+
 #include "drm.h"
 #include "msm_drm.h"
+#include "meecho_drm.h"
 
 #define MSM_MINOR	6
 #define NR_PRIORITIES	3		/* one ring, three levels (Linux) */
@@ -547,6 +553,74 @@ do_gem_info(struct drmdrv_call *c, void *arg)
 	return EINVAL;
 }
 
+/*
+ * DRM_IOCTL_MEECHO_SCANOUT_IMPORT (meecho_drm.h, the mali service's own
+ * request on the CB2): a scanout buffer of the frame buffer driver, named
+ * by the caller's mapping of it, as a buffer of the caller's context - so
+ * that the compositor's GPU draws its frames into what fb shows, and
+ * nothing copies them there.  The checks are mali's: the pages must be
+ * one of the buffers fb published in DS (memory that stays while fb
+ * runs), and the caller proves it may draw there by having them mapped.
+ * The buffer is placed like any other, writable for the GPU, not counted
+ * against the client's limit (foreign).
+ */
+static int
+do_scanout_import(struct drmdrv_call *c, void *arg)
+{
+	struct drm_meecho_scanout_import *a = arg;
+	struct drmdrv_mem *mem;
+	struct ad_bo *bo;
+	phys_bytes phys;
+	endpoint_t fb;
+	u32_t n, size, base, vir;
+	char key[DS_MAX_KEYLEN];
+	int i, r;
+
+	if (a->pad != 0 || a->size == 0 || (a->size & (PAGE - 1)) ||
+	    (a->addr & (PAGE - 1)) || a->size > AD_VA_END - AD_VA_START)
+		return EINVAL;
+	if (ds_retrieve_u32(MEECHO_DS_SCANOUT_N, &n) != OK ||
+	    ds_retrieve_u32(MEECHO_DS_SCANOUT_SIZE, &size) != OK)
+		return ENODEV;		/* no frame buffer driver, or before it */
+	/* One call: the kernel answers only for a contiguous range. */
+	if ((r = drmdrv_umap_remote(c->user, (vir_bytes)a->addr,
+	    (vir_bytes)a->size, &phys)) != OK || phys == 0)
+		return EFAULT;
+	for (i = 0; i < (int)n; i++) {
+		snprintf(key, sizeof(key), MEECHO_DS_SCANOUT, i);
+		if (ds_retrieve_u32(key, &base) == OK && phys == base &&
+		    a->size == ((size + PAGE - 1) & ~(PAGE - 1)))
+			break;
+	}
+	if (i == (int)n) {
+		log_warn(&ad_log, "%s: 0x%lx, %llu bytes, is no scanout "
+		    "buffer\n", c->ctx->name, (unsigned long)phys,
+		    (unsigned long long)a->size);
+		return EPERM;
+	}
+	snprintf(key, sizeof(key), MEECHO_DS_SCANOUT_VIR, i);
+	if (ds_retrieve_u32(key, &vir) != OK ||
+	    ds_retrieve_label_endpt(MEECHO_DS_FB_LABEL, &fb) != OK)
+		fb = NONE;
+	if ((mem = drmdrv_mem_new_phys(phys, fb, (vir_bytes)vir,
+	    (size_t)a->size, MSM_BO_WC, &r)) == NULL)
+		return r;
+	if ((bo = bo_place(&actx_of(c->ctx)->vm, mem, mem->flags,
+	    &r)) == NULL) {
+		drmdrv_mem_unref(mem);
+		return r;
+	}
+	if ((r = drmdrv_bo_handle(c->ctx, bo, &a->handle)) != OK) {
+		bo_unref(bo);
+		return r;
+	}
+	a->offset = bo->iova;
+	log_info(&ad_log, "%s: scanout buffer %d (0x%lx, %llu bytes) at GPU "
+	    "0x%llx\n", c->ctx->name, i, (unsigned long)phys,
+	    (unsigned long long)a->size, (unsigned long long)bo->iova);
+	return OK;
+}
+
 /* An absolute CLOCK_MONOTONIC time in ns; "forever" stays forever. */
 static int64_t
 deadline_of(const struct drm_msm_timespec *t)
@@ -955,6 +1029,8 @@ static const struct drmdrv_calldef msm_calls[] = {
 	{ DRM_MSM_SUBMITQUEUE_CLOSE, sizeof(uint32_t), do_queue_close },
 	{ DRM_MSM_SUBMITQUEUE_QUERY, sizeof(struct drm_msm_submitqueue_query),
 	    do_queue_query },
+	{ DRM_MEECHO_SCANOUT_IMPORT,
+	    sizeof(struct drm_meecho_scanout_import),	do_scanout_import },
 	{ 0, 0, NULL }
 };
 

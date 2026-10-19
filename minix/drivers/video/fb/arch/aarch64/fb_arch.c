@@ -743,6 +743,25 @@ find_mode(unsigned w, unsigned h, unsigned hz)
 }
 
 /*
+ * The bytes of a row of a scanout buffer in mode m.  On the
+ * simple-framebuffer a multiple of 256: the Mi Pad 4's GPU draws into the
+ * scanout buffers (the adreno service, meecho_drm.h), and an A5xx resolves
+ * its tiles in rows of 64 pixels - Mesa's freedreno refuses a buffer of
+ * another pitch (fd_layout_resource_for_handle()), and the frames are
+ * copied again.  The 1200 pixels of the Mi Pad 4 are 4800 bytes, so 4864.
+ * The copy to the boot loader's frame (simple_copy()) takes its own
+ * stride.  The CB2's VOP2 is told the stride, but its modes have always
+ * been their width, and stay so: a padded one was never tried there.
+ */
+static unsigned
+row_bytes(const struct videomode *m)
+{
+	unsigned b = (unsigned)m->hdisplay * BYTES_PER_PIXEL;
+
+	return simple_mode ? (b + 255) & ~255u : b;
+}
+
+/*
  * The bytes of one scanout buffer: the largest frame this driver makes at
  * all (mode_usable()), so that a mode change never needs other buffers - a
  * compositor has them mapped, and a buffer must not go while it may - not
@@ -753,7 +772,7 @@ static size_t
 buffer_bytes(void)
 {
 	size_t max = (size_t)MAX_W * MAX_H * BYTES_PER_PIXEL,
-	    now = (size_t)mode.hdisplay * mode.vdisplay * BYTES_PER_PIXEL;
+	    now = (size_t)row_bytes(&mode) * mode.vdisplay;
 
 	return now > max ? now : max;
 }
@@ -942,7 +961,7 @@ alloc_frame_buffer(void)
 {
 	void *v;
 
-	fb_stride = mode.hdisplay * BYTES_PER_PIXEL;
+	fb_stride = row_bytes(&mode);
 	fb_size = (size_t)fb_stride * mode.vdisplay;
 	buf_bytes = buffer_bytes();
 
@@ -1151,6 +1170,31 @@ drop_buffer(int b)
 }
 
 /*
+ * Rows y0..y1-1 of a buffer the GPU drew, about to be read by this driver:
+ * the simple-framebuffer's copy (show_rows()) reads them with the
+ * processor, which may hold lines of them from the copy of an earlier
+ * frame.  Only these rows, and the buffer stays GPU-drawn: the rest of it
+ * is dropped when it is read.
+ */
+static void
+drop_rows(int b, unsigned y0, unsigned y1)
+{
+	size_t off, len, n;
+
+	if (!gpu_drawn[b] || y0 >= y1)
+		return;
+	off = (size_t)y0 * fb_stride;
+	len = (size_t)(y1 - y0) * fb_stride;
+	if (off + len > buf_bytes)
+		len = off < buf_bytes ? buf_bytes - off : 0;
+	for (; len > 0; off += n, len -= n) {
+		n = len < FLUSH_PIECE ? len : FLUSH_PIECE;
+		(void)sys_cachectl(CACHE_CLEAN_INVALIDATE,
+		    (void *)(buf_vir[b] + off), n);
+	}
+}
+
+/*
  * The scanout buffers to DS, for the GPU service (meecho_drm.h): their
  * physical addresses - below 4 GiB, as the window needs - and size.  The
  * count goes last: a reader that sees n sees the n addresses.
@@ -1188,6 +1232,7 @@ show_rows(int b, unsigned y0, unsigned y1)
 			y1 = sfb.height;
 		}
 		span_add(b, y0, y1);
+		drop_rows(b, sdirty[b].lo, sdirty[b].hi);
 		if (sdirty[b].hi > sdirty[b].lo)
 			simple_copy(b, (size_t)sdirty[b].lo * fb_stride,
 			    (size_t)(sdirty[b].hi - sdirty[b].lo) * fb_stride);
@@ -1462,7 +1507,7 @@ program_mode(struct videomode *m)
 	unsigned got;
 	int r;
 
-	fb_stride = m->hdisplay * BYTES_PER_PIXEL;
+	fb_stride = row_bytes(m);
 	fb_size = (size_t)fb_stride * m->vdisplay;
 	if (virtual_mode)
 		return OK;
@@ -1489,13 +1534,12 @@ change_mode(const struct videomode *want)
 
 	if (same_mode(want, &mode))
 		return OK;
-	if ((size_t)want->hdisplay * want->vdisplay * BYTES_PER_PIXEL >
-	    buf_bytes)
+	if ((size_t)row_bytes(want) * want->vdisplay > buf_bytes)
 		return EINVAL;			/* not a mode of the list */
 
 	mode = *want;
 	memset((void *)buf_vir[shown], 0,
-	    (size_t)mode.hdisplay * BYTES_PER_PIXEL * mode.vdisplay);
+	    (size_t)row_bytes(&mode) * mode.vdisplay);
 	flush_rows(shown, 0, mode.vdisplay);
 	if ((r = program_mode(&mode)) != OK) {
 		log_warn(&fb_log, "mode %dx%d@%u did not take (%d); back to "
@@ -1999,7 +2043,9 @@ arch_get_varscreeninfo(int minor, struct fb_var_screeninfo *v)
 	if (minor != 0 || status <= 0)
 		return ENXIO;
 	memset(v, 0, sizeof(*v));
-	v->xres = v->xres_virtual = mode.hdisplay;
+	v->xres = mode.hdisplay;
+	/* A row of the buffer, as fbcon and fb.c count it (row_bytes()). */
+	v->xres_virtual = fb_stride / BYTES_PER_PIXEL;
 	v->yres = v->yres_virtual = mode.vdisplay;
 	v->bits_per_pixel = BYTES_PER_PIXEL * 8;
 	/* XRGB8888, little-endian: the word is 0x00RRGGBB. */

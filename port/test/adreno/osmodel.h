@@ -34,6 +34,8 @@ struct osm_remap {
 extern struct osm_remap osm_remaps[256];
 extern unsigned osm_nremaps;
 
+void osm_ds_set(const char *key, uint32_t val);	/* fb's keys in DS */
+
 extern int (*osm_cdev_close)(devminor_t minor);
 int osm_fd_pass(endpoint_t from, int fd, endpoint_t to);
 int osm_fd_close(endpoint_t who, int fd);

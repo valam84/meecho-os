@@ -325,6 +325,57 @@ rpm_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 	return OK;
 }
 
+/*
+ * Every service's own vote, and what goes to the RPM is the strongest of
+ * them: the highest level, enabled if anyone wants it - what Linux's genpd
+ * and rpmpd do between the GPU and the modem's loader, which both vote
+ * VDDMX (the loader for as long as the modem boots, then lets go).  One
+ * vote per service, rail and key; a vote of a service that went away
+ * counts until its endpoint votes again.
+ */
+#define NVOTES		16
+
+static struct vote {
+	endpoint_t who;
+	uint32_t type, key, value;
+	int used;
+} votes[NVOTES];
+
+static uint32_t
+aggregate(endpoint_t who, uint32_t type, uint32_t key, uint32_t value,
+	int *full)
+{
+	struct vote *v = NULL, *free_v = NULL;
+	uint32_t agg = 0;
+	unsigned i;
+
+	*full = 0;
+	for (i = 0; i < NVOTES; i++) {
+		if (!votes[i].used) {
+			if (free_v == NULL)
+				free_v = &votes[i];
+		} else if (votes[i].who == who && votes[i].type == type &&
+		    votes[i].key == key)
+			v = &votes[i];
+	}
+	if (v == NULL) {
+		if ((v = free_v) == NULL) {
+			*full = 1;
+			return 0;
+		}
+		v->used = 1;
+		v->who = who;
+		v->type = type;
+		v->key = key;
+	}
+	v->value = value;
+	for (i = 0; i < NVOTES; i++)
+		if (votes[i].used && votes[i].type == type &&
+		    votes[i].key == key && votes[i].value > agg)
+			agg = votes[i].value;
+	return agg;
+}
+
 /* QRPM_SET: one key of a rail, for the active set. */
 static int
 do_set(const message *m)
@@ -332,7 +383,7 @@ do_set(const message *m)
 	uint32_t type = m->m_u32.data[QRPM_TYPE], id = m->m_u32.data[QRPM_ID];
 	uint32_t key = m->m_u32.data[QRPM_KEY];
 	uint32_t value = m->m_u32.data[QRPM_VALUE];
-	int r;
+	int r, full;
 
 	if (!g_open)
 		return ENODEV;
@@ -340,6 +391,9 @@ do_set(const message *m)
 	    (key != QRPM_KEY_LEVEL && key != QRPM_KEY_ENABLE) ||
 	    (key == QRPM_KEY_ENABLE && value > 1))
 		return EPERM;
+	value = aggregate(m->m_source, type, key, value, &full);
+	if (full)
+		return ENOSPC;
 	r = glink_rpm_request(&g, type, id, &key, &value, 1, 1000);
 	if (r == GLINK_OK)
 		log_info(&rlog, "%s %s %u for %d\n", type == QRPM_RES_RWMX ?

@@ -15,7 +15,10 @@
 #define MDT_TYPE_HASH		2
 #define MDT_RELOCATABLE		(1u << 27)
 
+/* The modem's image has thirty; a user of this file may ask for more. */
+#ifndef MDT_MAXPH
 #define MDT_MAXPH		16
+#endif
 
 struct mdt_ph {
 	uint32_t type, offset, paddr, filesz, memsz, flags;

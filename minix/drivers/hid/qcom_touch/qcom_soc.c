@@ -469,6 +469,30 @@ qsoc_bcr_asserted(unsigned id, uint32_t *reg, const char **name)
 	return (v & BCR_ASSERT) != 0;
 }
 
+/*
+ * Hold the block reset with device tree number id (assert) or let it go:
+ * BCR bit 0, the one field written.  ENOENT for a number not in the table.
+ * The modem's loader lets MSS_RESTART go before it starts the Hexagon
+ * (Linux's reset_control_deassert() on the GCC's reset controller).
+ */
+int
+qsoc_bcr_set(unsigned id, int assert)
+{
+	unsigned i;
+	uint32_t v;
+
+	for (i = 0; i < (sizeof(sdm660_bcr) / sizeof(sdm660_bcr[0])); i++)
+		if (sdm660_bcr[i].id == id)
+			break;
+	if (i == (sizeof(sdm660_bcr) / sizeof(sdm660_bcr[0])))
+		return ENOENT;
+	if (gcc_read(sdm660_bcr[i].bcr, NULL, &v) != OK)
+		return EINVAL;
+	v = assert ? (v | BCR_ASSERT) : (v & ~BCR_ASSERT);
+	wr32(gcc, sdm660_bcr[i].bcr, v);
+	return OK;
+}
+
 int
 qsoc_clk_gate(unsigned id, uint32_t *en, unsigned *bit, int *nocheck)
 {

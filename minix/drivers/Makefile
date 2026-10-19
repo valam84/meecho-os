@@ -9,6 +9,7 @@ SUBDIR+=	iommu
 SUBDIR+=	net
 SUBDIR+=	power
 SUBDIR+=	printer
+SUBDIR+=	remoteproc
 SUBDIR+=	sensors
 SUBDIR+=	system
 SUBDIR+=	usb

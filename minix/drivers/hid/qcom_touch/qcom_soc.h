@@ -42,6 +42,9 @@ int qsoc_clk_on(unsigned id, uint32_t *reg, const char **name);
 int qsoc_gdsc_on(unsigned id, uint32_t *reg, const char **name);
 int qsoc_bcr_asserted(unsigned id, uint32_t *reg, const char **name);
 
+/* Hold a block reset (assert) or let it go; ENOENT: not in the table. */
+int qsoc_bcr_set(unsigned id, int assert);
+
 /*
  * The root (RCG) a branch clock hangs off: CMD_RCGR and CFG_RCGR, OK, or
  * ENOENT when it has none of its own.  CFG_RCGR's source is bits 10:8 and

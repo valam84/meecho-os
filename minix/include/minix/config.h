@@ -7,11 +7,11 @@
  * recognises the system by it.
  */
 #define OS_NAME "MEECHO"
-#define OS_RELEASE "0.1.0"	/* M.m.p */
+#define OS_RELEASE "0.1.1"	/* M.m.p */
 /* Nmm00pp00, as in NetBSD sys/param.h.  Written without leading zeros: a
  * leading zero would make this an octal constant.
  */
-#define OS_REV 1000000
+#define OS_REV 1000100
 #define OS_CONFIG "GENERIC"
 #define OS_VERSION OS_NAME " " OS_RELEASE " (" OS_CONFIG ")"
 

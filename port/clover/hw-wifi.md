@@ -259,7 +259,7 @@ read index движка, как у Linux: иначе можно записать
 |---|---|---|
 | `wcn_fw.c` | `firmware-N.bin`, `board-2.bin` | да — `fwtest` (**сделано**) |
 | `wcn_ce.c` | copy engine | да — `cetest` (**сделано**) |
-| `wcn_qmi.c` | клиент wlfw: сообщения §3 и порядок | да — против байтов эталона |
+| `wcn_wlfw.c` | сообщения wlfw §3 (для `wcnd`, §9) | да — против байтов эталона |
 | `wcn_htc.c` | HTC: READY, CONNECT, endpoint'ы, кредит | да — на модели CE |
 | `wcn_wmi.c` | WMI-TLV: сборка команд, разбор событий | да — на байтах |
 | `wcn_htt.c` | HTT: версия, кольцо приёма, TX_FRM, IN_ORD | да |
@@ -267,20 +267,38 @@ read index движка, как у Linux: иначе можно записать
 | `wcn_smmu.c` | банк `apps_smmu`, маршрут SID | нет — планшет |
 | `wcn_find.c` | узел, регистры, линии, MSA, iommus | стенд на DTB clover |
 | `wcn.c` | служба: `netdriver` + `chardriver`, цикл, состояния | нет |
+| `minix/usr.sbin/wcnd` | демон wlfw: сокет QRTR, порядок §3 | нет |
 
-## 9. Что нужно от сессии модема
+## 9. С модемом: QRTR — сокеты, wlfw — демон
 
-Записка в общей папке сессий — `wifi-needs-from-modem.md`; коротко:
-клиентский порт QRTR (подписка на NEW/DEL_SERVER для 0x45/1, DATA до
-~6.2 КБ в обе стороны с адресом отправителя, асинхронно); общая
-библиотека QMI (или wlfw кодирует сам и переедет); операция hyp-assign
-в `sys_qcomscm(2)` — она же нужна MSS PIL.
+Сессия модема решила интерфейс (`hw-modem.md`, §1): **QRTR — сокетное
+семейство `AF_QIPCRTR` (35)**, служба `qrtr` — сокетный драйвер, как
+`uds`/`lwip`; модем — узел 0, свой — 1; поиск службы — `NEW_LOOKUP` на
+`QRTR_PORT_CTRL`, как у Linux; QMI — дело клиента (`libqrtr` linux-msm,
+BSD-3). Hyp-assign — `QCOMSCM_ASSIGN_MEM` (`1ea1f7732`), только `no-map`
+из `/reserved-memory`.
+
+**Отсюда решение [I]: wlfw ведёт пользовательский демон `wcnd`, а не
+служба.** Служба `wcn` — `chardriver` для VFS (суппликант, `wcnd`) и
+`netdriver` для `lwip`; вызов сокета через VFS из неё — это служба, которую
+VFS сам ждёт, ждущая VFS: блокирующий `recvfrom` поставил бы два процесса в
+зависимость друг от друга, неблокирующий — опрос. Демону это не грозит, и
+так же устроена Linux-сторона у Qualcomm (cnss-daemon). Разделение:
+
+- `wcnd`: сокет QRTR, шаги 1–9 §3 (IND_REGISTER … FW_READY_IND), файлы
+  прошивки с корня, затем WLAN_CFG и WLAN_MODE — таблицы для них даёт
+  служба; переживает падение модема (DEL_SERVER → начать заново);
+- служба `wcn`: по ioctl от `wcnd` — hyp-assign регионов MSA (права
+  `QCOMSCM` у службы, не у демона), «прошивка готова — поднимай CE»;
+  дальше HTC/WMI/HTT и всё остальное — её.
+
+Кодирование wlfw — `wcn_wlfw.c` (без MINIX, общий для демона и стенда).
 
 ## 10. Ступени и эталон, который ещё снять
 
 1. **wlfw → CE → WMI READY** (готово, когда `fw_version` и build id
-   совпадут с §3, а службы READY — с `wmi_services.txt`). Нужны: транспорт
-   модема, hyp-assign, L5 и `rf_clk1`, банк SMMU.
+   совпадут с §3, а службы READY — с `wmi_services.txt`). Нужны: служба
+   `qrtr` и запущенный модем (сессия модема), L5 и `rf_clk1`, банк SMMU.
 2. **Скан со списком сетей** (эталон — `pass2/wifi/scan-summary.txt`: 21
    сеть, 13 на 2.4 и 8 на 5 ГГц).
 3. **WPA2 и ping**: MLME, HTT данных, wpa_supplicant.

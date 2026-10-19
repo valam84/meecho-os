@@ -55,8 +55,29 @@ rmtfs, tqftpserv, общая библиотека QMI) делает паралл
   и конечной инверсии, поэтому у zlib для того же файла число другое
   (`063e198f` против `022c9087`). Первый прогон стенда «не совпал» именно
   на этом.
-- `bdwlan.*` в `modem/image` — данные плат для других `board_id`; хосту
-  они не нужны, прошивка их не просит.
+- **`bdwlan.*` в `modem/image` — те же платы сырыми файлами**, по одной на
+  `board_id`, по правилу downstream: `0xff` → `bdwlan.bin`, меньше 0x100 —
+  `bdwlan.bXX`, иначе `bdwlan.XXX` (на разделе: `bdwlan.bin`,
+  `bdwlan.b04`…`b37`, `bdwlan.102`…`109`). **Запись
+  `bus=snoc,qmi-board-id=ff` в `board-2.bin` побайтно равна
+  `bdwlan.bin`** (смещение 460896, 19152 байта, `380d3b6d`) — стенд это
+  сверяет (`MODEM=` в `run.sh`). [?] Там же `bdwlanmi.bin` и `bdwlanpl.bin`
+  — эталон их не брал.
+
+**Комплект релиза прошивок не несёт** (решение пользователя): MEECHO при
+первой загрузке копирует `modem/image` с раздела самого планшета в
+`/libdata/firmware/qcom/clover/modem`, а `board-2.bin` и `firmware-5.bin`
+на разделах нет. Поэтому:
+
+- **данные платы** — `<каталог прошивки модема>/` + `wcn_bdf_name(board_id)`
+  первым, `board-2.bin` (`/libdata/firmware/ath10k/WCN3990/hw1.0/`) —
+  запасным, если он есть;
+- **признаки `firmware-5.bin`** (FEATURES `0x1d0140`, WMI op 4, HTT op 3) —
+  встроены (`wcn_fw_builtin()`, стенд сверяет их с файлом); файл на корне,
+  если есть, главнее.
+
+Зонд: `wlfwprobe bdf -` — тот же порядок; `bdf КАТАЛОГ`, `bdf board-2.bin`,
+`bdf ФАЙЛ` — явно.
 
 Разбор файлов — `minix/drivers/net/wcn/wcn_fw.c` (без MINIX); стенд —
 `port/test/wcn/run.sh` (`fwtest`: 25 проверок — эталонные суммы, признаки,

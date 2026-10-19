@@ -112,6 +112,38 @@ wcn_fw_parse(const uint8_t *file, size_t len, struct wcn_fw_info *fi)
 	return r < 0 ? EINVAL : 0;
 }
 
+void
+wcn_fw_builtin(struct wcn_fw_info *fi)
+{
+
+	memset(fi, 0, sizeof(*fi));
+	fi->api = 5;
+	fi->features = (uint64_t)1 << WCN_FW_FEAT_WOWLAN |
+	    (uint64_t)1 << WCN_FW_FEAT_NO_4ADDR_PAD |
+	    (uint64_t)1 << WCN_FW_FEAT_MESH_BCAST |
+	    (uint64_t)1 << WCN_FW_FEAT_MGMT_TX_BY_REF |
+	    (uint64_t)1 << WCN_FW_FEAT_NON_BMI |
+	    (uint64_t)1 << WCN_FW_FEAT_SINGLE_CHAN_INFO;
+	fi->wmi_op = 4;
+	fi->htt_op = 3;
+}
+
+int
+wcn_bdf_name(char *buf, size_t size, unsigned board_id)
+{
+	int n;
+
+	if (board_id == 0xff)
+		n = snprintf(buf, size, "bdwlan.bin");
+	else if (board_id < 0x100)
+		n = snprintf(buf, size, "bdwlan.b%02x", board_id);
+	else
+		n = snprintf(buf, size, "bdwlan.%03x", board_id);
+	if (n < 0 || (size_t)n >= size)
+		return -1;
+	return n;
+}
+
 int
 wcn_bd_name(char *buf, size_t size, int which, unsigned board_id,
 	unsigned chip_id, const char *variant)

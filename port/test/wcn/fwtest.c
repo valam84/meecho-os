@@ -210,6 +210,36 @@ real(const char *dir)
 		    crc32(bd, bdl));
 	}
 
+	/* The built-in features: what this very file says. */
+	{
+		struct wcn_fw_info bi;
+
+		wcn_fw_builtin(&bi);
+		CHECK(bi.features == fi.features && bi.wmi_op == fi.wmi_op &&
+		    bi.htt_op == fi.htt_op, "built-in differs from the file");
+	}
+
+	/*
+	 * The modem's image: bdwlan.bin is the board 0xff of board-2.bin,
+	 * byte for byte - the kit carries no board-2.bin and takes this.
+	 */
+	if (getenv("MODEM") != NULL && r == 0) {
+		char bn[32];
+		uint8_t *raw;
+		size_t rawl;
+
+		CHECK(wcn_bdf_name(bn, sizeof(bn), 0xff) > 0 &&
+		    strcmp(bn, "bdwlan.bin") == 0, "0xff: '%s'", bn);
+		raw = slurp(getenv("MODEM"), bn, &rawl);
+		CHECK(rawl == bdl && memcmp(raw, bd, bdl) == 0,
+		    "bdwlan.bin is not board-2.bin's board 0xff");
+		CHECK(crc32(raw, rawl) == 0x380d3b6d, "bdwlan.bin crc %08x",
+		    crc32(raw, rawl));
+		printf("bdwlan.bin: %zu bytes, crc %08x - the same board\n",
+		    rawl, crc32(raw, rawl));
+		free(raw);
+	}
+
 	/* Every truncation of either file: no read past the end, no hit. */
 	for (r = 0; (size_t)r < fwl; r++)
 		(void)wcn_fw_parse(fw, r, &fi);
@@ -289,6 +319,17 @@ made(void)
 	    "variant=xiaomi") == 0, "name 0 '%s'", name);
 	CHECK(wcn_bd_name(name, 8, 1, 0xff, 0x30214, NULL) < 0,
 	    "truncated name accepted");
+
+	/* bdwlan names: the files the tablet's modem image has. */
+	CHECK(wcn_bdf_name(name, sizeof(name), 0xff) > 0 &&
+	    strcmp(name, "bdwlan.bin") == 0, "0xff '%s'", name);
+	CHECK(wcn_bdf_name(name, sizeof(name), 0x04) > 0 &&
+	    strcmp(name, "bdwlan.b04") == 0, "0x04 '%s'", name);
+	CHECK(wcn_bdf_name(name, sizeof(name), 0x37) > 0 &&
+	    strcmp(name, "bdwlan.b37") == 0, "0x37 '%s'", name);
+	CHECK(wcn_bdf_name(name, sizeof(name), 0x102) > 0 &&
+	    strcmp(name, "bdwlan.102") == 0, "0x102 '%s'", name);
+	CHECK(wcn_bdf_name(name, 10, 0x04) < 0, "truncated bdwlan name");
 }
 
 int

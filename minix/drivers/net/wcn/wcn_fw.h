@@ -53,6 +53,15 @@ struct wcn_fw_info {
 
 int wcn_fw_parse(const uint8_t *file, size_t len, struct wcn_fw_info *fi);
 
+/*
+ * What firmware-5.bin of the tablet's Linux says, for when the file is
+ * not there: MEECHO's own kit carries no firmware, and the tablet's
+ * partitions have no such file - only the modem's image with the board
+ * data.  The values belong to WLAN.HL.1.0.1 (wmi-op 4, htt-op 3, the six
+ * features); a firmware-N.bin found on the root wins over them.
+ */
+void wcn_fw_builtin(struct wcn_fw_info *fi);
+
 /* board-2.bin: outer elements, inner elements of a BOARD element. */
 #define WCN_BD_IE_BOARD			0
 #define WCN_BD_IE_BOARD_EXT		1
@@ -79,6 +88,18 @@ int wcn_bd_name(char *buf, size_t size, int which, unsigned board_id,
  */
 int wcn_bd_find(const uint8_t *file, size_t len, const char *name,
 	const uint8_t **data, size_t *dlen);
+
+/*
+ * The board data as the modem's image carries it: one raw file per board
+ * id beside the firmware - bdwlan.bin for 0xff, bdwlan.bXX below 0x100,
+ * bdwlan.XXX above (the downstream driver's rule; the tablet's
+ * modem/image has bdwlan.bin, bdwlan.b04 ... bdwlan.b37, bdwlan.102 ...
+ * bdwlan.109).  board-2.bin's "bus=snoc,qmi-board-id=ff" is byte for
+ * byte that bdwlan.bin.  The order a driver looks: this file in the
+ * modem's firmware directory first, board-2.bin after.  -1 if it does
+ * not fit.
+ */
+int wcn_bdf_name(char *buf, size_t size, unsigned board_id);
 
 /* Every name in board-2.bin, for a report: fn(name, namelen, datalen). */
 int wcn_bd_walk(const uint8_t *file, size_t len,

@@ -6,6 +6,10 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$HERE/../../../minix/drivers/net/wcn
 FW=${FW:-/mnt/d/minix/clover-flash/pmos/fw/ath10k/WCN3990/hw1.0}
+# MODEM: the tablet's modem image, whose bdwlan.* are the board files the
+# kit takes (also outside the tree).
+MODEM=${MODEM:-/mnt/d/minix/clover-flash/pmos/fw/modem/image}
+if [ -f "$MODEM/bdwlan.bin" ]; then export MODEM; else unset MODEM; fi
 OUT=${OUT:-/tmp/wcn-stand}
 mkdir -p "$OUT"
 CC=${CC:-cc}

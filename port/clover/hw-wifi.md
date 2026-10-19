@@ -272,11 +272,14 @@ read index движка, как у Linux: иначе можно записать
 ## 9. С модемом: QRTR — сокеты, wlfw — демон
 
 Сессия модема решила интерфейс (`hw-modem.md`, §1): **QRTR — сокетное
-семейство `AF_QIPCRTR` (35)**, служба `qrtr` — сокетный драйвер, как
-`uds`/`lwip`; модем — узел 0, свой — 1; поиск службы — `NEW_LOOKUP` на
-`QRTR_PORT_CTRL`, как у Linux; QMI — дело клиента (`libqrtr` linux-msm,
-BSD-3). Hyp-assign — `QCOMSCM_ASSIGN_MEM` (`1ea1f7732`), только `no-map`
-из `/reserved-memory`.
+семейство `AF_QIPCRTR` (42, как у Linux; `<netqrtr/qrtr.h>`)**, служба
+`qrtr` — сокетный драйвер, как `uds`/`lwip`; модем — узел 0, свой — 1;
+поиск службы — `NEW_LOOKUP` на `{1, QRTR_PORT_CTRL}`, как у Linux, ответы и
+дальнейшие NEW/DEL_SERVER — на тот же сокет; DATA до 64 КБ; что модем
+поднят — ключ DS `qcom_mss.up`. QMI — дело клиента (`libqrtr` linux-msm,
+BSD-3, `-I/usr/include/libqrtr -lqrtr`). Hyp-assign — `QCOMSCM_ASSIGN_MEM`
+(`1ea1f7732`, `sys_qcomscm_assign()`), только `no-map` из
+`/reserved-memory`, отображённый вызывающим (`vm_map_phys`).
 
 **Отсюда решение [I]: wlfw ведёт пользовательский демон `wcnd`, а не
 служба.** Служба `wcn` — `chardriver` для VFS (суппликант, `wcnd`) и
@@ -292,7 +295,11 @@ VFS сам ждёт, ждущая VFS: блокирующий `recvfrom` пос�
   `QCOMSCM` у службы, не у демона), «прошивка готова — поднимай CE»;
   дальше HTC/WMI/HTT и всё остальное — её.
 
-Кодирование wlfw — `wcn_wlfw.c` (без MINIX, общий для демона и стенда).
+Кодирование wlfw — `wcn_wlfw.c` (без MINIX, общий для демона и стенда), а
+не таблицы `qmi_elem_info` `libqrtr`: таблицы wlfw есть только в коде
+ath10k (GPL) — переносить их «почти дословно» в дерево BSD нельзя, а свой
+кодировщик уже сверен байт в байт. `libqrtr` демону — для сокета, если
+пригодится.
 
 ## 10. Ступени и эталон, который ещё снять
 

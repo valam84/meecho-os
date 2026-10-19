@@ -27,7 +27,7 @@ struct mss {
 	unsigned nclk;
 	uint32_t reset_ph, reset_id;
 	uint32_t halt_ph, halt_q6, halt_modem, halt_nc;
-	u64_t mba_pa, mba_sz, mpss_pa, mpss_sz;
+	u64_t mba_pa, mba_sz, mpss_pa, mpss_sz, mdata_pa, mdata_sz;
 	char fw_mba[32], fw_mdt[32];
 	uint32_t stop_ph;			/* qcom,smem-states */
 
@@ -41,7 +41,7 @@ struct mss {
 	u64_t halt_pa, halt_sz;
 
 	/* Mapped. */
-	volatile uint8_t *qdsp6, *rmb, *halt, *mba, *mpss, *mbox;
+	volatile uint8_t *qdsp6, *rmb, *halt, *mba, *mpss, *mdata, *mbox;
 	volatile uint8_t *smem_base, *lock_base;
 
 	/* Ownership of the two regions, as masks of VM ids. */
@@ -63,6 +63,7 @@ int fw_read(const char *name, void **buf, size_t *len, size_t max);
 
 /* mss_boot.c */
 int mss_probe(void);
+void mss_crash_reason(void);
 int mss_boot(int stop_after_mba);
 void mss_watch(void);
 

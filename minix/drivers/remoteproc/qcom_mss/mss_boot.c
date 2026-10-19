@@ -484,7 +484,78 @@ mss_probe(void)
 	    rd(mss.halt, mss.halt_q6 + AXI_IDLE),
 	    rd(mss.halt, mss.halt_modem + AXI_IDLE),
 	    rd(mss.halt, mss.halt_nc + AXI_IDLE));
+	mss_crash_reason();
+	if (mlog.log_level >= LEVEL_DEBUG) {
+		char line[400];
+		size_t len, isz;
+		unsigned it, h;
+
+		for (h = 0; h < 2; h++) {
+			len = 0;
+			line[0] = '\0';
+			for (it = 8; it < s->item_count && len < sizeof(line) - 16;
+			    it++)
+				if (smem_get(s, h ? SMEM_HOST_ANY : 1, it, &isz)
+				    != 0)
+					len += snprintf(line + len,
+					    sizeof(line) - len, " %u:%zu", it,
+					    isz);
+			log_debug(&mlog, "SMEM items (%s):%s\n", h ? "global" :
+			    "modem's", line);
+		}
+		{
+			static const unsigned dump[][2] = { { 1, 435 },
+			    { 1, 428 }, { 0, 438 }, { 0, 439 }, { 0, 442 } };
+			size_t o;
+			unsigned d, k;
+
+			for (d = 0; d < sizeof(dump) / sizeof(dump[0]); d++) {
+				o = smem_get(s, dump[d][0] ? 1 : SMEM_HOST_ANY,
+				    dump[d][1], NULL);
+				if (o == 0)
+					continue;
+				len = 0;
+				for (k = 0; k < 48; k += 4)
+					len += snprintf(line + len, sizeof(line) -
+					    len, " %08x", smem_rd32(s, o + k));
+				log_debug(&mlog, "item %u:%s\n", dump[d][1], line);
+			}
+		}
+	}
 	return OK;
+}
+
+/*
+ * What the modem says about why it stopped: SMEM item 421, a string
+ * (Linux's q6v5_fatal_interrupt(), MPSS_CRASH_REASON_SMEM), in its
+ * partition or the global heap.
+ */
+#define MPSS_CRASH_REASON_SMEM	421
+
+void
+mss_crash_reason(void)
+{
+	char buf[200];
+	size_t off, sz = 0;
+	unsigned i;
+
+	off = smem_get(&mss.smem, mss.smp2p_remote, MPSS_CRASH_REASON_SMEM,
+	    &sz);
+	if (off == 0)
+		off = smem_get(&mss.smem, SMEM_HOST_ANY, MPSS_CRASH_REASON_SMEM,
+		    &sz);
+	if (off == 0 || sz == 0) {
+		log_info(&mlog, "no crash reason in SMEM\n");
+		return;
+	}
+	if (sz > sizeof(buf) - 1)
+		sz = sizeof(buf) - 1;
+	smem_read(&mss.smem, off, buf, sz);
+	buf[sz] = '\0';
+	for (i = 0; i < sz && buf[i] != '\0'; i++)
+		if (buf[i] < ' ' || buf[i] > '~')
+			buf[i] = '.';
+	log_warn(&mlog, "the modem's crash reason: \"%s\"\n", buf);
 }
 
 /*===========================================================================*
@@ -496,7 +567,6 @@ load_mpss(void)
 	struct mdt m;
 	const char *why;
 	void *file = NULL, *seg = NULL;
-	uint8_t *meta = NULL;
 	phys_bytes meta_pa;
 	size_t len, n, meta_len = 0, meta_alloc = 0, off, total = 0;
 	uint32_t meta_perm = HLOS, reloc, boot;
@@ -533,14 +603,19 @@ load_mpss(void)
 	/* 3. The metadata. */
 	meta_len = m.ehdr_size + m.hash_size;
 	meta_alloc = (meta_len + 4095) & ~(size_t)4095;
-	if ((meta = alloc_contig(meta_alloc, AC_ALIGN4K, &meta_pa)) == NULL) {
-		r = ENOMEM;
+	if (meta_alloc > mss.mdata_sz) {
+		log_warn(&mlog, "metadata of %zu bytes; its region holds %llu\n",
+		    meta_len, (unsigned long long)mss.mdata_sz);
+		r = EINVAL;
 		goto out;
 	}
-	memset(meta, 0, meta_alloc);
-	memcpy(meta, file, m.ehdr_size);
-	memcpy(meta + m.ehdr_size, (uint8_t *)file + m.hash_off, m.hash_size);
-	if ((r = xfer(&meta_perm, 0, 1, meta, meta_alloc, "metadata")) != OK)
+	meta_pa = (phys_bytes)mss.mdata_pa;
+	dev_put(mss.mdata, NULL, meta_alloc);
+	dev_put(mss.mdata, file, m.ehdr_size);
+	dev_put(mss.mdata + m.ehdr_size, (uint8_t *)file + m.hash_off,
+	    m.hash_size);
+	if ((r = xfer(&meta_perm, 0, 1, mss.mdata, meta_alloc, "metadata")) !=
+	    OK)
 		goto out;
 	wr(mss.rmb, RMB_PMI_META_DATA, (uint32_t)meta_pa);
 	wr(mss.rmb, RMB_MBA_COMMAND, RMB_CMD_META_DATA_READY);
@@ -548,10 +623,7 @@ load_mpss(void)
 	log_info(&mlog, "metadata (%zu bytes at %lx): MBA status %d%s\n",
 	    meta_len, (unsigned long)meta_pa, (int)st, r == OK ? ", accepted" :
 	    r == ETIMEDOUT ? ", no answer in 1 s" : ", REFUSED");
-	if (xfer(&meta_perm, 1, 0, meta, meta_alloc, "metadata back") != OK) {
-		/* Ours no more, and it may not be freed: leak it. */
-		meta = NULL;
-	}
+	(void)xfer(&meta_perm, 1, 0, mss.mdata, meta_alloc, "metadata back");
 	if (r != OK)
 		goto out;
 
@@ -626,8 +698,6 @@ load_mpss(void)
 	    ", authenticated" : r == ETIMEDOUT ? ", no answer in 10 s" :
 	    ", REFUSED");
 out:
-	if (meta != NULL)
-		free_contig(meta, meta_alloc);
 	free(seg);
 	free(file);
 	return r;
@@ -672,11 +742,18 @@ mss_boot(int stop_after_mba)
 		free(fw);
 		return EIO;
 	}
+	log_info(&mlog, "smp2p: our item at SMEM+%zx: %08x %08x %08x %08x\n",
+	    mss.smp2p.out, smem_rd32(&mss.smem, mss.smp2p.out),
+	    smem_rd32(&mss.smem, mss.smp2p.out + 4),
+	    smem_rd32(&mss.smem, mss.smp2p.out + 8),
+	    smem_rd32(&mss.smem, mss.smp2p.out + 12));
 
 	/* The regions, mapped and touched while they are ours. */
 	if ((mss.mba = map(mss.mba_pa, mss.mba_sz, "the MBA's region")) ==
 	    NULL || (mss.mpss = map(mss.mpss_pa, mss.mpss_sz,
 	    "the image region")) == NULL ||
+	    (mss.mdata = map(mss.mdata_pa, mss.mdata_sz,
+	    "the metadata's region")) == NULL ||
 	    (mss.qdsp6 = map(mss.qdsp6_pa, mss.qdsp6_sz, "QDSP6SS")) == NULL ||
 	    (mss.rmb = map(mss.rmb_pa, mss.rmb_sz, "RMB")) == NULL) {
 		free(fw);
@@ -684,6 +761,7 @@ mss_boot(int stop_after_mba)
 	}
 	touch(mss.mba, (size_t)mss.mba_sz);
 	touch(mss.mpss, (size_t)mss.mpss_sz);
+	touch(mss.mdata, (size_t)mss.mdata_sz);
 	mss.mba_perm = mss.mpss_perm = HLOS;
 	dev_put(mss.mba, fw, len);
 	free(fw);
@@ -732,7 +810,14 @@ mss_boot(int stop_after_mba)
 		goto fail_halt;
 
 	/* 5. Ready. */
-	for (t = 0; t < 500; t++) {
+	for (t = 0; t < 1500; t++) {
+		if (t % 100 == 99)
+			log_debug(&mlog, "waiting for ready: %u s, smp2p item "
+			    "%s, MBA %d; ours %08x %08x\n", (t + 1) / 100,
+			    mss.smp2p.in ? "there" : "not there",
+			    (int)rd(mss.rmb, RMB_MBA_STATUS),
+			    smem_rd32(&mss.smem, mss.smp2p.out + 8),
+			    smem_rd32(&mss.smem, mss.smp2p.out + 12));
 		if (smp2p_in(&mss.smp2p, "slave-kernel", &v) == 0 &&
 		    (v & (SMP2P_READY | SMP2P_FATAL)))
 			break;
@@ -740,9 +825,11 @@ mss_boot(int stop_after_mba)
 	}
 	if (smp2p_in(&mss.smp2p, "slave-kernel", &v) != 0 ||
 	    !(v & SMP2P_READY)) {
-		log_warn(&mlog, "the modem did not say ready in 5 s (%s, %08x)"
-		    "\n", mss.smp2p.in ? "its smp2p item there" :
-		    "no smp2p item of its", mss.smp2p.in ? v : 0);
+		log_warn(&mlog, "the modem did not say ready in 15 s (%s, "
+		    "%08x; MBA status %d)\n", mss.smp2p.in ?
+		    "its smp2p item there" : "no smp2p item of its",
+		    mss.smp2p.in ? v : 0, (int)rd(mss.rmb, RMB_MBA_STATUS));
+		mss_crash_reason();
 		r = ETIMEDOUT;
 		goto fail_halt;
 	}
@@ -757,6 +844,12 @@ fail_halt:
 fail_reclaim:
 	(void)xfer(&mss.mba_perm, 1, 0, mss.mba, (size_t)mss.mba_sz,
 	    "mba back");
+	/* And the image region: a service started again touches every page
+	 * of it, and a page the modem still owns is an external abort.  The
+	 * modem is held in reset first, as Linux's next load does it. */
+	(void)qsoc_bcr_set(mss.reset_id, 1);
+	(void)xfer(&mss.mpss_perm, 1, 0, mss.mpss, (size_t)mss.mpss_sz,
+	    "mpss back");
 fail_reset:
 	(void)qsoc_bcr_set(mss.reset_id, 1);
 fail_votes:

@@ -27,3 +27,19 @@
  * tree by itself, without this file's other statements.
  */
 #include "sdm660-xiaomi-clover-cpu.dtsi"
+
+/*
+ * The modem's metadata carveout (port/clover/hw-modem.md, section 4).
+ * Mainline gives it only alloc-ranges and a size, and Linux picks the
+ * place at boot; this kernel does not place dynamic regions, so it is
+ * fixed here, at the start of the range Linux picks from.  The modem's
+ * loader gives these pages to the modem's VM through TrustZone while the
+ * MBA checks the image's hashes: in ordinary RAM the kernel's cacheable
+ * linear map would still cover them, a speculative fetch from it would be
+ * an access to memory the modem owns, and TrustZone answers that by
+ * resetting the SoC - the likeliest reading of the reset the tablet went
+ * through when the metadata lay in a buffer of the loader's own RAM.
+ */
+&mdata_mem {
+	reg = <0x0 0xa0000000 0x0 0x4000>;
+};

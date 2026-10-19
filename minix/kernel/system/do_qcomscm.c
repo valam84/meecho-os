@@ -8,7 +8,7 @@
  *	QSCM_CMD	the SCM command (QCOMSCM_AVAIL), or the peripheral
  *			(the PAS operations, QCOMSCM_REMOTE_STATE)
  *	QSCM_ADDR	memory the call names, in the caller's address space
- *	QSCM_LEN	(QCOMSCM_PAS_INIT, QCOMSCM_PAS_MEM_SETUP)
+ *	QSCM_LEN	(QCOMSCM_PAS_INIT, QCOMSCM_PAS_MEM_SETUP, QCOMSCM_ASSIGN_MEM)
  * and the answer:
  *	QSCM_CONV	the calling convention the firmware speaks
  *	QSCM_STATUS	the firmware's x0
@@ -44,6 +44,7 @@ do_qcomscm(struct proc * caller, message * m_ptr)
 	case QCOMSCM_PAS_AUTH:
 	case QCOMSCM_REMOTE_STATE:
 	case QCOMSCM_RESUME:
+	case QCOMSCM_ASSIGN_MEM:
 		break;
 	default:
 		return EINVAL;

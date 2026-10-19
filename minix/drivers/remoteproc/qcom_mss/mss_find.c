@@ -79,6 +79,7 @@ find_cb(void *cookie, int depth, const char *name, const struct fdt_node *n)
 		 * metadata's, has no fixed place; ours is alloc_contig()). */
 		mss.mba_pa = prop_u32(n, "memory-region", 0, 0);
 		mss.mpss_pa = prop_u32(n, "memory-region", 1, 0);
+		mss.mdata_pa = prop_u32(n, "memory-region", 2, 0);
 		s = prop_str(n, "firmware-name", 0);
 		strlcpy(mss.fw_mba, s ? s : "mba.mbn", sizeof(mss.fw_mba));
 		s = prop_str(n, "firmware-name", 1);
@@ -95,8 +96,13 @@ find_cb(void *cookie, int depth, const char *name, const struct fdt_node *n)
 	if (fdt_node_is_compatible(n, "qcom,smp2p") &&
 	    prop_u32(n, "qcom,remote-pid", 0, ~0u) == MODEM_PID) {
 		found_smp2p = 1;
-		mss.smp2p_out = prop_u32(n, "qcom,smem", 0, 0);
-		mss.smp2p_in = prop_u32(n, "qcom,smem", 1, 0);
+		/* Inbound first, then outbound (Linux's smp2p.c reads them
+		 * into smem_items[SMP2P_INBOUND = 0, SMP2P_OUTBOUND = 1]):
+		 * on the SDM660 the modem writes 435 and we write 428.  The
+		 * other way round, we wrote our item into the modem's, the
+		 * modem wrote its header over ours, and never said ready. */
+		mss.smp2p_in = prop_u32(n, "qcom,smem", 0, 0);
+		mss.smp2p_out = prop_u32(n, "qcom,smem", 1, 0);
 		mss.smp2p_local = prop_u32(n, "qcom,local-pid", 0, 0);
 		mss.smp2p_remote = MODEM_PID;
 		mss.mbox_ph = prop_u32(n, "mboxes", 0, 0);
@@ -109,7 +115,7 @@ find_cb(void *cookie, int depth, const char *name, const struct fdt_node *n)
 int
 mss_find(const void *dtb)
 {
-	uint32_t mba_ph, mpss_ph, smem_ph;
+	uint32_t mba_ph, mpss_ph, smem_ph, mdata_ph;
 
 	(void)fdt_walk(dtb, find_cb, NULL);
 	if (found_mss <= 0) {
@@ -126,6 +132,20 @@ mss_find(const void *dtb)
 	/* The phandles, to addresses. */
 	mba_ph = (uint32_t)mss.mba_pa;
 	mpss_ph = (uint32_t)mss.mpss_pa;
+	mdata_ph = (uint32_t)mss.mdata_pa;
+	/*
+	 * The metadata's carveout: no-map, so that no cacheable mapping of
+	 * the kernel's covers it while it is the modem's (a speculative fetch
+	 * there would be an XPU violation, and TrustZone resets the SoC for
+	 * that).  Mainline leaves its place to Linux (alloc-ranges); MEECHO's
+	 * tree fixes it (port/clover/sdm660-xiaomi-clover-meecho.dtsi).
+	 */
+	if (mdata_ph == 0 || fdt_phandle_reg(dtb, mdata_ph, 0, &mss.mdata_pa,
+	    &mss.mdata_sz) != 0 || mss.mdata_sz < 4096) {
+		log_warn(&mlog, "no place for the metadata: the modem's third "
+		    "memory-region has no reg; not starting it\n");
+		return ENXIO;
+	}
 	smem_ph = (uint32_t)mss.smem_pa;
 	if (fdt_phandle_reg(dtb, mba_ph, 0, &mss.mba_pa, &mss.mba_sz) != 0 ||
 	    fdt_phandle_reg(dtb, mpss_ph, 0, &mss.mpss_pa, &mss.mpss_sz) != 0 ||
@@ -150,6 +170,8 @@ mss_find(const void *dtb)
 		    (unsigned long long)mss.mpss_sz, mss.mbox_bit, mss.lock_id);
 		return ENXIO;
 	}
+	log_info(&mlog, "metadata %llx+%llx\n", (unsigned long long)mss.mdata_pa,
+	    (unsigned long long)mss.mdata_sz);
 	log_info(&mlog, "qdsp6 %llx rmb %llx; mba %llx+%llx, mpss %llx+%llx; "
 	    "smem %llx+%llx (lock %u), smp2p %u/%u, mailbox %llx bit %u; "
 	    "firmware %s, %s; %u clocks\n",

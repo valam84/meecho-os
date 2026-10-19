@@ -18,7 +18,7 @@ struct smp2p {
 	/* The caller's. */
 	struct smem *smem;
 	unsigned local_pid, remote_pid;
-	unsigned out_item, in_item;	/* the tree's qcom,smem */
+	unsigned out_item, in_item;	/* the tree's qcom,smem: in, out */
 	void (*kick)(void);		/* ring the remote */
 
 	/* smp2p_init()'s and smp2p_poll()'s. */

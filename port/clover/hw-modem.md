@@ -69,9 +69,10 @@ int s = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
 | 5 | проверка | DMS `GET_REVISION` → `MPSS.AT.3.1-00729.1-…` |
 | 6 | потом | IPA (`ipa2_lite`, QMI `INIT_DRIVER`), rmnet → lwip |
 
-Состояние на 2026-10-19: шаги 1–4 написаны и собираются, **на планшете не
-запускались** (корень `userdata` занят postmarketOS, см. раздел 7). На QEMU
-проверен сокетный слой и сервер имён (раздел 5).
+Состояние на 2026-10-20: **модем на планшете загружается, QRTR работает,
+DMS отвечает строкой эталона** (раздел 8); модем падает через минуты без
+`diag-router` — открыто. На QEMU проверен сокетный слой и сервер имён
+(раздел 5).
 
 ## 3. TrustZone: `QCOMSCM_ASSIGN_MEM` [C]
 
@@ -209,3 +210,57 @@ linux-msm `rmtfs` и `tqftpserv` (и `libqrtr` под ними) — BSD-3, ле�
 - **Не проверено ничего из того, что QEMU не проверяет**: SMC ASSIGN на
   этой прошивке TrustZone, порядок питания QDSP6, кэш/атрибуты при записи
   образа (область отображена как устройство, запись словами).
+
+## 8. На планшете (2026-10-19/20)
+
+Корень MEECHO — в разделе **`system`** (3 ГиБ, `fastboot flash system`
+разреженным образом; `userdata` с postmarketOS не тронут), загрузка —
+`fastboot boot` образа с `gptpart0=system
+gptro0=modemst1,modemst2,fsg,fsc`. Журналы — `modem-20261020/`.
+
+**Модем загружается и отвечает [T]:**
+
+```
+mss: MBA booted (status 2), loading mpss
+mss: metadata (8412 bytes at a0000000): MBA status 3, accepted
+mss: 28 segments, 122898105 bytes, in the image region
+mss: image: MBA status 4, authenticated
+mss: remote processor is now up (smp2p 00000006)
+mss: handover: proxy votes let go
+qrtr: GLINK version 1 from the modem, features 7
+qrtr: IPCRTR open (lcid 1, rcid 2), 8 intents of 4096 bytes offered
+qrtr: node 0 says hello
+$ qmidms rev
+rev: 'MPSS.AT.3.1-00729.1-SDM660_GEN_PACK-1.214729.1.215613.1  1  [Jul 30 2019 14:00:00]'
+```
+
+— строка та же, что у `qmicli -d qrtr://0 --dms-get-revision` под pmos.
+Сервер имён видит 43 службы модема и наши `rmtfs` (14), `tqftpserv`
+(4096), `pd-mapper` (64); журналы `rmtfs` и `tqftpserv` совпадают с
+pmos строка в строку (отказ на `/boot/modem_fsg_oem_1/2`, нет
+`ota_firewall/ruleset` и `mcfg.tmp`; модем пишет `server_check.txt`).
+С `pd-mapper` появляется **`wlfw` (69) на узле 0** — то, что нужно Wi-Fi.
+
+Что стоило по дороге (каждое — прогон):
+
+1. **`do_qcomscm()` пропускает только перечисленные операции** —
+   `ASSIGN_MEM` получал `EINVAL`, до кода в `qcom_scm.c` не доходя.
+2. **Метаданные в RAM службы — сброс SoC.** Буфер `alloc_contig()` отдан
+   модему, а линейное отображение ядра остаётся кэшируемым: спекулятивное
+   чтение в отданную страницу — нарушение XPU, и TrustZone сбрасывает
+   машину. Linux держит метаданные в no-map области `mpss-metadata`, место
+   которой выбирает сам; в дереве MEECHO она закреплена на `0xa0000000`.
+3. **`qcom,smem = <435 428>` — сначала входящий** (`smem_items[0]` —
+   INBOUND). Мы писали свой предмет в номер модема; модем записал поверх
+   свой заголовок и, не найдя нашего 428, «ready» не сказал.
+4. **Повторный старт модема в той же загрузке** (после остановки) один
+   раз увёл SoC в аварийный дамп Qualcomm (USB `05c6:900e`, выводится
+   только кнопками). Порядок остановки (порты AXI, сброс, возврат областей)
+   не доведён — **модем пока запускать один раз за загрузку**.
+
+**Открыто: модем падает через минуты** — `dog_hb.c:266: Task starvation:
+diag` (SMEM 421): через ~1 мин без `pd-mapper`, через ~6 мин с ним. В
+pmos работает **`diag-router`** (linux-msm/diag): публикует службу 4097
+(каналы cntl/data/dci) и забирает у модема диагностический поток; у нас
+его нет. Следующий шаг — его порт (QRTR и unix-сокет; USB FunctionFS и
+Linux aio в `watch.c` — не для MEECHO).

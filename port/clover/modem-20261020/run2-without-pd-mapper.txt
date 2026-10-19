@@ -1,0 +1,2 @@
+mss(info)
+mss(warn)the modem's crash reason: "dog_hb.c:266:Task starvation: diag, ping: 4, triage with owner(d.dump 0x6984c5"

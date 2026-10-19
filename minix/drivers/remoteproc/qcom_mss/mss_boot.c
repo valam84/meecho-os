@@ -878,8 +878,10 @@ mss_watch(void)
 		proxy_held = 0;
 		log_info(&mlog, "handover: proxy votes let go\n");
 	}
-	if ((v & SMP2P_FATAL) && !(last & SMP2P_FATAL))
+	if ((v & SMP2P_FATAL) && !(last & SMP2P_FATAL)) {
 		log_warn(&mlog, "the modem says FATAL (smp2p %08x)\n", v);
+		mss_crash_reason();
+	}
 	log_debug(&mlog, "smp2p %08x -> %08x\n", last, v);
 	last = v;
 }

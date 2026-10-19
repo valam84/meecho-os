@@ -259,6 +259,13 @@ then
 		( trap '' HUP; /usr/sbin/tqftpserv ) \
 		    </dev/null >/var/log/tqftpserv.log 2>&1 &
 	fi
+	# The service locator the modem asks for its protection domains;
+	# without it the modem stops within a minute (hw-modem.md, §8).
+	if [ -x /usr/sbin/pd-mapper ]
+	then
+		( trap '' HUP; /usr/sbin/pd-mapper ) \
+		    </dev/null >/var/log/pd-mapper.log 2>&1 &
+	fi
 fi
 
 # And the port from now on: a cable swapped for an adapter, and back.

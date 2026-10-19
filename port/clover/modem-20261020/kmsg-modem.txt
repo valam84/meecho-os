@@ -1,0 +1,115 @@
+rpm(info)message RAM 0x778000+0x7000, IPC 0x17911008 bit 0; 4 regulators the tree keeps on
+rpm(info)FIFOs: tx 0x208+1784, rx 0x908+1784; indices as found: tx 0/0, rx 0/0 (tail/head)
+rpm(info)rpm_requests open (lcid 1, rcid 2)
+rpm(info)l3b on at 3000000 uV
+rpm(info)s4a on
+rpm(info)l11a on
+rpm(info)l13a on
+rpm(info)4 of 4 regulators asked on
+rpm(info)rwmx enable 1 for 65560
+rpm(info)rwmx level 256 for 65560
+rmtfs_mem(info)85e00000+200000, client 1, shared with VM 15
+qrtr(info):glink.c+711(gl_init):SMEM version 12; GLINK to the modem once qcom_mss says it is up
+qrtr(info):router.c+489(ns_rx):server 4096:1 at 1:16384
+qrtr(info):router.c+489(ns_rx):server 64:257 at 1:16385
+qrtr(info):router.c+489(ns_rx):server 14:1 at 1:14
+mss(info):mss_find.c+173(mss_find):metadata a0000000+4000
+mss(info):mss_find.c+175(mss_find):qdsp6 4080000 rmb 4180000; mba 94900000+200000, mpss 8ac00000+7e00000; smem 86000000+200000 (lock 3), smp2p 428/435, mailbox 17911000 bit 14; firmware mba.mbn, modem.mdt; 8 clocks
+mss(info):mss_boot.c+462(mss_probe):SMEM version 12, 603 items, global partition 1000+f8000, modem's 11b000+94000; lock 3 reads 0
+mss(info):mss_boot.c+467(mss_probe):smp2p items: ours (428) not yet, the modem's (435) not yet
+mss(info):mss_boot.c+476(mss_probe):clock iface: off (GCC_MSS_CFG_AHB_CLK 80008000)
+mss(info):mss_boot.c+476(mss_probe):clock bus: off (GCC_BIMC_MSS_Q6_AXI_CLK 80000000)
+mss(info):mss_boot.c+476(mss_probe):clock mem: on (GCC_BOOT_ROM_AHB_CLK 2000c220)
+mss(info):mss_boot.c+476(mss_probe):clock gpll0_mss: not in the table (- 00000000)
+mss(info):mss_boot.c+476(mss_probe):clock snoc_axi: off (GCC_MSS_SNOC_AXI_CLK 80000000)
+mss(info):mss_boot.c+476(mss_probe):clock mnoc_axi: on (GCC_MSS_MNOC_BIMC_AXI_CLK 00000000)
+mss(info):mss_boot.c+481(mss_probe):reset GCC_MSS_RESTART: released (00000000)
+mss(info):mss_boot.c+483(mss_probe):AXI ports idle: q6 1 modem 0 nc 1
+mss(info):mss_boot.c+548(mss_crash_reason):no crash reason in SMEM
+mss(debug):mss_boot.c+503(mss_probe):SMEM items (modem's):
+mss(debug):mss_boot.c+503(mss_probe):SMEM items (global): 80:1024 81:28 134:8 137:124 402:2328 403:16 404:8192 469:4096 473:1536 474:588 602:10240
+mss(info):mss_boot.c+745(mss_boot):smp2p: our item at SMEM+11b030: 504d5324 00000101 00010000 00010010
+mss(info):mss_boot.c+768(mss_boot):mba.mbn: 238256 bytes in the MBA's region
+rpm(info)rwcx level 384 for 65569
+rpm(info)rwcx enable 1 for 65569
+rpm(info)rwmx level 384 for 65569
+rpm(info)rwmx enable 1 for 65569
+mss(info):mss_boot.c+249(clocks_on):clock gpll0_mss (124): not one the GCC registers (Linux gets none either)
+mss(debug):mss_boot.c+243(clocks_on):clock qdss: not the GCC's; the RPM keeps it on
+mss(debug):mss_boot.c+243(clocks_on):clock xo: not the GCC's; the RPM keeps it on
+mss(info):mss_boot.c+780(mss_boot):clocks on, MSS_RESTART released; QDSP6SS reset 00000007, PBL status 0
+mss(debug):mss_boot.c+201(xfer):assign mpss to the modem: 8 -> 8000
+mss(debug):mss_boot.c+201(xfer):assign mba to the modem: 8 -> 8000
+mss(info):mss_boot.c+801(mss_boot):MBA booted (status 2), loading mpss
+mss(info):mss_boot.c+589(load_mpss):modem.mdt: 30 headers, hash 7400 bytes, 28 to load (relocatable), image 8ac00000..92200000
+mss(debug):mss_boot.c+201(xfer):assign metadata: 8 -> 8000
+mss(info):mss_boot.c+623(load_mpss):metadata (8412 bytes at a0000000): MBA status 3, accepted
+mss(debug):mss_boot.c+201(xfer):assign metadata back: 8000 -> 8
+mss(debug):mss_boot.c+201(xfer):assign mpss to us: 8000 -> 8
+mss(debug):mss_boot.c+201(xfer):assign mpss shared: 8 -> 8008
+mss(info):mss_boot.c+690(load_mpss):28 segments, 122898105 bytes, in the image region
+mss(debug):mss_boot.c+201(xfer):assign mpss to the modem: 8008 -> 8000
+mss(info):mss_boot.c+697(load_mpss):image: MBA status 4, authenticated
+mss(debug):mss_boot.c+201(xfer):assign mba back: 8000 -> 8
+mss(info):mss_boot.c+838(mss_boot):remote processor is now up (smp2p 00000006)
+rpm(info)rwcx level 0 for 65569
+rpm(info)rwcx enable 0 for 65569
+rpm(info)rwmx level 256 for 65569
+rpm(info)rwmx enable 1 for 65569
+mss(info):mss_boot.c+879(mss_watch):handover: proxy votes let go
+mss(debug):mss_boot.c+885(mss_watch):smp2p 00000000 -> 00000006
+qrtr(info):glink.c+737(pipes_init):GLINK to the modem: SMEM 12, our FIFO 16384 bytes, mailbox bit 15
+qrtr(info):glink.c+137(rx_avail):the modem's FIFO is there: 16384 bytes
+qrtr(info):glink.c+466(rx_one):GLINK version 1 from the modem, features 7
+qrtr(debug):glink.c+485(rx_one):the modem opens "glink_ssr" (rcid 1); not ours
+qrtr(info):glink.c+349(channel_check_up):IPCRTR open (lcid 1, rcid 2), 8 intents of 4096 bytes offered
+qrtr(info):router.c+456(ns_rx):node 0 says hello
+qrtr(info):router.c+489(ns_rx):server 66:46081 at 0:1
+qrtr(info):router.c+489(ns_rx):server 43:4610 at 0:4
+qrtr(info):router.c+489(ns_rx):server 15:1 at 0:20
+qrtr(info):router.c+489(ns_rx):server 21:1 at 0:21
+qrtr(info):router.c+489(ns_rx):server 24:1 at 0:22
+qrtr(debug):glink.c+485(rx_one):the modem opens "apr_voice_svc" (rcid 3); not ours
+qrtr(debug):glink.c+485(rx_one):the modem opens "apr_apps2" (rcid 4); not ours
+qrtr(info):router.c+489(ns_rx):server 23:1 at 0:23
+qrtr(debug):glink.c+485(rx_one):the modem opens "LOOPBACK_CTL_MPSS" (rcid 5); not ours
+qrtr(info):router.c+489(ns_rx):server 22:1 at 0:24
+qrtr(info):router.c+489(ns_rx):server 36:1 at 0:26
+qrtr(info):router.c+489(ns_rx):server 49:513 at 0:27
+qrtr(info):router.c+489(ns_rx):server 54:1 at 0:31
+qrtr(info):router.c+489(ns_rx):server 17:1 at 0:33
+qrtr(info):router.c+489(ns_rx):server 74:1 at 0:34
+qrtr(info):router.c+489(ns_rx):server 4098:0 at 0:35
+qrtr(info):router.c+489(ns_rx):server 34:1 at 0:37
+qrtr(info):router.c+489(ns_rx):server 41:257 at 0:38
+qrtr(info):router.c+489(ns_rx):server 55:513 at 0:47
+qrtr(info):router.c+489(ns_rx):server 50:1 at 0:49
+qrtr(info):router.c+489(ns_rx):server 9:2 at 0:50
+qrtr(info):router.c+489(ns_rx):server 3:1 at 0:51
+qrtr(info):router.c+489(ns_rx):server 12:1 at 0:52
+qrtr(info):router.c+489(ns_rx):server 10:2 at 0:53
+qrtr(info):router.c+489(ns_rx):server 5:1 at 0:54
+qrtr(info):router.c+489(ns_rx):server 47:1 at 0:55
+qrtr(info):router.c+489(ns_rx):server 11:1 at 0:56
+qrtr(info):router.c+489(ns_rx):server 71:1 at 0:57
+qrtr(info):router.c+489(ns_rx):server 1:1 at 0:61
+qrtr(info):router.c+489(ns_rx):server 4:1 at 0:62
+qrtr(info):router.c+489(ns_rx):server 26:1 at 0:63
+qrtr(info):router.c+489(ns_rx):server 7:1 at 0:64
+qrtr(info):router.c+489(ns_rx):server 8:1 at 0:65
+qrtr(info):router.c+489(ns_rx):server 29:1 at 0:66
+qrtr(info):router.c+489(ns_rx):server 42:1 at 0:68
+qrtr(info):router.c+489(ns_rx):server 2:1 at 0:69
+qrtr(info):router.c+489(ns_rx):server 48:1 at 0:70
+qrtr(info):router.c+489(ns_rx):server 68:1 at 0:71
+qrtr(info):router.c+489(ns_rx):server 16:2 at 0:72
+qrtr(debug):glink.c+485(rx_one):the modem opens "DS" (rcid 6); not ours
+qrtr(debug):glink.c+485(rx_one):the modem opens "DATA1" (rcid 7); not ours
+qrtr(debug):glink.c+485(rx_one):the modem opens "DATA2" (rcid 8); not ours
+qrtr(debug):glink.c+485(rx_one):the modem opens "DATA3" (rcid 9); not ours
+qrtr(debug):glink.c+485(rx_one):the modem opens "DATA4" (rcid 10); not ours
+qrtr(debug):glink.c+485(rx_one):the modem opens "DATA11" (rcid 11); not ours
+qrtr(info):router.c+489(ns_rx):server 51:769 at 0:75
+qrtr(info):router.c+489(ns_rx):server 69:1 at 0:76
+qrtr(info):router.c+489(ns_rx):server 33:1 at 0:79
+qrtr(info):router.c+489(ns_rx):server 18:1 at 0:80

@@ -80,8 +80,10 @@
 #define PCI_MAJOR		 134	/* 134 = /dev/pci (pci)            */
 #define QCOM_RMTFS_MAJOR	 135	/* 135 = /dev/qcom_rmtfs_mem1 (the
 					 * modem's rmtfs shared memory)     */
+#define WCN_MAJOR		 136	/* 136 = /dev/wlan0 (wcn: the
+					 * WCN3990 Wi-Fi's service)         */
 
-#define NR_DEVICES   		 136	/* number of (major) devices */
+#define NR_DEVICES   		 137	/* number of (major) devices */
 
 /* Minor device numbers for memory driver. */
 #  define RAM_DEV_OLD  		   0	/* minor device for /dev/ram */

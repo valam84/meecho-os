@@ -10,12 +10,16 @@
  *            fw_status;
  *   hostcap  HOST_CAP, the 8-bit form of SDM630/660;
  *   cap      CAP - chip, board, soc, firmware version and build id,
- *            compared with what the firmware told Linux on this tablet.
+ *            compared with what the firmware told Linux on this tablet;
+ *   msa      MSA_INFO with the MSA the wcn service holds, each region of
+ *            the answer given away by the service (WCNIOC_ASSIGN on
+ *            /dev/wlan0 - TrustZone), then MSA_READY: what Linux does
+ *            between HOST_CAP and CAP.  Memory leaves this side here.
  * -x prints every datagram in hex.
  *
- * Nothing that hands the firmware memory: no MSA_INFO, no MSA_READY, no
- * board data.  Those come with TrustZone's hyp-assign, which is the wcn
- * service's.  Closing the socket tells the modem the client is gone.
+ * Without "msa" nothing hands the firmware memory; with it, only through
+ * the wcn service, which holds the right to.  No board data yet.  Closing
+ * the socket tells the modem the client is gone.
  *
  * Build: the cross compiler against DESTDIR with wcn_wlfw.c beside it
  * (port/test/wcn/probe-build.sh).
@@ -25,6 +29,9 @@
 #include <sys/socket.h>
 #include <netqrtr/qrtr.h>
 
+#include <sys/ioctl.h>
+
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +39,7 @@
 #include <unistd.h>
 
 #include "wcn_wlfw.h"
+#include "wcn_ioc.h"
 
 static int hex;
 static int s;
@@ -177,6 +185,60 @@ do_cap(void)
 	    same ? "SAME as" : "DIFFERS from");
 }
 
+static void
+do_msa(void)
+{
+	struct qmi_buf b = { out, sizeof(out), 0, 0 };
+	struct qmi_msg m;
+	struct wlfw_region r[WLFW_MSA_REGIONS];
+	struct wcn_msa msa;
+	struct wcn_region g;
+	unsigned n, i;
+	int fd;
+
+	if ((fd = open("/dev/wlan0", O_RDWR)) < 0) {
+		perror("/dev/wlan0");
+		return;
+	}
+	if (ioctl(fd, WCNIOC_MSA, &msa) != 0) {
+		perror("WCNIOC_MSA");
+		close(fd);
+		return;
+	}
+	printf("MSA %llx+%x, %u region(s) out\n", (unsigned long long)msa.pa,
+	    msa.size, msa.given);
+	if (ask(wlfw_msa_info(&b, txn, msa.pa, msa.size), &m, "MSA_INFO") != 0 ||
+	    result(&m, "MSA_INFO") != 0) {
+		close(fd);
+		return;
+	}
+	if (wlfw_msa_info_resp(&m, msa.pa, msa.size, r, &n) != 0) {
+		printf("MSA_INFO: regions malformed or outside the MSA\n");
+		close(fd);
+		return;
+	}
+	for (i = 0; i < n; i++)
+		printf("MSA_INFO: region %u %llx+%x secure %u\n", i,
+		    (unsigned long long)r[i].addr, r[i].size, r[i].secure);
+	/* Linux waits 20 ms here (an SDM845 firmware's XPU update). */
+	usleep(20000);
+	for (i = 0; i < n; i++) {
+		g.addr = r[i].addr;
+		g.size = r[i].size;
+		g.secure = r[i].secure;
+		if (ioctl(fd, WCNIOC_ASSIGN, &g) != 0) {
+			perror("WCNIOC_ASSIGN");
+			close(fd);
+			return;
+		}
+		printf("region %u given\n", i);
+	}
+	close(fd);
+	b.len = 0;
+	if (ask(wlfw_msa_ready(&b, txn), &m, "MSA_READY") == 0)
+		(void)result(&m, "MSA_READY");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -247,6 +309,8 @@ main(int argc, char **argv)
 			do_hostcap();
 		else if (strcmp(argv[i], "cap") == 0)
 			do_cap();
+		else if (strcmp(argv[i], "msa") == 0)
+			do_msa();
 		else
 			printf("%s: unknown\n", argv[i]);
 	}

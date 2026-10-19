@@ -29,6 +29,9 @@ SUBDIR+=	dwmac
 # The Mi Pad 4 has no network controller at all; its network is its USB-C
 # port in device mode, to a host that sees an Ethernet adapter (CDC-ECM).
 SUBDIR+=	dwc3_ecm
+# Its Wi-Fi, the WCN3990, whose firmware runs in the modem
+# (port/clover/hw-wifi.md).
+SUBDIR+=	wcn
 .endif # ${MACHINE_ARCH} == "aarch64"
 
 .include <bsd.subdir.mk>

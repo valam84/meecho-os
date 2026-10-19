@@ -16,7 +16,8 @@
  *   Power              the backlight off, and on again.  Any key wakes it.
  *   Battery            charge, voltage, current and charger state, printed
  *                      when the state changes, every 10% and every ten
- *                      minutes; warnings at 15% and 5%.  A charger watchdog
+ *                      minutes, and read anew as sysctl minix.pmic.battery;
+ *                      warnings at 15% and 5%.  A charger watchdog
  *                      the boot loader left armed is fed, or charging stops.
  *   Next boot          where the boot loader goes after the next reset:
  *                      "bootloader" (fastboot), "recovery" or "normal", from
@@ -386,15 +387,14 @@ battery_init(void)
 	}
 }
 
+/* The fuel gauge and the charger now: what battery_poll() logs. */
 static void
-battery_poll(int force)
+battery_read(int *socp, int *mvp, int *map, int *onlinep, int *chargingp)
 {
 	uint8_t s[2], v[2], c[2], st = 0, path = 0;
 	int soc = -1, charging = 0, online = 0, mv = 0, ma = 0;
 	unsigned raw;
 
-	if (!have_fg && !have_chg)
-		return;
 	if (have_fg && spmi_read(&spmi, SID_PM660, FG_SOC, s, 2) == OK_SPMI) {
 		raw = s[0] < s[1] ? s[0] : s[1];
 		soc = raw == 0xff ? 100 : raw == 0 ? 0 :
@@ -411,6 +411,21 @@ battery_poll(int force)
 		online = (path & 0x10) && (path & 0x01);
 		charging = online && (st & 7) <= 4;
 	}
+	*socp = soc;
+	*mvp = mv;
+	*map = ma;
+	*onlinep = online;
+	*chargingp = charging;
+}
+
+static void
+battery_poll(int force)
+{
+	int soc, charging, online, mv, ma;
+
+	if (!have_fg && !have_chg)
+		return;
+	battery_read(&soc, &mv, &ma, &online, &charging);
 
 	if (!force && last.valid && last.charging == charging &&
 	    last.online == online && soc / 10 == last.soc / 10 &&
@@ -593,6 +608,34 @@ vbus_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
 }
 
 /*
+ * sysctl minix.pmic.battery: the fuel gauge read now - "SOC% mV mA state",
+ * the current in mA with + into the battery, as the log line has it.  For a
+ * measurement that cannot wait for the log's ten minutes (the governors',
+ * port/clover/hw-cpu.md).  Reads only.
+ */
+static char battery_str[64];
+
+static struct rmib_node battery_data = RMIB_STRING(RMIB_RO, battery_str,
+	"battery", "The battery now");
+
+static ssize_t
+battery_func(struct rmib_call *call, struct rmib_node *UNUSED(node),
+	struct rmib_oldp *oldp, struct rmib_newp *newp)
+{
+	int soc, mv, ma, online, charging;
+
+	if (!have_fg && !have_chg)
+		strlcpy(battery_str, "unknown", sizeof(battery_str));
+	else {
+		battery_read(&soc, &mv, &ma, &online, &charging);
+		snprintf(battery_str, sizeof(battery_str), "%d %d %d %s", soc,
+		    mv, ma, !online ? "battery" : charging ? "charging" :
+		    "connected");
+	}
+	return rmib_readwrite(call, &battery_data, oldp, newp);
+}
+
+/*
  * sysctl minix.pmic.otg: "off" or "auto" - whether the port may be a
  * source (typec.h).  Writing takes root, which the remote MIB library
  * checks before this is called.
@@ -762,6 +805,9 @@ static struct rmib_node pmic_table[] = {
 /* 3*/	[3]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RW, sizeof(otg_str),
 		    otg_func, "otg", "Whether the USB-C port may power a "
 		    "device: off or auto"),
+/* 4*/	[4]	= RMIB_FUNC(CTLTYPE_STRING | RMIB_RO, sizeof(battery_str),
+		    battery_func, "battery", "The battery now: charge %, mV, "
+		    "mA (+ into the battery) and battery, charging or connected"),
 };
 
 static struct rmib_node pmic_node = RMIB_NODE(RMIB_RO, pmic_table, "pmic",

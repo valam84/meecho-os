@@ -255,5 +255,7 @@ void textinput_state(struct tinywl_server *server, struct mw_reply *reply);
 bool ipc_start(struct tinywl_server *server);
 void ipc_stop(void);
 int ipc_send(int argc, char **argv);
+int ipc_query(const char *line, char *buf, size_t size);
+int bar_run(int argc, char **argv);
 
 #endif

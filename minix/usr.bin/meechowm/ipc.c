@@ -234,3 +234,45 @@ ipc_send(int argc, char **argv)
 	}
 	return failed;
 }
+
+/*
+ * A command and its reply, for a client in this program (barstat.c): the
+ * reply's length in buf (at most size - 1, the rest dropped), or -1 when
+ * the compositor is not there.
+ */
+int
+ipc_query(const char *line, char *buf, size_t size)
+{
+	struct sockaddr_un sun;
+	size_t len = 0;
+	ssize_t r;
+	int fd;
+	char drop[512];
+
+	if (!socket_path())
+		return -1;
+	memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_UNIX;
+	strlcpy(sun.sun_path, sock_path, sizeof(sun.sun_path));
+	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
+		return -1;
+	if (connect(fd, (struct sockaddr *)&sun, sizeof(sun)) < 0) {
+		close(fd);
+		return -1;
+	}
+	write_all(fd, line, strlen(line));
+	for (;;) {
+		if (len < size - 1)
+			r = read(fd, buf + len, size - 1 - len);
+		else
+			r = read(fd, drop, sizeof(drop));
+		if (r < 0 && errno == EINTR)
+			continue;
+		if (r <= 0)
+			break;
+		if (len < size - 1)
+			len += (size_t)r;
+	}
+	close(fd);
+	return (int)len;
+}

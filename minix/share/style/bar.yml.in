@@ -29,10 +29,13 @@ bar:
             foreground: @accent@ff
             font: monospace:size=11:weight=bold
             right-margin: 8
+    # No poll-interval: with one, yambar starts the script again every
+    # time - five or six programs a second on an idle desktop.  With the
+    # interval as an argument it stays (meechowm -b, barstat.c) and writes
+    # only what changed.
     - script:
         path: /usr/bin/meechowm-bar
-        args: [status]
-        poll-interval: 1000
+        args: [status, "1000"]
         content:
           string:
             text: "{workspace}"
@@ -49,8 +52,7 @@ bar:
   right:
     - script:
         path: /usr/bin/meechowm-bar
-        args: [load]
-        poll-interval: 2000
+        args: [load, "2000"]
         content:
           list:
             spacing: 14

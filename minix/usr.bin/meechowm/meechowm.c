@@ -1335,6 +1335,10 @@ int main(int argc, char *argv[]) {
 	if (argc >= 2 && strcmp(argv[1], "-m") == 0) {
 		return ipc_send(argc - 2, argv + 2);
 	}
+	/* MEECHO: the panel's modules, as processes that stay (barstat.c). */
+	if (argc >= 2 && strcmp(argv[1], "-b") == 0) {
+		return bar_run(argc - 2, argv + 2);
+	}
 
 	wlr_log_init(getenv("MEECHOWM_DEBUG") ? WLR_DEBUG : WLR_INFO, NULL);
 	char *startup_cmd = NULL;

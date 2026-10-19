@@ -43,3 +43,28 @@
 &mdata_mem {
 	reg = <0x0 0xa0000000 0x0 0x4000>;
 };
+
+/*
+ * The IPA v2.6L (port/clover/hw-modem.md, section 9): the modem's data
+ * path to the AP.  Mainline has no node for it; this is the node of the
+ * ipa2-lite tree (github.com/valam84/linux, nura/sdm660-ipa), which
+ * postmarketOS runs on this tablet - one window over the BAM (+0x4000),
+ * the IPA's registers (+0x40000) and its SRAM (+0x45000), the RPM's IPA
+ * clock, the IPA's and the BAM's lines, and its two stream IDs on the
+ * apps SMMU, the one the Wi-Fi's are on too.  Its interconnect paths are
+ * left out: MEECHO has no interconnect driver, and nothing here reads
+ * them.
+ */
+&soc {
+	ipa: ipa@14780000 {
+		compatible = "qcom,sdm660-ipa", "qcom,ipa-lite-v2.6";
+		reg = <0x14780000 0x4f000>;
+		clocks = <&rpmcc RPM_SMD_IPA_CLK>;
+		interrupts = <GIC_SPI 333 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 432 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "ipa", "dma";
+		iommus = <&anoc2_smmu 0x19c0>,
+			 <&anoc2_smmu 0x19c2>;
+		modem-remoteproc = <&remoteproc_mss>;
+	};
+};

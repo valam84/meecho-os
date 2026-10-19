@@ -252,19 +252,7 @@ int smmu_attach(void);			/* SID 0 to bank 0 until smmu_undo() */
 uint32_t smmu_fsr(void);
 
 /* adreno_pt.c: one address space of the GPU. */
-#define AD_PT_READ	1
-#define AD_PT_WRITE	2
-struct ad_ptab;
-struct ad_pt {
-	struct ad_ptab *root;
-	unsigned ias, oas;		/* input and output address bits */
-	int start;			/* the level the walk starts at */
-};
-int pt_init(struct ad_pt *pt, unsigned ias, unsigned oas);
-int pt_map(struct ad_pt *pt, uint64_t va, uint64_t pa, int prot);
-int pt_unmap(struct ad_pt *pt, uint64_t va);
-uint64_t pt_root(const struct ad_pt *pt);
-void pt_free(struct ad_pt *pt);
+#include "adreno_pt.h"
 
 /* adreno_smmu.c, serving: bank 0 kept, the clients' tables switched. */
 int smmu_serve(void);

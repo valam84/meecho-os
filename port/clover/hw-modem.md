@@ -281,3 +281,85 @@ pmos строка в строку (отказ на `/boot/modem_fsg_oem_1/2`, н
 mpss, но и MSA Wi-Fi, которую служба `wcn` отдала модему (ключ DS
 `wcn.msa`, `hw-wifi.md` §3); прерываний (GLINK, smp2p) нет — всё опросом
 раз в тик.
+
+## 9. IPA и данные: что делать (по ipa2-lite и pmos) [C]
+
+Эталон — `drivers/net/ipa2-lite/` ветки `nura/sdm660-ipa`
+(github.com/valam84/linux; GPL — отсюда номера регистров, протокол и
+порядок, не текст) и pmos на этом планшете (`ipa_clk` 9.6 МГц, голос
+`14780000.ipa`). Mainline-дерево, из которого собирается наш DTB
+(`~/sdm660-linux`), **узла IPA не имеет** — он только в ветке ipa2-lite;
+MEECHO добавляет его своим `.dtsi`.
+
+**Узел.** `qcom,sdm660-ipa`, `qcom,ipa-lite-v2.6`; одно окно `0x14780000`
++ `0x4f000`: BAM с `+0x4000`, регистры IPA с `+0x40000`, SRAM (общая
+память IPA) с `+0x45000` — через то же окно. Линии SPI 333 (`ipa`) и 432
+(`dma`, BAM). Такт — RPM `ipa` (ресурс `0x617069`, ключ `KHz`; 40 МГц в
+работе, 9.6 в покое). Шины: `a2noc MASTER_IPA → bimc SLAVE_EBI` (80/640 и
+206/960 МБ/с avg/peak), `gnoc APSS → snoc SLAVE_IPA`. `iommus =
+<&anoc2_smmu 0x19c0>, <&anoc2_smmu 0x19c2>` — тот же `iommu@16c0000`, что
+у Wi-Fi (`0x1a00`, `0x1a01`).
+
+**Сброс и BAM** (`ipa_reset_hw`): `COMP_SW_RESET` (+0x3c) 1, 0;
+`COMP_CFG` (+0x38) = `0x11`; `VERSION` (+0x34) не ноль — иначе нет
+доступа; `BCR` (+0x5b0) = `0x1fff7f`; BAM: `CTRL` сброс и 0,
+`DESC_CNT_TRSHLD` = 0x10, `CNFG_BITS` = `~BIT(11)`, `CTRL.BAM_EN`,
+`IRQ_EN` = ошибка+HRESP, маска EE0 = бит 31.
+
+**Шесть каналов BAM** (номер канала = номер конечной точки IPA): 0
+TEST_TX, 1 TEST_RX, 2 LAN_RX, 3 CMD, 4 TX (к модему), 5 RX (от модема).
+FIFO — 256 дескрипторов по 8 байт (`addr` 32, `size`/`opcode` 16, флаги
+16: `INT` 15, `EOT` 14, `IMMCMD` 8), адрес FIFO 32-битный — DMA ниже 4
+ГиБ. Канал: `IPA_EP_CTRL` (+0x70+4n) = задержка (кроме CMD),
+`HOL_BLOCK_EN` для приёма, `P_CTRL` 0, `P_RST` 1/0, `RD_OFF`/`WR_OFF`,
+`DESC_FIFO_ADDR`, `FIFO_SIZES`, `P_CTRL = SYS_MODE|EN|(DIRECTION для
+приёма)`. Настройки точек: LAN_RX — `HDR 2`, `HDR_EXT 0x803`, `STATUS
+1`; TX — `HDR 0x44`, `HDR_EXT 1`, `STATUS 5`, `ROUTE 7`, `MODE 0x20`; RX
+— `HDR 0x002800c4`, `HDR_EXT 0xb`, `METADATA_MASK 0xff000000`. После —
+`IPA_ROUTE` (+0x44) = `0x00040044`.
+
+**SRAM** (`SHARED_MEM` +0x50: старшие 16 — запрещённое начало, младшие —
+размер). Разметка с 0x280, каждый кусок после слова-канарейки
+`0xdeadbeaf`: FT v4 и v6 по 22 слова, RT v4 и v6 по 7, MDM_HDR 80, DRV
+(наши правила), MDM_COMP 128 (v2.6), остальное — модему. Заполняется
+непосредственными командами в канале CMD: `HDR_SYSTEM_INIT` (10),
+`HDR_LOCAL_INIT` (9), `DMA_SHARED_MEM` (19), `FT/RT_V4/V6_INIT` (3, 4,
+7, 8). Таблицы по умолчанию — «все правила → DRV» (`смещение | 1`), у
+фильтров первое слово `0x1fffff`.
+
+**Микроконтроллер.** Его грузит модем. Готовность — линия `ipa`,
+`IRQ_STTS_EE0` бит 3 (UC_IRQ_1) и `UC_RESP` (SRAM+0x08) = 1
+(INIT_COMPLETED); ipa2-lite запоминает это словом `0x10ADEDFF` в начале
+DRV. Команды uC (`RESET_PIPE` модемных каналов 6, 7, 11, 13 / 8, 9, 12,
+14) нужны только при перезапуске модема.
+
+**QMI (служба 0x31).** Мы — сервер `0x31` v1 экземпляр 1 и клиент
+модемного `0x31` экземпляр 2. На появление модемного шлём `INIT_DRIVER`
+(0x21): TLV 0x10 платформа 3 (MSM Android), 0x11 MDM_HDR (начало, конец),
+0x12/0x13 RT v4/v6 (начало, **индекс** последнего), 0x14/0x15 FT v4/v6,
+0x16 MDM (начало, размер), 0x17 конечная точка управления 5, 0x18
+`skip_uc_load` (1, если uC уже готов), 0x1a MDM_COMP. Модем шлёт нам
+`INDICATION_REGISTER` (0x20) — отвечаем успехом; когда есть и ответ на
+INIT_DRIVER, и uC — индикация `INIT_COMPLETE` (0x22). На IPA v2
+`DRIVER_INIT_COMPLETE` модем не шлёт.
+
+**Путь данных у Linux.** `rmnet_ipa0`: RX — канал 5, кадры QMAP (4 байта:
+флаги/паддинг, mux id, длина BE), TX — канал 4, тоже с QMAP. Поверх —
+`rmnet` по mux id; сессию открывает ModemManager (WDS) по QMI.
+
+**План MEECHO.**
+
+1. Голос RPM за `ipa` в `qcom_rpm` (сейчас он принимает только `rwcx` и
+   `rwmx`).
+2. Служба `qcom_ipa`, `stage=probe`: только чтение — `apps_smmu` (sCR0,
+   IDR, все SMR/S2CR, CBAR и SCTLR банков) по выдаче RS через `iommus`
+   и, с голосом за такт, регистры IPA и BAM. Главный вопрос пробы —
+   **в каком виде гипервизор и загрузчик оставили потоки `0x19c0` и
+   `0x19c2`**: обход (тогда DMA IPA физический) или трансляция.
+3. Сброс, BAM, SRAM, uC, QMI — рукопожатие, строка «data path enabled».
+4. Драйвер `libnetdriver` для `lwip`: `lwip` знает только Ethernet,
+   поэтому служба показывает Ethernet-интерфейс — снимает заголовок
+   Ethernet и ставит QMAP при передаче, обратно при приёме, на ARP
+   отвечает сама.
+5. Сессия WDS (`qmidms.c` → маленький клиент WDS: `START_NETWORK_INTERFACE`,
+   `GET_RUNTIME_SETTINGS`), адрес на интерфейс, `ping`.

@@ -23,7 +23,7 @@
  * a mapping removed here is gone from memory, not from the TLB.
  */
 
-#include "adreno.h"
+#include "adreno_pt.h"
 
 #include <minix/cachectl.h>
 #include <minix/syslib.h>
@@ -57,7 +57,7 @@ clean(void *addr, size_t len)
 	int r;
 
 	if ((r = sys_cachectl(CACHE_CLEAN, addr, len)) != OK)
-		log_warn(&ad_log, "cleaning a page table to memory failed: "
+		log_warn(&PT_LOG, "cleaning a page table to memory failed: "
 		    "%d\n", r);
 	return r;
 }
@@ -128,7 +128,7 @@ pt_init(struct ad_pt *pt, unsigned ias, unsigned oas)
 	if ((pt->root = table_new(pt->start)) == NULL)
 		return ENOMEM;
 	if (pt->root->phys >> oas) {
-		log_warn(&ad_log, "page table at 0x%llx is beyond the SMMU's "
+		log_warn(&PT_LOG, "page table at 0x%llx is beyond the SMMU's "
 		    "%u output bits\n", (unsigned long long)pt->root->phys, oas);
 		pt_free(pt);
 		return EINVAL;

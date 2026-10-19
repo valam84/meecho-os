@@ -376,7 +376,21 @@ aggregate(endpoint_t who, uint32_t type, uint32_t key, uint32_t value,
 	return agg;
 }
 
-/* QRPM_SET: one key of a rail, for the active set. */
+static const char *
+res_name(uint32_t type)
+{
+	return type == QRPM_RES_RWMX ? "rwmx" : type == QRPM_RES_RWCX ?
+	    "rwcx" : "ipa clock";
+}
+
+static const char *
+key_name(uint32_t key)
+{
+	return key == QRPM_KEY_LEVEL ? "level" : key == QRPM_KEY_ENABLE ?
+	    "enable" : "kHz";
+}
+
+/* QRPM_SET: one key of a rail or the IPA's clock, for the active set. */
 static int
 do_set(const message *m)
 {
@@ -387,7 +401,13 @@ do_set(const message *m)
 
 	if (!g_open)
 		return ENODEV;
-	if ((type != QRPM_RES_RWCX && type != QRPM_RES_RWMX) || id != 0 ||
+	if (id != 0)
+		return EPERM;
+	if (type == QRPM_RES_IPA_CLK) {
+		/* The IPA's clock, by its rate (the IPA asks 40 MHz). */
+		if (key != QRPM_KEY_KHZ || value > 200000)
+			return EPERM;
+	} else if ((type != QRPM_RES_RWCX && type != QRPM_RES_RWMX) ||
 	    (key != QRPM_KEY_LEVEL && key != QRPM_KEY_ENABLE) ||
 	    (key == QRPM_KEY_ENABLE && value > 1))
 		return EPERM;
@@ -396,13 +416,11 @@ do_set(const message *m)
 		return ENOSPC;
 	r = glink_rpm_request(&g, type, id, &key, &value, 1, 1000);
 	if (r == GLINK_OK)
-		log_info(&rlog, "%s %s %u for %d\n", type == QRPM_RES_RWMX ?
-		    "rwmx" : "rwcx", key == QRPM_KEY_LEVEL ? "level" :
-		    "enable", value, m->m_source);
+		log_info(&rlog, "%s %s %u for %d\n", res_name(type),
+		    key_name(key), value, m->m_source);
 	else
-		log_warn(&rlog, "%s %s %u for %d: %d%s%s\n", type ==
-		    QRPM_RES_RWMX ? "rwmx" : "rwcx", key == QRPM_KEY_LEVEL ?
-		    "level" : "enable", value, m->m_source, r,
+		log_warn(&rlog, "%s %s %u for %d: %d%s%s\n", res_name(type),
+		    key_name(key), value, m->m_source, r,
 		    g.rpm_err[0] ? ", RPM says: " : "", g.rpm_err);
 	return r;
 }

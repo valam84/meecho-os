@@ -1491,6 +1491,7 @@ struct rproc *rp;
  * would grant them all).
  */
 #define DT_MAX_REGIONS 8
+#define DT_MAX_IOMMUS 4
 
 struct dt_grant {
   struct rproc *rp;
@@ -1500,6 +1501,8 @@ struct dt_grant {
   int match_depth;			/* inside a matched node: its depth */
   uint32_t region[DT_MAX_REGIONS];	/* memory-region phandles named */
   int nregion;
+  uint32_t iommu[DT_MAX_IOMMUS];	/* iommus phandles named */
+  int niommu;
   int in_reserved;			/* the second walk: under it */
 };
 
@@ -1572,6 +1575,69 @@ static void dt_note_regions(struct dt_grant *g, const struct fdt_node *node)
   }
 }
 
+/*
+ * A matched node's "iommus": the SMMU its DMA goes through (each entry the
+ * SMMU's phandle and #iommu-cells more cells, one on every SMMU this reads,
+ * "qcom,smmu-v2").  Its registers are granted too, so that the driver can
+ * route its own stream IDs - a compatible string would grant every SMMU of
+ * the SoC.  Its lines are not: they are the SMMU's, shared with whoever
+ * else is behind it.  On the Mi Pad 4 the IPA and the Wi-Fi share
+ * iommu@16c0000 (port/clover/hw-modem.md, hw-wifi.md); which stream and
+ * context bank is whose is theirs to keep apart.
+ */
+static void dt_note_iommus(struct dt_grant *g, const struct fdt_node *node)
+{
+  const uint8_t *p;
+  unsigned len, off;
+  uint32_t ph;
+  int i;
+
+  if ((p = fdt_getprop(node, "iommus", &len)) == NULL) return;
+  for (off = 0; off + 8 <= len; off += 8) {
+      ph = (uint32_t) fdt_read_cells(p + off, 1);
+      for (i = 0; i < g->niommu && g->iommu[i] != ph; i++)
+          ;
+      if (i < g->niommu) continue;
+      if (g->niommu == DT_MAX_IOMMUS) {
+          g->r = E2BIG;
+          return;
+      }
+      g->iommu[g->niommu++] = ph;
+  }
+}
+
+/* The third walk: the SMMUs the first one named, wherever they are. */
+static int dt_grant_iommu(void *cookie, int UNUSED(depth), const char *name,
+  const struct fdt_node *node)
+{
+  struct dt_grant *g = cookie;
+  const void *p;
+  u64_t base, size;
+  uint32_t ph;
+  unsigned i, len;
+  int k, r;
+
+  if ((p = fdt_getprop(node, "phandle", &len)) == NULL &&
+      (p = fdt_getprop(node, "linux,phandle", &len)) == NULL) return 0;
+  if (len != 4) return 0;
+  ph = (uint32_t) fdt_read_cells(p, 1);
+  for (k = 0; k < g->niommu && g->iommu[k] != ph; k++)
+      ;
+  if (k == g->niommu) return 0;
+
+  for (i = 0; fdt_node_reg(node, i, &base, &size) == 0; i++) {
+      if ((r = dt_add_mem(g->rp, (phys_bytes) base, (phys_bytes) size))
+          != OK) {
+          g->r = r;
+          return 1;
+      }
+      if (rs_verbose)
+          printf("RS: edit_slot: %s (iommus): memory [%lx..%lx]\n",
+              name, (unsigned long) base, (unsigned long) (base + size - 1));
+  }
+  return 0;
+}
+
 /* The second walk: the children of /reserved-memory the first one named. */
 static int dt_grant_region(void *cookie, int depth, const char *name,
   const struct fdt_node *node)
@@ -1632,6 +1698,7 @@ static int dt_grant_node(void *cookie, int depth, const char *name,
   g->matched++;
   g->match_depth = depth;
   dt_note_regions(g, node);
+  dt_note_iommus(g, node);
   if (g->r != OK) return 1;
 
   for (i = 0; fdt_node_reg(node, i, &base, &size) == 0; i++) {
@@ -1699,6 +1766,8 @@ static int dt_grants(struct rproc *rp, struct rs_start *rs_start)
       (void) fdt_walk(dtb, dt_grant_node, &g);
       if (g.r == OK && g.nregion > 0)
           (void) fdt_walk(dtb, dt_grant_region, &g);
+      if (g.r == OK && g.niommu > 0)
+          (void) fdt_walk(dtb, dt_grant_iommu, &g);
 
       if (g.r != OK) {
           printf("RS: edit_slot: device-tree grant for \"%s\" failed: %d\n",

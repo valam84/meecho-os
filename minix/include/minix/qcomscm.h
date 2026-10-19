@@ -60,6 +60,22 @@
  *				GPU's zap shader after every power-up but the
  *				first.
  *
+ *   QCOMSCM_ASSIGN_MEM	MP/ASSIGN: who may reach [addr, addr + len)
+ *				of the caller's space (page-aligned, whole
+ *				pages, one physical run).  svc: the current
+ *				owners, a mask of VM ids (1 << QCOMSCM_VMID_*);
+ *				cmd: the next ones, up to four bytes from the
+ *				lowest, each QCOMSCM_DST(vmid, perm), the
+ *				first zero byte ending the list.  The range is
+ *				either inside a "no-map" range of
+ *				/reserved-memory the caller mapped, or the
+ *				caller's own RAM (cleaned to memory first) -
+ *				which it must take back (dst HLOS) before it
+ *				frees it: an access to memory TrustZone gave
+ *				away is an external abort.  The modem's image
+ *				and metadata, rmtfs's shared memory, Wi-Fi's
+ *				MSA (Linux's qcom_scm_assign_mem()).
+ *
  * On OK, the answer is what the firmware said: status is its x0 (0 for
  * success, negative SCM error codes otherwise), res its x1..x3, and conv
  * the convention found (QCOMSCM_CONV_*).  A call succeeded when status is
@@ -84,6 +100,7 @@
 #define QCOMSCM_PAS_AUTH	6
 #define QCOMSCM_REMOTE_STATE	7
 #define QCOMSCM_RESUME		8	/* sys_qcomscm()'s own */
+#define QCOMSCM_ASSIGN_MEM	9
 
 #define QCOMSCM_CONV_ARM64	64
 #define QCOMSCM_CONV_ARM32	32
@@ -111,10 +128,27 @@
 #define QCOMSCM_PIL_PAS_AUTH_AND_RESET	0x05
 #define QCOMSCM_PIL_PAS_IS_SUPPORTED	0x07
 #define QCOMSCM_SVC_INFO	0x06
+#define QCOMSCM_SVC_MP		0x0c
+#define QCOMSCM_MP_ASSIGN		0x16
 #define QCOMSCM_INFO_IS_CALL_AVAIL	0x01
 
 /* Peripheral authentication service ids. */
 #define QCOMSCM_PAS_GPU		13
+
+/* VM ids and permissions of MP/ASSIGN (Linux's qcom_scm.h). */
+#define QCOMSCM_VMID_HLOS	0x3
+#define QCOMSCM_VMID_MSS_MSA	0xf
+#define QCOMSCM_VMID_WLAN	0x18
+#define QCOMSCM_VMID_WLAN_CE	0x19
+#define QCOMSCM_PERM_READ	0x4
+#define QCOMSCM_PERM_WRITE	0x2
+#define QCOMSCM_PERM_EXEC	0x1
+#define QCOMSCM_PERM_RW		(QCOMSCM_PERM_READ | QCOMSCM_PERM_WRITE)
+#define QCOMSCM_PERM_RWX	(QCOMSCM_PERM_RW | QCOMSCM_PERM_EXEC)
+/* One new owner in ASSIGN_MEM's cmd: a VM id below 32, its permissions. */
+#define QCOMSCM_DST(vmid, perm)	((((vmid) & 0x1f) << 3) | ((perm) & 0x7))
+#define QCOMSCM_DST_VMID(b)	(((b) >> 3) & 0x1f)
+#define QCOMSCM_DST_PERM(b)	((b) & 0x7)
 
 /* SET_REMOTE_STATE's states. */
 #define QCOMSCM_STATE_RESUME	0

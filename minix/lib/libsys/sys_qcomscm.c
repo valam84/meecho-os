@@ -64,3 +64,20 @@ sys_qcomscm_mem(int op, uint32_t id, void *addr, size_t len,
 	m.QSCM_LEN = len;
 	return call(&m, ans);
 }
+
+/* QCOMSCM_ASSIGN_MEM: [addr, addr + len) from the owners in src (a mask of
+ * VM ids) to those in dst (QCOMSCM_DST() bytes). */
+int
+sys_qcomscm_assign(void *addr, size_t len, uint32_t src, uint32_t dst,
+	struct qcomscm_answer *ans)
+{
+	message m;
+
+	memset(&m, 0, sizeof(m));
+	m.QSCM_OP = QCOMSCM_ASSIGN_MEM;
+	m.QSCM_SVC = src;
+	m.QSCM_CMD = dst;
+	m.QSCM_ADDR = (vir_bytes)addr;
+	m.QSCM_LEN = len;
+	return call(&m, ans);
+}

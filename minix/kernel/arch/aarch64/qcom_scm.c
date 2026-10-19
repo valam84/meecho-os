@@ -92,7 +92,7 @@ static struct {
 	unsigned cpu;		/* where it stopped: resumed only there */
 	int op;			/* QCOMSCM_*, for the bookkeeping at its end */
 	unsigned id;		/* the peripheral */
-	unsigned long arginfo, a[3];
+	unsigned long arginfo, a[4];
 	unsigned long x6;	/* the firmware's, for the resume */
 } held;
 
@@ -119,7 +119,7 @@ find_scm(void *cookie, int UNUSED(depth), const char *UNUSED(name),
  * mapping, from this same processor - has to have arrived before it looks.
  */
 static void
-smc(unsigned long fn, unsigned long arginfo, const unsigned long a[3],
+smc(unsigned long fn, unsigned long arginfo, const unsigned long a[4],
 	unsigned long x6, unsigned long out[4], unsigned long *x6_out)
 {
 	register unsigned long r0 __asm__("x0") = fn;
@@ -127,7 +127,7 @@ smc(unsigned long fn, unsigned long arginfo, const unsigned long a[3],
 	register unsigned long r2 __asm__("x2") = a[0];
 	register unsigned long r3 __asm__("x3") = a[1];
 	register unsigned long r4 __asm__("x4") = a[2];
-	register unsigned long r5 __asm__("x5") = 0;
+	register unsigned long r5 __asm__("x5") = a[3];
 	register unsigned long r6 __asm__("x6") = x6;
 	register unsigned long r7 __asm__("x7") = 0;
 
@@ -161,7 +161,7 @@ smc(unsigned long fn, unsigned long arginfo, const unsigned long a[3],
 static int
 scm_probe(void)
 {
-	unsigned long a[3] = { 0, 0, 0 }, out[4], x6, self;
+	unsigned long a[4] = { 0, 0, 0, 0 }, out[4], x6, self;
 	const void *dtb;
 	int found = 0;
 
@@ -318,7 +318,7 @@ settle(struct proc *caller, message *m, const unsigned long out[4],
 static int
 yielding(struct proc *caller, message *m, int op, unsigned id, unsigned svc,
 	unsigned cmd, unsigned long arginfo, unsigned long a0, unsigned long a1,
-	unsigned long a2)
+	unsigned long a2, unsigned long a3)
 {
 	unsigned long fn, out[4], x6;
 
@@ -331,8 +331,111 @@ yielding(struct proc *caller, message *m, int op, unsigned id, unsigned svc,
 	held.a[0] = a0;
 	held.a[1] = a1;
 	held.a[2] = a2;
+	held.a[3] = a3;
 	smc(fn, arginfo, held.a, 0, out, &x6);
 	return settle(caller, m, out, x6);
+}
+
+/*===========================================================================*
+ *				assign_mem				     *
+ *===========================================================================*/
+/*
+ * MP/ASSIGN (Linux's qcom_scm_assign_mem()): who may reach [addr, addr +
+ * len) of the caller's space - the current owners as a bit mask of VM ids
+ * (src), the new ones as up to four (VM id, permission) bytes (dst, see
+ * <minix/qcomscm.h>).  The memory is either a "no-map" range of
+ * /reserved-memory the caller has mapped (a modem's image region, the
+ * shared memory of rmtfs, the Wi-Fi's MSA) or one run of the caller's own
+ * RAM (the modem's metadata, given for the length of one check and taken
+ * back).  Either way TrustZone gets a physical address and this kernel is
+ * the one that makes it.
+ *
+ * The call takes seven arguments, and SMCCC carries four in registers: the
+ * fourth on goes into a buffer whose address is the last register (Linux's
+ * qcom_scm_call(), SCM_SMC_FIRST_EXT_IDX).  That buffer and the three
+ * tables the call points at live here, in one page of the kernel, cleaned
+ * to memory before the SMC; nothing changes them while a call is held,
+ * since every other operation is EBUSY then.
+ */
+#define SCM_MP_ASSIGN_ARGS	(SCM_ARGS(7) | (1UL << 4) | (1UL << 8) | \
+				 (1UL << 12))	/* RO, VAL, RO, VAL, RO, VAL, VAL */
+
+static struct {
+	u32_t src[32];				/* the current owners */
+	u64_t map[2];				/* address, size */
+	u32_t pad[4];
+	struct { u32_t vmid, perm; u64_t ctx; u32_t ctx_size, pad; }
+	    dst[4];				/* the next ones */
+	u64_t ext[4];				/* arguments 4..7 */
+} assign_buf __aligned(4096);
+
+static int
+assign_mem(struct proc *caller, message *m, vir_bytes addr, vir_bytes len,
+	u32_t src, u32_t dst)
+{
+	struct nomap_find f;
+	phys_bytes pa, bpa;
+	unsigned i, nsrc, ndst;
+	u32_t *ext32;
+
+	if (len == 0 || (len & AARCH64_PAGE_MASK) != 0 || src == 0 ||
+	    (dst & 0xff) == 0)
+		return EINVAL;
+
+	if (caller_range(caller, addr, len, 1, &pa) == OK) {
+		/* The caller's RAM: what it wrote has to be in memory before
+		 * anyone else is let at it, and no line of it may be left in
+		 * a cache to be written back over what that someone wrote. */
+		if (arch_cache_range(caller, addr, len,
+		    CACHE_CLEAN_INVALIDATE) != OK)
+			return EFAULT;
+	} else {
+		if (caller_range(caller, addr, len, 0, &pa) != OK)
+			return EINVAL;
+		memset(&f, 0, sizeof(f));
+		f.lo = pa;
+		f.hi = pa + len;
+		(void)fdt_walk((const void *)phys2vir(boot_dtb), find_nomap,
+		    &f);
+		if (!f.found)
+			return EINVAL;
+	}
+
+	memset(&assign_buf, 0, sizeof(assign_buf));
+	for (i = nsrc = 0; i < 32; i++)
+		if (src & (1U << i))
+			assign_buf.src[nsrc++] = i;
+	assign_buf.map[0] = pa;
+	assign_buf.map[1] = len;
+	for (ndst = 0; ndst < 4 && ((dst >> (8 * ndst)) & 0xff) != 0; ndst++) {
+		assign_buf.dst[ndst].vmid = QCOMSCM_DST_VMID(dst >> (8 * ndst));
+		assign_buf.dst[ndst].perm = QCOMSCM_DST_PERM(dst >> (8 * ndst));
+	}
+
+	bpa = vir2phys(&assign_buf);
+	if (scm_state == SCM_ARM32) {
+		if ((u64_t)pa + len > 0x100000000ULL ||
+		    (u64_t)bpa + sizeof(assign_buf) > 0x100000000ULL)
+			return EINVAL;
+		ext32 = (u32_t *)assign_buf.ext;
+		ext32[0] = nsrc * sizeof(u32_t);
+		ext32[1] = bpa + offsetof(__typeof__(assign_buf), dst);
+		ext32[2] = ndst * sizeof(assign_buf.dst[0]);
+		ext32[3] = 0;
+	} else {
+		assign_buf.ext[0] = nsrc * sizeof(u32_t);
+		assign_buf.ext[1] = bpa + offsetof(__typeof__(assign_buf), dst);
+		assign_buf.ext[2] = ndst * sizeof(assign_buf.dst[0]);
+		assign_buf.ext[3] = 0;
+	}
+	dcache_range(CACHE_CLEAN, (unsigned long)&assign_buf,
+	    sizeof(assign_buf));
+
+	return yielding(caller, m, QCOMSCM_ASSIGN_MEM, 0, QCOMSCM_SVC_MP,
+	    QCOMSCM_MP_ASSIGN, SCM_MP_ASSIGN_ARGS,
+	    bpa + offsetof(__typeof__(assign_buf), map),
+	    sizeof(assign_buf.map), bpa, bpa +
+	    offsetof(__typeof__(assign_buf), ext));
 }
 
 /*===========================================================================*
@@ -387,11 +490,11 @@ arch_qcomscm(struct proc *caller, message *m)
 			return EINVAL;
 		return yielding(caller, m, op, 0, QCOMSCM_SVC_INFO,
 		    QCOMSCM_INFO_IS_CALL_AVAIL, SCM_ARGS(1),
-		    SCM_FNID(svc, id) | SMCCC_OWNER_SIP, 0, 0);
+		    SCM_FNID(svc, id) | SMCCC_OWNER_SIP, 0, 0, 0);
 
 	case QCOMSCM_PAS_SUPPORTED:
 		return yielding(caller, m, op, id, QCOMSCM_SVC_PIL,
-		    QCOMSCM_PIL_PAS_IS_SUPPORTED, SCM_ARGS(1), id, 0, 0);
+		    QCOMSCM_PIL_PAS_IS_SUPPORTED, SCM_ARGS(1), id, 0, 0, 0);
 
 	case QCOMSCM_PAS_INIT:
 		if (id >= QCOMSCM_PAS_IDS || len > QCOMSCM_META_MAX)
@@ -408,7 +511,7 @@ arch_qcomscm(struct proc *caller, message *m)
 			return r;
 		return yielding(caller, m, op, id, QCOMSCM_SVC_PIL,
 		    QCOMSCM_PIL_PAS_INIT_IMAGE, SCM_ARGS(2) | SCM_ARG_RW(1),
-		    id, pa, 0);
+		    id, pa, 0, 0);
 
 	case QCOMSCM_PAS_MEM_SETUP: {
 		struct nomap_find f;
@@ -430,7 +533,7 @@ arch_qcomscm(struct proc *caller, message *m)
 			return EINVAL;
 		pas[id] = QCOMSCM_PAS_GIVEN;
 		return yielding(caller, m, op, id, QCOMSCM_SVC_PIL,
-		    QCOMSCM_PIL_PAS_MEM_SETUP, SCM_ARGS(3), id, pa, len);
+		    QCOMSCM_PIL_PAS_MEM_SETUP, SCM_ARGS(3), id, pa, len, 0);
 	}
 
 	case QCOMSCM_PAS_AUTH:
@@ -442,14 +545,17 @@ arch_qcomscm(struct proc *caller, message *m)
 			return EINVAL;
 		pas[id] = QCOMSCM_PAS_GIVEN;
 		return yielding(caller, m, op, id, QCOMSCM_SVC_PIL,
-		    QCOMSCM_PIL_PAS_AUTH_AND_RESET, SCM_ARGS(1), id, 0, 0);
+		    QCOMSCM_PIL_PAS_AUTH_AND_RESET, SCM_ARGS(1), id, 0, 0, 0);
 
 	case QCOMSCM_REMOTE_STATE:
 		if (svc != QCOMSCM_STATE_RESUME || id >= QCOMSCM_PAS_IDS ||
 		    pas[id] != QCOMSCM_PAS_AUTHED)
 			return EINVAL;
 		return yielding(caller, m, op, id, QCOMSCM_SVC_BOOT,
-		    QCOMSCM_BOOT_SET_REMOTE_STATE, SCM_ARGS(2), svc, id, 0);
+		    QCOMSCM_BOOT_SET_REMOTE_STATE, SCM_ARGS(2), svc, id, 0, 0);
+
+	case QCOMSCM_ASSIGN_MEM:
+		return assign_mem(caller, m, addr, len, svc, id);
 	}
 	return EINVAL;
 }

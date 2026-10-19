@@ -11,8 +11,29 @@ rpm(info)rwmx level 256 for 65560
 rmtfs_mem(info)85e00000+200000, client 1, shared with VM 15
 qrtr(info):glink.c+711(gl_init):SMEM version 12; GLINK to the modem once qcom_mss says it is up
 qrtr(info):router.c+489(ns_rx):server 4096:1 at 1:16384
-qrtr(info):router.c+489(ns_rx):server 64:257 at 1:16385
 qrtr(info):router.c+489(ns_rx):server 14:1 at 1:14
+qrtr(info):router.c+489(ns_rx):server 4097:0 at 1:16385
+qrtr(info):router.c+489(ns_rx):server 4097:2 at 1:16387
+qrtr(info):router.c+489(ns_rx):server 4097:4 at 1:16388
+qrtr(info):router.c+489(ns_rx):server 4097:64 at 1:16389
+qrtr(info):router.c+489(ns_rx):server 4097:66 at 1:16391
+qrtr(info):router.c+489(ns_rx):server 4097:68 at 1:16392
+qrtr(info):router.c+489(ns_rx):server 4097:128 at 1:16393
+qrtr(info):router.c+489(ns_rx):server 4097:130 at 1:16395
+qrtr(info):router.c+489(ns_rx):server 4097:132 at 1:16396
+qrtr(info):router.c+489(ns_rx):server 4097:192 at 1:16397
+qrtr(info):router.c+489(ns_rx):server 4097:194 at 1:16399
+qrtr(info):router.c+489(ns_rx):server 4097:196 at 1:16400
+qrtr(info):router.c+489(ns_rx):server 4097:256 at 1:16401
+qrtr(info):router.c+489(ns_rx):server 4097:258 at 1:16403
+qrtr(info):router.c+489(ns_rx):server 4097:260 at 1:16404
+qrtr(info):router.c+489(ns_rx):server 4097:320 at 1:16405
+qrtr(info):router.c+489(ns_rx):server 4097:322 at 1:16407
+qrtr(info):router.c+489(ns_rx):server 4097:324 at 1:16408
+qrtr(info):router.c+489(ns_rx):server 4097:832 at 1:16409
+qrtr(info):router.c+489(ns_rx):server 4097:834 at 1:16411
+qrtr(info):router.c+489(ns_rx):server 4097:836 at 1:16412
+qrtr(info):router.c+489(ns_rx):server 64:257 at 1:16413
 mss(info):mss_find.c+173(mss_find):metadata a0000000+4000
 mss(info):mss_find.c+175(mss_find):qdsp6 4080000 rmb 4180000; mba 94900000+200000, mpss 8ac00000+7e00000; smem 86000000+200000 (lock 3), smp2p 428/435, mailbox 17911000 bit 14; firmware mba.mbn, modem.mdt; 8 clocks
 mss(info):mss_boot.c+462(mss_probe):SMEM version 12, 603 items, global partition 1000+f8000, modem's 11b000+94000; lock 3 reads 0
@@ -74,42 +95,47 @@ qrtr(debug):glink.c+485(rx_one):the modem opens "apr_apps2" (rcid 4); not ours
 qrtr(info):router.c+489(ns_rx):server 23:1 at 0:23
 qrtr(debug):glink.c+485(rx_one):the modem opens "LOOPBACK_CTL_MPSS" (rcid 5); not ours
 qrtr(info):router.c+489(ns_rx):server 22:1 at 0:24
-qrtr(info):router.c+489(ns_rx):server 36:1 at 0:26
-qrtr(info):router.c+489(ns_rx):server 49:513 at 0:27
-qrtr(info):router.c+489(ns_rx):server 54:1 at 0:31
-qrtr(info):router.c+489(ns_rx):server 17:1 at 0:33
-qrtr(info):router.c+489(ns_rx):server 74:1 at 0:34
-qrtr(info):router.c+489(ns_rx):server 4098:0 at 0:35
-qrtr(info):router.c+489(ns_rx):server 34:1 at 0:37
-qrtr(info):router.c+489(ns_rx):server 41:257 at 0:38
-qrtr(info):router.c+489(ns_rx):server 55:513 at 0:47
-qrtr(info):router.c+489(ns_rx):server 50:1 at 0:49
-qrtr(info):router.c+489(ns_rx):server 9:2 at 0:50
-qrtr(info):router.c+489(ns_rx):server 3:1 at 0:51
-qrtr(info):router.c+489(ns_rx):server 12:1 at 0:52
-qrtr(info):router.c+489(ns_rx):server 10:2 at 0:53
-qrtr(info):router.c+489(ns_rx):server 5:1 at 0:54
-qrtr(info):router.c+489(ns_rx):server 47:1 at 0:55
-qrtr(info):router.c+489(ns_rx):server 11:1 at 0:56
-qrtr(info):router.c+489(ns_rx):server 71:1 at 0:57
-qrtr(info):router.c+489(ns_rx):server 1:1 at 0:61
-qrtr(info):router.c+489(ns_rx):server 4:1 at 0:62
-qrtr(info):router.c+489(ns_rx):server 26:1 at 0:63
-qrtr(info):router.c+489(ns_rx):server 7:1 at 0:64
-qrtr(info):router.c+489(ns_rx):server 8:1 at 0:65
-qrtr(info):router.c+489(ns_rx):server 29:1 at 0:66
-qrtr(info):router.c+489(ns_rx):server 42:1 at 0:68
-qrtr(info):router.c+489(ns_rx):server 2:1 at 0:69
-qrtr(info):router.c+489(ns_rx):server 48:1 at 0:70
-qrtr(info):router.c+489(ns_rx):server 68:1 at 0:71
-qrtr(info):router.c+489(ns_rx):server 16:2 at 0:72
+qrtr(info):router.c+489(ns_rx):server 4097:1 at 0:28
+qrtr(info):router.c+489(ns_rx):server 4097:3 at 0:31
+qrtr(info):router.c+489(ns_rx):server 36:1 at 0:34
+qrtr(info):router.c+489(ns_rx):server 49:513 at 0:35
+qrtr(info):router.c+489(ns_rx):server 54:1 at 0:38
+qrtr(info):router.c+489(ns_rx):server 17:1 at 0:41
+qrtr(info):router.c+489(ns_rx):server 74:1 at 0:42
+qrtr(info):router.c+489(ns_rx):server 4098:0 at 0:43
+qrtr(info):router.c+489(ns_rx):server 34:1 at 0:45
+qrtr(info):router.c+489(ns_rx):server 41:257 at 0:46
+qrtr(info):router.c+489(ns_rx):server 55:513 at 0:55
+qrtr(info):router.c+489(ns_rx):server 50:1 at 0:56
+qrtr(info):router.c+489(ns_rx):server 9:2 at 0:58
+qrtr(info):router.c+489(ns_rx):server 3:1 at 0:59
+qrtr(info):router.c+489(ns_rx):server 12:1 at 0:60
+qrtr(info):router.c+489(ns_rx):server 10:2 at 0:61
+qrtr(info):router.c+489(ns_rx):server 47:1 at 0:62
+qrtr(info):router.c+489(ns_rx):server 11:1 at 0:63
+qrtr(info):router.c+489(ns_rx):server 5:1 at 0:64
+qrtr(info):router.c+489(ns_rx):server 1:1 at 0:65
+qrtr(info):router.c+489(ns_rx):server 4:1 at 0:66
+qrtr(info):router.c+489(ns_rx):server 26:1 at 0:67
+qrtr(info):router.c+489(ns_rx):server 7:1 at 0:68
+qrtr(info):router.c+489(ns_rx):server 8:1 at 0:69
+qrtr(info):router.c+489(ns_rx):server 29:1 at 0:70
+qrtr(info):router.c+489(ns_rx):server 71:1 at 0:71
+qrtr(info):router.c+489(ns_rx):server 42:1 at 0:76
+qrtr(info):router.c+489(ns_rx):server 2:1 at 0:77
+qrtr(info):router.c+489(ns_rx):server 48:1 at 0:78
+qrtr(info):router.c+489(ns_rx):server 68:1 at 0:79
+qrtr(info):router.c+489(ns_rx):server 16:2 at 0:80
 qrtr(debug):glink.c+485(rx_one):the modem opens "DS" (rcid 6); not ours
 qrtr(debug):glink.c+485(rx_one):the modem opens "DATA1" (rcid 7); not ours
 qrtr(debug):glink.c+485(rx_one):the modem opens "DATA2" (rcid 8); not ours
 qrtr(debug):glink.c+485(rx_one):the modem opens "DATA3" (rcid 9); not ours
 qrtr(debug):glink.c+485(rx_one):the modem opens "DATA4" (rcid 10); not ours
 qrtr(debug):glink.c+485(rx_one):the modem opens "DATA11" (rcid 11); not ours
-qrtr(info):router.c+489(ns_rx):server 51:769 at 0:75
-qrtr(info):router.c+489(ns_rx):server 69:1 at 0:76
-qrtr(info):router.c+489(ns_rx):server 33:1 at 0:79
-qrtr(info):router.c+489(ns_rx):server 18:1 at 0:80
+qrtr(info):router.c+489(ns_rx):server 51:769 at 0:83
+qrtr(info):router.c+489(ns_rx):server 69:1 at 0:84
+qrtr(info):router.c+489(ns_rx):server 33:1 at 0:87
+qrtr(info):router.c+489(ns_rx):server 18:1 at 0:88
+qrtr(debug):qrtr.c+59(qs_deliver):port 16433: queue full, a packet dropped
+qrtr(debug):qrtr.c+59(qs_deliver):port 16433: queue full, a packet dropped
+qrtr(debug):qrtr.c+59(qs_deliver):port 16433: queue full, a packet dropped

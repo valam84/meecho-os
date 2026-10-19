@@ -70,9 +70,8 @@ int s = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
 | 6 | потом | IPA (`ipa2_lite`, QMI `INIT_DRIVER`), rmnet → lwip |
 
 Состояние на 2026-10-20: **модем на планшете загружается, QRTR работает,
-DMS отвечает строкой эталона** (раздел 8); модем падает через минуты без
-`diag-router` — открыто. На QEMU проверен сокетный слой и сервер имён
-(раздел 5).
+DMS отвечает строкой эталона, модем держится** (21 мин, раздел 8). На
+QEMU проверен сокетный слой и сервер имён (раздел 5).
 
 ## 3. TrustZone: `QCOMSCM_ASSIGN_MEM` [C]
 
@@ -258,9 +257,24 @@ pmos строка в строку (отказ на `/boot/modem_fsg_oem_1/2`, н
    только кнопками). Порядок остановки (порты AXI, сброс, возврат областей)
    не доведён — **модем пока запускать один раз за загрузку**.
 
-**Открыто: модем падает через минуты** — `dog_hb.c:266: Task starvation:
-diag` (SMEM 421): через ~1 мин без `pd-mapper`, через ~6 мин с ним. В
-pmos работает **`diag-router`** (linux-msm/diag): публикует службу 4097
-(каналы cntl/data/dci) и забирает у модема диагностический поток; у нас
-его нет. Следующий шаг — его порт (QRTR и unix-сокет; USB FunctionFS и
-Linux aio в `watch.c` — не для MEECHO).
+**Модем держится, когда на нашей стороне есть все его собеседники.** Без
+`pd-mapper` он падал через ~1 мин, с ним без `diag-router` — через ~6
+мин, оба раза `dog_hb.c:266: Task starvation: diag` (SMEM 421;
+`modem-20261020/run2-without-pd-mapper.txt`, `run3-without-diag-router.txt`).
+В pmos работают оба (`pass1/sys/ps.txt`: `diag-router`, а `pd-mapper` —
+модулем ядра). С `diag-router` (linux-msm/diag, BSD-3: забирает
+диагностический поток модема по QRTR, служба 4097 — cntl/data/dci) —
+**21 минута без падения, DMS отвечает, 64 службы, `wlfw` (69) на узле 0**
+(`modem-20261020/kmsg-modem.txt`, `qmi-qrtr.txt`).
+
+Полный набор на нашей стороне, порядок `rc.clover` (`modem=1`):
+`qcom_rmtfs_mem` → `qrtr` → `rmtfs -r -P -o /dev/modem`, `tqftpserv`,
+`diag-router`, `pd-mapper` → `qcom_mss`.
+
+`diag-router` здесь — без USB FunctionFS и UART (Linux), его цикл событий
+переписан на `select()` (`external/bsd/diag/watch_minix.c`: в оригинале
+очереди идут через Linux aio и eventfd), unix-сокет — `/var/run/diag.sock`
+вместо абстрактного имени.
+
+Ещё открыто: повторный старт модема в той же загрузке (п. 4 выше);
+прерываний (GLINK, smp2p) нет — всё опросом раз в тик.

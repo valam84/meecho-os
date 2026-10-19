@@ -54,9 +54,10 @@ SUBDIR+= nnn
 .endif
 
 # A Qualcomm modem's userland (port/clover/hw-modem.md): libqrtr, then the
-# two daemons on it that serve the modem its storage and its files.
+# daemons on it the modem needs - its storage, its files, its protection
+# domains' locator and the taker of its diagnostic stream.
 .if ${MACHINE_ARCH} == "aarch64"
-SUBDIR+= qrtr .WAIT rmtfs tqftpserv pd-mapper
+SUBDIR+= qrtr .WAIT rmtfs tqftpserv pd-mapper diag
 .endif
 
 .include <bsd.subdir.mk>

@@ -220,13 +220,14 @@ fi
 # its firmware in /libdata/firmware/qcom/clover/modem - a copy of the modem
 # partition's image/, not MEECHO's to carry.  After ssh, so that a modem
 # that does not come up leaves the tablet reachable.  In order: the memory
-# rmtfs shares with the modem (given to its VM), the modem itself
-# (qcom_mss; it says "remote processor is now up" or why not), the router
-# (qrtr: GLINK once the modem is up, AF_QIPCRTR sockets), then the two
-# daemons the modem asks for: rmtfs with its storage read only - the
-# partitions gptro0= names (modemst1,modemst2,fsg,fsc) are /dev/c0d0p3..p0,
-# linked by name under /dev/modem - and tqftpserv.  modemstage= passes
-# stage= to qcom_mss (probe: read only; mba: the MBA and no more).
+# rmtfs shares with the modem (given to its VM), the router
+# (qrtr: GLINK once the modem is up, AF_QIPCRTR sockets), the daemons the
+# modem asks for - rmtfs with its storage read only (the partitions
+# gptro0= names, modemst1,modemst2,fsg,fsc, are /dev/c0d0p3..p0, linked by
+# name under /dev/modem), tqftpserv, diag-router, pd-mapper - and the
+# modem itself last.  modemstage= passes stage= to qcom_mss (probe: read
+# only; mba: the MBA and no more).  One start per boot: stopping and
+# starting the modem again is not safe yet (hw-modem.md, section 8).
 if [ "`sysenv modem 2>/dev/null`" = 1 ] && [ -x /service/qcom_mss ] &&
    [ -f /libdata/firmware/qcom/clover/modem/mba.mbn ]
 then
@@ -242,12 +243,6 @@ then
 	    mknod /dev/qcom_rmtfs_mem1 c 135 1
 	minix-service up /service/qcom_rmtfs_mem -dev /dev/qcom_rmtfs_mem1 ||
 	    echo "WARNING: no rmtfs shared memory"
-	modemstage=boot
-	if sysenv modemstage >/dev/null
-	then	modemstage="`sysenv modemstage`"
-	fi
-	minix-service up /service/qcom_mss -args "stage=$modemstage" ||
-	    echo "WARNING: qcom_mss did not start"
 	minix-service up /service/qrtr || echo "WARNING: no QRTR"
 	if [ -x /usr/sbin/rmtfs ]
 	then
@@ -259,6 +254,14 @@ then
 		( trap '' HUP; /usr/sbin/tqftpserv ) \
 		    </dev/null >/var/log/tqftpserv.log 2>&1 &
 	fi
+	# The taker of the modem's diagnostic stream (QRTR service 4097);
+	# without it the modem stops after minutes with "Task starvation:
+	# diag" (hw-modem.md, §8).  Before the modem, as postmarketOS has it.
+	if [ -x /usr/sbin/diag-router ]
+	then
+		( trap '' HUP; /usr/sbin/diag-router ) \
+		    </dev/null >/var/log/diag-router.log 2>&1 &
+	fi
 	# The service locator the modem asks for its protection domains;
 	# without it the modem stops within a minute (hw-modem.md, §8).
 	if [ -x /usr/sbin/pd-mapper ]
@@ -266,6 +269,14 @@ then
 		( trap '' HUP; /usr/sbin/pd-mapper ) \
 		    </dev/null >/var/log/pd-mapper.log 2>&1 &
 	fi
+	# The modem last, once everything it asks for is there; it boots in
+	# the background, and qrtr lays out GLINK when it is up.
+	modemstage=boot
+	if sysenv modemstage >/dev/null
+	then	modemstage="`sysenv modemstage`"
+	fi
+	minix-service up /service/qcom_mss -args "stage=$modemstage" ||
+	    echo "WARNING: qcom_mss did not start"
 fi
 
 # And the port from now on: a cable swapped for an adapter, and back.

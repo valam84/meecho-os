@@ -126,6 +126,51 @@ chip_family 0x4001, board_id 0xff, soc_id 0x40050000, fw_version
 `diag-router` (сессия модема, `hw-modem.md` §8): первый прогон зонда
 пришёлся на мёртвый модем и не получил ни одного ответа — как и DMS.
 
+### MSA через TrustZone и FW_READY [T] (2026-10-20, образ из `da39459c8`)
+
+Служба `wcn` (`/dev/wlan0`, `mknod -m 600 /dev/wlan0 c 136 0`, затем
+`minix-service up /service/wcn -dev /dev/wlan0`): `WCN3990 at 18800000, MSA
+85700000+100000`. Зонд `wlfwprobe -x reg hostcap msa cap`, затем
+`wlfwprobe reg bdf /libdata/firmware/ath10k/WCN3990/hw1.0/board-2.bin`
+(файлы прошивки положены на корень планшета `scp`, в дерево — нет):
+
+```
+MSA_INFO > 00 03 00 2d 00 12 00 01 08 00 00 00 70 85 00 00 00 00 02 04 00 00 00 10 00
+         < 02 03 00 2d 00 25 00 02 04 00 00 00 00 00 03 1b 00 02
+           00 00 70 85 00 00 00 00 00 40 00 00 01     (85700000+4000, secure)
+           00 40 70 85 00 00 00 00 00 c0 0f 00 00     (85704000+fc000)
+wcn: MSA 85700000+4000 given to the modem and the WLAN (secure)
+wcn: MSA 85704000+fc000 given to the modem and the WLAN, and the copy engines
+MSA_READY: result 0
+CAP: chip 0x30214 family 0x4001, soc 0x40050000, fw 0x101f81f0,
+     "2018-08-31 21:42", QC_IMAGE_VERSION_STRING=WLAN.HL.1.0.1.c2-00496-QCAHLSWMTPLZ-1
+     — но result 1, error 90 (см. ниже)
+BDF: board 'bus=snoc,qmi-board-id=ff', 19152 bytes
+BDF 0..2 (6144): result 0;  BDF 3 (720, end): result 1 error 1
+CAL_REPORT: result 0
+indication 0x0021 - FW_READY
+```
+
+- **Hyp-assign MSA через TrustZone работает**: два региона (первые 16 КБ —
+  secure, без WLAN_CE; остальное — с WLAN_CE), машина и модем живы.
+  Отданное записано в DS (`wcn.msa`); забирать регионы назад нельзя, пока
+  модем жив.
+- **CAP совпал с эталоном во всех полях** (chip, family, soc, fw_version,
+  время сборки, build id; board_info в ответе нет — отсюда 0xff, как у
+  ath10k). Но общий результат — `error 90`. [?] Отличие от Linux: в этом
+  прогоне IND_REGISTER ответил `fw_status 0x1` (ALREADY_REGISTERED) —
+  прошивка помнила клиента прошлого запуска зонда (тот же client_id, порт
+  другой). Linux регистрируется один раз за жизнь модема. Проверить на
+  свежем модеме: регистрация → MSA → CAP одним клиентом.
+- **BDF**: последний сегмент — MALFORMED (проверка CRC платы), ровно то, что
+  ath10k прощает; прошивка плату приняла: **FW_READY_IND пришёл** через
+  секунды после CAL_REPORT.
+- **Дальше не пошёл намеренно**: WLAN_CFG и WLAN_MODE включают WLAN, и
+  прошивка начнёт ходить в кольца CE — через `apps_smmu` по SID 0x1a00,
+  маршрута для которого ещё нет (§6). Следующее — служба: L5 и `rf_clk1`,
+  чтение `apps_smmu` без записей, кольца CE (`wcn_ce.c`), и только потом
+  WLAN_MODE.
+
 ## 4. Copy engine [C]
 
 Подробно — `port/clover/wifi/ce.md`. Двенадцать колец DMA; CE n —

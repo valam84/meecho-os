@@ -14,7 +14,10 @@
  *   msa      MSA_INFO with the MSA the wcn service holds, each region of
  *            the answer given away by the service (WCNIOC_ASSIGN on
  *            /dev/wlan0 - TrustZone), then MSA_READY: what Linux does
- *            between HOST_CAP and CAP.  Memory leaves this side here.
+ *            between HOST_CAP and CAP.  Memory leaves this side here;
+ *   bdf FILE the board data of board-2.bin FILE for the board the
+ *            firmware is (chip 0x30214, board 0xff - CAP), in segments,
+ *            then CAL_REPORT, then up to 20 s for FW_READY_IND.
  * -x prints every datagram in hex.
  *
  * Without "msa" nothing hands the firmware memory; with it, only through
@@ -40,6 +43,9 @@
 
 #include "wcn_wlfw.h"
 #include "wcn_ioc.h"
+#include "wcn_fw.h"
+
+#include <errno.h>
 
 static int hex;
 static int s;
@@ -239,6 +245,81 @@ do_msa(void)
 		(void)result(&m, "MSA_READY");
 }
 
+static void
+do_bdf(const char *file)
+{
+	struct qmi_buf b = { out, sizeof(out), 0, 0 };
+	struct sockaddr_qrtr from;
+	struct qmi_msg m;
+	char name[WCN_BD_NAME_MAX];
+	const uint8_t *bd;
+	uint8_t *f;
+	size_t bdl, off, piece;
+	uint32_t seg;
+	unsigned res, err;
+	FILE *fp;
+	long n;
+	int which, e = ENOENT, r;
+
+	if ((fp = fopen(file, "rb")) == NULL) {
+		perror(file);
+		return;
+	}
+	fseek(fp, 0, SEEK_END);
+	n = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	f = malloc(n > 0 ? n : 1);
+	if (f == NULL || fread(f, 1, n, fp) != (size_t)n) {
+		perror(file);
+		fclose(fp);
+		return;
+	}
+	fclose(fp);
+	for (which = 0; which < 3 && e == ENOENT; which++) {
+		if (wcn_bd_name(name, sizeof(name), which, 0xff, 0x30214,
+		    NULL) < 0)
+			continue;
+		e = wcn_bd_find(f, n, name, &bd, &bdl);
+	}
+	if (e != 0) {
+		printf("BDF: no board in %s (%d)\n", file, e);
+		free(f);
+		return;
+	}
+	printf("BDF: board '%s', %zu bytes\n", name, bdl);
+	for (off = 0, seg = 0; off < bdl; off += piece, seg++) {
+		piece = bdl - off > WLFW_BDF_SEG ? WLFW_BDF_SEG : bdl - off;
+		if (ask(wlfw_bdf(&b, txn, bdl, seg, bd + off, piece,
+		    off + piece == bdl), &m, "BDF_DOWNLOAD") != 0)
+			break;
+		if (qmi_result(&m, &res, &err) != 0) {
+			printf("BDF %u: no result\n", seg);
+			break;
+		}
+		printf("BDF %u (%zu bytes%s): result %u error %u\n", seg,
+		    piece, off + piece == bdl ? ", end" : "", res, err);
+		if (res != 0 && off + piece != bdl)
+			break;
+	}
+	free(f);
+	if (ask(wlfw_cal_report(&b, txn), &m, "CAL_REPORT") == 0)
+		(void)result(&m, "CAL_REPORT");
+	/* FW_READY_IND: the firmware is up and waits for WLAN_CFG. */
+	for (;;) {
+		if ((r = get(in, sizeof(in), &from, 20000)) < 0) {
+			printf("FW_READY_IND: none in 20 s\n");
+			return;
+		}
+		dump("<", in, r);
+		if (qmi_parse(in, r, &m) == 0 && m.type == QMI_INDICATION) {
+			printf("indication 0x%04x%s\n", m.id,
+			    m.id == WLFW_FW_READY_IND ? " - FW_READY" : "");
+			if (m.id == WLFW_FW_READY_IND)
+				return;
+		}
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -311,6 +392,8 @@ main(int argc, char **argv)
 			do_cap();
 		else if (strcmp(argv[i], "msa") == 0)
 			do_msa();
+		else if (strcmp(argv[i], "bdf") == 0 && i + 1 < argc)
+			do_bdf(argv[++i]);
 		else
 			printf("%s: unknown\n", argv[i]);
 	}

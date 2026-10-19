@@ -259,7 +259,7 @@ read index движка, как у Linux: иначе можно записать
 |---|---|---|
 | `wcn_fw.c` | `firmware-N.bin`, `board-2.bin` | да — `fwtest` (**сделано**) |
 | `wcn_ce.c` | copy engine | да — `cetest` (**сделано**) |
-| `wcn_wlfw.c` | сообщения wlfw §3 (для `wcnd`, §9) | да — против байтов эталона |
+| `wcn_wlfw.c` | сообщения wlfw §3 (для `wcnd`, §9) | да — `wlfwtest` против байтов Linux (**сделано**) |
 | `wcn_htc.c` | HTC: READY, CONNECT, endpoint'ы, кредит | да — на модели CE |
 | `wcn_wmi.c` | WMI-TLV: сборка команд, разбор событий | да — на байтах |
 | `wcn_htt.c` | HTT: версия, кольцо приёма, TX_FRM, IN_ORD | да |

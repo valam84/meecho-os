@@ -18,3 +18,16 @@ else
 	echo "($FW: no files - the made-up cases only)"
 	"$OUT/fwtest"
 fi
+
+$CC $CFLAGS -o "$OUT/cetest" "$HERE/cetest.c" "$SRC/wcn_ce.c"
+"$OUT/cetest"
+"$OUT/cetest" -s
+# Each mutant of the cache maintenance or of the engine's address must
+# be caught.
+for m in noclean noinval noflush nommu; do
+	if "$OUT/cetest" -m $m >"$OUT/mut-$m.txt" 2>&1 &&
+	    "$OUT/cetest" -s -m $m >>"$OUT/mut-$m.txt" 2>&1; then
+		echo "MUTANT $m NOT CAUGHT"; exit 1
+	fi
+	echo "mutant $m: caught ($(grep -c FAIL "$OUT/mut-$m.txt") failures)"
+done

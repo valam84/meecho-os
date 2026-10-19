@@ -1299,9 +1299,12 @@ static int check_request(struct rs_start *rs_start)
 	  /* keep the default value */
   } else if (rs_start->rss_cpu < 0)
 	  return EINVAL;
-  else if (rs_start->rss_cpu > machine.processors_count) {
+  else if (rs_start->rss_cpu >= machine.processors_count) {
+	  /* Numbered from 0: on one processor "cpu 1" is out of range too,
+	   * and the kernel would refuse it (sched_proc()), failing the start.
+	   */
 	  printf("RS: cpu number %d out of range 0-%d, using BSP\n",
-			  rs_start->rss_cpu, machine.processors_count);
+			  rs_start->rss_cpu, machine.processors_count - 1);
 	  rs_start->rss_cpu = machine.bsp_id;
   }
 

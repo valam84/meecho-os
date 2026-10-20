@@ -25,7 +25,9 @@
 # a512_zap.mdt and its .b00-.b02, LICENSE.qcom, NOTICE.qcom - and they go
 # into the root as /libdata/firmware/qcom (mkroot.sh, ROOT_EXTRA).  The kit
 # is then a local one, not for publication.  FW_DIR=none: a root without
-# them, whose desktop draws with the processor.
+# them - the kit to publish: at its first boot rc.clover copies the GPU's
+# files off the tablet's vendor partition and the modem's off its modem
+# partition (fwimport), so the tablet runs on its own firmware.
 #
 # Variables: FW_DIR (required), AUTHKEYS (the key ssh lets in as root; none
 # - no ssh login), KVAR (the kernel variant's name, "kit"), EXTRA_CMDLINE
@@ -88,7 +90,12 @@ extra=
 cp "$W/root-clover.img.gz" "$OUT/meecho-clover-root.img.gz" || exit 1
 
 # 4. The boot images: one kernel, one archive, four command lines.
+# The tablet's own partitions, read only: the modem's storage for rmtfs
+# first (rc.clover links the first four for it), then modem and vendor,
+# which the firmware is copied off at the first boot (fwimport); modem=1
+# starts the modem (hw-modem.md).
 EMMC="rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata console=console osk=1"
+EMMC="$EMMC gptro0=modemst1,modemst2,fsg,fsc,modem,vendor modem=1"
 : > "$OUT/cmdline.txt"
 img() {	# name cmdline
 	local cmd="$2${EXTRA_CMDLINE:+ $EXTRA_CMDLINE}"

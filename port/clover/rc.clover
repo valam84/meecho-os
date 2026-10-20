@@ -70,6 +70,54 @@ then
 	    echo "WARNING: no touch screen driver"
 fi
 
+# The firmware, from this tablet's own partitions, once: the remote
+# processors' and the GPU's files are Qualcomm's and Xiaomi's, not
+# MEECHO's to ship, and the tablet carries them - the modem, Wi-Fi and DSP
+# images on "modem" (FAT, image/), the GPU's microcode and zap shader on
+# "vendor" (ext4, /firmware).  The read-only windows gptro0= names are
+# /dev/c0d0p3..p0 and then /dev/c0d0p3s3..p3s0 in the order named
+# (sdmmc.c); /dev/gptro/NAME links them by name.  fwimport (minix/usr.sbin/
+# fwimport) copies into a fresh directory and only a whole copy is moved
+# into place, so a copy cut short is taken again at the next boot.
+# fwimport=0 (a boot argument) leaves /libdata/firmware as it is.
+mkdir -p /dev/gptro
+cmaj=`ls -l /dev/c0d0 2>/dev/null | awk '{ sub(",", "", $5); print $5 }'`
+i=0
+for p in `sysenv gptro0 2>/dev/null | tr , ' '`
+do
+	if [ $i -lt 4 ]
+	then	d=/dev/c0d0p$((3 - i)); m=$((4 - i))
+	else	d=/dev/c0d0p3s$((7 - i)); m=$((128 + 15 - (i - 4)))
+	fi
+	[ -b $d ] || [ -z "$cmaj" ] || mknod $d b $cmaj $m
+	ln -sf $d /dev/gptro/$p
+	i=$((i + 1))
+done
+fw=/libdata/firmware/qcom
+if [ "`sysenv fwimport 2>/dev/null`" != 0 ] && [ -x /usr/sbin/fwimport ]
+then
+	if [ ! -f $fw/clover/modem/mba.mbn ] && [ -b /dev/gptro/modem ]
+	then
+		echo "Copying the modem's firmware off the modem partition"
+		rm -rf $fw/clover/modem.new && mkdir -p $fw/clover &&
+		    fwimport fat /dev/gptro/modem image $fw/clover/modem.new &&
+		    [ -f $fw/clover/modem.new/mba.mbn ] &&
+		    mv $fw/clover/modem.new $fw/clover/modem ||
+		    echo "WARNING: no modem firmware copied"
+	fi
+	if [ ! -f $fw/a530_pm4.fw ] && [ -b /dev/gptro/vendor ]
+	then
+		echo "Copying the GPU's firmware off the vendor partition"
+		rm -rf $fw.new && fwimport ext4 /dev/gptro/vendor $fw.new \
+		    /firmware/a530_pm4.fw /firmware/a530_pfp.fw \
+		    /firmware/a512_zap.mdt /firmware/a512_zap.b00 \
+		    /firmware/a512_zap.b01 /firmware/a512_zap.b02 &&
+		    mkdir -p $fw && mv $fw.new/* $fw/ && rmdir $fw.new ||
+		    echo "WARNING: no GPU firmware copied"
+	fi
+	sync
+fi
+
 # The GPU: Adreno 512, Mesa's freedreno through /dev/dri/renderD128
 # (port/clover/hw-gpu.md).  After qcom_rpm, which takes its VDDMX votes.
 # It needs the CP's microcode and the tablet's zap shader in

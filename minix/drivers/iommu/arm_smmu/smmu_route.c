@@ -224,17 +224,17 @@ smmu_route_on(struct smmu_route *r, const uint32_t *sids, unsigned n)
 	    r->smr, s2cr, r->smr, r->smr_val);
 	wr(r, SMMU_SMR(r->smr), r->smr_val);
 	/*
-	 * On the apps SMMU the SMR reads back 0 after this write, while the
-	 * S2CR reads what was written: the hypervisor's emulation, or a
-	 * refusal.  Only a transaction of the device tells (an unmatched one
-	 * is a global fault, smmu_route_report()); so the S2CR decides here.
+	 * Both must read back as written.  On the apps SMMU SMR 0 read 0
+	 * after its write while SMR 1 kept it: a stream whose SMR was not
+	 * taken stays unmatched, faults, and the IPA's first DMA after that
+	 * reset the SoC (hw-modem.md, 9.4) - so a route that does not read
+	 * back is refused, not tried.
 	 */
-	r->routed = (s2cr & 0x300ff) == r->cb;
+	r->routed = (s2cr & 0x300ff) == r->cb &&
+	    rd(r, SMMU_SMR(r->smr)) == r->smr_val;
 	log_info(r->log, "smmu: smr %u reads %08x; streams %x..%x to bank %u%s"
 	    "\n", r->smr, rd(r, SMMU_SMR(r->smr)), sids[0], sids[n - 1], r->cb,
-	    !r->routed ? " - S2CR NOT as written" :
-	    rd(r, SMMU_SMR(r->smr)) != r->smr_val ? " (SMR reads otherwise; "
-	    "the device's traffic will say)" : "");
+	    r->routed ? "" : " - NOT as written; refusing");
 	return r->routed ? OK : EIO;
 }
 

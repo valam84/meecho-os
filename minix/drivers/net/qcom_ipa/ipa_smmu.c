@@ -1,6 +1,6 @@
 /*
- * The IPA's streams on the apps SMMU (iommu@16c0000): SMR 0 and bank 0 by
- * agreement with the Wi-Fi (SMR 1, bank 1), over page tables of this
+ * The IPA's streams on the apps SMMU (iommu@16c0000): SMR 2 and bank 0, the
+ * Wi-Fi SMR 1 and bank 1, over page tables of this
  * service's memory, so that the addresses in the IPA's descriptors are
  * IOVAs below 4 GiB this service chose and nothing else of the AP's memory
  * is reachable from the IPA or from its microcontroller, which the modem
@@ -12,7 +12,14 @@
 #include "ipa.h"
 #include "smmu_route.h"
 
-#define IPA_SMR		0
+/*
+ * SMR 2, not 0: on the tablet a write to SMR 0 read back as 0 - not taken
+ * - while the Wi-Fi's SMR 1 took its write (80011a00) and its DMA works
+ * through the same code.  An IPA stream left unmatched faults
+ * (sCR0.USFCFG), and both IPA bring-ups that went on past the route ended
+ * in Qualcomm's crash-dump mode (hw-modem.md, 9.4).
+ */
+#define IPA_SMR		2
 #define IPA_CB		0
 #define IPA_ASID	1
 #define IPA_IAS		32		/* the IPA's addresses are 32-bit */

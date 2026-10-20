@@ -1,0 +1,16 @@
+# Раздача репозитория пакетов MEECHO по HTTPS (srv.sh https).
+#
+# 443 на сервере сборки занят чужой службой, поэтому HTTPS - на 8443, а
+# сертификат Let's Encrypt берётся проверкой HTTP-01 на 80 (TLS-ALPN
+# требует именно 443). На 80 же - переадресация на HTTPS.
+{
+	http_port 80
+	https_port 8443
+	admin off
+}
+
+{$PKG_HOST}:8443 {
+	root * /srv/pkg
+	file_server browse
+	encode gzip
+}

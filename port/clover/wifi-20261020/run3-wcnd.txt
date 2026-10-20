@@ -1,0 +1,26 @@
+30.56
+up=0
+wlfw at 0:83
+fw_status 0x0
+MSA: 2 region(s) given
+chip 0x30214 family 0x4001 board 0xff soc 0x40050000, fw 0x101f81f0 QC_IMAGE_VERSION_STRING=WLAN.HL.1.0.1.c2-00496-QCAHLSWMTPLZ-1
+board data: /libdata/firmware/qcom/clover/modem/bdwlan.bin, 19152 bytes
+firmware ready
+n=0
+wlfw at 0:83
+fw_status 0x7
+firmware up already: WLAN_CFG next
+WLAN on (mission mode)
+copy engines up, HTC connected
+SERVICE_READY: build 0x101f81f0 abi 0x1000000/571, 2 chains, ht 0x381b vht 0x739139ba, regdomain 0x809c, 2G 2312-2732 5G 4912-6100, 0 memory requests
+services: rx full reorder 1, mgmt tx by WMI 1, ack rssi 0, extend address 0
+READY: status 0, mac 00:00:00:00:00:00
+HTT up
+WMI event 0x0, 60 bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ...
+WMI event 0x0, 60 bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ...
+WMI event 0x0, 60 bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ...
+WMI event 0x0, 60 bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ...
+WMI event 0x0, 60 bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ...
+WMI event 0x0, 60 bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ...
+v=0
+38.20

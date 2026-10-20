@@ -192,6 +192,47 @@ indication 0x0021 - FW_READY
   чтение `apps_smmu` без записей, кольца CE (`wcn_ce.c`), и только потом
   WLAN_MODE.
 
+### Первая ступень: WMI READY [T] (2026-10-20, образ `boot-20261020014439`)
+
+Образ сессии модема с `modem=1` и RS, выдающим узел по `iommus`; на корне
+`system` — свежие `qcom_rpm` (L5, `rf_clk1`), `wcn`, `wcnd`. Журнал
+ядра — потоком `ssh … kmsg -f` на хост (файл на планшете сброс не
+переживает). `wcnd -f -n`, затем `wcnd -f`:
+
+```
+fw_status 0x0 … MSA: 2 region(s) given … chip 0x30214 … (CAP без ошибки)
+board data: /libdata/firmware/qcom/clover/modem/bdwlan.bin, 19152 bytes
+firmware ready
+fw_status 0x7 → WLAN_CFG, WLAN_MODE → WLAN on (mission mode)
+rpm: ldoa uV 525000, ldoa enable 1, clka pin enable 1
+smmu: s2cr 1 reads 00000301; smr 1 reads 80011a00; streams 1a00..1a01 to bank 1
+HTC ready: 2 credits of 2184 bytes, 22 endpoints, version 1
+service 0100 on endpoint 1; service 0300 on endpoint 2
+SERVICE_READY: build 0x101f81f0 abi 0x1000000/571, 2 chains, ht 0x381b
+  vht 0x739139ba, regdomain 0x809c, 2G 2312-2732 5G 4912-6100, 0 memory requests
+services: rx full reorder 1, mgmt tx by WMI 1, ack rssi 0, extend address 0
+READY: status 0, mac 00:00:00:00:00:00
+HTT 3.56
+```
+
+- **Совпало с эталоном**: `fw_version` `0x101f81f0` в SERVICE_READY, ABI
+  `571` — это «1.0.0.571» `ethtool` под Linux, HTT 3.56, MAC в READY
+  негодный (Linux: «invalid MAC address; choosing random»).
+- **DMA через `apps_smmu` работает в обе стороны** (банк 1, IOVA
+  0x20000000 → память службы): SMR 1 читается обратно как записан; HTC
+  READY и ответы CONNECT пришли через кольца приёма, CONNECT и WMI INIT
+  ушли через кольца отправки. Это закрывает и вопрос сессии модема о
+  маршруте (`hw-modem.md` 9.2–9.3).
+- **CAP без ошибки, когда клиент один**: `error 90` прошлого круга давала
+  регистрация, оставшаяся от предыдущего запуска зонда.
+- **Плата — из `bdwlan.bin` образа модема**: путь релиза работает.
+- Найдено прогоном: буфер приёма, взятый из середины строки дескрипторов,
+  по правилу строки не может вернуться сразу и терялся (`ce2: a buffer
+  not posted again`); теперь ждёт в списке трубы, пока строка не освободится.
+- [?] После READY приходят WMI-сообщения по 60 байт из нулей (id 0): HTC-
+  заголовок цел, тело — нули. Похоже на кадры, несущие только кредит в
+  трейлере; ath10k такие молча пропускает. Разобрать, если помешают.
+
 ## 4. Copy engine [C]
 
 Подробно — `port/clover/wifi/ce.md`. Двенадцать колец DMA; CE n —

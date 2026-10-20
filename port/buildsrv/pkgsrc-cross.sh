@@ -65,8 +65,13 @@ rsync -a --delete --exclude=/usr/pkg/ "$H/dest-evbarm64/" "$H/cross-root/"
 
 rm -rf "$TOOLDIR"
 mkdir -p "$TOOLDIR/bin"
-for f in "$XT"/$T-*; do
+# binutils - из первого префикса: второй проход (C++) их не ставит и
+# берёт оттуда же. Из $XT поверх - только сам компилятор.
+for f in "$H/xtools-aarch64/bin"/$T-*; do
 	ln -s "$f" "$TOOLDIR/bin/"
+done
+for f in "$XT"/$T-gcc* "$XT"/$T-g++ "$XT"/$T-c++ "$XT"/$T-cpp "$XT"/$T-gcov*; do
+	[ -e "$f" ] && ln -sf "$f" "$TOOLDIR/bin/"
 done
 # Компиляторы знают sysroot dest-evbarm64 (--with-sysroot при сборке),
 # а зависимости pkgsrc ставит в cross-root: обёртки называют его явно.
@@ -128,6 +133,12 @@ TOOLS_PLATFORM.install=	$TOOLDIR/bin/$T-install
 # пользуется), и пакеты - тоже.
 LDFLAGS+=		-static
 .endif
+
+# GCC 15 по умолчанию - C23, и старый код с объявлениями без
+# прототипа (getenv(), xexit()) перестаёт собираться. Та же политика,
+# что у HOST_CFLAGS дерева: чужому коду - gnu17. Пакет, которому нужен
+# C23, задаёт FORCE_C_STD сам (?=).
+FORCE_C_STD?=		gnu17
 
 DISTDIR=		$H/distfiles
 WRKOBJDIR=		$H/pkgsrc-work

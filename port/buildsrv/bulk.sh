@@ -40,7 +40,7 @@ PRIORITY="devel textproc sysutils misc archivers shells editors lang \
 	multimedia www wayland x11 wm"
 export PATH=/usr/pkg/bin:/usr/pkg/sbin:$PATH
 
-mkdir -p "$S/log" "$REPO"
+mkdir -p "$S/log" "$S/deps" "$REPO"
 touch "$S/status.tsv"
 
 say() { echo "$(date '+%F %T') $*" | tee -a "$S/bulk.log"; }
@@ -89,6 +89,29 @@ reason() {	# reason журнал
 culprit() {	# culprit журнал
 	grep -o "stopped making \"[^\"]*\" in $PKGSRC/[^/ ]*/[^/ ]*" "$1" |
 	    head -1 | sed "s|.* in $PKGSRC/||"
+}
+
+# Прямые зависимости пакета (все виды) - из кэша $S/deps.
+deps() {	# deps PKGPATH
+	f=$S/deps/$(echo "$1" | tr / _)
+	[ -f "$f" ] || (cd "$PKGSRC/$1" 2>/dev/null &&
+	    bmake show-depends-pkgpaths 2>/dev/null) | sort -u > "$f"
+	cat "$f"
+}
+
+# Первая упавшая зависимость на любой глубине, обход в ширину.
+bad_dep() {	# bad_dep PKGPATH
+	seen=" $1 " queue=$(deps "$1")
+	while [ -n "$queue" ]; do
+		next=
+		for d in $queue; do
+			case $seen in *" $d "*) continue ;; esac
+			seen="$seen$d "
+			failed "$d" && { echo "$d"; return; }
+			next="$next $(deps "$d")"
+		done
+		queue=$next
+	done
 }
 
 publish() {
@@ -151,7 +174,10 @@ fi
 say "начало: $(wc -l < "$LIST") пакетов в списке, записей $(wc -l < "$S/status.tsv")"
 
 done_since=0
-while read -r p; do
+# Список - через дескриптор 3, а stdin всего, что внутри, - /dev/null:
+# bmake и configure читают stdin и съедают строки списка.
+exec < /dev/null
+while read -r p <&3; do
 	[ -n "$p" ] || continue
 	[ -f "$S/STOP" ] && { say "STOP"; break; }
 	known "$p" && continue
@@ -161,11 +187,8 @@ while read -r p; do
 	fi
 
 	dir=$PKGSRC/$p
-	# Зависимость уже не собралась - не пробовать.
-	bad=
-	for d in $(cd "$dir" && bmake show-depends-pkgpaths 2>/dev/null); do
-		failed "$d" && { bad=$d; break; }
-	done
+	# Зависимость (на любой глубине) уже не собралась - не пробовать.
+	bad=$(bad_dep "$p")
 	if [ -n "$bad" ]; then
 		record "$p" depfail "$bad" 0
 		continue
@@ -202,7 +225,7 @@ while read -r p; do
 	trim_distfiles
 	if [ "$done_since" -ge 20 ]; then publish; done_since=0; fi
 	report
-done < "$LIST"
+done 3< "$LIST"
 
 publish
 report

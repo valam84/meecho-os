@@ -337,13 +337,13 @@ rpm_init(int UNUSED(type), sef_init_info_t *UNUSED(info))
 
 static struct vote {
 	endpoint_t who;
-	uint32_t type, key, value;
+	uint32_t type, id, key, value;
 	int used;
 } votes[NVOTES];
 
 static uint32_t
-aggregate(endpoint_t who, uint32_t type, uint32_t key, uint32_t value,
-	int *full)
+aggregate(endpoint_t who, uint32_t type, uint32_t id, uint32_t key,
+	uint32_t value, int *full)
 {
 	struct vote *v = NULL, *free_v = NULL;
 	uint32_t agg = 0;
@@ -355,7 +355,7 @@ aggregate(endpoint_t who, uint32_t type, uint32_t key, uint32_t value,
 			if (free_v == NULL)
 				free_v = &votes[i];
 		} else if (votes[i].who == who && votes[i].type == type &&
-		    votes[i].key == key)
+		    votes[i].id == id && votes[i].key == key)
 			v = &votes[i];
 	}
 	if (v == NULL) {
@@ -366,12 +366,14 @@ aggregate(endpoint_t who, uint32_t type, uint32_t key, uint32_t value,
 		v->used = 1;
 		v->who = who;
 		v->type = type;
+		v->id = id;
 		v->key = key;
 	}
 	v->value = value;
 	for (i = 0; i < NVOTES; i++)
 		if (votes[i].used && votes[i].type == type &&
-		    votes[i].key == key && votes[i].value > agg)
+		    votes[i].id == id && votes[i].key == key &&
+		    votes[i].value > agg)
 			agg = votes[i].value;
 	return agg;
 }
@@ -380,14 +382,16 @@ static const char *
 res_name(uint32_t type)
 {
 	return type == QRPM_RES_RWMX ? "rwmx" : type == QRPM_RES_RWCX ?
-	    "rwcx" : "ipa clock";
+	    "rwcx" : type == QRPM_RES_LDOA ? "ldoa" : type == QRPM_RES_CLKA ?
+	    "clka" : "ipa clock";
 }
 
 static const char *
 key_name(uint32_t key)
 {
 	return key == QRPM_KEY_LEVEL ? "level" : key == QRPM_KEY_ENABLE ?
-	    "enable" : "kHz";
+	    "enable" : key == QRPM_KEY_UV ? "uV" : key == QRPM_KEY_PIN_ENABLE ?
+	    "pin enable" : "kHz";
 }
 
 /* QRPM_SET: one key of a rail or the IPA's clock, for the active set. */
@@ -401,9 +405,22 @@ do_set(const message *m)
 
 	if (!g_open)
 		return ENODEV;
-	if (id != 0)
+	if (type == QRPM_RES_LDOA && id == 5) {
+		/*
+		 * PM660's L5, the WCN3990's vdd-0.8-cx-mx: on/off, and the
+		 * voltage inside the tree's range (525-952 mV; Linux kept
+		 * it at 525 mV under Wi-Fi).
+		 */
+		if ((key != QRPM_KEY_ENABLE || value > 1) &&
+		    (key != QRPM_KEY_UV || value < 525000 || value > 952000))
+			return EPERM;
+	} else if (type == QRPM_RES_CLKA && id == 4) {
+		/* rf_clk1, the WCN3990's reference clock, by its pin. */
+		if (key != QRPM_KEY_PIN_ENABLE || value > 1)
+			return EPERM;
+	} else if (id != 0)
 		return EPERM;
-	if (type == QRPM_RES_IPA_CLK) {
+	else if (type == QRPM_RES_IPA_CLK) {
 		/* The IPA's clock, by its rate (the IPA asks 40 MHz). */
 		if (key != QRPM_KEY_KHZ || value > 200000)
 			return EPERM;
@@ -411,7 +428,7 @@ do_set(const message *m)
 	    (key != QRPM_KEY_LEVEL && key != QRPM_KEY_ENABLE) ||
 	    (key == QRPM_KEY_ENABLE && value > 1))
 		return EPERM;
-	value = aggregate(m->m_source, type, key, value, &full);
+	value = aggregate(m->m_source, type, id, key, value, &full);
 	if (full)
 		return ENOSPC;
 	r = glink_rpm_request(&g, type, id, &key, &value, 1, 1000);

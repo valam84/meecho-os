@@ -3,8 +3,9 @@
  * of one RPM resource, for the active set - what Linux's rpmpd.c sends for
  * a power domain's "swen" and "vlvl" (qcom_rpm_smd_write()).  The adreno
  * service votes VDDMX this way for the GPU's clock (port/clover/hw-gpu.md,
- * §20).  qcom_rpm takes the rails' level and enable keys, and the IPA's
- * clock by its rate (qcom_ipa; port/clover/hw-modem.md, section 9).
+ * §20).  qcom_rpm takes the rails' level and enable keys, the IPA's
+ * clock by its rate (qcom_ipa; port/clover/hw-modem.md, section 9), and
+ * the Wi-Fi's L5 and reference clock (wcn).
  *
  *	request:  m_type QRPM_SET, m_u32.data[QRPM_TYPE .. QRPM_VALUE]
  *	reply:    m_type OK, or an error (EINVAL the RPM said no, ENXIO no
@@ -26,6 +27,17 @@
 #define QRPM_RES_RWMX		0x786d7772	/* "rwmx": VDDMX, by level */
 #define QRPM_KEY_ENABLE		0x6e657773	/* "swen" */
 #define QRPM_KEY_LEVEL		0x6c766c76	/* "vlvl" */
+
+/*
+ * The WCN3990's supplies (port/clover/hw-wifi.md, section 6): PM660's L5
+ * (vdd-0.8-cx-mx, the only one of its four LDOs off at boot) by enable
+ * and microvolts (qcom_smd-regulator.c), and its reference clock rf_clk1
+ * - an XO buffer controlled by pin (clk-smd-rpm.c), id 4.
+ */
+#define QRPM_RES_LDOA		0x616f646c	/* "ldoa": PM660's LDOs */
+#define QRPM_KEY_UV		0x00007675	/* "uv" */
+#define QRPM_RES_CLKA		0x616b6c63	/* "clka": XO buffers */
+#define QRPM_KEY_PIN_ENABLE	0x62636370	/* "pccb" */
 
 /* Clocks (clk-smd-rpm.c): the rate in kHz, 0 for off. */
 #define QRPM_RES_IPA_CLK	0x00617069	/* "ipa": the IPA's core clock */

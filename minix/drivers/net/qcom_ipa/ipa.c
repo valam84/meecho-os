@@ -172,6 +172,8 @@ parse(void)
 		smmu_check = (int)lv;
 	if (env_parse("mux", "d", 0, &lv, 1, 254) == EP_SET)
 		mux = (unsigned)lv;
+	if (env_parse("step_ms", "d", 0, &lv, 0, 5000) == EP_SET)
+		step_ms = (unsigned)lv;
 	if (env_get_param("stage", buf, sizeof(buf)) == OK) {
 		if (strcmp(buf, "init") == 0)
 			stage_init = 1;

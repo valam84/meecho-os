@@ -139,6 +139,16 @@ volatile uint8_t *ipa_map(u64_t pa, u64_t sz, const char *what);
 int ipa_probe_smmu(int banks);
 int ipa_probe_regs(void);
 
+/*
+ * A line, then a pause, before each step of the bring-up: on the tablet a
+ * step reset the SoC into Qualcomm's crash-dump mode, and only a log
+ * streamed off the machine as it is written (kmsg -f over ssh) survives
+ * that (hw-modem.md, 9.2).  step_ms= sets the pause, 0 for none.
+ */
+extern unsigned step_ms;
+#define STEP(...)	do { log_info(&ilog, __VA_ARGS__); \
+			    if (step_ms) micro_delay(step_ms * 1000); } while (0)
+
 /* ipa_hw.c */
 int dbuf_alloc(struct dbuf *b, size_t len, int writable);
 void dbuf_clean(struct dbuf *b, size_t off, size_t len);

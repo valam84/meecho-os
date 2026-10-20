@@ -70,6 +70,7 @@
 
 struct ipa_hw hw;
 int ipa_test_mode;
+unsigned step_ms = 200;
 
 /*
  * DRV: the AP's own rules (ipa2-lite's ipa_rules), always this size - the
@@ -140,6 +141,9 @@ reset_hw(void)
 {
 	uint32_t v;
 
+	STEP("step: reading VERSION before the reset\n");
+	v = rd32(ipa.base, IPA_VERSION);
+	STEP("step: VERSION %08x; writing COMP_SW_RESET 1, 0\n", v);
 	wr32(ipa.base, IPA_COMP_SW_RESET, 1);
 	wr32(ipa.base, IPA_COMP_SW_RESET, 0);
 	wr32(ipa.base, IPA_COMP_CFG, 0x11);
@@ -147,8 +151,10 @@ reset_hw(void)
 		log_warn(&ilog, "IPA_VERSION reads 0: no access\n");
 		return EIO;
 	}
+	STEP("step: VERSION %08x after; writing BCR\n", v);
 	wr32(ipa.base, IPA_BCR, 0x1fff7f);		/* v2.5 and later */
 
+	STEP("step: resetting the BAM\n");
 	wr32(ipa.base, BAM_CTRL, BAM_SW_RST);
 	wr32(ipa.base, BAM_CTRL, 0);
 	wr32(ipa.base, BAM_DESC_CNT_TRSHLD, 0x10);
@@ -156,6 +162,7 @@ reset_hw(void)
 	wr32(ipa.base, BAM_CTRL, rd32(ipa.base, BAM_CTRL) | BAM_EN);
 	wr32(ipa.base, BAM_IRQ_EN, BAM_ERROR_EN | BAM_HRESP_ERR_EN);
 	wr32(ipa.base, BAM_IRQ_SRCS_MSK_EE0, BAM_IRQ);
+	STEP("step: BAM on, revision %08x\n", rd32(ipa.base, BAM_REVISION));
 	return OK;
 }
 
@@ -202,6 +209,8 @@ partition(void)
 		return EINVAL;
 	}
 	hw.smem_size -= hw.smem_restr;
+	STEP("step: SHARED_MEM %08x; writing the canaries from SRAM+0x280\n",
+	    v);
 	off = 0x280;
 	put(&off, MEM_FT_V4, IPA_NUM_PIPES + 2, 2);
 	put(&off, MEM_FT_V6, IPA_NUM_PIPES + 2, 2);
@@ -443,6 +452,8 @@ sram_init(void)
 	int r;
 
 	for (i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
+		STEP("step: SRAM part %d (%x+%x) through the command pipe\n",
+		    order[i], hw.part[order[i]].offset, hw.part[order[i]].size);
 		if ((r = sram_part(order[i])) != OK) {
 			log_warn(&ilog, "SRAM part %d (%x+%x): %d\n", order[i],
 			    hw.part[order[i]].offset, hw.part[order[i]].size,
@@ -466,6 +477,7 @@ ipa_hw_init(void)
 		log_warn(&ilog, "the IPA's clock: RPM vote failed (%d)\n", r);
 		return r;
 	}
+	STEP("step: clock voted; the SMMU's tables\n");
 	if ((r = ipa_smmu_init()) != OK)
 		return r;
 	for (ep = 0; ep < EP_NUM; ep++)
@@ -478,12 +490,14 @@ ipa_hw_init(void)
 	log_info(&ilog, "resetting the IPA and its BAM\n");
 	if ((r = reset_hw()) != OK || (r = partition()) != OK)
 		return r;
+	STEP("step: setting up the pipes\n");
 	for (ep = 0; ep < EP_NUM; ep++) {
 		hw.pipe[ep].desc = hw.pipe[ep].fifo.va;
 		dbuf_clean(&hw.pipe[ep].fifo, 0, hw.pipe[ep].fifo.len);
 		pipe_reset(ep);
 		pipe_setup_regs(ep);
 	}
+	STEP("step: pipes set up; writing ROUTE\n");
 	wr32(ipa.base, IPA_ROUTE, 0x00040044);
 
 	log_info(&ilog, "SRAM %u bytes (restricted %u): DRV %x, MDM %x+%x; "

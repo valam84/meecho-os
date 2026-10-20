@@ -237,13 +237,13 @@ ipa_probe_regs(void)
 		    "reading the IPA\n", r);
 		return r;
 	}
-	log_info(&ilog, "ipa: clock voted (40 MHz)\n");
+	STEP("ipa: clock voted (40 MHz)\n");
 	if (ipa.base == NULL && (ipa.base = ipa_map(ipa.pa, ipa.sz,
 	    "the IPA")) == NULL) {
 		(void)ipa_rpm_clock(0);
 		return ENOMEM;
 	}
-	log_info(&ilog, "ipa: reading VERSION\n");
+	STEP("ipa: reading VERSION\n");
 	v = rd32(ipa.base, IPA_VERSION);
 	log_info(&ilog, "ipa: VERSION %08x; reading the BAM's REVISION\n", v);
 	(void)rd32(ipa.base, BAM_REVISION);

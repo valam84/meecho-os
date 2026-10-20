@@ -5,7 +5,8 @@
  * itself waits on should not hold, so it is held here; what needs rights
  * (TrustZone, the hardware) is asked of the wcn service on /dev/wlan0.
  *
- *	wcnd [-f] [-v] [-d fwdir] [-b board-2.bin] [-n]
+ *	wcnd [-f] [-v] [-d fwdir] [-b board-2.bin] [-n | -s | -S | -j]
+ *	     [-c wcnd.conf]
  *
  *	-f	stay in the foreground
  *	-v	print the QMI exchange
@@ -14,6 +15,14 @@
  *	-b	a board-2.bin to fall back on
  *		(/libdata/firmware/ath10k/WCN3990/hw1.0/board-2.bin)
  *	-n	stop after FW_READY: no supplies, no WLAN_MODE, no engines
+ *	-s, -S	scan once and list the networks (-S with their names)
+ *	-j	scan and join in the foreground, then keep the keys
+ *	-c	the network to join: "ssid=..." and "psk=..." lines
+ *		(/etc/wcnd.conf, mode 0600: the passphrase is in it)
+ *
+ * Without -f (as rc runs it) wcnd brings the WLAN up, joins the network
+ * of wcnd.conf if there is one, and stays in the background for the
+ * group key; dhcpcd on wlan0 does the rest.
  *
  * The order is Linux's (ath10k qmi.c and snoc.c): IND_REGISTER, HOST_CAP,
  * MSA_INFO, the MSA given through TrustZone (by the service), MSA_READY,
@@ -44,19 +53,23 @@
 #include "wcn_ioc.h"
 #include "wcn_wmi.h"
 #include "wcn_mlme.h"
+#include "wcnd.h"
 
 #define FWDIR	"/libdata/firmware/qcom/clover/modem"
 #define BOARD2	"/libdata/firmware/ath10k/WCN3990/hw1.0/board-2.bin"
 #define DEV	"/dev/wlan0"
 
-static int verbose, fg, stop_at_ready, do_scan;
+static int verbose, fg, stop_at_ready, do_scan, do_join;
+static const char *conf = "/etc/wcnd.conf";
+static char want_ssid[33], want_psk[65];
 static const char *fwdir = FWDIR, *board2 = BOARD2;
-static int s, dev = -1;
+static int s;
+int dev = -1;
 static struct sockaddr_qrtr fw;
 static uint16_t txn = 1;
 static uint8_t out[WLFW_MSG_MAX], in[WLFW_MSG_MAX];
 
-static void
+void
 say(int pri, const char *fmt, ...)
 {
 	va_list ap;
@@ -406,7 +419,7 @@ static struct wmi_svc svc;
 static struct wmi_ready rdy;
 
 /* One WMI event into "msg": 0, or -1 when none came in "ms". */
-static int
+int
 wmi_wait(struct wcn_msg *msg, unsigned ms)
 {
 
@@ -420,7 +433,7 @@ wmi_wait(struct wcn_msg *msg, unsigned ms)
 	return 0;
 }
 
-static int
+int
 wmi_send(const uint8_t *p, size_t n, const char *what)
 {
 	struct wcn_msg msg;
@@ -543,6 +556,33 @@ static int show_ssid;
  * channels passive.  The regulatory domain is the firmware's own (its
  * EEPROM's, 0x809c here) - no PDEV_SET_REGDOMAIN yet.
  */
+/* ssid= and psk= of the configuration file. */
+static int
+read_conf(void)
+{
+	char line[128], *v;
+	FILE *f;
+	size_t n;
+
+	if ((f = fopen(conf, "r")) == NULL)
+		return -1;
+	while (fgets(line, sizeof(line), f) != NULL) {
+		n = strlen(line);
+		while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
+			line[--n] = '\0';
+		if (line[0] == '#' || (v = strchr(line, '=')) == NULL)
+			continue;
+		*v++ = '\0';
+		if (strcmp(line, "ssid") == 0)
+			strlcpy(want_ssid, v, sizeof(want_ssid));
+		else if (strcmp(line, "psk") == 0)
+			strlcpy(want_psk, v, sizeof(want_psk));
+	}
+	fclose(f);
+	memset(line, 0, sizeof(line));
+	return want_ssid[0] != '\0' ? 0 : -1;
+}
+
 static int
 chan_list(uint32_t *freqs, unsigned *n)
 {
@@ -739,7 +779,7 @@ main(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "fvd:b:nsS")) != -1)
+	while ((c = getopt(argc, argv, "fvd:b:nsSjc:")) != -1)
 		switch (c) {
 		case 'f': fg = 1; break;
 		case 'v': verbose = 1; fg = 1; break;
@@ -748,6 +788,8 @@ main(int argc, char **argv)
 		case 'n': stop_at_ready = 1; break;
 		case 's': do_scan = fg = 1; break;
 		case 'S': do_scan = fg = show_ssid = 1; break;
+		case 'j': do_join = fg = 1; break;
+		case 'c': conf = optarg; break;
 		default:
 			fprintf(stderr, "usage: wcnd [-f] [-v] [-d fwdir] "
 			    "[-b board-2.bin] [-n]\n");
@@ -768,6 +810,24 @@ main(int argc, char **argv)
 		if (fg)
 			wmi_listen(5);
 		return 1;
+	}
+	if (do_join || !fg) {
+		if (read_conf() != 0) {
+			say(LOG_INFO, "no network named in %s: up, not joined",
+			    conf);
+			if (fg)
+				return 0;
+		} else {
+			if (scan() != 0 || join(&bss, want_ssid, want_psk,
+			    &svr, self) != 0) {
+				memset(want_psk, 0, sizeof(want_psk));
+				return 1;
+			}
+			memset(want_psk, 0, sizeof(want_psk));
+			if (!fg && daemon(0, 0) != 0)
+				say(LOG_WARNING, "daemon: %s", strerror(errno));
+			keep();
+		}
 	}
 	if (fg) {
 		if (do_scan)

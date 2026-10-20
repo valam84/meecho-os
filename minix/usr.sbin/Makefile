@@ -16,6 +16,8 @@ SUBDIR+=	usbrole
 SUBDIR+=	fbmode
 SUBDIR+=	ipaqmid
 SUBDIR+=	mkbootarchive
+# The WCN3990 Wi-Fi's QMI half (minix/drivers/net/wcn).
+SUBDIR+=	wcnd
 .endif
 
 .include <bsd.subdir.mk>

@@ -26,6 +26,9 @@ fi
 $CC $CFLAGS -o "$OUT/wlfwtest" "$HERE/wlfwtest.c" "$SRC/wcn_wlfw.c"
 "$OUT/wlfwtest"
 
+$CC $CFLAGS -o "$OUT/htctest" "$HERE/htctest.c" "$SRC/wcn_htc.c"
+"$OUT/htctest"
+
 $CC $CFLAGS -o "$OUT/cetest" "$HERE/cetest.c" "$SRC/wcn_ce.c"
 "$OUT/cetest"
 "$OUT/cetest" -s

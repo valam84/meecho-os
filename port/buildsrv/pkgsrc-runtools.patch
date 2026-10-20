@@ -1,0 +1,26 @@
+Cross-compiling to another OPSYS: allow USE_TOOLS+=...:run when the
+native and target layouts agree.
+
+A tool used at run time becomes a DEPENDS of the package, and its path
+is substituted into the package (interpreter lines, REPLACE_*, scripts)
+from the native build. The check refuses that whenever the target OPSYS
+differs from the native one, because then the native path need not
+exist on the target.
+
+What actually matters is that the paths agree, not that the OS names
+do. A cross build whose native pkgsrc lives at the target's LOCALBASE
+(/usr/pkg on both sides) is in the same position as a NetBSD -> NetBSD
+build, which the check already allows. TOOLS_CROSS_RUN_SAME_PATHS=yes
+in mk.conf says so; without it nothing changes.
+
+--- mk/tools/replace.mk
++++ mk/tools/replace.mk
+@@ -141,6 +141,7 @@
+ .endfor
+ .for _t_ in ${USE_TOOLS:M*\:run}
+-.  if ${USE_CROSS_COMPILE:tl} == "yes" && ${OPSYS} != ${NATIVE_OPSYS}
++.  if ${USE_CROSS_COMPILE:tl} == "yes" && ${OPSYS} != ${NATIVE_OPSYS} && \
++      ${TOOLS_CROSS_RUN_SAME_PATHS:Uno:tl} != "yes"
+ PKG_FAIL_REASON+=	"USE_TOOLS+=${_t_} not supported in cross-compilation"
+ .  endif
+ _TOOLS_DEPMETHOD.${_t_:C/:.*//}=	DEPENDS

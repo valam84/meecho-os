@@ -1,0 +1,50 @@
+Cross-compiling to another OPSYS: do not pin the cross variables in
+MAKEFLAGS.
+
+OPSYS, OS_VERSION, OPSYS_VERSION and LOWER_OPSYS are CROSSVARS: each is
+an expression that picks CROSS_* or NATIVE_* by USE_CROSS_COMPILE. The
+top-level make evaluated them (to the target's values, under
+USE_CROSS_COMPILE=yes) and passed the result in MAKEFLAGS, so every
+recursive make got them as command-line variables, including the native
+builds of TOOL_DEPENDS that run with USE_CROSS_COMPILE=no. With target
+OPSYS == native OPSYS (NetBSD -> NetBSD) that is harmless; with another
+target OS the host tools are built as "Minix/x86_64" and pkg_add refuses
+to install them ("was built for a different platform").
+
+NATIVE_* and CROSS_* are already passed down, so the expressions give
+the right answer in every make without pinning.
+
+--- mk/bsd.prefs.mk
++++ mk/bsd.prefs.mk
+@@ -90,7 +90,6 @@
+ .if !defined(NATIVE_OPSYS)
+ NATIVE_OPSYS:=		${:!${UNAME} -s!:S/-//g:S/\///g:C/^CYGWIN_.*$/Cygwin/}
+ MAKEFLAGS+=		NATIVE_OPSYS=${NATIVE_OPSYS:Q}
+-MAKEFLAGS+=		OPSYS=${OPSYS:Q} # defined in crossvars
+ .endif
+
+ # OS_VARIANT is used to differentiate operating systems which have a common
+@@ -105,7 +104,6 @@
+ _NATIVE_OS_VERSION_CMD=	${UNAME} -r
+ NATIVE_OS_VERSION=	${_NATIVE_OS_VERSION_CMD:sh}
+ MAKEFLAGS+=		NATIVE_OS_VERSION=${NATIVE_OS_VERSION:Q}
+-MAKEFLAGS+=		OS_VERSION=${OS_VERSION:Q} # defined in crossvars
+ .endif
+
+ #
+@@ -119,7 +117,6 @@
+ 			awk -F. '{major=int($$1); minor=int($$2); if (minor>=100) minor=99; patch=int($$3); if (patch>=100) patch=99; printf "%02d%02d%02d", major, minor, patch}'
+ NATIVE_OPSYS_VERSION=	${_NATIVE_OPSYS_VERSION_CMD:sh}
+ MAKEFLAGS+=		NATIVE_OPSYS_VERSION=${NATIVE_OPSYS_VERSION:Q}
+-MAKEFLAGS+=		OPSYS_VERSION=${OPSYS_VERSION:Q} # defined in crossvars
+ .endif
+
+ # Preload these for architectures not in all variations of bsd.own.mk,
+@@ -331,7 +328,6 @@
+ NATIVE_OS_VERSION:=	${NATIVE_OS_VERSION}
+
+ MAKEFLAGS+=		NATIVE_LOWER_OPSYS=${NATIVE_LOWER_OPSYS:Q}
+-MAKEFLAGS+=		LOWER_OPSYS=${LOWER_OPSYS:Q} # defined in crossvars
+
+ NATIVE_LOWER_VENDOR?=	# empty ("arch--opsys")
+

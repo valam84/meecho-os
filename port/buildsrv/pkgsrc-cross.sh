@@ -75,11 +75,17 @@ for f in "$XT"/$T-gcc* "$XT"/$T-g++ "$XT"/$T-c++ "$XT"/$T-cpp "$XT"/$T-gcov*; do
 done
 # Компиляторы знают sysroot dest-evbarm64 (--with-sysroot при сборке),
 # а зависимости pkgsrc ставит в cross-root: обёртки называют его явно.
+# Си - ещё и -std=gnu17 по умолчанию: GCC 15 без него говорит на C23, где
+# char *getenv(); значит «без аргументов», и старый код не собирается.
+# FORCE_C_STD этого не делает: он идёт через cwrappers, а кросс-сборка
+# pkgsrc - через прежние обёртки (mk/wrapper/cmd-sink-cross-gcc). Флаг -
+# до аргументов пакета: его собственный -std= стоит позже и побеждает.
 for c in gcc g++ c++ cpp; do
 	[ -x "$XT/$T-$c" ] || continue
+	case $c in gcc|cpp) std=-std=gnu17 ;; *) std= ;; esac
 	rm -f "$TOOLDIR/bin/$T-$c"
-	printf '#!/bin/sh\nexec "%s" --sysroot="%s" "$@"\n' \
-	    "$XT/$T-$c" "$H/cross-root" > "$TOOLDIR/bin/$T-$c"
+	printf '#!/bin/sh\nexec "%s" --sysroot="%s" %s "$@"\n' \
+	    "$XT/$T-$c" "$H/cross-root" "$std" > "$TOOLDIR/bin/$T-$c"
 	chmod +x "$TOOLDIR/bin/$T-$c"
 done
 # install -s хостового install зовёт хостовой strip, а тот aarch64 не
@@ -136,10 +142,9 @@ LDFLAGS+=		-static
 
 # GCC 15 по умолчанию - C23, и старый код с объявлениями без
 # прототипа (getenv(), xexit()) перестаёт собираться. Та же политика,
-# что у HOST_CFLAGS дерева (там gnu17; pkgsrc из новых знает только
-# gnu11, gnu17 молча пропускает - mk/compiler.mk). Пакет, которому нужен
-# C23, задаёт FORCE_C_STD сам (?=).
-FORCE_C_STD?=		gnu11
+# что у HOST_CFLAGS дерева: чужому коду - gnu17. Это для хостовых
+# сборок (cwrappers); сборкам под цель gnu17 даёт обёртка в TOOLDIR.
+FORCE_C_STD?=		gnu17
 
 DISTDIR=		$H/distfiles
 WRKOBJDIR=		$H/pkgsrc-work

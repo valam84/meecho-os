@@ -192,6 +192,7 @@ for p in $(cat "$LIST"); do
 	bad=$(bad_dep "$p")
 	if [ -n "$bad" ]; then
 		record "$p" depfail "$bad" 0
+		say "depfail $p <- $bad (без попытки)"
 		continue
 	fi
 

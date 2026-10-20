@@ -28,6 +28,12 @@
  *   WCNIOC_FRAME	a management frame copied into DMA memory, for
  *			MGMT_TX_SEND by reference: its address for the
  *			engine back (one of 16 slots, reused in turn)
+ *   WCNIOC_HTT_START	after WMI's READY: HTT's version, the fragment
+ *			descriptors, the rx ring, aggregation
+ *   WCNIOC_LINK	what wcnd joined (vdev, BSS) and whether the port is
+ *			open: lwip's frames flow only when it is
+ *   WCNIOC_EAPOL_TX	an EAPOL frame (Ethernet) to the BSS
+ *   WCNIOC_EAPOL_RX	the next EAPOL frame received, waiting up to "ms"
  *
  * The station itself - which WMI command when, the 802.11 exchange, WPA2
  * - is wcnd's: the service carries; the daemon decides.
@@ -70,5 +76,19 @@ struct wcn_msg {
 #define WCNIOC_WMI_SEND	_IOW('W', 6, struct wcn_msg)
 #define WCNIOC_WMI_RECV	_IOWR('W', 7, struct wcn_msg)
 #define WCNIOC_FRAME	_IOWR('W', 8, struct wcn_msg)
+
+struct wcn_link {
+	uint32_t up;			/* associated */
+	uint32_t authorized;		/* keys in: lwip's frames may go */
+	uint32_t vdev;
+	uint32_t freq;			/* MHz */
+	uint8_t bssid[6];
+	uint8_t pad[2];
+};
+
+#define WCNIOC_HTT_START _IO('W', 9)
+#define WCNIOC_LINK	_IOW('W', 10, struct wcn_link)
+#define WCNIOC_EAPOL_TX	_IOW('W', 11, struct wcn_msg)
+#define WCNIOC_EAPOL_RX	_IOWR('W', 12, struct wcn_msg)
 
 #endif /* _WCN_IOC_H */

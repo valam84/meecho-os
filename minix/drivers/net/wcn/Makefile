@@ -3,7 +3,8 @@
 # QMI half of its bring-up is a user daemon's, this is the half that needs
 # rights: the MSA given through TrustZone, then the copy engines.
 PROG=	wcn
-SRCS=	wcn.c wcn_hw.c wcn_ce.c wcn_htc.c smmu_route.c adreno_pt.c
+SRCS=	wcn.c wcn_hw.c wcn_data.c wcn_ce.c wcn_htc.c wcn_htt.c \
+	smmu_route.c adreno_pt.c
 
 FILES=${PROG}.conf
 FILESNAME=${PROG}

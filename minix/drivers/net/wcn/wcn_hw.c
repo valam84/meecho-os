@@ -113,6 +113,7 @@ struct rxbuf {
 	uint8_t *va;
 	uint64_t da;
 	size_t len;
+	unsigned slot;		/* send buffers: which of the 256 */
 };
 
 /* Received messages, per endpoint, until someone waits for them. */
@@ -228,6 +229,12 @@ deliver(unsigned eid, const uint8_t *msg, size_t len)
 {
 	unsigned t;
 
+	/* HTT is handled as it comes: the data path. */
+	if (htt_ep >= 0 && eid == (unsigned)htt_ep) {
+		data_htt(msg, len);
+		return;
+	}
+
 	if (eid >= HTC_MAX_EP || rxq[eid] == NULL)
 		return;
 	if (rxq[eid]->tail - rxq[eid]->head >= RXQ || len > RXQ_MAX) {
@@ -258,8 +265,8 @@ service_rx(unsigned id)
 				/* CE5: HTT without the HTC header (Linux
 				 * strips 8 bytes, unchecked). */
 				if (len > HTC_HDR && htt_ep >= 0)
-					deliver((unsigned)htt_ep,
-					    b->va + HTC_HDR, len - HTC_HDR);
+					data_htt(b->va + HTC_HDR,
+					    len - HTC_HDR);
 			} else if (htc_rx(&htc, b->va, len, &eid, &msg,
 			    &mlen) == 1)
 				deliver(eid, msg, mlen);
@@ -270,14 +277,23 @@ service_rx(unsigned id)
 	wcn_ce_rx_commit(&ce, id);
 }
 
+static uint8_t slot_busy[256];
+
 static void
 service_tx(unsigned id)
 {
+	struct rxbuf *t;
 	void *ctx;
 
-	while (wcn_ce_send_done(&ce, id, &ctx) == 0)
-		free(ctx);
+	while (wcn_ce_send_done(&ce, id, &ctx) == 0) {
+		t = ctx;
+		if (t != NULL && t->slot < 256)
+			slot_busy[t->slot] = 0;
+		free(t);
+	}
 }
+
+void hw_poll(void);
 
 static void
 service_all(void)
@@ -312,6 +328,21 @@ hw_intr(unsigned long mask)
 		service_tx(4);
 		(void)sys_irqenable(&hooks[i]);
 	}
+}
+
+void
+hw_poll(void)
+{
+
+	if (started)
+		service_all();
+}
+
+int
+hw_take(size_t len, void **va, uint64_t *da)
+{
+
+	return wcn_mem_take(&mem, len, va, da);
 }
 
 /* ---- send ---- */
@@ -352,7 +383,17 @@ hw_send(unsigned eid, const void *msg, size_t len)
 			}
 			sendarea = va;
 		}
-		slot = next++ % 256;
+		slot = next % 256;
+		if (slot_busy[slot]) {
+			/* still in flight: look at the rings, try later */
+			service_all();
+			if (slot_busy[slot]) {
+				free(t);
+				return EAGAIN;
+			}
+		}
+		next++;
+		t->slot = slot;
 		t->va = sendarea + slot * 2048;
 		t->da = sendda + slot * 2048;
 	}
@@ -362,7 +403,9 @@ hw_send(unsigned eid, const void *msg, size_t len)
 		return r;
 	}
 	(void)sys_cachectl(CACHE_CLEAN, t->va, t->len);
+	slot_busy[t->slot] = 1;
 	if ((r = wcn_ce_send(&ce, pipe, t->da, t->len, eid, 0, t)) != 0) {
+		slot_busy[t->slot] = 0;
 		free(t);
 		return r;
 	}

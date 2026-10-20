@@ -17,7 +17,6 @@
 
 #include <minix/drivers.h>
 #include <minix/chardriver.h>
-#include <minix/netdriver.h>
 #include <minix/ds.h>
 #include <minix/fdt.h>
 #include <minix/log.h>
@@ -268,6 +267,17 @@ msg_ioctl(unsigned long request, endpoint_t endpt, cp_grant_id_t grant)
 		if ((e = hw_frame(iomsg.data, iomsg.len, &iomsg.da)) != OK)
 			return e;
 		break;
+	case WCNIOC_EAPOL_TX:
+		if (iomsg.len < 14 || iomsg.len > WCN_MSG_MAX)
+			return EINVAL;
+		return data_eapol_send(iomsg.data, iomsg.len);
+	case WCNIOC_EAPOL_RX:
+		n = data_eapol_recv(iomsg.data, sizeof(iomsg.data),
+		    iomsg.ms > 10000 ? 10000 : iomsg.ms);
+		if (n < 0)
+			return (int)-n;
+		iomsg.len = (uint32_t)n;
+		break;
 	}
 	return sys_safecopyto(endpt, grant, 0, (vir_bytes)&iomsg,
 	    sizeof(iomsg));
@@ -280,6 +290,7 @@ w_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 {
 	struct wcn_msa m;
 	struct wcn_region r;
+	struct wcn_link lk;
 	int e, on;
 
 	if (minor != 0)
@@ -309,7 +320,18 @@ w_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 	case WCNIOC_WMI_SEND:
 	case WCNIOC_WMI_RECV:
 	case WCNIOC_FRAME:
+	case WCNIOC_EAPOL_TX:
+	case WCNIOC_EAPOL_RX:
 		return msg_ioctl(request, endpt, grant);
+	case WCNIOC_HTT_START:
+		return data_start();
+	case WCNIOC_LINK:
+		if ((e = sys_safecopyfrom(endpt, grant, 0, (vir_bytes)&lk,
+		    sizeof(lk))) != OK)
+			return e;
+		e = data_link(&lk);
+		netdriver_link();
+		return e;
 	default:
 		return ENOTTY;
 	}
@@ -324,7 +346,6 @@ static struct chardriver w_tab = {
 /* ---- the network side, to lwip ---- */
 
 static netdriver_addr_t mac;
-static int link_up;
 
 /*
  * The station's address.  The WLAN keeps none of its own (Linux on this
@@ -445,26 +466,24 @@ w_stop(void)
 
 /* Frames: none until a network is joined (HTT and the station come next). */
 static ssize_t
-w_recv(struct netdriver_data *data __unused, size_t max __unused)
+w_recv(struct netdriver_data *data, size_t max)
 {
 
-	return SUSPEND;
+	return data_net_recv(data, max);
 }
 
 static int
-w_send(struct netdriver_data *data __unused, size_t size __unused)
+w_send(struct netdriver_data *data, size_t size)
 {
 
-	if (!link_up)
-		return EIO;	/* dropped: no network */
-	return SUSPEND;
+	return data_net_send(data, size);
 }
 
 static unsigned int
 w_get_link(uint32_t *media __unused)
 {
 
-	return link_up ? NDEV_LINK_UP : NDEV_LINK_DOWN;
+	return data_link_up() ? NDEV_LINK_UP : NDEV_LINK_DOWN;
 }
 
 static void

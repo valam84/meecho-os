@@ -9,8 +9,11 @@
 #include <minix/drivers.h>
 #include <minix/log.h>
 
+#include <minix/netdriver.h>
+
 #include "wcn_ce.h"
 #include "wcn_htc.h"
+#include "wcn_ioc.h"
 
 extern struct log wlog;
 
@@ -36,6 +39,19 @@ int hw_start(void);		/* CE up, HTC READY, services connected */
 void hw_stop(void);
 void hw_intr(unsigned long mask);
 void hw_smmu_report(void);
+void hw_poll(void);		/* look at every ring now */
+int hw_take(size_t len, void **va, uint64_t *da);	/* DMA memory */
+
+/* wcn_data.c: HTT and the frames. */
+void data_htt(const uint8_t *m, size_t len);
+int data_start(void);
+int data_send(const uint8_t *eth, size_t len, int no_encrypt);
+int data_link(const struct wcn_link *l);
+int data_link_up(void);
+ssize_t data_net_recv(struct netdriver_data *data, size_t max);
+int data_net_send(struct netdriver_data *data, size_t size);
+int data_eapol_send(const uint8_t *eth, size_t len);
+ssize_t data_eapol_recv(uint8_t *buf, size_t size, unsigned ms);
 int hw_send(unsigned eid, const void *msg, size_t len);
 /* Wait up to "ms" for a message on endpoint "eid" (copied): its length,
  * or -ETIMEDOUT. */

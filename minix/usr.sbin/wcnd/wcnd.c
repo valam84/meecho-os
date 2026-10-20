@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "wcn_wlfw.h"
@@ -601,7 +602,9 @@ scan(void)
 	struct wcn_bss one;
 	uint8_t out2[2048];
 	uint32_t freqs[64];
-	unsigned nfreq, t, i, frames = 0, n24 = 0, n5 = 0;
+	unsigned nfreq, i, frames = 0, n24 = 0, n5 = 0, other = 0;
+	unsigned seen_id[16], seen_n[16], nseen = 0, k;
+	struct timespec t0, now;
 	int done = 0;
 
 	if (ioctl(dev, WCNIOC_MAC, &m) != 0) {
@@ -633,7 +636,13 @@ scan(void)
 		return -1;
 	say(LOG_INFO, "scanning %u channels", nfreq);
 	wcn_bss_init(&bss);
-	for (t = 0; t < 60 && !done; t++) {
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	/* Until COMPLETED, or 20 s by the clock - not by the number of
+	 * events: the firmware sends many besides beacons. */
+	for (;;) {
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		if (done || now.tv_sec - t0.tv_sec >= 20)
+			break;
 		if (wmi_wait(&msg, 500) != 0 ||
 		    wmi_event(msg.data, msg.len, &ev) != 0)
 			continue;
@@ -643,7 +652,8 @@ scan(void)
 				break;
 			frames++;
 			if (wcn_bss_parse(mr.frame, mr.len, mr.channel,
-			    (int)mr.snr + WMI_NOISE_FLOOR, t, &one) == 0)
+			    (int)mr.snr + WMI_NOISE_FLOOR,
+			    (uint32_t)(now.tv_sec - t0.tv_sec), &one) == 0)
 				(void)wcn_bss_update(&bss, &one);
 			break;
 		case WMI_EV_SCAN:
@@ -659,9 +669,20 @@ scan(void)
 			}
 			break;
 		default:
+			other++;
+			for (k = 0; k < nseen && seen_id[k] != ev.id; k++)
+				;
+			if (k == nseen && nseen < 16) {
+				seen_id[nseen] = ev.id;
+				seen_n[nseen++] = 0;
+			}
+			if (k < 16)
+				seen_n[k]++;
 			break;
 		}
 	}
+	for (k = 0; k < nseen; k++)
+		say(LOG_INFO, "other events: 0x%x x%u", seen_id[k], seen_n[k]);
 	for (i = 0; i < WCN_BSS_MAX; i++) {
 		const struct wcn_bss *e = &bss.e[i];
 

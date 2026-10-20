@@ -26,7 +26,7 @@
 #include <string.h>
 
 #define ARENA		(8u << 20)
-#define RXQ		64		/* messages kept per endpoint */
+#define RXQ		256		/* messages kept per endpoint */
 #define RXQ_MAX		2048
 
 struct htc htc;

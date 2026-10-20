@@ -174,10 +174,11 @@ fi
 say "начало: $(wc -l < "$LIST") пакетов в списке, записей $(wc -l < "$S/status.tsv")"
 
 done_since=0
-# Список - через дескриптор 3, а stdin всего, что внутри, - /dev/null:
-# bmake и configure читают stdin и съедают строки списка.
+# Список - словами for, а не read: bmake и configure читают stdin и
+# съедали строки, а унаследованный дескриптор со списком ломал цикл после
+# первого bmake -j (свои дескрипторы заданий). stdin всего - /dev/null.
 exec < /dev/null
-while read -r p <&3; do
+for p in $(cat "$LIST"); do
 	[ -n "$p" ] || continue
 	[ -f "$S/STOP" ] && { say "STOP"; break; }
 	known "$p" && continue
@@ -225,7 +226,7 @@ while read -r p <&3; do
 	trim_distfiles
 	if [ "$done_since" -ge 20 ]; then publish; done_since=0; fi
 	report
-done 3< "$LIST"
+done
 
 publish
 report

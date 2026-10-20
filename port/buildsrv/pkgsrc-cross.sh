@@ -136,9 +136,10 @@ LDFLAGS+=		-static
 
 # GCC 15 по умолчанию - C23, и старый код с объявлениями без
 # прототипа (getenv(), xexit()) перестаёт собираться. Та же политика,
-# что у HOST_CFLAGS дерева: чужому коду - gnu17. Пакет, которому нужен
+# что у HOST_CFLAGS дерева (там gnu17; pkgsrc из новых знает только
+# gnu11, gnu17 молча пропускает - mk/compiler.mk). Пакет, которому нужен
 # C23, задаёт FORCE_C_STD сам (?=).
-FORCE_C_STD?=		gnu17
+FORCE_C_STD?=		gnu11
 
 DISTDIR=		$H/distfiles
 WRKOBJDIR=		$H/pkgsrc-work

@@ -398,6 +398,37 @@ cfg:
 	return 0;
 }
 
+/*
+ * The first WMI events, as they come: SERVICE_READY is the proof that the
+ * engines, the SMMU route and HTC carry the firmware's words to us.  The
+ * WMI header's first word holds the event id in bits 23:0.
+ */
+static void
+wmi_listen(unsigned secs)
+{
+	struct wcn_msg msg;
+	unsigned t, i;
+	uint32_t id;
+
+	for (t = 0; t < secs * 2; t++) {
+		memset(&msg, 0, sizeof(msg));
+		msg.ms = 500;
+		if (ioctl(dev, WCNIOC_WMI_RECV, &msg) != 0) {
+			if (errno != ETIMEDOUT) {
+				say(LOG_ERR, "WMI: %s", strerror(errno));
+				return;
+			}
+			continue;
+		}
+		id = msg.len >= 4 ? (msg.data[0] | msg.data[1] << 8 |
+		    msg.data[2] << 16) : 0;
+		fprintf(stderr, "WMI event 0x%x, %u bytes:", id, msg.len);
+		for (i = 0; i < msg.len && i < 48; i++)
+			fprintf(stderr, " %02x", msg.data[i]);
+		fprintf(stderr, "%s\n", msg.len > 48 ? " ..." : "");
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -426,6 +457,8 @@ main(int argc, char **argv)
 		return 1;
 	if (stop_at_ready)
 		return 0;
+	if (fg)
+		wmi_listen(10);
 	if (!fg && daemon(0, 0) != 0)
 		say(LOG_WARNING, "daemon: %s", strerror(errno));
 	/* The network side comes next: scan, association, WPA2. */

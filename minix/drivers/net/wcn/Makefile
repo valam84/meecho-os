@@ -9,8 +9,8 @@ FILES=${PROG}.conf
 FILESNAME=${PROG}
 FILESDIR= /etc/system.conf.d
 
-DPADD+=	${LIBCHARDRIVER} ${LIBSYS}
-LDADD+=	-lchardriver -lsys
+DPADD+=	${LIBNETDRIVER} ${LIBCHARDRIVER} ${LIBSYS}
+LDADD+=	-lnetdriver -lchardriver -lsys
 
 WARNS?=	5
 

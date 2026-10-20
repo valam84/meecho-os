@@ -17,6 +17,7 @@
 
 #include <minix/drivers.h>
 #include <minix/chardriver.h>
+#include <minix/netdriver.h>
 #include <minix/ds.h>
 #include <minix/fdt.h>
 #include <minix/log.h>
@@ -26,6 +27,7 @@
 #include <sys/mman.h>
 #include <sys/ioccom.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -263,8 +265,62 @@ static struct chardriver w_tab = {
 	.cdr_ioctl	= w_ioctl,
 };
 
+/* ---- the network side, to lwip ---- */
+
+static netdriver_addr_t mac;
+static int link_up;
+
+/*
+ * The station's address.  The WLAN keeps none of its own (Linux on this
+ * tablet: "invalid MAC address; choosing random"): mac= if given, else a
+ * locally administered one made once per boot and kept in DS, so that a
+ * restarted service is the same station.
+ */
+static void
+pick_mac(void)
+{
+	char buf[32];
+	unsigned v[6], i;
+	uint32_t hi, lo;
+	u64_t t;
+
+	if (env_get_param("mac", buf, sizeof(buf)) == OK) {
+		/* xx:xx:xx:xx:xx:xx (libminc has no sscanf) */
+		const char *p = buf;
+		char *end;
+
+		for (i = 0; i < 6; i++) {
+			v[i] = (unsigned)strtoul(p, &end, 16);
+			if (end == p || v[i] > 0xff || (i < 5 && *end != ':'))
+				break;
+			p = end + 1;
+		}
+		if (i == 6) {
+			for (i = 0; i < 6; i++)
+				mac.na_addr[i] = v[i];
+			return;
+		}
+		log_warn(&wlog, "mac=%s: not an address\n", buf);
+	}
+	if (ds_retrieve_u32("wcn.mac.hi", &hi) != OK ||
+	    ds_retrieve_u32("wcn.mac.lo", &lo) != OK) {
+		read_tsc_64(&t);
+		hi = 0x0200 | (uint32_t)((t >> 8) & 0xfc);	/* local, unicast */
+		lo = (uint32_t)(t ^ (t >> 32)) * 2654435761u;
+		(void)ds_publish_u32("wcn.mac.hi", hi, DSF_OVERWRITE);
+		(void)ds_publish_u32("wcn.mac.lo", lo, DSF_OVERWRITE);
+	}
+	mac.na_addr[0] = 0x02;
+	mac.na_addr[1] = hi & 0xff;
+	mac.na_addr[2] = lo >> 24;
+	mac.na_addr[3] = lo >> 16;
+	mac.na_addr[4] = lo >> 8;
+	mac.na_addr[5] = lo;
+}
+
 static int
-w_init(int type __unused, sef_init_info_t *info __unused)
+w_init(unsigned int instance __unused, netdriver_addr_t *hwaddr,
+	uint32_t *caps, unsigned int *ticks)
 {
 	uint32_t out;
 	void *dtb;
@@ -304,31 +360,85 @@ w_init(int type __unused, sef_init_info_t *info __unused)
 		    "(%x); left alone\n", out);
 		tainted = 1;
 	}
-	log_info(&wlog, "WCN3990 at %llx, MSA %llx+%llx, %u lines\n",
+	pick_mac();
+	*hwaddr = mac;
+	*caps = NDEV_CAP_BCAST | NDEV_CAP_MCAST;
+	*ticks = 0;
+	log_info(&wlog, "WCN3990 at %llx, MSA %llx+%llx, %u lines, station "
+	    "%02x:%02x:%02x:%02x:%02x:%02x\n",
 	    (unsigned long long)dt.regs_pa, (unsigned long long)dt.msa_pa,
-	    (unsigned long long)dt.msa_sz, dt.nirq);
+	    (unsigned long long)dt.msa_sz, dt.nirq, mac.na_addr[0],
+	    mac.na_addr[1], mac.na_addr[2], mac.na_addr[3], mac.na_addr[4],
+	    mac.na_addr[5]);
 	chardriver_announce();
 	return OK;
 }
+
+static void
+w_stop(void)
+{
+
+	hw_stop();
+}
+
+/* Frames: none until a network is joined (HTT and the station come next). */
+static ssize_t
+w_recv(struct netdriver_data *data __unused, size_t max __unused)
+{
+
+	return SUSPEND;
+}
+
+static int
+w_send(struct netdriver_data *data __unused, size_t size __unused)
+{
+
+	if (!link_up)
+		return EIO;	/* dropped: no network */
+	return SUSPEND;
+}
+
+static unsigned int
+w_get_link(uint32_t *media __unused)
+{
+
+	return link_up ? NDEV_LINK_UP : NDEV_LINK_DOWN;
+}
+
+static void
+w_intr(unsigned int mask)
+{
+
+	hw_intr(mask);
+}
+
+/* /dev/wlan0's requests come here: everything the network side does not
+ * know is the character device's. */
+static void
+w_other(const message *m, int ipc_status)
+{
+
+	message copy = *m;	/* libchardriver takes it writable */
+
+	chardriver_process(&w_tab, &copy, ipc_status);
+}
+
+static const struct netdriver w_net = {
+	.ndr_name	= "wlan",
+	.ndr_init	= w_init,
+	.ndr_stop	= w_stop,
+	.ndr_recv	= w_recv,
+	.ndr_send	= w_send,
+	.ndr_get_link	= w_get_link,
+	.ndr_intr	= w_intr,
+	.ndr_other	= w_other,
+};
 
 int
 main(int argc, char **argv)
 {
 
 	env_setargs(argc, argv);
-	sef_setcb_init_fresh(w_init);
-	sef_startup();
-	for (;;) {
-		message m;
-		int st, r;
-
-		if ((r = sef_receive_status(ANY, &m, &st)) != OK)
-			panic("sef_receive: %d", r);
-		if (is_ipc_notify(st) && _ENDPOINT_P(m.m_source) == HARDWARE) {
-			hw_intr(m.m_notify.interrupts);
-			continue;
-		}
-		chardriver_process(&w_tab, &m, st);
-	}
+	netdriver_task(&w_net);
 	return 0;
 }

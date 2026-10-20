@@ -71,6 +71,7 @@ static int
 find_cb(void *cookie, int depth, const char *name, const struct fdt_node *n)
 {
 	const char *st;
+	const uint8_t *p;
 	unsigned len;
 
 	(void)cookie; (void)depth; (void)name;
@@ -82,6 +83,20 @@ find_cb(void *cookie, int depth, const char *name, const struct fdt_node *n)
 	if (fdt_node_reg(n, 0, &dt.regs_pa, &dt.regs_sz) != 0)
 		return 0;
 	dt.msa_ph = prop_u32(n, "memory-region", 0, 0);
+	/* iommus: one SMMU's phandle and the stream ids, a cell each. */
+	if ((p = fdt_getprop(n, "iommus", &len)) != NULL) {
+		unsigned off;
+
+		for (off = 0; off + 8 <= len && dt.nsid < 4; off += 8) {
+			u32_t ph = (u32_t)fdt_read_cells(p + off, 1);
+
+			if (dt.smmu_ph != 0 && ph != dt.smmu_ph)
+				continue;
+			dt.smmu_ph = ph;
+			dt.sid[dt.nsid++] =
+			    (uint32_t)fdt_read_cells(p + off + 4, 1);
+		}
+	}
 	/* Twelve lines, CE0..CE11 in order. */
 	for (dt.nirq = 0; dt.nirq < WCN_CE_COUNT &&
 	    (dt.irq[dt.nirq] = fdt_node_gic_irq(n, dt.nirq)) >= 0; dt.nirq++)
@@ -381,6 +396,12 @@ w_init(unsigned int instance __unused, netdriver_addr_t *hwaddr,
 	    &dt.msa_sz) != 0) {
 		free(dtb);
 		log_warn(&wlog, "the node names no MSA (memory-region)\n");
+		return ENXIO;
+	}
+	if (dt.smmu_ph == 0 || dt.nsid == 0 || fdt_phandle_reg(dtb,
+	    dt.smmu_ph, 0, &dt.smmu_pa, &dt.smmu_sz) != 0) {
+		free(dtb);
+		log_warn(&wlog, "the node names no SMMU (iommus)\n");
 		return ENXIO;
 	}
 	free(dtb);

@@ -22,6 +22,11 @@ struct wcn_dt {
 	u64_t msa_pa, msa_sz;
 	int irq[WCN_CE_COUNT];
 	unsigned nirq;
+	/* iommus: the apps SMMU and the WLAN's stream ids (0x1a00, 0x1a01). */
+	u32_t smmu_ph;
+	u64_t smmu_pa, smmu_sz;
+	uint32_t sid[4];
+	unsigned nsid;
 };
 extern struct wcn_dt dt;
 
@@ -30,6 +35,7 @@ int hw_power(int on);
 int hw_start(void);		/* CE up, HTC READY, services connected */
 void hw_stop(void);
 void hw_intr(unsigned long mask);
+void hw_smmu_report(void);
 int hw_send(unsigned eid, const void *msg, size_t len);
 /* Wait up to "ms" for a message on endpoint "eid" (copied): its length,
  * or -ETIMEDOUT. */
@@ -41,6 +47,6 @@ int hw_frame(const void *frame, size_t len, uint64_t *da);
 
 extern struct htc htc;
 extern int wmi_ep, htt_ep;
-extern int smmu_ready;
+
 
 #endif /* _WCN_H */

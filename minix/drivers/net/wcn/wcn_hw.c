@@ -18,6 +18,8 @@
 #include <minix/qcom_rpm.h>
 #include <minix/vm.h>
 
+#include "smmu_route.h"
+
 #include <sys/mman.h>
 
 #include <stdlib.h>
@@ -40,12 +42,71 @@ static int hooks[WCN_CE_COUNT];
 static int started;
 
 /*
- * Set once the apps SMMU maps the DMA memory for SID 0x1a00/0x1a01 at its
- * physical address (the shared SMMU code, SMR 1 and bank 1 by agreement
- * with the IPA; hw-wifi.md, section 6).  Until then the engines must not
- * start: a stream without a route faults (sCR0.USFCFG = 1).
+ * The apps SMMU (shared with the IPA; hw-wifi.md, section 6): SMR 1 and
+ * bank 1 by agreement, ASID 2.  The DMA memory appears to the engines at
+ * IOVA_BASE, under 4 GiB, whatever its physical address: no field the
+ * firmware has will meet an address too wide.  Until the route is on the
+ * engines must not start - a stream without a route faults
+ * (sCR0.USFCFG = 1).
  */
-int smmu_ready;
+#define WCN_SMR		1
+#define WCN_CB		1
+#define WCN_ASID	2
+#define IOVA_BASE	0x20000000u
+
+static struct smmu_route route;
+static volatile uint8_t *smmu;
+static int routed;
+
+static int
+smmu_up(void)
+{
+	int r;
+
+	if (routed)
+		return OK;
+	if (smmu == NULL && (smmu = vm_map_phys(SELF,
+	    (void *)(phys_bytes)dt.smmu_pa, (size_t)dt.smmu_sz)) ==
+	    MAP_FAILED) {
+		smmu = NULL;
+		log_warn(&wlog, "cannot map the SMMU; not granted by RS?\n");
+		return EPERM;
+	}
+	route.base = smmu;
+	route.size = (size_t)dt.smmu_sz;
+	route.log = &wlog;
+	route.smr = WCN_SMR;
+	route.cb = WCN_CB;
+	route.asid = WCN_ASID;
+	route.ias = 32;
+	route.check = 0;		/* reading a bank stops a core here */
+	if ((r = smmu_route_init(&route)) != OK) {
+		log_warn(&wlog, "SMMU: %d\n", r);
+		return r;
+	}
+	if ((r = smmu_route_map(&route, IOVA_BASE, arena_pa, ARENA, 1)) !=
+	    OK) {
+		log_warn(&wlog, "SMMU map: %d\n", r);
+		return r;
+	}
+	if ((r = smmu_route_on(&route, dt.sid, dt.nsid)) != OK) {
+		log_warn(&wlog, "SMMU route: %d\n", r);
+		return r;
+	}
+	routed = 1;
+	log_info(&wlog, "SMMU: streams %x %x through bank %u, %x+%x at "
+	    "%lx\n", dt.sid[0], dt.nsid > 1 ? dt.sid[1] : 0, WCN_CB, IOVA_BASE,
+	    ARENA, (unsigned long)arena_pa);
+	return OK;
+}
+
+void
+hw_smmu_report(void)
+{
+
+	if (routed)
+		smmu_route_report(&route);
+}
 
 /* Receive buffers: their address for the engine and their memory. */
 struct rxbuf {
@@ -428,10 +489,6 @@ hw_start(void)
 
 	if (started)
 		return EBUSY;
-	if (!smmu_ready) {
-		log_warn(&wlog, "no SMMU route for the copy engines yet\n");
-		return ENXIO;
-	}
 	if (regs == NULL && (regs = vm_map_phys(SELF,
 	    (void *)(phys_bytes)dt.regs_pa, (size_t)dt.regs_sz)) == MAP_FAILED) {
 		regs = NULL;
@@ -445,9 +502,11 @@ hw_start(void)
 			return ENOMEM;
 		}
 		mem.va = arena;
-		mem.da = arena_pa;	/* the SMMU maps it 1:1 */
+		mem.da = IOVA_BASE;	/* as the engines see it */
 		mem.len = ARENA;
 	}
+	if ((r = smmu_up()) != OK)
+		return r;
 	mem.used = 0;
 	for (i = 0; i < HTC_MAX_EP; i++)
 		if (rxq[i] == NULL && (rxq[i] = calloc(1, sizeof(*rxq[i]))) ==

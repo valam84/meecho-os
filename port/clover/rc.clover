@@ -344,6 +344,30 @@ then
 	fi
 	minix-service up /service/qcom_mss -args "stage=$modemstage" ||
 	    echo "WARNING: qcom_mss did not start"
+	# The Wi-Fi (port/clover/hw-wifi.md): its firmware runs in the
+	# modem.  The wcn service (/dev/wlan0, and wlan0 to lwip), then wcnd
+	# in the background: it waits for the modem's wlfw, brings the WLAN
+	# up, joins the network of /etc/wcnd.conf (ssid=, psk=; mode 0600)
+	# and joins again when it is lost; dhcpcd takes wlan0 once the port
+	# opens.  Without /etc/wcnd.conf the WLAN is up and joins nothing.
+	# wifi=0 (a boot argument) leaves it off.
+	if [ "`sysenv wifi 2>/dev/null`" != 0 ] && [ -x /service/wcn ] &&
+	   [ -x /usr/sbin/wcnd ]
+	then
+		[ -c /dev/wlan0 ] || mknod -m 600 /dev/wlan0 c 136 0
+		if minix-service up /service/wcn -dev /dev/wlan0 -label wcn_0
+		then
+			( trap '' HUP; /usr/sbin/wcnd -B ) \
+			    </dev/null >/var/log/wcnd.log 2>&1 &
+			if [ -f /etc/wcnd.conf ] && [ -x /sbin/dhcpcd ]
+			then
+				( trap '' HUP; /sbin/dhcpcd -b wlan0 ) \
+				    </dev/null >/var/log/dhcpcd-wlan0.log 2>&1 &
+			fi
+		else
+			echo "WARNING: no Wi-Fi service"
+		fi
+	fi
 fi
 
 # And the port from now on: a cable swapped for an adapter, and back.

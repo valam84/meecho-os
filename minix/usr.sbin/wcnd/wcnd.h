@@ -19,6 +19,7 @@ int wmi_send(const uint8_t *p, size_t n, const char *what);
 /* connect.c */
 int join(const struct wcn_bss_table *t, const char *ssid, const char *pass,
 	const struct wmi_svc_ready *svr, const uint8_t self[6]);
-void keep(void);
+int keep(void);
+void leave(void);
 
 #endif /* _WCND_H */

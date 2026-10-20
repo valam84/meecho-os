@@ -366,9 +366,11 @@ join(const struct wcn_bss_table *t, const char *ssid, const char *pass,
 	clock_gettime(CLOCK_MONOTONIC, &t0);
 	while (!wpa_authorized(&sm) && ms_since(&t0) < 10000) {
 		memset(&msg, 0, sizeof(msg));
-		msg.ms = 500;
-		if (ioctl(dev, WCNIOC_EAPOL_RX, &msg) != 0 || msg.len < 14)
+		msg.ms = WCN_WAIT_MAX;
+		if (ioctl(dev, WCNIOC_EAPOL_RX, &msg) != 0 || msg.len < 14) {
+			usleep(10000);
 			continue;
+		}
 		wpa_out_clear(&wo);
 		if ((r = wpa_rx(&sm, msg.data + 14, msg.len - 14, &wo)) != 0) {
 			say(LOG_WARNING, "EAPOL: %s", wpa_strerror(r));
@@ -404,21 +406,66 @@ join(const struct wcn_bss_table *t, const char *ssid, const char *pass,
 	return 0;
 }
 
-/* The group key handshake when the AP renews its key; the rest of the
- * time nothing.  Runs until the link is lost. */
+/* Undo a join: the station down, the AP's peer gone, the vdev stopped. */
 void
+leave(void)
+{
+
+	(void)link_set(0, 0, 0);
+	(void)wmi_send(out3, wmi_vdev_down(wb(), VDEV), "VDEV_DOWN");
+	(void)wmi_send(out3, wmi_peer_delete(wb(), VDEV, sta.bssid),
+	    "PEER_DELETE");
+	(void)wmi_send(out3, wmi_vdev_stop(wb(), VDEV), "VDEV_STOP");
+	wpa_clear(&sm);
+	usleep(200000);
+}
+
+/*
+ * After joining: the group key handshake when the AP renews its key, and
+ * the firmware's events read (beacons of the BSS and the like keep coming;
+ * unread, they fill the service's queue) - the AP sending us away ends it.
+ * 0 when the link is lost.
+ */
+int
 keep(void)
 {
 	struct wcn_msg msg;
+	struct wmi_ev ev;
+	struct wmi_kickout ko;
+	struct wmi_mgmt_rx mr;
 	struct wpa_out wo;
 	uint8_t eth[WCN_MSG_MAX];
-	int r;
+	uint16_t reason;
+	int r, dis;
 
 	for (;;) {
+		/* Events first: all that are there. */
+		while (wmi_wait(&msg, 0) == 0) {
+			if (wmi_event(msg.data, msg.len, &ev) != 0)
+				continue;
+			if (ev.id == WMI_EV_PEER_STA_KICKOUT &&
+			    wmi_peer_kickout(&ev, &ko) == 0 &&
+			    memcmp(ko.mac, sta.bssid, 6) == 0) {
+				say(LOG_WARNING, "the AP is gone (kickout)");
+				(void)link_set(0, 0, 0);
+				return 0;
+			}
+			if (ev.id == WMI_EV_MGMT_RX && wmi_mgmt_rx(&ev, &mr) ==
+			    0 && wcn_parse_leave(&sta, mr.frame, mr.len,
+			    &reason, &dis) == 0) {
+				say(LOG_WARNING, "the AP sent us away (%s, "
+				    "reason %u)", dis ? "disassociation" :
+				    "deauthentication", reason);
+				(void)link_set(0, 0, 0);
+				return 0;
+			}
+		}
 		memset(&msg, 0, sizeof(msg));
-		msg.ms = 5000;
-		if (ioctl(dev, WCNIOC_EAPOL_RX, &msg) != 0 || msg.len < 14)
+		msg.ms = WCN_WAIT_MAX;
+		if (ioctl(dev, WCNIOC_EAPOL_RX, &msg) != 0 || msg.len < 14) {
+			usleep(100000);
 			continue;
+		}
 		wpa_out_clear(&wo);
 		if ((r = wpa_rx(&sm, msg.data + 14, msg.len - 14, &wo)) != 0)
 			continue;

@@ -5,7 +5,7 @@
  * itself waits on should not hold, so it is held here; what needs rights
  * (TrustZone, the hardware) is asked of the wcn service on /dev/wlan0.
  *
- *	wcnd [-f] [-v] [-d fwdir] [-b board-2.bin] [-n | -s | -S | -j]
+ *	wcnd [-f] [-v] [-d fwdir] [-b board-2.bin] [-n | -s | -S | -j | -B]
  *	     [-c wcnd.conf]
  *
  *	-f	stay in the foreground
@@ -17,6 +17,9 @@
  *	-n	stop after FW_READY: no supplies, no WLAN_MODE, no engines
  *	-s, -S	scan once and list the networks (-S with their names)
  *	-j	scan and join in the foreground, then keep the keys
+ *	-B	as rc runs it: like -j, but try again whenever the join
+ *		fails or the network is lost, and never detach - the log is
+ *		stderr (rc sends it to /var/log/wcnd.log)
  *	-c	the network to join: "ssid=..." and "psk=..." lines
  *		(/etc/wcnd.conf, mode 0600: the passphrase is in it)
  *
@@ -59,7 +62,7 @@
 #define BOARD2	"/libdata/firmware/ath10k/WCN3990/hw1.0/board-2.bin"
 #define DEV	"/dev/wlan0"
 
-static int verbose, fg, stop_at_ready, do_scan, do_join;
+static int verbose, fg, stop_at_ready, do_scan, do_join, stay;
 static const char *conf = "/etc/wcnd.conf";
 static char want_ssid[33], want_psk[65];
 static const char *fwdir = FWDIR, *board2 = BOARD2;
@@ -423,14 +426,26 @@ int
 wmi_wait(struct wcn_msg *msg, unsigned ms)
 {
 
-	memset(msg, 0, sizeof(*msg));
-	msg->ms = ms;
-	if (ioctl(dev, WCNIOC_WMI_RECV, msg) != 0) {
-		if (errno != ETIMEDOUT)
+	struct timespec t0, n;
+	long spent;
+
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	for (;;) {
+		memset(msg, 0, sizeof(*msg));
+		msg->ms = WCN_WAIT_MAX;
+		if (ioctl(dev, WCNIOC_WMI_RECV, msg) == 0)
+			return 0;
+		if (errno != ETIMEDOUT) {
 			say(LOG_ERR, "WMI: %s", strerror(errno));
-		return -1;
+			return -1;
+		}
+		clock_gettime(CLOCK_MONOTONIC, &n);
+		spent = (n.tv_sec - t0.tv_sec) * 1000 +
+		    (n.tv_nsec - t0.tv_nsec) / 1000000;
+		if (spent >= (long)ms)
+			return -1;
+		usleep(10000);
 	}
-	return 0;
 }
 
 int
@@ -647,20 +662,33 @@ scan(void)
 	struct timespec t0, now;
 	int done = 0;
 
-	if (ioctl(dev, WCNIOC_MAC, &m) != 0) {
-		say(LOG_ERR, "MAC: %s", strerror(errno));
-		return -1;
+	static int vdev_made;
+
+	if (!vdev_made) {
+		if (ioctl(dev, WCNIOC_MAC, &m) != 0) {
+			say(LOG_ERR, "MAC: %s", strerror(errno));
+			return -1;
+		}
+		memcpy(self, m.addr, 6);
+		b.p = out2;
+		b.cap = sizeof(out2);
+		b.len = 0;
+		b.err = 0;
+		if (wmi_send(out2, wmi_vdev_create(&b, 0, WMI_VDEV_TYPE_STA,
+		    WMI_VDEV_SUBTYPE_NONE, self), "VDEV_CREATE") != 0)
+			return -1;
+		if (chan_list(freqs, &nfreq) != 0)
+			return -1;
+		vdev_made = 1;
+	} else {
+		for (nfreq = 0; nfreq < wcn_nchans && nfreq < 64; nfreq++)
+			;
+		nfreq = 0;
+		for (i = 0; i < wcn_nchans && nfreq < 64; i++)
+			if (wcn_chans[i].band != WCN_BAND_2G ||
+			    wcn_chans[i].chan <= 13)
+				freqs[nfreq++] = wcn_chans[i].freq;
 	}
-	memcpy(self, m.addr, 6);
-	b.p = out2;
-	b.cap = sizeof(out2);
-	b.len = 0;
-	b.err = 0;
-	if (wmi_send(out2, wmi_vdev_create(&b, 0, WMI_VDEV_TYPE_STA,
-	    WMI_VDEV_SUBTYPE_NONE, self), "VDEV_CREATE") != 0)
-		return -1;
-	if (chan_list(freqs, &nfreq) != 0)
-		return -1;
 	wmi_scan_defaults(&sc);
 	sc.vdev_id = 0;
 	sc.scan_id = 1;
@@ -779,7 +807,7 @@ main(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "fvd:b:nsSjc:")) != -1)
+	while ((c = getopt(argc, argv, "fvd:b:nsSjc:B")) != -1)
 		switch (c) {
 		case 'f': fg = 1; break;
 		case 'v': verbose = 1; fg = 1; break;
@@ -789,6 +817,7 @@ main(int argc, char **argv)
 		case 's': do_scan = fg = 1; break;
 		case 'S': do_scan = fg = show_ssid = 1; break;
 		case 'j': do_join = fg = 1; break;
+		case 'B': do_join = fg = stay = 1; break;
 		case 'c': conf = optarg; break;
 		default:
 			fprintf(stderr, "usage: wcnd [-f] [-v] [-d fwdir] "
@@ -818,15 +847,32 @@ main(int argc, char **argv)
 			if (fg)
 				return 0;
 		} else {
-			if (scan() != 0 || join(&bss, want_ssid, want_psk,
-			    &svr, self) != 0) {
-				memset(want_psk, 0, sizeof(want_psk));
-				return 1;
+			int detached = fg;
+
+			/*
+			 * Join, keep the keys, and when the AP sends us
+			 * away or is gone - scan and join again.  The first
+			 * failure in the foreground is the caller's.
+			 */
+			for (;;) {
+				if (scan() == 0 && join(&bss, want_ssid,
+				    want_psk, &svr, self) == 0) {
+					if (!detached) {
+						if (daemon(0, 0) != 0)
+							say(LOG_WARNING,
+							    "daemon: %s",
+							    strerror(errno));
+						detached = 1;
+					}
+					(void)keep();
+					leave();
+				} else if (fg && !stay) {
+					memset(want_psk, 0, sizeof(want_psk));
+					return 1;
+				} else
+					leave();
+				sleep(10);
 			}
-			memset(want_psk, 0, sizeof(want_psk));
-			if (!fg && daemon(0, 0) != 0)
-				say(LOG_WARNING, "daemon: %s", strerror(errno));
-			keep();
 		}
 	}
 	if (fg) {

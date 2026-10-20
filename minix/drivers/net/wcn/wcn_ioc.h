@@ -24,7 +24,9 @@
  *   WCNIOC_WMI_SEND	one WMI command (header and TLVs, without HTC's
  *			header) - waiting up to a second for WMI's one
  *			credit
- *   WCNIOC_WMI_RECV	the next WMI event, waiting up to "ms"; ETIMEDOUT
+ *   WCNIOC_WMI_RECV	the next WMI event, waiting up to "ms" but never
+ *			more than WCN_WAIT_MAX - the service serves lwip in
+ *			the same loop; ETIMEDOUT
  *   WCNIOC_FRAME	a management frame copied into DMA memory, for
  *			MGMT_TX_SEND by reference: its address for the
  *			engine back (one of 16 slots, reused in turn)
@@ -66,6 +68,7 @@ struct wcn_region {
 #define WCNIOC_START	_IO('W', 5)
 
 #define WCN_MSG_MAX	2040		/* a WMI message, HTC header apart */
+#define WCN_WAIT_MAX	5		/* ms a request may wait in the service */
 
 struct wcn_msg {
 	uint32_t len;

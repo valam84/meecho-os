@@ -253,8 +253,13 @@ deliver(unsigned eid, const uint8_t *msg, size_t len)
 	if (eid >= HTC_MAX_EP || rxq[eid] == NULL)
 		return;
 	if (rxq[eid]->tail - rxq[eid]->head >= RXQ || len > RXQ_MAX) {
-		log_warn(&wlog, "endpoint %u: message of %zu dropped\n", eid,
-		    len);
+		/* Said once in a while: a reader that stopped would
+		 * otherwise fill the log with it. */
+		static unsigned long lost;
+
+		if (lost++ % 1000 == 0)
+			log_warn(&wlog, "endpoint %u: message of %zu dropped "
+			    "(%lu so far)\n", eid, len, lost);
 		return;
 	}
 	t = rxq[eid]->tail++ % RXQ;

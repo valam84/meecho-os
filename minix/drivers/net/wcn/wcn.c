@@ -257,8 +257,10 @@ msg_ioctl(unsigned long request, endpoint_t endpt, cp_grant_id_t grant)
 	case WCNIOC_WMI_RECV:
 		if (wmi_ep < 0)
 			return EINVAL;
+		/* A look at the rings, not a wait: lwip is served by this
+		 * same loop, and wcnd does the waiting (WCN_WAIT_MAX). */
 		n = hw_wait((unsigned)wmi_ep, iomsg.data, sizeof(iomsg.data),
-		    iomsg.ms > 10000 ? 10000 : iomsg.ms);
+		    iomsg.ms > WCN_WAIT_MAX ? WCN_WAIT_MAX : iomsg.ms);
 		if (n < 0)
 			return (int)-n;
 		iomsg.len = (uint32_t)n;
@@ -275,7 +277,7 @@ msg_ioctl(unsigned long request, endpoint_t endpt, cp_grant_id_t grant)
 		return data_eapol_send(iomsg.data, iomsg.len);
 	case WCNIOC_EAPOL_RX:
 		n = data_eapol_recv(iomsg.data, sizeof(iomsg.data),
-		    iomsg.ms > 10000 ? 10000 : iomsg.ms);
+		    iomsg.ms > WCN_WAIT_MAX ? WCN_WAIT_MAX : iomsg.ms);
 		if (n < 0)
 			return (int)-n;
 		iomsg.len = (uint32_t)n;

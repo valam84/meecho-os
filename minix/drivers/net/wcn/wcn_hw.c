@@ -1,0 +1,499 @@
+/*
+ * The WCN3990's hardware side, as the wcn service drives it: the supplies
+ * and the reference clock through qcom_rpm, the copy engines' window, the
+ * DMA memory, the twelve lines, and HTC over it all
+ * (port/clover/hw-wifi.md, sections 4-6).
+ *
+ * The DMA memory is one contiguous block (alloc_contig: cacheable RAM,
+ * maintained by hand - wcn_ce.h says how).  The engines reach it through
+ * the apps SMMU (SID 0x1a00/0x1a01), which must map it at its physical
+ * address before hw_start(): that route is the shared SMMU code's, not
+ * this file's.
+ */
+
+#include "wcn.h"
+
+#include <minix/cachectl.h>
+#include <minix/ds.h>
+#include <minix/qcom_rpm.h>
+#include <minix/vm.h>
+
+#include <sys/mman.h>
+
+#include <stdlib.h>
+#include <string.h>
+
+#define ARENA		(8u << 20)
+#define RXQ		64		/* messages kept per endpoint */
+#define RXQ_MAX		2048
+
+struct htc htc;
+int wmi_ep = -1, htt_ep = -1;
+
+static volatile uint8_t *regs;
+static struct wcn_mem mem;
+static uint8_t *arena;
+static phys_bytes arena_pa;
+static struct wcn_ce ce;
+static void **ce_ctx;
+static int hooks[WCN_CE_COUNT];
+static int started;
+
+/*
+ * Set once the apps SMMU maps the DMA memory for SID 0x1a00/0x1a01 at its
+ * physical address (the shared SMMU code, SMR 1 and bank 1 by agreement
+ * with the IPA; hw-wifi.md, section 6).  Until then the engines must not
+ * start: a stream without a route faults (sCR0.USFCFG = 1).
+ */
+int smmu_ready;
+
+/* Receive buffers: their address for the engine and their memory. */
+struct rxbuf {
+	uint8_t *va;
+	uint64_t da;
+	size_t len;
+};
+
+/* Received messages, per endpoint, until someone waits for them. */
+static struct {
+	uint8_t data[RXQ][RXQ_MAX];
+	size_t len[RXQ];
+	unsigned head, tail;
+} *rxq[HTC_MAX_EP];
+
+/* ---- the copy engines' operations ---- */
+
+static uint32_t
+ce_rd(void *arg, uint32_t off)
+{
+
+	(void)arg;
+	return *(volatile uint32_t *)(volatile void *)(regs + off);
+}
+
+static void
+ce_wr(void *arg, uint32_t off, uint32_t v)
+{
+
+	(void)arg;
+	*(volatile uint32_t *)(volatile void *)(regs + off) = v;
+}
+
+static void
+ce_clean(void *arg, void *va, size_t len)
+{
+
+	(void)arg;
+	(void)sys_cachectl(CACHE_CLEAN, va, len);
+}
+
+static void
+ce_inval(void *arg, void *va, size_t len)
+{
+
+	(void)arg;
+	(void)sys_cachectl(CACHE_INVALIDATE, va, len);
+}
+
+static void
+ce_flush(void *arg, void *va, size_t len)
+{
+
+	(void)arg;
+	(void)sys_cachectl(CACHE_CLEAN_INVALIDATE, va, len);
+}
+
+static const struct wcn_ce_ops ce_ops = {
+	ce_rd, ce_wr, ce_clean, ce_inval, ce_flush, NULL
+};
+
+/* ---- supplies ---- */
+
+static int
+rpm(uint32_t type, uint32_t id, uint32_t key, uint32_t value)
+{
+	static endpoint_t ep = NONE;
+	message m;
+	int r;
+
+	if (ep == NONE && ds_retrieve_label_endpt("qcom_rpm", &ep) != OK) {
+		ep = NONE;
+		return ENODEV;
+	}
+	memset(&m, 0, sizeof(m));
+	m.m_type = QRPM_SET;
+	m.m_u32.data[QRPM_TYPE] = type;
+	m.m_u32.data[QRPM_ID] = id;
+	m.m_u32.data[QRPM_KEY] = key;
+	m.m_u32.data[QRPM_VALUE] = value;
+	if ((r = ipc_sendrec(ep, &m)) != OK) {
+		ep = NONE;
+		return r;
+	}
+	return m.m_type;
+}
+
+/*
+ * Linux's ath10k_hw_power_on(): the four supplies and the reference
+ * clock.  L6, L9 and L19 are on from the boot loader (shared with the
+ * Bluetooth of the same chip); L5 is not.
+ */
+int
+hw_power(int on)
+{
+	int r;
+
+	if (on && (r = rpm(QRPM_RES_LDOA, 5, QRPM_KEY_UV, 525000)) != OK) {
+		log_warn(&wlog, "L5 at 525 mV: %d\n", r);
+		return r;
+	}
+	if ((r = rpm(QRPM_RES_LDOA, 5, QRPM_KEY_ENABLE, on ? 1 : 0)) != OK) {
+		log_warn(&wlog, "L5 %s: %d\n", on ? "on" : "off", r);
+		return r;
+	}
+	if ((r = rpm(QRPM_RES_CLKA, 4, QRPM_KEY_PIN_ENABLE, on ? 1 : 0)) !=
+	    OK) {
+		log_warn(&wlog, "rf_clk1 %s: %d\n", on ? "on" : "off", r);
+		return r;
+	}
+	log_info(&wlog, "supplies %s (L5, rf_clk1)\n", on ? "on" : "off");
+	return OK;
+}
+
+/* ---- receive ---- */
+
+static void
+deliver(unsigned eid, const uint8_t *msg, size_t len)
+{
+	unsigned t;
+
+	if (eid >= HTC_MAX_EP || rxq[eid] == NULL)
+		return;
+	if (rxq[eid]->tail - rxq[eid]->head >= RXQ || len > RXQ_MAX) {
+		log_warn(&wlog, "endpoint %u: message of %zu dropped\n", eid,
+		    len);
+		return;
+	}
+	t = rxq[eid]->tail++ % RXQ;
+	memcpy(rxq[eid]->data[t], msg, len);
+	rxq[eid]->len[t] = len;
+}
+
+/* Take what engine "id" received; give its buffers back. */
+static void
+service_rx(unsigned id)
+{
+	struct rxbuf *b;
+	const uint8_t *msg;
+	size_t len, mlen;
+	unsigned eid;
+	void *ctx;
+
+	while (wcn_ce_rx_done(&ce, id, &ctx, &len) == 0) {
+		b = ctx;
+		(void)sys_cachectl(CACHE_INVALIDATE, b->va, b->len);
+		if (len <= b->len) {
+			if (id == 5) {
+				/* CE5: HTT without the HTC header (Linux
+				 * strips 8 bytes, unchecked). */
+				if (len > HTC_HDR && htt_ep >= 0)
+					deliver((unsigned)htt_ep,
+					    b->va + HTC_HDR, len - HTC_HDR);
+			} else if (htc_rx(&htc, b->va, len, &eid, &msg,
+			    &mlen) == 1)
+				deliver(eid, msg, mlen);
+		}
+		if (wcn_ce_rx_post(&ce, id, b->va, b->da, b->len, b) != 0)
+			log_warn(&wlog, "ce%u: a buffer not posted again\n", id);
+	}
+	wcn_ce_rx_commit(&ce, id);
+}
+
+static void
+service_tx(unsigned id)
+{
+	void *ctx;
+
+	while (wcn_ce_send_done(&ce, id, &ctx) == 0)
+		free(ctx);
+}
+
+static void
+service_all(void)
+{
+	unsigned i;
+
+	for (i = 0; i < WCN_CE_COUNT; i++) {
+		if (ce.pipe[i].has_src)
+			service_tx(i);
+		if (ce.pipe[i].has_dst)
+			service_rx(i);
+	}
+}
+
+void
+hw_intr(unsigned long mask)
+{
+	unsigned i;
+
+	if (!started)
+		return;
+	for (i = 0; i < WCN_CE_COUNT; i++) {
+		if (!(mask & (1ul << i)))
+			continue;
+		wcn_ce_intr_ack(&ce, i);
+		if (ce.pipe[i].has_dst)
+			service_rx(i);
+		if (ce.pipe[i].has_src)
+			service_tx(i);
+		/* CE4, HTT's sends, has no line of its own: whenever any
+		 * receive pipe is served, so is it. */
+		service_tx(4);
+		(void)sys_irqenable(&hooks[i]);
+	}
+}
+
+/* ---- send ---- */
+
+/*
+ * One HTC message: copied into DMA memory (freed when the engine is done
+ * with it), framed, cleaned, sent.  EAGAIN: no credit or no room yet.
+ */
+int
+hw_send(unsigned eid, const void *msg, size_t len)
+{
+	struct rxbuf *t;
+	unsigned pipe;
+	int r;
+
+	if (!started)
+		return ENXIO;
+	if ((t = malloc(sizeof(*t))) == NULL)
+		return ENOMEM;
+	/* A buffer from the arena's send area: a fixed slot per pipe. */
+	t->len = HTC_HDR + len;
+	if (t->len > 2048) {
+		free(t);
+		return EINVAL;
+	}
+	{
+		static unsigned next;
+		static uint8_t *sendarea;
+		static uint64_t sendda;
+		unsigned slot;
+
+		if (sendarea == NULL) {
+			void *va;
+
+			if (wcn_mem_take(&mem, 256 * 2048, &va, &sendda) != 0) {
+				free(t);
+				return ENOMEM;
+			}
+			sendarea = va;
+		}
+		slot = next++ % 256;
+		t->va = sendarea + slot * 2048;
+		t->da = sendda + slot * 2048;
+	}
+	memcpy(t->va + HTC_HDR, msg, len);
+	if ((r = htc_frame(&htc, eid, t->va, len, &pipe)) != 0) {
+		free(t);
+		return r;
+	}
+	(void)sys_cachectl(CACHE_CLEAN, t->va, t->len);
+	if ((r = wcn_ce_send(&ce, pipe, t->da, t->len, eid, 0, t)) != 0) {
+		free(t);
+		return r;
+	}
+	return OK;
+}
+
+ssize_t
+hw_wait(unsigned eid, void *buf, size_t size, unsigned ms)
+{
+	unsigned h, waited;
+	size_t n;
+
+	if (eid >= HTC_MAX_EP || rxq[eid] == NULL)
+		return -EINVAL;
+	for (waited = 0; ; waited++) {
+		if (rxq[eid]->head != rxq[eid]->tail) {
+			h = rxq[eid]->head++ % RXQ;
+			n = rxq[eid]->len[h] < size ? rxq[eid]->len[h] : size;
+			memcpy(buf, rxq[eid]->data[h], n);
+			return (ssize_t)n;
+		}
+		if (waited >= ms)
+			return -ETIMEDOUT;
+		/* Lines come as notifications to the main loop; while a
+		 * caller waits here, look at the rings ourselves. */
+		service_all();
+		if (rxq[eid]->head == rxq[eid]->tail)
+			micro_delay(1000);
+	}
+}
+
+/* ---- start ---- */
+
+static int
+post_all(void)
+{
+	struct rxbuf *b;
+	unsigned i, n;
+	void *va;
+
+	for (i = 0; i < WCN_CE_COUNT; i++) {
+		if (!ce.pipe[i].has_dst || ce.pipe[i].attr.rx_size == 0)
+			continue;
+		for (n = 0; ; n++) {
+			if ((b = malloc(sizeof(*b))) == NULL)
+				return ENOMEM;
+			b->len = ce.pipe[i].attr.rx_size;
+			if (wcn_mem_take(&mem, b->len, &va, &b->da) != 0) {
+				free(b);
+				return ENOMEM;
+			}
+			b->va = va;
+			if (wcn_ce_rx_post(&ce, i, b->va, b->da, b->len, b) !=
+			    0) {
+				free(b);
+				break;	/* full; the memory stays unused */
+			}
+		}
+		wcn_ce_rx_commit(&ce, i);
+		log_debug(&wlog, "ce%u: %u receive buffers\n", i, n);
+	}
+	return OK;
+}
+
+/*
+ * A host table with fewer receive buffers than Linux's: the target-to-host
+ * rings that carry little (the micro controller's, the packet log, the
+ * second and third HTT) get 64-descriptor rings - enough, and the arena
+ * stays at 8 MB.  The rings the firmware is told about (WLAN_CFG) are its
+ * side; the host's sizes are ours.
+ */
+static struct wcn_ce_attr host_cfg[WCN_CE_COUNT];
+
+int
+hw_start(void)
+{
+	uint8_t msg[64], rsp[RXQ_MAX];
+	unsigned i;
+	size_t n;
+	ssize_t got;
+	int r;
+
+	if (started)
+		return EBUSY;
+	if (!smmu_ready) {
+		log_warn(&wlog, "no SMMU route for the copy engines yet\n");
+		return ENXIO;
+	}
+	if (regs == NULL && (regs = vm_map_phys(SELF,
+	    (void *)(phys_bytes)dt.regs_pa, (size_t)dt.regs_sz)) == MAP_FAILED) {
+		regs = NULL;
+		log_warn(&wlog, "cannot map the registers\n");
+		return EPERM;
+	}
+	if (arena == NULL) {
+		if ((arena = alloc_contig(ARENA, AC_ALIGN64K, &arena_pa)) ==
+		    NULL) {
+			log_warn(&wlog, "no %u bytes of DMA memory\n", ARENA);
+			return ENOMEM;
+		}
+		mem.va = arena;
+		mem.da = arena_pa;	/* the SMMU maps it 1:1 */
+		mem.len = ARENA;
+	}
+	mem.used = 0;
+	for (i = 0; i < HTC_MAX_EP; i++)
+		if (rxq[i] == NULL && (rxq[i] = calloc(1, sizeof(*rxq[i]))) ==
+		    NULL)
+			return ENOMEM;
+
+	memcpy(host_cfg, wcn_ce_host_cfg, sizeof(host_cfg));
+	host_cfg[8].dst_n = host_cfg[9].dst_n = host_cfg[10].dst_n =
+	    host_cfg[11].dst_n = 64;
+	free(ce_ctx);
+	if ((ce_ctx = calloc(wcn_ce_ctx_size(host_cfg), sizeof(void *))) ==
+	    NULL)
+		return ENOMEM;
+	if ((r = wcn_ce_init(&ce, &ce_ops, host_cfg, &mem, ce_ctx)) != 0) {
+		log_warn(&wlog, "copy engines: %d\n", r);
+		return r;
+	}
+	if ((r = post_all()) != OK)
+		return r;
+
+	for (i = 0; i < dt.nirq && i < WCN_CE_COUNT; i++) {
+		hooks[i] = (int)i;
+		if ((r = sys_irqsetpolicy(dt.irq[i], 0, &hooks[i])) != OK ||
+		    (r = sys_irqenable(&hooks[i])) != OK) {
+			log_warn(&wlog, "line %d (ce%u): %d\n", dt.irq[i], i, r);
+			return r;
+		}
+	}
+	started = 1;
+	log_info(&wlog, "copy engines up, DMA %lx+%x\n",
+	    (unsigned long)arena_pa, ARENA);
+
+	/* HTC: READY, then WMI control and HTT data, then setup complete. */
+	htc_init(&htc);
+	for (i = 0; i < 2000 && !htc.ready; i++) {
+		service_all();
+		micro_delay(1000);
+	}
+	if (!htc.ready) {
+		log_warn(&wlog, "no HTC READY in 2 s\n");
+		return ETIMEDOUT;
+	}
+	log_info(&wlog, "HTC ready: %u credits of %u bytes, %u endpoints, "
+	    "version %d\n", htc.target_credits, htc.credit_size, htc.max_ep,
+	    htc.htc_version);
+	{
+		static const uint16_t svc[2] = {
+			HTC_SVC_WMI_CONTROL, HTC_SVC_HTT_DATA
+		};
+
+		for (i = 0; i < 2; i++) {
+			htc.conn_done = 0;
+			n = htc_connect_msg(msg, svc[i]);
+			if ((r = hw_send(0, msg, n)) != OK)
+				return r;
+			for (got = 0; got < 1000 && !htc.conn_done; got++) {
+				service_all();
+				micro_delay(1000);
+			}
+			if (!htc.conn_done || htc.conn_status != 0) {
+				log_warn(&wlog, "connect %04x: %s %u\n", svc[i],
+				    htc.conn_done ? "status" : "no answer",
+				    htc.conn_status);
+				return EIO;
+			}
+			log_info(&wlog, "service %04x on endpoint %u\n",
+			    svc[i], htc.conn_eid);
+		}
+	}
+	wmi_ep = htc_svc_ep(&htc, HTC_SVC_WMI_CONTROL);
+	htt_ep = htc_svc_ep(&htc, HTC_SVC_HTT_DATA);
+	n = htc_setup_complete_msg(msg);
+	if ((r = hw_send(0, msg, n)) != OK)
+		return r;
+	(void)rsp;
+	return OK;
+}
+
+void
+hw_stop(void)
+{
+	unsigned i;
+
+	if (!started)
+		return;
+	for (i = 0; i < dt.nirq && i < WCN_CE_COUNT; i++) {
+		wcn_ce_intr_enable(&ce, i, 0);
+		(void)sys_irqrmpolicy(&hooks[i]);
+	}
+	started = 0;
+}

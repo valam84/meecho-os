@@ -29,23 +29,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "wcn.h"
 #include "wcn_ioc.h"
 
 #define PAGE		4096
 #define DS_MSA		"wcn.msa"
 
-static struct log wlog = {
+struct log wlog = {
 	.name = "wcn",
 	.log_level = LEVEL_INFO,
 	.log_func = default_log
 };
 
-static struct {
-	int found;
-	u64_t regs_pa, regs_sz;		/* "membase": the copy engines */
-	u32_t msa_ph;			/* memory-region */
-	u64_t msa_pa, msa_sz;
-} dt;
+struct wcn_dt dt;
 
 static volatile uint8_t *msa;		/* mapped, as a device */
 
@@ -84,6 +80,10 @@ find_cb(void *cookie, int depth, const char *name, const struct fdt_node *n)
 	if (fdt_node_reg(n, 0, &dt.regs_pa, &dt.regs_sz) != 0)
 		return 0;
 	dt.msa_ph = prop_u32(n, "memory-region", 0, 0);
+	/* Twelve lines, CE0..CE11 in order. */
+	for (dt.nirq = 0; dt.nirq < WCN_CE_COUNT &&
+	    (dt.irq[dt.nirq] = fdt_node_gic_irq(n, dt.nirq)) >= 0; dt.nirq++)
+		;
 	dt.found = 1;
 	return 1;
 }
@@ -226,7 +226,7 @@ w_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 {
 	struct wcn_msa m;
 	struct wcn_region r;
-	int e;
+	int e, on;
 
 	if (minor != 0)
 		return ENXIO;
@@ -245,6 +245,13 @@ w_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 		return assign(&r);
 	case WCNIOC_RECLAIM:
 		return reclaim();
+	case WCNIOC_POWER:
+		if ((e = sys_safecopyfrom(endpt, grant, 0, (vir_bytes)&on,
+		    sizeof(on))) != OK)
+			return e;
+		return hw_power(on != 0);
+	case WCNIOC_START:
+		return hw_start();
 	default:
 		return ENOTTY;
 	}
@@ -297,9 +304,9 @@ w_init(int type __unused, sef_init_info_t *info __unused)
 		    "(%x); left alone\n", out);
 		tainted = 1;
 	}
-	log_info(&wlog, "WCN3990 at %llx, MSA %llx+%llx\n",
+	log_info(&wlog, "WCN3990 at %llx, MSA %llx+%llx, %u lines\n",
 	    (unsigned long long)dt.regs_pa, (unsigned long long)dt.msa_pa,
-	    (unsigned long long)dt.msa_sz);
+	    (unsigned long long)dt.msa_sz, dt.nirq);
 	chardriver_announce();
 	return OK;
 }
@@ -311,6 +318,17 @@ main(int argc, char **argv)
 	env_setargs(argc, argv);
 	sef_setcb_init_fresh(w_init);
 	sef_startup();
-	chardriver_task(&w_tab);
+	for (;;) {
+		message m;
+		int st, r;
+
+		if ((r = sef_receive_status(ANY, &m, &st)) != OK)
+			panic("sef_receive: %d", r);
+		if (is_ipc_notify(st) && _ENDPOINT_P(m.m_source) == HARDWARE) {
+			hw_intr(m.m_notify.interrupts);
+			continue;
+		}
+		chardriver_process(&w_tab, &m, st);
+	}
 	return 0;
 }

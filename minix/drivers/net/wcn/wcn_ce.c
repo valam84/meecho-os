@@ -145,7 +145,7 @@ src_hw(struct wcn_ce *ce, struct wcn_ce_pipe *p)
 {
 
 	if (p->attr.flags & WCN_CE_A_NOINTR) {
-		ce->ops.inval(ce->ops.arg, (void *)&ce->rri[p->id], 4);
+		ce->ops.inval(ce->ops.arg, (void *)(uintptr_t)&ce->rri[p->id], 4);
 		return ce->rri[p->id] & 0xffff & p->src.mask;
 	}
 	return rd(ce, WCN_CE_BASE(p->id) + WCN_CE_SR_RD) & p->src.mask;
@@ -400,7 +400,7 @@ wcn_ce_rx_done(struct wcn_ce *ce, unsigned id, void **ctx, size_t *len)
 	 * Filled when nbytes is not 0 - the engine may move its read index
 	 * before the descriptor lands, so the index says nothing.
 	 */
-	ce->ops.inval(ce->ops.arg, (void *)d, WCN_CE_DESC);
+	ce->ops.inval(ce->ops.arg, (void *)(uintptr_t)d, WCN_CE_DESC);
 	n = d[8] | d[9] << 8;
 	if (n == 0)
 		return EAGAIN;

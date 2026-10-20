@@ -17,6 +17,10 @@
  *   WCNIOC_RECLAIM	take every given region back (to HLOS) - only once
  *			the firmware is gone: memory the modem uses taken
  *			away from it is a fault on its side
+ *   WCNIOC_POWER	the WLAN's supplies and reference clock on (1) or
+ *			off (0) - before WLAN_CFG/WLAN_MODE, as Linux
+ *   WCNIOC_START	after WLAN_MODE: the copy engines up, HTC READY,
+ *			WMI control and HTT data connected
  *
  * Root only (the node is 0600).
  */
@@ -41,5 +45,7 @@ struct wcn_region {
 #define WCNIOC_MSA	_IOR('W', 1, struct wcn_msa)
 #define WCNIOC_ASSIGN	_IOW('W', 2, struct wcn_region)
 #define WCNIOC_RECLAIM	_IO('W', 3)
+#define WCNIOC_POWER	_IOW('W', 4, int)
+#define WCNIOC_START	_IO('W', 5)
 
 #endif /* _WCN_IOC_H */

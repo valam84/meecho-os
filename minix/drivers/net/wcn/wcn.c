@@ -44,6 +44,8 @@ struct log wlog = {
 
 struct wcn_dt dt;
 
+static netdriver_addr_t mac;		/* the station's address */
+
 static volatile uint8_t *msa;		/* mapped, as a device */
 
 /* Regions given away, as the firmware named them. */
@@ -291,6 +293,7 @@ w_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 	struct wcn_msa m;
 	struct wcn_region r;
 	struct wcn_link lk;
+	struct wcn_mac wm;
 	int e, on;
 
 	if (minor != 0)
@@ -325,6 +328,11 @@ w_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 		return msg_ioctl(request, endpt, grant);
 	case WCNIOC_HTT_START:
 		return data_start();
+	case WCNIOC_MAC:
+		memset(&wm, 0, sizeof(wm));
+		memcpy(wm.addr, mac.na_addr, 6);
+		return sys_safecopyto(endpt, grant, 0, (vir_bytes)&wm,
+		    sizeof(wm));
 	case WCNIOC_LINK:
 		if ((e = sys_safecopyfrom(endpt, grant, 0, (vir_bytes)&lk,
 		    sizeof(lk))) != OK)
@@ -345,7 +353,6 @@ static struct chardriver w_tab = {
 
 /* ---- the network side, to lwip ---- */
 
-static netdriver_addr_t mac;
 
 /*
  * The station's address.  The WLAN keeps none of its own (Linux on this

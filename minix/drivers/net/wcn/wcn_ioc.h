@@ -34,6 +34,7 @@
  *			open: lwip's frames flow only when it is
  *   WCNIOC_EAPOL_TX	an EAPOL frame (Ethernet) to the BSS
  *   WCNIOC_EAPOL_RX	the next EAPOL frame received, waiting up to "ms"
+ *   WCNIOC_MAC		the station's address, the one lwip has
  *
  * The station itself - which WMI command when, the 802.11 exchange, WPA2
  * - is wcnd's: the service carries; the daemon decides.
@@ -90,5 +91,12 @@ struct wcn_link {
 #define WCNIOC_LINK	_IOW('W', 10, struct wcn_link)
 #define WCNIOC_EAPOL_TX	_IOW('W', 11, struct wcn_msg)
 #define WCNIOC_EAPOL_RX	_IOWR('W', 12, struct wcn_msg)
+
+struct wcn_mac {
+	uint8_t addr[6];
+	uint8_t pad[2];
+};
+
+#define WCNIOC_MAC	_IOR('W', 13, struct wcn_mac)
 
 #endif /* _WCN_IOC_H */

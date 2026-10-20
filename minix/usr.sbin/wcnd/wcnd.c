@@ -42,12 +42,13 @@
 #include "wcn_fw.h"
 #include "wcn_ioc.h"
 #include "wcn_wmi.h"
+#include "wcn_mlme.h"
 
 #define FWDIR	"/libdata/firmware/qcom/clover/modem"
 #define BOARD2	"/libdata/firmware/ath10k/WCN3990/hw1.0/board-2.bin"
 #define DEV	"/dev/wlan0"
 
-static int verbose, fg, stop_at_ready;
+static int verbose, fg, stop_at_ready, do_scan;
 static const char *fwdir = FWDIR, *board2 = BOARD2;
 static int s, dev = -1;
 static struct sockaddr_qrtr fw;
@@ -532,6 +533,155 @@ wmi_up(void)
 	return 0;
 }
 
+static uint8_t self[6];
+static struct wcn_bss_table bss;
+static int show_ssid;
+
+/*
+ * The channels to scan: 2.4 GHz 1-13 and 5 GHz from the table, radar
+ * channels passive.  The regulatory domain is the firmware's own (its
+ * EEPROM's, 0x809c here) - no PDEV_SET_REGDOMAIN yet.
+ */
+static int
+chan_list(uint32_t *freqs, unsigned *n)
+{
+	struct wmi_chan c[64];
+	struct wmi_buf b;
+	uint8_t out2[2048];
+	unsigned i, k = 0;
+
+	for (i = 0; i < wcn_nchans && k < 64; i++) {
+		const struct wcn_chan *w = &wcn_chans[i];
+
+		if (w->band == WCN_BAND_2G && w->chan > 13)
+			continue;
+		memset(&c[k], 0, sizeof(c[k]));
+		c[k].freq = c[k].center1 = w->freq;
+		c[k].mode = w->band == WCN_BAND_2G ? WMI_MODE_11NG_HT20 :
+		    WMI_MODE_11NA_HT20;
+		c[k].flags = WMI_CHAN_ALLOW_HT |
+		    ((w->flags & WCN_CHAN_DFS) ? WMI_CHAN_PASSIVE |
+		    WMI_CHAN_DFS : 0);
+		c[k].max_power = c[k].reg_power = 40;	/* 20 dBm */
+		freqs[k] = w->freq;
+		k++;
+	}
+	*n = k;
+	b.p = out2;
+	b.cap = sizeof(out2);
+	b.len = 0;
+	b.err = 0;
+	return wmi_send(out2, wmi_scan_chan_list(&b, c, k), "SCAN_CHAN_LIST");
+}
+
+static const char *
+sec_name(int s)
+{
+	static const char *n[] = { "open", "WEP", "WPA1", "WPA2-PSK",
+	    "WPA2/3", "WPA3", "802.1X", "other" };
+
+	return s >= 0 && s < 8 ? n[s] : "?";
+}
+
+/*
+ * One scan of every channel, the beacons and probe responses (MGMT_RX)
+ * into the BSS table, until COMPLETED: the second stage's proof.
+ */
+static int
+scan(void)
+{
+	struct wcn_mac m;
+	struct wcn_msg msg;
+	struct wmi_ev ev;
+	struct wmi_buf b;
+	struct wmi_scan sc;
+	struct wmi_scan_ev se;
+	struct wmi_mgmt_rx mr;
+	struct wmi_ssid any;
+	struct wcn_bss one;
+	uint8_t out2[2048];
+	uint32_t freqs[64];
+	unsigned nfreq, t, i, frames = 0, n24 = 0, n5 = 0;
+	int done = 0;
+
+	if (ioctl(dev, WCNIOC_MAC, &m) != 0) {
+		say(LOG_ERR, "MAC: %s", strerror(errno));
+		return -1;
+	}
+	memcpy(self, m.addr, 6);
+	b.p = out2;
+	b.cap = sizeof(out2);
+	b.len = 0;
+	b.err = 0;
+	if (wmi_send(out2, wmi_vdev_create(&b, 0, WMI_VDEV_TYPE_STA,
+	    WMI_VDEV_SUBTYPE_NONE, self), "VDEV_CREATE") != 0)
+		return -1;
+	if (chan_list(freqs, &nfreq) != 0)
+		return -1;
+	wmi_scan_defaults(&sc);
+	sc.vdev_id = 0;
+	sc.scan_id = 1;
+	sc.req_id = 1;
+	sc.freqs = freqs;
+	sc.nchan = nfreq;
+	memset(&any, 0, sizeof(any));	/* the wildcard SSID: active */
+	sc.ssids = &any;
+	sc.nssid = 1;
+	b.len = 0;
+	b.err = 0;
+	if (wmi_send(out2, wmi_start_scan(&b, &sc), "START_SCAN") != 0)
+		return -1;
+	say(LOG_INFO, "scanning %u channels", nfreq);
+	wcn_bss_init(&bss);
+	for (t = 0; t < 60 && !done; t++) {
+		if (wmi_wait(&msg, 500) != 0 ||
+		    wmi_event(msg.data, msg.len, &ev) != 0)
+			continue;
+		switch (ev.id) {
+		case WMI_EV_MGMT_RX:
+			if (wmi_mgmt_rx(&ev, &mr) != 0)
+				break;
+			frames++;
+			if (wcn_bss_parse(mr.frame, mr.len, mr.channel,
+			    (int)mr.snr + WMI_NOISE_FLOOR, t, &one) == 0)
+				(void)wcn_bss_update(&bss, &one);
+			break;
+		case WMI_EV_SCAN:
+			if (wmi_scan_event(&ev, &se) != 0)
+				break;
+			if (se.type == WMI_SCAN_EV_COMPLETED) {
+				say(LOG_INFO, "scan done, reason %u",
+				    se.reason);
+				done = 1;
+			} else if (se.type == WMI_SCAN_EV_START_FAILED) {
+				say(LOG_ERR, "scan did not start");
+				return -1;
+			}
+			break;
+		default:
+			break;
+		}
+	}
+	for (i = 0; i < WCN_BSS_MAX; i++) {
+		const struct wcn_bss *e = &bss.e[i];
+
+		if (!bss.used[i])
+			continue;
+		if (e->band == WCN_BAND_2G)
+			n24++;
+		else
+			n5++;
+		printf("%02x:%02x:%02x:%02x:%02x:%02x ch %3u %4d dBm %-8s%s "
+		    "%.*s\n", e->bssid[0], e->bssid[1], e->bssid[2],
+		    e->bssid[3], e->bssid[4], e->bssid[5], e->chan, e->rssi,
+		    sec_name(e->sec), wcn_bss_usable(e) ? " " : "-",
+		    show_ssid ? e->ssid_len : 0, (const char *)e->ssid);
+	}
+	say(LOG_INFO, "%u frames, %u networks: %u at 2.4 GHz, %u at 5 GHz%s",
+	    frames, n24 + n5, n24, n5, done ? "" : " (no COMPLETED)");
+	return done ? 0 : -1;
+}
+
 /*
  * The first WMI events, as they come: SERVICE_READY is the proof that the
  * engines, the SMMU route and HTC carry the firmware's words to us.  The
@@ -568,13 +718,15 @@ main(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "fvd:b:n")) != -1)
+	while ((c = getopt(argc, argv, "fvd:b:nsS")) != -1)
 		switch (c) {
 		case 'f': fg = 1; break;
 		case 'v': verbose = 1; fg = 1; break;
 		case 'd': fwdir = optarg; break;
 		case 'b': board2 = optarg; break;
 		case 'n': stop_at_ready = 1; break;
+		case 's': do_scan = fg = 1; break;
+		case 'S': do_scan = fg = show_ssid = 1; break;
 		default:
 			fprintf(stderr, "usage: wcnd [-f] [-v] [-d fwdir] "
 			    "[-b board-2.bin] [-n]\n");
@@ -597,6 +749,8 @@ main(int argc, char **argv)
 		return 1;
 	}
 	if (fg) {
+		if (do_scan)
+			return scan() == 0 ? 0 : 1;
 		wmi_listen(3);
 		return 0;		/* the station comes next */
 	}

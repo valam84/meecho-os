@@ -3,7 +3,7 @@
 # service does what needs rights.  The protocol code is the driver's own
 # pure files, built here as well.
 PROG=	wcnd
-SRCS=	wcnd.c wcn_wlfw.c wcn_fw.c wcn_wmi.c
+SRCS=	wcnd.c wcn_wlfw.c wcn_fw.c wcn_wmi.c wcn_mlme.c
 MAN=
 BINDIR=	/usr/sbin
 

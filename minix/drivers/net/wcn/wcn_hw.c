@@ -124,6 +124,20 @@ static struct {
 	unsigned head, tail;
 } *rxq[HTC_MAX_EP];
 
+/*
+ * The pure layers (wcn_ce.c, wcn_htc.c) are built without _SYSTEM: their
+ * error codes are positive, a service's negative.  Every code that crosses
+ * into the service goes through here - comparing a pure EAGAIN with the
+ * service's EAGAIN otherwise fails, and a positive code reaches the
+ * caller of an ioctl as a "success" with errno 0 (seen on the tablet).
+ */
+static int
+own(int r)
+{
+
+	return r > 0 ? -r : r;
+}
+
 /* ---- the copy engines' operations ---- */
 
 static uint32_t
@@ -373,7 +387,7 @@ int
 hw_take(size_t len, void **va, uint64_t *da)
 {
 
-	return wcn_mem_take(&mem, len, va, da);
+	return own(wcn_mem_take(&mem, len, va, da));
 }
 
 /* ---- send ---- */
@@ -429,13 +443,14 @@ hw_send(unsigned eid, const void *msg, size_t len)
 		t->da = sendda + slot * 2048;
 	}
 	memcpy(t->va + HTC_HDR, msg, len);
-	if ((r = htc_frame(&htc, eid, t->va, len, &pipe)) != 0) {
+	if ((r = own(htc_frame(&htc, eid, t->va, len, &pipe))) != 0) {
 		free(t);
 		return r;
 	}
 	(void)sys_cachectl(CACHE_CLEAN, t->va, t->len);
 	slot_busy[t->slot] = 1;
-	if ((r = wcn_ce_send(&ce, pipe, t->da, t->len, eid, 0, t)) != 0) {
+	if ((r = own(wcn_ce_send(&ce, pipe, t->da, t->len, eid, 0, t))) !=
+	    0) {
 		slot_busy[t->slot] = 0;
 		free(t);
 		return r;
@@ -596,7 +611,8 @@ hw_start(void)
 		return ENOMEM;
 	log_info(&wlog, "copy engines: rings at %x, first DMA next\n",
 	    IOVA_BASE);
-	if ((r = wcn_ce_init(&ce, &ce_ops, host_cfg, &mem, ce_ctx)) != 0) {
+	if ((r = own(wcn_ce_init(&ce, &ce_ops, host_cfg, &mem, ce_ctx))) !=
+	    0) {
 		log_warn(&wlog, "copy engines: %d\n", r);
 		return r;
 	}

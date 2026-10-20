@@ -393,3 +393,35 @@ smmu: 0 valid stream match(es) for ipa/wifi; unmatched streams go by USFCFG (fau
   Отсюда правило: **банки `apps_smmu` не читать вовсе**; маршрут IPA
   пишется без чтения назад (`smmucheck=0`, `ipa_smmu.c`), а доступные
   чтения — только глобальная страница 0.
+
+### 9.2. Маршрут через apps_smmu и сброс IPA под работающим модемом (2026-10-20, 12:22–12:30)
+
+Маршрут теперь общий код — `minix/drivers/iommu/arm_smmu/smmu_route.[ch]`
+(SMR, банк, ASID, ширина адреса — параметры; IPA берёт SMR 0 / банк 0,
+Wi-Fi — SMR 1 / банк 1). `qcom_ipa stage=init` на образе с `modem=1`,
+модем уже поднят:
+
+```
+rpm(info)ipa clock kHz 40000 for 98338
+ipa(info)smmu: writing bank 0 (tables at e9c6b000, ias 32 oas 36, asid 1)
+ipa(info)smmu: bank 0 written; writing s2cr 0 = 00000300
+ipa(info)smmu: s2cr 0 reads 00000300; writing smr 0 = 800219c0
+ipa(info)smmu: smr 0 reads 00000000; ...
+```
+
+- **Записи банка 0 проходят** (CBA2R, CBAR, TCR2, TCR, TTBR0/1, MAIR,
+  TLBIASID, SCTLR) — останавливало только чтение банков (9.1). Голос RPM за
+  такт IPA принят.
+- **S2CR принимает `0x300`** и читается так же.
+- **SMR читается назад нулём** — эмуляция гипервизора или отказ; решит
+  только трафик устройства (непринятый поток — глобальный отказ, его
+  регистры в странице 0 читать можно; `smmu_route_report()`).
+- **Второй прогон (тот же шаг, дальше — сброс IPA и SRAM) кончился
+  аварийным режимом Qualcomm** (`05c6:900e`, crash dump), строк не дошло.
+  [I] Модем к этому времени уже работал; Linux поднимает IPA **до** модема
+  (pmos: IPA в 22.6 с, рукопожатие с модемом в 32 с), а после старта
+  модема TrustZone, видимо, закрывает части IPA (SRAM, микроконтроллер) —
+  сброс и запись SRAM со стороны AP тогда нарушение XPU. Поэтому:
+  `qcom_ipa stage=init` — только до `qcom_mss` (так стоит в `rc.clover`
+  под `ipa=1`), а маршрут проверяется петлёй (`stage=loop`) на загрузке
+  без модема.

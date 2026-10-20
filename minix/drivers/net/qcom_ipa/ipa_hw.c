@@ -490,10 +490,10 @@ ipa_hw_init(void)
 	    "filling it through the command pipe\n", hw.smem_size,
 	    hw.smem_restr, hw.part[MEM_DRV].offset, hw.part[MEM_MDM].offset,
 	    hw.part[MEM_MDM].size);
-	if ((r = sram_init()) != OK) {
-		ipa_smmu_report();
+	r = sram_init();
+	ipa_smmu_report();
+	if (r != OK)
 		return r;
-	}
 	log_info(&ilog, "IPA version %08x (hw %08x), BAM revision %08x, %u "
 	    "bytes SRAM: immediate commands went through the BAM\n",
 	    rd32(ipa.base, IPA_VERSION), rd32(ipa.base, IPA_COMP_HW_VERSION),

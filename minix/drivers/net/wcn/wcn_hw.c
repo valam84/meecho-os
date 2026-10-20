@@ -89,6 +89,7 @@ smmu_up(void)
 		log_warn(&wlog, "SMMU map: %d\n", r);
 		return r;
 	}
+	log_info(&wlog, "SMMU: bank %u set, routing the streams now\n", WCN_CB);
 	if ((r = smmu_route_on(&route, dt.sid, dt.nsid)) != OK) {
 		log_warn(&wlog, "SMMU route: %d\n", r);
 		return r;
@@ -563,6 +564,8 @@ hw_start(void)
 	if ((ce_ctx = calloc(wcn_ce_ctx_size(host_cfg), sizeof(void *))) ==
 	    NULL)
 		return ENOMEM;
+	log_info(&wlog, "copy engines: rings at %x, first DMA next\n",
+	    IOVA_BASE);
 	if ((r = wcn_ce_init(&ce, &ce_ops, host_cfg, &mem, ce_ctx)) != 0) {
 		log_warn(&wlog, "copy engines: %d\n", r);
 		return r;

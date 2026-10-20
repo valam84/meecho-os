@@ -257,6 +257,58 @@ CHAN_INFO переполнили очередь службы (64) — MGMT_RX и
 отрицательны** (`_SYSTEM`): ожидание кредита WMI (`!= EAGAIN`) не ждало, а
 положительный код уходил ioctl'у как «успех» с `errno 0` (`a7dac34bc`).
 
+### Третья ступень: WPA2, DHCP, ping по имени [T] (2026-10-20)
+
+Сеть пользователя (WPA2-PSK, несколько AP на 2.4 и 5 ГГц); SSID и пароль —
+только в `/etc/wcnd.conf` на корне планшета (root, 0600), положен `scp`-ом
+из файла, без командной строки. `wcnd -j`:
+
+```
+joining 44:f7:70:06:62:bc on 2412 MHz, -37 dBm, WPA2
+authenticated
+associated, aid 1
+WPA2 keys in, the port is open
+wcn: peer 61/77/109: (BSSID) on vdev 0; link up: vdev 0
+```
+
+Затем `dhcpcd -d -t 30 wlan0` (маршрута по умолчанию через `ecm0` нет —
+всё в интернет только через `wlan0`):
+
+```
+wlan0: leased 192.168.33.119 for 600 seconds
+wlan0: adding default route via 192.168.33.1
+nameserver 192.168.33.1                       (/etc/resolv.conf)
+ping 192.168.33.1: 3 packets transmitted, 3 received
+ping ya.ru (77.88.44.242): 4 transmitted, 4 received, 0.0% loss
+ping github.com: 2 transmitted, 2 received
+```
+
+- **Весь путь своего кода на железе**: MLME (auth, assoc), кадры по
+  ссылке через MGMT_TX_SEND, PEER_ASSOC/VDEV_UP, 4-way handshake своего
+  суппликанта (`wcn_wpa.c`) поверх EAPOL службы, ключи CCMP, HTT TX
+  (native wifi, фрагментные дескрипторы) и RX (in-order по адресу,
+  native wifi → Ethernet) к `lwip`.
+- Найдено прогоном: **служба не должна ждать внутри запроса** — `wcnd`
+  держал её в EAPOL_RX до 5 с, а `lwip` обслуживается тем же циклом:
+  `ifconfig wlan0 up` и `dhcpcd` висели. Теперь не больше 5 мс
+  (`WCN_WAIT_MAX`), ждёт демон (`f08a6f5d4`). И после входа `wcnd` обязан
+  читать события прошивки: маяки своей BSS иначе переполняют очередь.
+- `dhcpcd` 6.9 не знает `-1`: в `rc` — `dhcpcd -b wlan0`.
+
+**Сам при загрузке** (`rc.clover`, с `modem=1`, без `wifi=0`): после
+модема — служба `wcn`, `wcnd -B` (журнал `/var/log/wcnd.log`; при потере
+сети — снова скан и вход через 10 с), `dhcpcd -b wlan0`, если
+`/etc/wcnd.conf` называет сеть. **Проверено перезагрузкой без единой
+команды** (образ `boot-20261020014439`, корень `system`): через 45 с после
+старта — 22 сети в скане, вход (aid 2), `WPA2 keys in, the port is open`,
+`inet 192.168.33.120`, `nameserver 192.168.33.1`, `ping ya.ru` — 3 из 3.
+
+Открыто: [?] одно «EAPOL: not an RSN EAPOL-Key frame» на входе (кадр EAPOL
+не-ключ — вероятно, EAPOL-Start/Identity точки; не мешает); события WMI id
+0 (сотни за минуту) — шум; повторный вход после потери сети не проверялся
+(нужна выключенная точка); скорость не мерилась; `bdwlanmi.bin`/
+`bdwlanpl.bin` не разобраны; WPA3/SAE и корпоративные сети — hostap (§7).
+
 ## 4. Copy engine [C]
 
 Подробно — `port/clover/wifi/ce.md`. Двенадцать колец DMA; CE n —

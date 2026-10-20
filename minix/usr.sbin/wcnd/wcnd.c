@@ -41,6 +41,7 @@
 #include "wcn_wlfw.h"
 #include "wcn_fw.h"
 #include "wcn_ioc.h"
+#include "wcn_wmi.h"
 
 #define FWDIR	"/libdata/firmware/qcom/clover/modem"
 #define BOARD2	"/libdata/firmware/ath10k/WCN3990/hw1.0/board-2.bin"
@@ -398,6 +399,139 @@ cfg:
 	return 0;
 }
 
+static struct wmi_svc_ready svr;
+static struct wmi_svc svc;
+static struct wmi_ready rdy;
+
+/* One WMI event into "msg": 0, or -1 when none came in "ms". */
+static int
+wmi_wait(struct wcn_msg *msg, unsigned ms)
+{
+
+	memset(msg, 0, sizeof(*msg));
+	msg->ms = ms;
+	if (ioctl(dev, WCNIOC_WMI_RECV, msg) != 0) {
+		if (errno != ETIMEDOUT)
+			say(LOG_ERR, "WMI: %s", strerror(errno));
+		return -1;
+	}
+	return 0;
+}
+
+static int
+wmi_send(const uint8_t *p, size_t n, const char *what)
+{
+	struct wcn_msg msg;
+
+	if (n == 0 || n > sizeof(msg.data)) {
+		say(LOG_ERR, "%s: could not build", what);
+		return -1;
+	}
+	memset(&msg, 0, sizeof(msg));
+	msg.len = n;
+	memcpy(msg.data, p, n);
+	if (ioctl(dev, WCNIOC_WMI_SEND, &msg) != 0) {
+		say(LOG_ERR, "%s: %s", what, strerror(errno));
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * WMI's start, as ath10k's core_start: SERVICE_READY (SERVICE_AVAILABLE
+ * may come first), INIT with what the firmware offers, READY; then HTT.
+ */
+static int
+wmi_up(void)
+{
+	struct wcn_msg msg;
+	struct wmi_ev ev;
+	struct wmi_buf b;
+	uint8_t out2[512];
+	unsigned t, i, flags = 0;
+	int e;
+
+	for (t = 0; t < 20; t++) {
+		if (wmi_wait(&msg, 500) != 0)
+			continue;
+		if (wmi_event(msg.data, msg.len, &ev) != 0) {
+			say(LOG_WARNING, "WMI: a malformed event (%u bytes)",
+			    msg.len);
+			continue;
+		}
+		if (ev.id == WMI_EV_SERVICE_AVAILABLE) {
+			(void)wmi_svc_available(&ev, &svc);
+			continue;
+		}
+		if (ev.id == WMI_EV_SERVICE_READY)
+			break;
+		say(LOG_INFO, "WMI: event 0x%x before SERVICE_READY", ev.id);
+	}
+	if (t == 20) {
+		say(LOG_ERR, "no SERVICE_READY in 10 s");
+		return -1;
+	}
+	if ((e = wmi_svc_ready(&ev, &svr, &svc)) != 0) {
+		say(LOG_ERR, "SERVICE_READY: %s", e == ENOTSUP ?
+		    "not our ABI" : "malformed");
+		return -1;
+	}
+	say(LOG_INFO, "SERVICE_READY: build 0x%x abi 0x%x/%u, %u chains, "
+	    "ht 0x%x vht 0x%x, regdomain 0x%x, 2G %u-%u 5G %u-%u, "
+	    "%u memory requests", svr.fw_build, svr.abi_ver0, svr.abi_ver1,
+	    svr.num_rf_chains, svr.ht_cap_info, svr.vht_cap_info,
+	    svr.eeprom_rd, svr.low_2ghz_chan, svr.high_2ghz_chan,
+	    svr.low_5ghz_chan, svr.high_5ghz_chan, svr.num_mem_reqs);
+	say(LOG_INFO, "services: rx full reorder %d, mgmt tx by WMI %d, "
+	    "ack rssi %d, extend address %d",
+	    wmi_svc_enabled(&svc, WMI_SVC_RX_FULL_REORDER),
+	    wmi_svc_enabled(&svc, WMI_SVC_MGMT_TX_WMI),
+	    wmi_svc_enabled(&svc, WMI_SVC_TX_DATA_MGMT_ACK_RSSI),
+	    wmi_svc_enabled(&svc, WMI_SVC_EXTEND_ADDRESS));
+	if (verbose)
+		for (i = 0; i < 8; i++)
+			fprintf(stderr, "  service words %u: %08x\n", i,
+			    svc.w[i]);
+	if (svr.num_mem_reqs != 0) {
+		for (i = 0; i < svr.num_mem_reqs; i++)
+			say(LOG_ERR, "memory request %u: id %u, %u units of %u",
+			    i, svr.mem_req[i].req_id, svr.mem_req[i].num_units,
+			    svr.mem_req[i].unit_size);
+		say(LOG_ERR, "the firmware wants host memory: not done yet");
+		return -1;
+	}
+	if (wmi_svc_enabled(&svc, WMI_SVC_RX_FULL_REORDER))
+		flags |= WMI_INIT_RX_REORDER;
+	if (wmi_svc_enabled(&svc, WMI_SVC_TX_DATA_MGMT_ACK_RSSI))
+		flags |= WMI_INIT_TX_ACK_RSSI;
+	b.p = out2;
+	b.cap = sizeof(out2);
+	b.len = 0;
+	b.err = 0;
+	if (wmi_send(out2, wmi_init(&b, flags, NULL, 0), "INIT") != 0)
+		return -1;
+	for (t = 0; t < 20; t++) {
+		if (wmi_wait(&msg, 500) != 0)
+			continue;
+		if (wmi_event(msg.data, msg.len, &ev) == 0 &&
+		    ev.id == WMI_EV_READY)
+			break;
+	}
+	if (t == 20 || wmi_ready(&ev, &rdy) != 0) {
+		say(LOG_ERR, "no READY after INIT");
+		return -1;
+	}
+	say(LOG_INFO, "READY: status %u, mac %02x:%02x:%02x:%02x:%02x:%02x",
+	    rdy.status, rdy.mac[0], rdy.mac[1], rdy.mac[2], rdy.mac[3],
+	    rdy.mac[4], rdy.mac[5]);
+	if (ioctl(dev, WCNIOC_HTT_START) != 0) {
+		say(LOG_ERR, "HTT: %s", strerror(errno));
+		return -1;
+	}
+	say(LOG_INFO, "HTT up");
+	return 0;
+}
+
 /*
  * The first WMI events, as they come: SERVICE_READY is the proof that the
  * engines, the SMMU route and HTC carry the firmware's words to us.  The
@@ -457,9 +591,16 @@ main(int argc, char **argv)
 		return 1;
 	if (stop_at_ready)
 		return 0;
-	if (fg)
-		wmi_listen(10);
-	if (!fg && daemon(0, 0) != 0)
+	if (wmi_up() != 0) {
+		if (fg)
+			wmi_listen(5);
+		return 1;
+	}
+	if (fg) {
+		wmi_listen(3);
+		return 0;		/* the station comes next */
+	}
+	if (daemon(0, 0) != 0)
 		say(LOG_WARNING, "daemon: %s", strerror(errno));
 	/* The network side comes next: scan, association, WPA2. */
 	for (;;)

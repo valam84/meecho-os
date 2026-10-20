@@ -248,6 +248,37 @@ deliver(unsigned eid, const uint8_t *msg, size_t len)
 	rxq[eid]->len[t] = len;
 }
 
+/*
+ * Buffers waiting to go back: a receive line is handed to the engine only
+ * when none of its descriptors is the engine's (wcn_ce.h), so a buffer
+ * taken from the middle of a line waits here until the line is whole.
+ */
+#define SPARE	512
+static struct rxbuf *spare[WCN_CE_COUNT][SPARE];
+static unsigned nspare[WCN_CE_COUNT];
+
+static void
+repost(unsigned id, struct rxbuf *b)
+{
+	unsigned i, k;
+
+	if (b != NULL) {
+		if (nspare[id] >= SPARE) {
+			log_warn(&wlog, "ce%u: a buffer lost\n", id);
+			free(b);
+		} else
+			spare[id][nspare[id]++] = b;
+	}
+	for (i = 0; i < nspare[id]; i++)
+		if (wcn_ce_rx_post(&ce, id, spare[id][i]->va, spare[id][i]->da,
+		    spare[id][i]->len, spare[id][i]) != 0)
+			break;
+	for (k = 0; i + k < nspare[id]; k++)
+		spare[id][k] = spare[id][i + k];
+	nspare[id] -= i;
+	wcn_ce_rx_commit(&ce, id);
+}
+
 /* Take what engine "id" received; give its buffers back. */
 static void
 service_rx(unsigned id)
@@ -272,10 +303,9 @@ service_rx(unsigned id)
 			    &mlen) == 1)
 				deliver(eid, msg, mlen);
 		}
-		if (wcn_ce_rx_post(&ce, id, b->va, b->da, b->len, b) != 0)
-			log_warn(&wlog, "ce%u: a buffer not posted again\n", id);
+		repost(id, b);
 	}
-	wcn_ce_rx_commit(&ce, id);
+	repost(id, NULL);
 }
 
 static uint8_t slot_busy[256];

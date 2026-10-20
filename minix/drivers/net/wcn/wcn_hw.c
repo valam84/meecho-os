@@ -333,6 +333,48 @@ hw_wait(unsigned eid, void *buf, size_t size, unsigned ms)
 	}
 }
 
+int
+hw_wmi_send(const void *msg, size_t len)
+{
+	unsigned t;
+	int r;
+
+	/* WMI has one credit: the previous command's comes back in a
+	 * received frame's trailer. */
+	for (t = 0; ; t++) {
+		if ((r = hw_send((unsigned)wmi_ep, msg, len)) != EAGAIN ||
+		    t >= 1000)
+			return r;
+		service_all();
+		micro_delay(1000);
+	}
+}
+
+int
+hw_frame(const void *frame, size_t len, uint64_t *da)
+{
+	static uint8_t *slots;
+	static uint64_t slots_da;
+	static unsigned next;
+	unsigned k;
+	void *va;
+
+	if (!started)
+		return ENXIO;
+	if (len > 2048)
+		return EINVAL;
+	if (slots == NULL) {
+		if (wcn_mem_take(&mem, 16 * 2048, &va, &slots_da) != 0)
+			return ENOMEM;
+		slots = va;
+	}
+	k = next++ % 16;
+	memcpy(slots + k * 2048, frame, len);
+	(void)sys_cachectl(CACHE_CLEAN, slots + k * 2048, len);
+	*da = slots_da + k * 2048;
+	return OK;
+}
+
 /* ---- start ---- */
 
 static int

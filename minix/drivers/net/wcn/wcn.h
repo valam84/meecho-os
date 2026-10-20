@@ -34,6 +34,10 @@ int hw_send(unsigned eid, const void *msg, size_t len);
 /* Wait up to "ms" for a message on endpoint "eid" (copied): its length,
  * or -ETIMEDOUT. */
 ssize_t hw_wait(unsigned eid, void *buf, size_t size, unsigned ms);
+/* A WMI command, waiting up to a second for the credit. */
+int hw_wmi_send(const void *msg, size_t len);
+/* A frame into one of 16 DMA slots: its address for the engine. */
+int hw_frame(const void *frame, size_t len, uint64_t *da);
 
 extern struct htc htc;
 extern int wmi_ep, htt_ep;

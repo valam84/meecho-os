@@ -221,6 +221,43 @@ w_close(devminor_t minor __unused)
 	return OK;
 }
 
+static struct wcn_msg iomsg;
+
+/* WMI and frames, both ways (wcn_ioc.h). */
+static int
+msg_ioctl(unsigned long request, endpoint_t endpt, cp_grant_id_t grant)
+{
+	ssize_t n;
+	int e;
+
+	if ((e = sys_safecopyfrom(endpt, grant, 0, (vir_bytes)&iomsg,
+	    sizeof(iomsg))) != OK)
+		return e;
+	switch (request) {
+	case WCNIOC_WMI_SEND:
+		if (iomsg.len == 0 || iomsg.len > WCN_MSG_MAX || wmi_ep < 0)
+			return EINVAL;
+		return hw_wmi_send(iomsg.data, iomsg.len);
+	case WCNIOC_WMI_RECV:
+		if (wmi_ep < 0)
+			return EINVAL;
+		n = hw_wait((unsigned)wmi_ep, iomsg.data, sizeof(iomsg.data),
+		    iomsg.ms > 10000 ? 10000 : iomsg.ms);
+		if (n < 0)
+			return (int)-n;
+		iomsg.len = (uint32_t)n;
+		break;
+	case WCNIOC_FRAME:
+		if (iomsg.len == 0 || iomsg.len > WCN_MSG_MAX)
+			return EINVAL;
+		if ((e = hw_frame(iomsg.data, iomsg.len, &iomsg.da)) != OK)
+			return e;
+		break;
+	}
+	return sys_safecopyto(endpt, grant, 0, (vir_bytes)&iomsg,
+	    sizeof(iomsg));
+}
+
 static int
 w_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 	cp_grant_id_t grant, int flags __unused, endpoint_t user __unused,
@@ -254,6 +291,10 @@ w_ioctl(devminor_t minor, unsigned long request, endpoint_t endpt,
 		return hw_power(on != 0);
 	case WCNIOC_START:
 		return hw_start();
+	case WCNIOC_WMI_SEND:
+	case WCNIOC_WMI_RECV:
+	case WCNIOC_FRAME:
+		return msg_ioctl(request, endpt, grant);
 	default:
 		return ENOTTY;
 	}

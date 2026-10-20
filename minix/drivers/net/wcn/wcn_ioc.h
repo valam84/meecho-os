@@ -21,6 +21,16 @@
  *			off (0) - before WLAN_CFG/WLAN_MODE, as Linux
  *   WCNIOC_START	after WLAN_MODE: the copy engines up, HTC READY,
  *			WMI control and HTT data connected
+ *   WCNIOC_WMI_SEND	one WMI command (header and TLVs, without HTC's
+ *			header) - waiting up to a second for WMI's one
+ *			credit
+ *   WCNIOC_WMI_RECV	the next WMI event, waiting up to "ms"; ETIMEDOUT
+ *   WCNIOC_FRAME	a management frame copied into DMA memory, for
+ *			MGMT_TX_SEND by reference: its address for the
+ *			engine back (one of 16 slots, reused in turn)
+ *
+ * The station itself - which WMI command when, the 802.11 exchange, WPA2
+ * - is wcnd's: the service carries; the daemon decides.
  *
  * Root only (the node is 0600).
  */
@@ -47,5 +57,18 @@ struct wcn_region {
 #define WCNIOC_RECLAIM	_IO('W', 3)
 #define WCNIOC_POWER	_IOW('W', 4, int)
 #define WCNIOC_START	_IO('W', 5)
+
+#define WCN_MSG_MAX	2040		/* a WMI message, HTC header apart */
+
+struct wcn_msg {
+	uint32_t len;
+	uint32_t ms;			/* RECV: how long to wait */
+	uint64_t da;			/* FRAME: where the engine finds it */
+	uint8_t data[WCN_MSG_MAX];
+};
+
+#define WCNIOC_WMI_SEND	_IOW('W', 6, struct wcn_msg)
+#define WCNIOC_WMI_RECV	_IOWR('W', 7, struct wcn_msg)
+#define WCNIOC_FRAME	_IOWR('W', 8, struct wcn_msg)
 
 #endif /* _WCN_IOC_H */

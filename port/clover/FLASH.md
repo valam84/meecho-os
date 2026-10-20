@@ -10,11 +10,11 @@
 
 | Файл | Что это | Командная строка ядра |
 |---|---|---|
-| `meecho-clover-desktop.img` | **стол**: корень на eMMC, при загрузке — `meecho-desktop` на Adreno | `rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata console=console osk=1 desktop=1` |
-| `meecho-clover-emmc.img` | тот же корень, консоль вместо стола (`meecho-desktop` — из шелла) | `rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata console=console osk=1` |
+| `meecho-clover-desktop.img` | **стол**: корень на eMMC, при загрузке — `meecho-desktop` на Adreno, модем | `rootdevname=c0d0 blkdrv=sdmmc gptpart0=userdata console=console osk=1 gptro0=modemst1,modemst2,fsg,fsc,modem,vendor modem=1 desktop=1` |
+| `meecho-clover-emmc.img` | тот же корень, консоль вместо стола (`meecho-desktop` — из шелла) | то же без `desktop=1` |
 | `meecho-clover-boot.img` | корень в памяти, все ядра, eMMC **только на чтение** | `bootramdisk=1 console=console osk=1 blkdrv=sdmmc` |
 | `meecho-clover-safe.img` | запасной: корень в памяти, одно ядро, без драйвера eMMC | `bootramdisk=1 console=console osk=1 no_smp=1` |
-| `meecho-clover-root.img.gz` | файловая система для `userdata` (1 ГиБ после `gunzip`): полный userland, стол, микрокод GPU | — |
+| `meecho-clover-root.img.gz` | файловая система для `userdata` (1 ГиБ после `gunzip`): полный userland, стол; прошивок нет — см. ниже | — |
 | `SHA256SUMS`, `cmdline.txt`, `BUILD.txt` | суммы, командные строки, из чего собрано | — |
 
 Все четыре образа содержат одно и то же ядро и один и тот же загрузочный
@@ -23,10 +23,16 @@
 ровно как у LineageOS (`BOARD_KERNEL_IMAGE_NAME := Image.gz-dtb`).
 **AVB/`vbmeta` и `dtbo` у clover нет**, раздел `boot` — 64 МиБ.
 
-**Комплект — локальный, не для публикации**: в корне лежат микрокод CP
-Adreno (linux-firmware, `LICENSE.qcom`) и zap-шейдер с раздела vendor
-этого планшета (`/libdata/firmware/qcom`). Без них `rc` не поднимает
-`adreno`, и стол рисует процессор.
+**Прошивки берутся с самого планшета** (с 2026-10-20; так собран
+публичный релиз, `FW_DIR=none`). Модему, Wi-Fi, DSP и GPU нужны файлы
+Qualcomm и Xiaomi, которые MEECHO распространять не может, — но они есть
+на разделах планшета. При первой загрузке `rc.clover` копирует
+`image/` с раздела `modem` (FAT) в `/libdata/firmware/qcom/clover/modem`
+и микрокод CP с zap-шейдером с `vendor` (ext4, `/firmware`) в
+`/libdata/firmware/qcom` — программой `fwimport`, через окна только на
+чтение (`gptro0=`). Это около 100 МБ и минута; дальше — с корня.
+`fwimport=0` — не копировать. Комплект с `FW_DIR=каталог` кладёт
+микрокод в корень сразу и остаётся локальным.
 
 ## Что умеет и чего нет
 
@@ -46,9 +52,9 @@ CHECKLIST.
   USB-хабы, клавиатура и мышь; кабель к компьютеру — снова сеть.
   Low-speed клавиатура прямо в переходнике не перечисляется — через хаб
   работает (`hw-usbhost.md`, шаг 7).
-- **Частоты**: процессоры 1747/1536 МГц при загрузке (`cpufreq=0` —
-  частоты загрузчика), GPU — `gpufreq=max|МГц|0`. Регулятора по нагрузке
-  нет: частоты не снижаются в простое.
+- **Частоты**: процессоры до 1747/1536 МГц (большие/малые), по нагрузке
+  (`cpugov=ondemand|performance|powersave`, `cpufreq=0` — частоты
+  загрузчика); GPU до 588 МГц (`gpufreq=max|МГц|0`, `gpugov=`).
 - Экран: консоль крупным шрифтом, внизу экранная клавиатура (`osk=1`).
 - Ввод: касания; громкость — стрелки вверх/вниз; кнопка питания гасит и
   зажигает подсветку.
@@ -59,8 +65,13 @@ CHECKLIST.
 - Сеть и ssh — по кабелю USB к компьютеру (CDC Ethernet, `10.42.0.2`).
 - **USB и сеть поднимаются только после `fastboot boot`**: из прошитого
   `boot` контроллер USB никто не включил, и драйверы его не берут.
+- **Модем** (`modem=1`, `hw-modem.md`): MBA и mpss загружаются, QRTR,
+  `rmtfs` (хранилище модема только на чтение), `tqftpserv`, `pd-mapper`,
+  `diag-router`; модем отвечает по QMI. Передачи данных ещё нет (IPA —
+  `ipa=1`, не проверено), звонков и SMS нет.
 - **Нет**: выключения по `poweroff` (может не сработать), автогашения
-  экрана, Wi-Fi, звука.
+  экрана, Wi-Fi (прошивка поднимается до `FW_READY`, `hw-wifi.md`; в
+  `rc` не запускается), звука.
 
 ## Защита загрузчиков
 
@@ -147,7 +158,9 @@ fastboot reboot
 
 ## Как собрано
 
-Одной командой из дерева — `port/clover/mkkit.sh`:
+Одной командой из дерева — `port/clover/mkkit.sh`; публичный комплект —
+`FW_DIR=none AUTHKEYS=none` (прошивки — с планшета, ключа ssh нет).
+Локальный, с микрокодом в корне:
 
 ```
 FW_DIR=<каталог с a530_pm4.fw, a530_pfp.fw, a512_zap.mdt/.b00-.b02,
